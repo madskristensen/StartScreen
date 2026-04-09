@@ -86,13 +86,15 @@ namespace StartScreen.Services
             }
 
             // Parse MRU entries on background thread (includes file I/O for timestamps)
+            // Deduplicate by path, keeping only the first (most recent) occurrence
             var vsItems = await Task.Run(() =>
             {
                 var items = new List<MruItem>();
+                var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var raw in rawEntries)
                 {
                     var item = ParseMruEntry(raw);
-                    if (item != null)
+                    if (item != null && seenPaths.Add(item.Path))
                     {
                         items.Add(item);
                     }
