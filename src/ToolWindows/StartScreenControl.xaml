@@ -32,6 +32,7 @@
                         <Border Background="{TemplateBinding Background}"
                                BorderBrush="{TemplateBinding BorderBrush}"
                                BorderThickness="{TemplateBinding BorderThickness}"
+                               CornerRadius="4"
                                Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
@@ -210,9 +211,9 @@
                         </DockPanel>
                     </Border>
 
-        <!-- Right Pane: Links + News -->
+        <!-- Right Pane: Links + News (subtle lighter background than left pane) -->
         <Border Grid.Column="1"
-                Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}">
+                Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowContentGridBrushKey}}">
             <ScrollViewer x:Name="NewsScroll"
                           VerticalScrollBarVisibility="Auto"
                           Margin="40 16 24 16"
@@ -236,13 +237,29 @@
 
                     <!-- News Header -->
                     <Grid Margin="0 82 0 12">
-                        <TextBlock Text="News"
-                                  FontSize="16"
-                                  FontWeight="SemiBold"
-                                  HorizontalAlignment="Left"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                            <TextBlock Text="News"
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      VerticalAlignment="Center"/>
+                            <Button x:Name="RefreshNewsButton"
+                                    Click="RefreshNewsButton_Click"
+                                    Style="{StaticResource ActionButtonStyle}"
+                                    ToolTip="Refresh news feeds"
+                                    Margin="8 0 0 0"
+                                    Padding="4"
+                                    BorderThickness="0"
+                                    VerticalAlignment="Center">
+                                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}" 
+                                                    Width="16" Height="16"/>
+                            </Button>
+                        </StackPanel>
                         <ProgressBar Height="2" 
                                     VerticalAlignment="Bottom"
                                     IsIndeterminate="True"
+                                    Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                                    BorderThickness="0"
                                     Visibility="{Binding IsRefreshingNews, Converter={StaticResource BoolToVisibilityConverter}}"/>
                     </Grid>
 
@@ -255,10 +272,18 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <controls:NewsItemControl MinWidth="280" MaxWidth="380" Width="350" Margin="0 0 24 20"/>
+                                <controls:NewsItemControl MinWidth="280" MaxWidth="380" Width="350" Margin="0 0 64 20"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <!-- Customize news feeds link -->
+                    <TextBlock Margin="0 8 0 0" FontSize="13">
+                        <Hyperlink Click="NewsFeedsSettings_Click"
+                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                            Customize news feeds...
+                        </Hyperlink>
+                    </TextBlock>
                 </StackPanel>
             </ScrollViewer>
         </Border>

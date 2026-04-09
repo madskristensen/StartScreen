@@ -24,8 +24,7 @@
             <TextBlock Text="{Binding Title}"
                       FontWeight="SemiBold"
                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                      TextWrapping="NoWrap"
-                      TextTrimming="CharacterEllipsis"
+                      TextWrapping="Wrap"
                       FontSize="13"/>
 
             <!-- Summary -->
@@ -34,7 +33,7 @@
                       TextWrapping="Wrap"
                       TextTrimming="WordEllipsis"
                       MaxHeight="40"
-                      Margin="0 4 0 0"/>
+                      Margin="0 6 0 6"/>
 
             <!-- Source and Date -->
             <TextBlock Text="{Binding Source}"

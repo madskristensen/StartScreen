@@ -12,6 +12,8 @@ or get the latest CI build from [Open VSIX Gallery][vsixgallery].
 
 Start Screen brings a fast, modern, and developer-focused launch experience to Visual Studio.
 
+![Start Screen screenshot placeholder](art/startscreen.png)
+
 It replaces the default start page with a practical workspace hub that helps you get productive right away.
 
 ## Why you will love it
@@ -44,12 +46,6 @@ Launch common workflows from one place:
 - Read fresh engineering news directly inside Visual Studio
 - Combines multiple RSS and Atom sources into one view
 - Uses local cache for fast startup and background refresh for freshness
-
-### Screenshot
-
-![Start Screen screenshot placeholder](docs/images/start-screen-placeholder.png)
-
-> Replace this placeholder image with an actual screenshot of the extension UI.
 
 ## Installation
 

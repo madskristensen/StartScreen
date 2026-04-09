@@ -72,6 +72,38 @@ namespace StartScreen.ToolWindows
                 await ViewModel.RemoveMruItemAsync(e);
             }
         }
+
+        private async void NewsFeedsSettings_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var filePath = FeedStore.EnsureNewsFeedsFileAndGetPath();
+                if (!string.IsNullOrEmpty(filePath) && System.IO.File.Exists(filePath))
+                {
+                    // Start watching for changes
+                    FeedStore.StartWatching();
+
+                    // Open in VS
+                    await VS.Documents.OpenAsync(filePath);
+                }
+                else
+                {
+                    await VS.MessageBox.ShowErrorAsync("Start Screen", "Could not create the news feeds configuration file.");
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        private void RefreshNewsButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel != null)
+            {
+                ViewModel.ForceRefreshNews();
+            }
+        }
     }
 
     /// <summary>

@@ -99,6 +99,16 @@ namespace StartScreen.ToolWindows
             _allMruItems = new ObservableCollection<MruItem>();
             _discoverySectionTitle = "Discover what's new";
             _discoverySectionVersion = string.Empty;
+
+            // Start watching for feed file changes and subscribe to event
+            FeedStore.StartWatching();
+            FeedStore.FeedsChanged += OnFeedsChanged;
+        }
+
+        private void OnFeedsChanged(object sender, EventArgs e)
+        {
+            // Force refresh news when feeds file changes
+            ForceRefreshNews();
         }
 
         /// <summary>
@@ -157,7 +167,7 @@ namespace StartScreen.ToolWindows
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Trace.TraceError($"Failed to refresh MRU: {ex.Message}");
+                ex.Log();
             }
         }
 
@@ -165,32 +175,79 @@ namespace StartScreen.ToolWindows
         {
             try
             {
-                IsRefreshingNews = true;
+                // Always load from cache first for instant display
+                var cachedFeed = FeedService.GetCachedFeed();
+                var posts = cachedFeed != null ? FeedService.ConvertToNewsPosts(cachedFeed) : null;
+                var hasCachedItems = posts != null && posts.Count > 0;
 
-                var feeds = FeedStore.GetFeeds();
-                var updatedFeed = await FeedService.RefreshFeedInBackgroundAsync(feeds);
-
-                if (updatedFeed != null)
+                if (hasCachedItems)
                 {
-                    var posts = FeedService.ConvertToNewsPosts(updatedFeed);
+                    await UpdateNewsPostsOnUIThreadAsync(posts);
+                }
 
-                    // Update on UI thread
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-                    NewsPosts.Clear();
-                    foreach (var post in posts)
-                    {
-                        NewsPosts.Add(post);
-                    }
+                // Only trigger background sync if no cache or empty cache
+                if (!hasCachedItems)
+                {
+                    StartBackgroundFeedRefresh();
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Trace.TraceError($"Failed to refresh news: {ex.Message}");
+                ex.Log();
             }
-            finally
+        }
+
+        /// <summary>
+        /// Forces a refresh of news feeds regardless of cache state.
+        /// </summary>
+        public void ForceRefreshNews()
+        {
+            if (IsRefreshingNews)
+                return;
+
+            StartBackgroundFeedRefresh();
+        }
+
+        /// <summary>
+        /// Starts a fire-and-forget background refresh of news feeds.
+        /// </summary>
+        private void StartBackgroundFeedRefresh()
+        {
+            IsRefreshingNews = true;
+
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
-                IsRefreshingNews = false;
+                try
+                {
+                    var feeds = FeedStore.GetFeeds();
+                    var updatedFeed = await FeedService.DownloadFeedsAsync(feeds);
+
+                    if (updatedFeed != null)
+                    {
+                        var posts = FeedService.ConvertToNewsPosts(updatedFeed);
+                        await UpdateNewsPostsOnUIThreadAsync(posts);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ex.Log();
+                }
+                finally
+                {
+                    IsRefreshingNews = false;
+                }
+            }).FileAndForget(nameof(StartScreenViewModel));
+        }
+
+        private async Task UpdateNewsPostsOnUIThreadAsync(List<NewsPost> posts)
+        {
+            // Update on UI thread
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            NewsPosts.Clear();
+            foreach (var post in posts)
+            {
+                NewsPosts.Add(post);
             }
         }
 
@@ -222,7 +279,7 @@ namespace StartScreen.ToolWindows
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Trace.TraceError($"Failed to get VS version: {ex.Message}");
+                ex.Log();
             }
         }
 

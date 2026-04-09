@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/madskristensen/StartScreen/master/newsfeeds.schema.json",
+  "title": "Start Screen News Feeds",
+  "description": "Configuration for news feeds displayed on the Visual Studio Start Screen extension.",
+  "type": "object",
+  "required": [ "feeds" ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference to the JSON Schema for validation and IntelliSense."
+    },
+    "feeds": {
+      "type": "array",
+      "description": "List of RSS/Atom feeds to display.",
+      "items": {
+        "type": "object",
+        "required": [ "name", "url" ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Display name of the feed."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of the RSS or Atom feed."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether this feed is enabled."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

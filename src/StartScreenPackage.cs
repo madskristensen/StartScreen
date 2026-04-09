@@ -54,7 +54,13 @@ namespace StartScreen
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                // Hide Start Screen when a solution is opened
+                // Don't close if it's just the Miscellaneous Files project (no actual solution)
+                if (obj == null || string.IsNullOrEmpty(obj.FullPath))
+                {
+                    return;
+                }
+
+                // Hide Start Screen when a real solution is opened
                 try
                 {
                     var uiShell = await GetServiceAsync(typeof(SVsUIShell)) as IVsUIShell;
@@ -65,20 +71,20 @@ namespace StartScreen
                         frame?.CloseFrame((uint)__FRAMECLOSE.FRAMECLOSE_NoSave);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Tool window may not be open
+                    ex.Log();
                 }
             }).FileAndForget(nameof(StartScreen));
         }
 
         private void OnSolutionClosed()
         {
-            //ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
-            //{
-            //    // Show Start Screen when solution is closed
-            //    await ShowStartScreenAsync();
-            //}).FileAndForget(nameof(StartScreen));
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                // Show Start Screen when solution is closed
+                await ShowStartScreenAsync();
+            }).FileAndForget(nameof(StartScreen));
         }
 
         protected override void Dispose(bool disposing)

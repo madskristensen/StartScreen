@@ -43,8 +43,9 @@ namespace StartScreen.Services
                            .ThenByDescending(i => i.LastAccessed)
                            .ToList();
             }
-            catch
+            catch (Exception ex)
             {
+                ex.Log();
                 return new List<MruItem>();
             }
         }
@@ -141,8 +142,9 @@ namespace StartScreen.Services
                     GitBranch = GitHelper.GetCurrentBranch(rawPath)
                 };
             }
-            catch
+            catch (Exception ex)
             {
+                ex.Log();
                 return null;
             }
         }
@@ -203,9 +205,9 @@ namespace StartScreen.Services
                     return File.GetLastWriteTime(path);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fall through to default
+                ex.Log();
             }
 
             return DateTime.Now;
@@ -240,8 +242,9 @@ namespace StartScreen.Services
 
                 return latest;
             }
-            catch
+            catch (Exception ex)
             {
+                ex.Log();
                 return null;
             }
         }
@@ -264,9 +267,9 @@ namespace StartScreen.Services
 
                     File.WriteAllText(MruCacheFile, json);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Fail silently if write fails
+                    ex.Log();
                 }
             });
         }

@@ -100,8 +100,7 @@ namespace StartScreen.ToolWindows.Controls
             }
             catch (Exception ex)
             {
-                VS.MessageBox.ShowErrorAsync("Start Screen", $"Failed to open folder: {ex.Message}")
-                    .FileAndForget(nameof(StartScreen));
+                ex.Log();
             }
         }
 

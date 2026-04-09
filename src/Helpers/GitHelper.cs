@@ -48,9 +48,9 @@ namespace StartScreen.Helpers
                     return headContent.Substring(0, 7);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore any I/O or permission errors
+                ex.Log();
             }
 
             return null;

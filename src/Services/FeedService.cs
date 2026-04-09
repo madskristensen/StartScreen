@@ -27,6 +27,7 @@ namespace StartScreen.Services
         private static readonly HttpClient HttpClient = new HttpClient();
         private static readonly TimeSpan StaleThreshold = TimeSpan.FromHours(4);
         private const int MaxConcurrentDownloads = 6;
+        private const int MaxNewsItems = 25;
 
         static FeedService()
         {
@@ -54,30 +55,31 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                Trace.TraceError($"Failed to load cached feed: {ex.Message}");
+                ex.Log();
                 return null;
             }
         }
 
         /// <summary>
-        /// Refreshes feeds in the background if stale (>4 hours).
-        /// Returns the updated feed, or null if cache was fresh.
+        /// Returns true if the feed cache is stale (>4 hours old) or doesn't exist.
         /// </summary>
-        public static async Task<SyndicationFeed> RefreshFeedInBackgroundAsync(IEnumerable<FeedInfo> feeds)
+        public static bool IsCacheStale()
+        {
+            if (!File.Exists(CombinedFeedFile))
+                return true;
+
+            var lastModified = File.GetLastWriteTimeUtc(CombinedFeedFile);
+            return DateTime.UtcNow - lastModified >= StaleThreshold;
+        }
+
+        /// <summary>
+        /// Downloads and refreshes feeds from the network.
+        /// Returns the updated feed, or null if download failed.
+        /// </summary>
+        public static async Task<SyndicationFeed> DownloadFeedsAsync(IEnumerable<FeedInfo> feeds)
         {
             if (feeds == null || !feeds.Any())
                 return null;
-
-            // Check staleness
-            if (File.Exists(CombinedFeedFile))
-            {
-                var lastModified = File.GetLastWriteTimeUtc(CombinedFeedFile);
-                if (DateTime.UtcNow - lastModified < StaleThreshold)
-                {
-                    Trace.TraceInformation("Feed cache is fresh, skipping refresh.");
-                    return null; // Cache is fresh
-                }
-            }
 
             // Download and combine feeds
             try
@@ -100,7 +102,7 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                Trace.TraceError($"Failed to refresh feeds: {ex.Message}");
+                ex.Log();
                 return null;
             }
         }
@@ -110,7 +112,7 @@ namespace StartScreen.Services
         /// </summary>
         private static async Task<SyndicationFeed> DownloadAndCombineFeedsAsync(IEnumerable<FeedInfo> feeds)
         {
-            var selectedFeeds = feeds.Where(f => f.IsSelected).ToList();
+            var selectedFeeds = feeds.Where(f => f.Enabled).ToList();
             if (!selectedFeeds.Any())
                 return new SyndicationFeed("Start Screen", "Developer News", null);
 
@@ -126,7 +128,7 @@ namespace StartScreen.Services
                         var feed = await DownloadFeedAsync(feedInfo);
                         if (feed != null)
                         {
-                            feed.Title = new TextSyndicationContent(feedInfo.DisplayName);
+                            feed.Title = new TextSyndicationContent(feedInfo.Name);
 
                             // Set source feed for all items
                             if (feed.Items != null)
@@ -142,7 +144,7 @@ namespace StartScreen.Services
                     }
                     catch (Exception ex)
                     {
-                        Trace.TraceError($"Failed to download feed {feedInfo.DisplayName}: {ex.Message}");
+                        ex.Log();
                     }
                     finally
                     {
@@ -164,7 +166,7 @@ namespace StartScreen.Services
         /// </summary>
         private static async Task<SyndicationFeed> DownloadFeedAsync(FeedInfo feedInfo)
         {
-            var fileName = $"{feedInfo.DisplayName}.xml";
+            var fileName = $"{feedInfo.Name}.xml";
             var cacheFile = Path.Combine(CacheFolder, fileName);
 
             DateTime lastModified = File.Exists(cacheFile) 
@@ -194,7 +196,7 @@ namespace StartScreen.Services
                 }
                 catch (Exception ex)
                 {
-                    Trace.TraceError($"Failed to read cached feed {fileName}: {ex.Message}");
+                    ex.Log();
                 }
             }
 
@@ -235,7 +237,7 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                Trace.TraceError($"Failed to download feed from {url}: {ex.Message}");
+                ex.Log();
             }
 
             return null;
@@ -252,8 +254,7 @@ namespace StartScreen.Services
 
                 using (var writer = XmlWriter.Create(filePath))
                 {
-                    // Limit items for performance
-                    feed.Items = feed.Items.Take(20);
+                    feed.Items = feed.Items.Take(MaxNewsItems);
                     feed.SaveAsRss20(writer);
                 }
 
@@ -264,7 +265,7 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                Trace.TraceError($"Failed to write feed to disk: {ex.Message}");
+                ex.Log();
             }
         }
 
@@ -286,7 +287,7 @@ namespace StartScreen.Services
                 .GroupBy(i => i.Title.Text, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.OrderByDescending(i => i.PublishDate).First())
                 .OrderByDescending(i => i.PublishDate.Date)
-                .Take(100)
+                .Take(MaxNewsItems)
                 .ToList();
 
             combined.LastUpdatedTime = DateTime.UtcNow;

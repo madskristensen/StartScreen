@@ -1,0 +1,115 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madskristensen/StartScreen/master/newsfeeds.schema.json",
+  "feeds": [
+    {
+      "name": "Visual Studio",
+      "url": "https://devblogs.microsoft.com/visualstudio/feed/",
+      "enabled": true
+    },
+    {
+      "name": ".NET",
+      "url": "https://devblogs.microsoft.com/dotnet/feed/",
+      "enabled": true
+    },
+    {
+      "name": "Azure AI Foundry",
+      "url": "https://devblogs.microsoft.com/foundry/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Azure Blog",
+      "url": "https://azurecomcdn.azureedge.net/en-us/blog/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Azure DevOps",
+      "url": "https://devblogs.microsoft.com/devops/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Azure SDKs",
+      "url": "https://devblogs.microsoft.com/azure-sdk/feed/",
+      "enabled": false
+    },
+    {
+      "name": "C++",
+      "url": "https://devblogs.microsoft.com/cppblog/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Command Line",
+      "url": "https://devblogs.microsoft.com/commandline/feed/",
+      "enabled": false
+    },
+    {
+      "name": "CosmosDB",
+      "url": "https://devblogs.microsoft.com/cosmosdb/feed/",
+      "enabled": false
+    },
+    {
+      "name": "DirectX",
+      "url": "https://devblogs.microsoft.com/directx/feed/",
+      "enabled": false
+    },
+    {
+      "name": "IoT",
+      "url": "https://devblogs.microsoft.com/iotdev/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Microsoft 365",
+      "url": "https://devblogs.microsoft.com/microsoft365dev/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Microsoft Blog",
+      "url": "https://blogs.microsoft.com/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Microsoft Education",
+      "url": "https://www.microsoft.com/en-us/education/blog/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Microsoft News",
+      "url": "https://news.microsoft.com/feed/",
+      "enabled": false
+    },
+    {
+      "name": "NuGet",
+      "url": "https://devblogs.microsoft.com/nuget/feed/",
+      "enabled": false
+    },
+    {
+      "name": "PowerShell",
+      "url": "https://devblogs.microsoft.com/powershell/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Python",
+      "url": "https://devblogs.microsoft.com/python/feed/",
+      "enabled": false
+    },
+    {
+      "name": "SQL Server",
+      "url": "https://cloudblogs.microsoft.com/sqlserver/feed/",
+      "enabled": false
+    },
+    {
+      "name": "TypeScript",
+      "url": "https://devblogs.microsoft.com/typescript/feed/",
+      "enabled": false
+    },
+    {
+      "name": "Visual Studio Code",
+      "url": "https://code.visualstudio.com/feed.xml",
+      "enabled": false
+    },
+    {
+      "name": "Windows Developer",
+      "url": "https://blogs.windows.com/windowsdeveloper/feed/",
+      "enabled": false
+    }
+  ]
+}

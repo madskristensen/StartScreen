@@ -44,7 +44,7 @@ namespace StartScreen.ToolWindows.Controls
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Trace.TraceError($"Failed to open URL: {ex.Message}");
+                    ex.Log();
                 }
             }
         }
