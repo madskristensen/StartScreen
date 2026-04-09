@@ -7,12 +7,14 @@
              xmlns:catalog="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.ImageCatalog"
              xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:controls="clr-namespace:StartScreen.ToolWindows.Controls"
              toolkit:Themes.UseVsTheme="True"
              Background="Transparent"
              mc:Ignorable="d" 
              d:DesignHeight="60" d:DesignWidth="400">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <controls:NullToCollapsedConverter x:Key="NullToCollapsedConverter"/>
     </UserControl.Resources>
     <Border x:Name="RootBorder"
             BorderThickness="0"
@@ -27,19 +29,86 @@
             <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
                      BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                     BorderThickness="1">
-                <TextBlock Text="{Binding ToolTipText}" />
+                     BorderThickness="1"
+                     Padding="4">
+                <StackPanel>
+                    <!-- Path (bold) -->
+                    <TextBlock Text="{Binding Path}" 
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"
+                               MaxWidth="400"/>
+
+                    <!-- Last opened -->
+                    <StackPanel Orientation="Horizontal" Margin="0 6 0 0">
+                        <TextBlock Text="Last opened: " Opacity="0.7"/>
+                        <TextBlock Text="{Binding FormattedDate}"/>
+                    </StackPanel>
+
+                    <!-- Git info section -->
+                    <StackPanel Margin="0 2 0 0"
+                                Visibility="{Binding HasGitBranch, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <!-- Branch -->
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Branch: " Opacity="0.7"/>
+                            <TextBlock Text="{Binding GitBranch}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding AheadBehindText}" 
+                                       Margin="6 0 0 0"
+                                       Visibility="{Binding HasAheadBehind, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                            <TextBlock Text=" ●" 
+                                       Foreground="#E8A838" 
+                                       FontSize="10"
+                                       ToolTip="Uncommitted changes"
+                                       Visibility="{Binding HasUncommittedChanges, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        </StackPanel>
+
+                        <!-- Last commit -->
+                        <StackPanel Orientation="Horizontal" 
+                                    Margin="0 2 0 0"
+                                    Visibility="{Binding LastCommitTime, Converter={StaticResource NullToCollapsedConverter}}">
+                            <TextBlock Text="Last commit: " Opacity="0.7"/>
+                            <TextBlock Text="{Binding LastCommitTimeText}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
             </ToolTip>
         </Border.ToolTip>
         <DockPanel>
-            <!-- Right side: timestamp and pin -->
+            <!-- Right side: Git info and pin -->
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                <!-- Timestamp -->
-                <TextBlock Text="{Binding FormattedDate}"
-                          Opacity="0.5"
-                          FontSize="11"
-                          VerticalAlignment="Center"
-                          Margin="12 0 4 0"/>
+                <!-- Git status (right-aligned) -->
+                <StackPanel Orientation="Horizontal" 
+                            VerticalAlignment="Center"
+                            Margin="12 0 0 0"
+                            Visibility="{Binding HasGitBranch, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Branch}"
+                                        Width="12" Height="12"
+                                        Margin="0 0 4 0"
+                                        Opacity="0.6"
+                                        VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding GitBranch}"
+                              FontSize="11"
+                              Opacity="0.6"
+                              VerticalAlignment="Center"
+                              TextTrimming="CharacterEllipsis"
+                              MaxWidth="100"/>
+
+                    <!-- Ahead/Behind indicators -->
+                    <TextBlock Text="{Binding AheadBehindText}"
+                              FontSize="11"
+                              Opacity="0.6"
+                              Margin="6 0 0 0"
+                              VerticalAlignment="Center"
+                              Visibility="{Binding HasAheadBehind, Converter={StaticResource BoolToVisibilityConverter}}"/>
+
+                    <!-- Uncommitted changes indicator -->
+                    <TextBlock Text="●"
+                              FontSize="9"
+                              Foreground="#E8A838"
+                              Margin="6 0 0 2"
+                              VerticalAlignment="Center"
+                              ToolTip="Uncommitted changes"
+                              Visibility="{Binding HasUncommittedChanges, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                </StackPanel>
 
                 <!-- Pin Button -->
                 <Button x:Name="PinButton"
@@ -48,6 +117,7 @@
                        BorderThickness="0"
                        Cursor="Hand"
                        VerticalAlignment="Center"
+                       Margin="4 0 0 0"
                        ToolTip="Pin/Unpin"
                        Click="PinButton_Click">
                     <imaging:CrispImage x:Name="PinIcon" Moniker="{x:Static catalog:KnownMonikers.Pin}" Width="16" Height="16"/>
@@ -60,29 +130,13 @@
                               Margin="0 0 8 0"
                               VerticalAlignment="Center"/>
 
-            <!-- Name only (path is in tooltip) -->
+            <!-- Solution/Project Name -->
             <TextBlock x:Name="NameText"
                       Text="{Binding Name}"
                       FontWeight="SemiBold"
                       VerticalAlignment="Center"
                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
                       TextTrimming="CharacterEllipsis"/>
-
-            <!-- Git branch (shown inline when available) -->
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
-                        Visibility="{Binding HasGitBranch, Converter={StaticResource BoolToVisibilityConverter}}">
-                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Branch}"
-                                    Width="12" Height="12"
-                                    Margin="8 0 3 0"
-                                    Opacity="0.6"
-                                    VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding GitBranch}"
-                          FontSize="11"
-                          Opacity="0.6"
-                          VerticalAlignment="Center"
-                          TextTrimming="CharacterEllipsis"
-                          MaxWidth="150"/>
-            </StackPanel>
         </DockPanel>
 
         <!-- Context Menu -->

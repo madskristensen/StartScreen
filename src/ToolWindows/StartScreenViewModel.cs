@@ -141,8 +141,8 @@ namespace StartScreen.ToolWindows
                 }
             }
 
-            // Populate git branches in background after UI is updated
-            _ = MruService.PopulateGitBranchesAsync(cachedMru);
+            // Populate git status in background after UI is updated
+            MruService.PopulateGitStatusAsync(cachedMru);
         }
 
         /// <summary>
@@ -176,8 +176,8 @@ namespace StartScreen.ToolWindows
 
                 UpdateMruCollections();
 
-                // Populate git branches in background after UI is updated
-                _ = MruService.PopulateGitBranchesAsync(updatedMru);
+                // Populate git status in background after UI is updated
+                MruService.PopulateGitStatusAsync(updatedMru);
             }
             catch (Exception ex)
             {

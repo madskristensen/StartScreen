@@ -1,9 +1,8 @@
+using System;
 using System.Globalization;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
-using Microsoft.VisualStudio.Shell;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -78,20 +77,14 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async void MruItemControl_PinToggleRequested(object sender, MruItem e)
+        private void MruItemControl_PinToggleRequested(object sender, MruItem item)
         {
-            if (ViewModel != null)
-            {
-                await ViewModel.TogglePinAsync(e);
-            }
+            ViewModel?.TogglePinAsync(item);
         }
 
-        private async void MruItemControl_RemoveRequested(object sender, MruItem e)
+        private void MruItemControl_RemoveRequested(object sender, MruItem item)
         {
-            if (ViewModel != null)
-            {
-                await ViewModel.RemoveMruItemAsync(e);
-            }
+            ViewModel?.RemoveMruItemAsync(item);
         }
 
         private async void NewsFeedsSettings_Click(object sender, RoutedEventArgs e)

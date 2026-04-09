@@ -26,6 +26,10 @@ namespace StartScreen.Models
         private DateTime _lastAccessed;
         private bool _isPinned;
         private string _gitBranch;
+        private int? _commitsAhead;
+        private int? _commitsBehind;
+        private bool _hasUncommittedChanges;
+        private DateTime? _lastCommitTime;
         private bool? _exists;
 
         public string Name
@@ -119,16 +123,155 @@ namespace StartScreen.Models
         public bool HasGitBranch => !string.IsNullOrEmpty(_gitBranch);
 
         /// <summary>
-        /// Composite tooltip text showing path and optionally branch info.
+        /// Number of commits ahead of the upstream tracking branch.
+        /// Null if no upstream is configured.
+        /// </summary>
+        public int? CommitsAhead
+        {
+            get => _commitsAhead;
+            set
+            {
+                if (_commitsAhead != value)
+                {
+                    _commitsAhead = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasAheadBehind));
+                    OnPropertyChanged(nameof(AheadBehindText));
+                    OnPropertyChanged(nameof(ToolTipText));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Number of commits behind the upstream tracking branch.
+        /// Null if no upstream is configured.
+        /// </summary>
+        public int? CommitsBehind
+        {
+            get => _commitsBehind;
+            set
+            {
+                if (_commitsBehind != value)
+                {
+                    _commitsBehind = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasAheadBehind));
+                    OnPropertyChanged(nameof(AheadBehindText));
+                    OnPropertyChanged(nameof(ToolTipText));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether there are uncommitted changes in the working directory.
+        /// </summary>
+        public bool HasUncommittedChanges
+        {
+            get => _hasUncommittedChanges;
+            set
+            {
+                if (_hasUncommittedChanges != value)
+                {
+                    _hasUncommittedChanges = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(ToolTipText));
+                }
+            }
+        }
+
+        /// <summary>
+        /// The timestamp of the last commit on the current branch.
+        /// </summary>
+        public DateTime? LastCommitTime
+        {
+            get => _lastCommitTime;
+            set
+            {
+                if (_lastCommitTime != value)
+                {
+                    _lastCommitTime = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(LastCommitTimeText));
+                    OnPropertyChanged(nameof(ToolTipText));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether ahead/behind information is available for display.
+        /// </summary>
+        public bool HasAheadBehind => _commitsAhead.HasValue || _commitsBehind.HasValue;
+
+        /// <summary>
+        /// Formatted ahead/behind text (e.g., "up arrow 2 down arrow 3").
+        /// </summary>
+        public string AheadBehindText
+        {
+            get
+            {
+                if (!HasAheadBehind)
+                    return string.Empty;
+
+                var parts = new System.Collections.Generic.List<string>();
+                if (_commitsAhead > 0)
+                    parts.Add($"\u2191{_commitsAhead}");
+                if (_commitsBehind > 0)
+                    parts.Add($"\u2193{_commitsBehind}");
+
+                return string.Join(" ", parts);
+            }
+        }
+
+        /// <summary>
+        /// Formatted relative time for last commit (e.g., "2 hours ago").
+        /// </summary>
+        public string LastCommitTimeText
+        {
+            get
+            {
+                if (!_lastCommitTime.HasValue)
+                    return string.Empty;
+
+                var span = DateTime.Now - _lastCommitTime.Value;
+
+                if (span.TotalMinutes < 1)
+                    return "just now";
+                if (span.TotalMinutes < 60)
+                    return $"{(int)span.TotalMinutes}m ago";
+                if (span.TotalHours < 24)
+                    return $"{(int)span.TotalHours}h ago";
+                if (span.TotalDays < 7)
+                    return $"{(int)span.TotalDays}d ago";
+                if (span.TotalDays < 30)
+                    return $"{(int)(span.TotalDays / 7)}w ago";
+
+                return _lastCommitTime.Value.ToString("MMM d");
+            }
+        }
+
+        /// <summary>
+        /// Composite tooltip text showing path and Git status info.
         /// </summary>
         public string ToolTipText
         {
             get
             {
-                if (HasGitBranch)
-                    return $"{Path}\nBranch: {GitBranch}";
+                var lines = new System.Collections.Generic.List<string> { Path };
 
-                return Path;
+                if (HasGitBranch)
+                {
+                    var branchInfo = $"Branch: {GitBranch}";
+                    if (HasAheadBehind)
+                        branchInfo += $" ({AheadBehindText})";
+                    if (HasUncommittedChanges)
+                        branchInfo += " *";
+                    lines.Add(branchInfo);
+                }
+
+                if (_lastCommitTime.HasValue)
+                    lines.Add($"Last commit: {LastCommitTimeText}");
+
+                return string.Join("\n", lines);
             }
         }
 

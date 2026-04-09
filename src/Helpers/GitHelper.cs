@@ -1,24 +1,25 @@
 using System;
 using System.IO;
+using LibGit2Sharp;
+using StartScreen.Models;
 
 namespace StartScreen.Helpers
 {
     /// <summary>
-    /// Lightweight Git branch detection by reading .git/HEAD directly (no git CLI dependency).
+    /// Git repository status detection using LibGit2Sharp.
     /// </summary>
     internal static class GitHelper
     {
         private const int MaxParentWalk = 10;
-        private const string RefPrefix = "ref: refs/heads/";
 
         /// <summary>
-        /// Gets the current Git branch name for a given solution, project, or folder path.
-        /// Returns null if the path is not inside a Git repository.
+        /// Gets comprehensive Git status for a given solution, project, or folder path.
+        /// Returns a GitStatus object with all available information.
         /// </summary>
-        public static string GetCurrentBranch(string path)
+        public static GitStatus GetGitStatus(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
-                return null;
+                return new GitStatus();
 
             try
             {
@@ -26,40 +27,74 @@ namespace StartScreen.Helpers
                     ? path
                     : Path.GetDirectoryName(path);
 
-                var gitDir = FindGitDirectory(startDir);
-                if (gitDir == null)
-                    return null;
+                var repoPath = FindRepositoryPath(startDir);
+                if (repoPath == null)
+                    return new GitStatus();
 
-                var headFile = Path.Combine(gitDir, "HEAD");
-                if (!File.Exists(headFile))
-                    return null;
-
-                var headContent = File.ReadAllText(headFile).Trim();
-
-                // Symbolic ref: "ref: refs/heads/main"
-                if (headContent.StartsWith(RefPrefix, StringComparison.Ordinal))
+                using (var repo = new Repository(repoPath))
                 {
-                    return headContent.Substring(RefPrefix.Length);
-                }
+                    var status = new GitStatus();
 
-                // Detached HEAD: raw commit SHA — show abbreviated hash
-                if (headContent.Length >= 7)
-                {
-                    return headContent.Substring(0, 7);
+                    // Branch name (or detached HEAD SHA)
+                    if (repo.Head.FriendlyName == "(no branch)")
+                    {
+                        // Detached HEAD - show abbreviated commit SHA
+                        status.BranchName = repo.Head.Tip?.Sha?.Substring(0, 7);
+                    }
+                    else
+                    {
+                        status.BranchName = repo.Head.FriendlyName;
+                    }
+
+                    // Ahead/behind tracking branch
+                    if (repo.Head.IsTracking && repo.Head.TrackedBranch != null)
+                    {
+                        var tracking = repo.Head.TrackingDetails;
+                        status.CommitsAhead = tracking.AheadBy;
+                        status.CommitsBehind = tracking.BehindBy;
+                    }
+
+                    // Uncommitted changes (staged or unstaged)
+                    var repoStatus = repo.RetrieveStatus(new StatusOptions
+                    {
+                        IncludeUntracked = false,
+                        RecurseUntrackedDirs = false
+                    });
+                    status.HasUncommittedChanges = repoStatus.IsDirty;
+
+                    // Last commit time
+                    if (repo.Head.Tip != null)
+                    {
+                        status.LastCommitTime = repo.Head.Tip.Author.When.LocalDateTime;
+                    }
+
+                    return status;
                 }
+            }
+            catch (RepositoryNotFoundException)
+            {
+                // Not a git repository - return empty status
+                return new GitStatus();
             }
             catch (Exception ex)
             {
                 ex.Log();
+                return new GitStatus();
             }
-
-            return null;
         }
 
         /// <summary>
-        /// Walks up from the given directory looking for a .git directory or file (submodule worktree).
+        /// Gets the current Git branch name for a given path (lightweight, for backward compatibility).
         /// </summary>
-        private static string FindGitDirectory(string startDir)
+        public static string GetCurrentBranch(string path)
+        {
+            return GetGitStatus(path).BranchName;
+        }
+
+        /// <summary>
+        /// Walks up from the given directory looking for a Git repository root.
+        /// </summary>
+        private static string FindRepositoryPath(string startDir)
         {
             if (string.IsNullOrEmpty(startDir))
                 return null;
@@ -70,29 +105,13 @@ namespace StartScreen.Helpers
             {
                 var gitPath = Path.Combine(current, ".git");
 
+                // Standard repository
                 if (Directory.Exists(gitPath))
-                {
-                    return gitPath;
-                }
+                    return current;
 
-                // Submodule/worktree: .git is a file containing "gitdir: <path>"
+                // Submodule/worktree: .git is a file
                 if (File.Exists(gitPath))
-                {
-                    var content = File.ReadAllText(gitPath).Trim();
-                    if (content.StartsWith("gitdir:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var resolved = content.Substring("gitdir:".Length).Trim();
-                        if (!Path.IsPathRooted(resolved))
-                        {
-                            resolved = Path.GetFullPath(Path.Combine(current, resolved));
-                        }
-
-                        if (Directory.Exists(resolved))
-                        {
-                            return resolved;
-                        }
-                    }
-                }
+                    return current;
 
                 current = Directory.GetParent(current)?.FullName;
             }

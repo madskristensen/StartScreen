@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Helpers;
 using StartScreen.Models;
 using System;
@@ -172,18 +173,32 @@ namespace StartScreen.Services
         }
 
         /// <summary>
-        /// Populates Git branch names for items in the background.
-        /// Updates each item's GitBranch property as it resolves, triggering UI updates via INotifyPropertyChanged.
+        /// Populates Git status information for items in the background.
+        /// Updates each item's Git properties as they resolve, triggering UI updates via INotifyPropertyChanged.
+        /// Uses JoinableTaskFactory to avoid blocking and ensure proper thread handling.
         /// </summary>
-        public static Task PopulateGitBranchesAsync(IEnumerable<MruItem> items)
+        public static JoinableTask PopulateGitStatusAsync(IEnumerable<MruItem> items)
         {
-            return Task.Run(() =>
+            return ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
-                Parallel.ForEach(items, item =>
+                // Switch to background thread for parallel Git operations
+                await TaskScheduler.Default;
+
+                var itemList = items.ToList();
+
+                // Process items in parallel - each gets its own LibGit2Sharp Repository instance
+                Parallel.ForEach(itemList, item =>
                 {
                     try
                     {
-                        item.GitBranch = GitHelper.GetCurrentBranch(item.Path);
+                        var status = GitHelper.GetGitStatus(item.Path);
+
+                        // Update properties (INotifyPropertyChanged handles UI marshaling)
+                        item.GitBranch = status.BranchName;
+                        item.CommitsAhead = status.CommitsAhead;
+                        item.CommitsBehind = status.CommitsBehind;
+                        item.HasUncommittedChanges = status.HasUncommittedChanges;
+                        item.LastCommitTime = status.LastCommitTime;
                     }
                     catch (Exception ex)
                     {
@@ -191,6 +206,15 @@ namespace StartScreen.Services
                     }
                 });
             });
+        }
+
+        /// <summary>
+        /// Populates Git branch names for items in the background (legacy compatibility method).
+        /// </summary>
+        [Obsolete("Use PopulateGitStatusAsync instead for full Git status information.")]
+        public static Task PopulateGitBranchesAsync(IEnumerable<MruItem> items)
+        {
+            return PopulateGitStatusAsync(items).Task;
         }
 
         /// <summary>

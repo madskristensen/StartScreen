@@ -6,9 +6,11 @@ using StartScreen.Models;
 using StartScreen.Services;
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 
@@ -136,6 +138,22 @@ namespace StartScreen.ToolWindows.Controls
                     : KnownMonikers.Pin;
                 PinButton.ToolTip = MruItem.IsPinned ? "Unpin" : "Pin";
             }
+        }
+    }
+
+    /// <summary>
+    /// Converter that returns Collapsed for null values, Visible otherwise.
+    /// </summary>
+    public class NullToCollapsedConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return value == null ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
         }
     }
 }
