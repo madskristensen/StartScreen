@@ -40,6 +40,13 @@ Launch common workflows from one place:
 - Instant filtering with search
 - Pin important solutions and projects
 - Organize recents by time groups like Today and This week
+- Git branch name displayed for each repository
+- Ahead/behind commit counts relative to the upstream tracking branch
+- Uncommitted changes indicator for dirty working directories
+- Last commit timestamp shown as a relative time (e.g., 2h ago)
+- Rich tooltip with branch, ahead/behind, and last commit details
+- Detached HEAD state shown as an abbreviated commit SHA
+- Git status loaded in the background without blocking the UI
 
 ### Built-in developer news
 
