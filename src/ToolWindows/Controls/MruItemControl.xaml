@@ -1,0 +1,112 @@
+<UserControl x:Class="StartScreen.ToolWindows.Controls.MruItemControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:imaging="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.Imaging"
+             xmlns:catalog="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.ImageCatalog"
+             xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
+             xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             toolkit:Themes.UseVsTheme="True"
+             Background="Transparent"
+             mc:Ignorable="d" 
+             d:DesignHeight="60" d:DesignWidth="400">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+    </UserControl.Resources>
+    <Border x:Name="RootBorder"
+            BorderThickness="0"
+            Background="Transparent"
+            Padding="8 6"
+            ToolTip="{Binding ToolTipText}"
+            MouseEnter="RootBorder_MouseEnter"
+            MouseLeave="RootBorder_MouseLeave"
+            MouseUp="RootBorder_MouseUp">
+        <DockPanel>
+            <!-- Right side: timestamp and pin -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Timestamp -->
+                <TextBlock Text="{Binding FormattedDate}"
+                          Opacity="0.5"
+                          FontSize="11"
+                          VerticalAlignment="Center"
+                          Margin="12 0 4 0"/>
+
+                <!-- Pin Button -->
+                <Button x:Name="PinButton"
+                       Width="24" Height="24"
+                       Background="Transparent"
+                       BorderThickness="0"
+                       Cursor="Hand"
+                       VerticalAlignment="Center"
+                       ToolTip="Pin/Unpin"
+                       Click="PinButton_Click">
+                    <imaging:CrispImage x:Name="PinIcon" Moniker="{x:Static catalog:KnownMonikers.Pin}" Width="16" Height="16"/>
+                </Button>
+            </StackPanel>
+
+            <!-- Icon -->
+            <imaging:CrispImage x:Name="Icon" DockPanel.Dock="Left"
+                              Width="24" Height="24"
+                              Margin="0 0 8 0"
+                              VerticalAlignment="Center"/>
+
+            <!-- Name only (path is in tooltip) -->
+            <TextBlock x:Name="NameText"
+                      Text="{Binding Name}"
+                      FontWeight="SemiBold"
+                      VerticalAlignment="Center"
+                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                      TextTrimming="CharacterEllipsis"/>
+
+            <!-- Git branch (shown inline when available) -->
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                        Visibility="{Binding HasGitBranch, Converter={StaticResource BoolToVisibilityConverter}}">
+                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Branch}"
+                                    Width="12" Height="12"
+                                    Margin="8 0 3 0"
+                                    Opacity="0.6"
+                                    VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding GitBranch}"
+                          FontSize="11"
+                          Opacity="0.6"
+                          VerticalAlignment="Center"
+                          TextTrimming="CharacterEllipsis"
+                          MaxWidth="150"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Context Menu -->
+        <Border.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="Open" Click="OpenMenuItem_Click">
+                    <MenuItem.Icon>
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Open}"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open Containing Folder" Click="OpenFolderMenuItem_Click">
+                    <MenuItem.Icon>
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.FolderOpened}"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Copy Path" Click="CopyPathMenuItem_Click">
+                    <MenuItem.Icon>
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Copy}"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="PinMenuItem" Header="Pin" Click="PinMenuItem_Click">
+                    <MenuItem.Icon>
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Pin}"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Remove from List" Click="RemoveMenuItem_Click">
+                    <MenuItem.Icon>
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.DeleteListItem}"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+            </ContextMenu>
+        </Border.ContextMenu>
+    </Border>
+</UserControl>

@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json.schemastore.org/vsix-publish",
+  "categories": [ "start pages" ],
+  "private": false,
+  "identity": {
+    "internalName": "StartScreen",
+    "tags": [ "start", "news" ]
+  },
+  "assetFiles": [
+
+  ],
+  "overview": "README.md",
+  "publisher": "MadsKristensen",
+  "repo": "https://github.com/madskristensen/StartScreen"
+}

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+  <Include href="KnownImageIds.vsct"/>
+  <Include href="VSGlobals.vsct"/>
+
+  <Commands package="StartScreen">
+    <Groups>
+      <Group guid="StartScreen" id="StartScreenGroup" priority="0x0600">
+        <Parent guid="VSMainMenu" id="View"/>
+      </Group>
+    </Groups>
+
+    <!--This section defines the elements the user can interact with, like a menu command or a button
+        or combo box in a toolbar. -->
+    <Buttons>
+      <Button guid="StartScreen" id="ShowStartScreenCommand" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="StartScreenGroup" />
+        <Icon guid="ImageCatalogGuid" id="Home" />
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <Strings>
+          <ButtonText>Start Screen</ButtonText>
+          <LocCanonicalName>.StartScreen.ShowStartScreen</LocCanonicalName>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="StartScreen" value="{4add43ae-71e4-4eec-b622-2e8ed3452024}">
+      <IDSymbol name="StartScreenGroup" value="0x0001" />
+      <IDSymbol name="ShowStartScreenCommand" value="0x0100" />
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>
