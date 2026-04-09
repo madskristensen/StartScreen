@@ -1,4 +1,3 @@
-using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -24,24 +23,31 @@ namespace StartScreen.ToolWindows
 
         private async void UserControl_Loaded(object sender, RoutedEventArgs e)
         {
-            // If already initialized, just refresh in background
-            if (ViewModel != null)
+            try
             {
-                await ViewModel.RefreshInBackgroundAsync();
-                return;
+                // If already initialized, just refresh in background
+                if (ViewModel != null)
+                {
+                    await ViewModel.RefreshInBackgroundAsync();
+                    return;
+                }
+
+                // Yield to let the window paint first
+                await Task.Yield();
+
+                // Wait for cache load to complete (likely already done)
+                await _cacheLoadTask;
+
+                // Bind ViewModel to trigger UI update
+                DataContext = _viewModel;
+
+                // Refresh from live sources in background
+                await _viewModel.RefreshInBackgroundAsync();
             }
-
-            // Yield to let the window paint first
-            await Task.Yield();
-
-            // Wait for cache load to complete (likely already done)
-            await _cacheLoadTask;
-
-            // Bind ViewModel to trigger UI update
-            DataContext = _viewModel;
-
-            // Refresh from live sources in background
-            await _viewModel.RefreshInBackgroundAsync();
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
         }
 
         private async void ReleaseNotesLink_Click(object sender, RoutedEventArgs e)

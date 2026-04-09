@@ -79,6 +79,9 @@ namespace StartScreen.Services
             {
                 string mruCacheFile = await GetMruCacheFileAsync();
 
+                // Switch to background thread for file I/O to avoid blocking the UI thread
+                await TaskScheduler.Default;
+
                 if (!File.Exists(mruCacheFile))
                     return new List<MruItem>();
 
@@ -91,10 +94,16 @@ namespace StartScreen.Services
 
                 var items = JsonSerializer.Deserialize<List<MruItem>>(json) ?? new List<MruItem>();
 
+                // Deduplicate by path, keeping the item with the freshest timestamp
+                var deduped = items
+                    .GroupBy(i => NormalizePath(i.Path), StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.OrderByDescending(i => i.LastAccessed).First())
+                    .ToList();
+
                 // Sort: pinned first, then by last accessed
-                return items.OrderByDescending(i => i.IsPinned)
-                           .ThenByDescending(i => i.LastAccessed)
-                           .ToList();
+                return deduped.OrderByDescending(i => i.IsPinned)
+                              .ThenByDescending(i => i.LastAccessed)
+                              .ToList();
             }
             catch (Exception ex)
             {
@@ -133,20 +142,30 @@ namespace StartScreen.Services
             }
 
             // Parse MRU entries on background thread (includes file I/O for timestamps)
-            // Deduplicate by path, keeping only the first (most recent) occurrence
+            // Deduplicate by normalized path, keeping the entry with the freshest timestamp
             var vsItems = await Task.Run(() =>
             {
-                var items = new List<MruItem>();
-                var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var itemsByPath = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
                 foreach (var raw in rawEntries)
                 {
                     var item = ParseMruEntry(raw);
-                    if (item != null && seenPaths.Add(item.Path))
+                    if (item == null)
+                        continue;
+
+                    var key = NormalizePath(item.Path);
+                    if (itemsByPath.TryGetValue(key, out var existing))
                     {
-                        items.Add(item);
+                        if (item.LastAccessed > existing.LastAccessed)
+                        {
+                            itemsByPath[key] = item;
+                        }
+                    }
+                    else
+                    {
+                        itemsByPath[key] = item;
                     }
                 }
-                return items;
+                return itemsByPath.Values.ToList();
             });
 
             // Merge: VS items are primary (correct order), cached items provide pinned state
@@ -163,8 +182,10 @@ namespace StartScreen.Services
                 }
             }
 
-            // Sort: pinned first, then preserve MRU order from VS
-            var mruItems = vsItems.OrderByDescending(i => i.IsPinned).ToList();
+            // Sort: pinned first, then by last accessed (date and time)
+            var mruItems = vsItems.OrderByDescending(i => i.IsPinned)
+                                  .ThenByDescending(i => i.LastAccessed)
+                                  .ToList();
 
             // Save merged list back to cache
             await SyncAndSaveAsync(mruItems);
@@ -359,6 +380,22 @@ namespace StartScreen.Services
             {
                 ex.Log();
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Normalizes a file or directory path for consistent deduplication.
+        /// </summary>
+        private static string NormalizePath(string path)
+        {
+            try
+            {
+                return Path.GetFullPath(path)
+                           .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                return path;
             }
         }
 
