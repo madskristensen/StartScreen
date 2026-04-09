@@ -26,6 +26,7 @@ namespace StartScreen.Models
         private string _source;
         private string _toolTip;
         private bool _hasDescription;
+        private bool _isPinned;
 
         public string Title
         {
@@ -113,6 +114,19 @@ namespace StartScreen.Models
                 if (_hasDescription != value)
                 {
                     _hasDescription = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool IsPinned
+        {
+            get => _isPinned;
+            set
+            {
+                if (_isPinned != value)
+                {
+                    _isPinned = value;
                     OnPropertyChanged();
                 }
             }

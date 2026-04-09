@@ -238,8 +238,30 @@
                         </Hyperlink>
                     </TextBlock>
 
+                    <!-- Tip of the Day -->
+                    <Border Margin="0 40 0 0"
+                            Padding="12 8"
+                            CornerRadius="4"
+                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
+                        <DockPanel>
+                            <imaging:CrispImage DockPanel.Dock="Left"
+                                                Moniker="{x:Static catalog:KnownMonikers.IntellisenseLightBulb}"
+                                                Width="16" Height="16"
+                                                Margin="0 0 8 0"
+                                                VerticalAlignment="Center"/>
+                            <TextBlock FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Opacity="0.8"
+                                       VerticalAlignment="Center">
+                                <Run Text="Tip of the Day" FontWeight="Bold"/>
+                                <Run Text=" "/>
+                                <Run Text="{Binding CurrentTip}"/>
+                            </TextBlock>
+                        </DockPanel>
+                    </Border>
+
                     <!-- News Header -->
-                    <Grid Margin="0 82 0 12">
+                    <Grid Margin="0 24 0 12">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                             <TextBlock Text="News"
                                       FontSize="16"
@@ -267,6 +289,27 @@
                                     Visibility="{Binding IsRefreshingNews, Converter={StaticResource BoolToVisibilityConverter}}"/>
                     </Grid>
 
+                    <!-- Pinned News Articles -->
+                    <TextBlock Text="Pinned"
+                              FontSize="13"
+                              FontWeight="SemiBold"
+                              Opacity="0.7"
+                              Margin="0 0 0 4"
+                              Visibility="{Binding PinnedNewsPosts.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
+                    <ItemsControl ItemsSource="{Binding PinnedNewsPosts}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <controls:NewsItemControl MinWidth="280" MaxWidth="380" Width="350" Margin="0 0 64 20"
+                                                          PinToggleRequested="NewsItemControl_PinToggleRequested"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
                     <!-- News Cards in flowing columns -->
                     <ItemsControl ItemsSource="{Binding NewsPosts}">
                         <ItemsControl.ItemsPanel>
@@ -276,7 +319,8 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <controls:NewsItemControl MinWidth="280" MaxWidth="380" Width="350" Margin="0 0 64 20"/>
+                                <controls:NewsItemControl MinWidth="280" MaxWidth="380" Width="350" Margin="0 0 64 20"
+                                                          PinToggleRequested="NewsItemControl_PinToggleRequested"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

@@ -23,52 +23,60 @@
             MouseLeave="RootBorder_MouseLeave"
             MouseUp="RootBorder_MouseUp"
             Cursor="Hand">
-        <StackPanel Orientation="Vertical">
-            <!-- Title -->
-            <TextBlock Text="{Binding Title}"
-                      FontWeight="SemiBold"
-                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                      TextWrapping="Wrap"
-                      FontSize="13"/>
+        <Grid>
+            <StackPanel Orientation="Vertical" Margin="0 0 24 0">
+                <!-- Title -->
+                <TextBlock Text="{Binding Title}"
+                          FontWeight="SemiBold"
+                          Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                          TextWrapping="Wrap"
+                          FontSize="13"/>
 
-            <!-- Summary -->
-            <TextBlock Text="{Binding Summary}"
-                      Opacity="0.7"
-                      TextWrapping="Wrap"
-                      TextTrimming="WordEllipsis"
-                      MaxHeight="40"
-                      Margin="0 6 0 6"/>
+                <!-- Summary -->
+                <TextBlock Text="{Binding Summary}"
+                          Opacity="0.7"
+                          TextWrapping="Wrap"
+                          TextTrimming="WordEllipsis"
+                          MaxHeight="40"
+                          Margin="0 6 0 6"/>
 
-            <!-- Source and Date -->
-            <StackPanel Orientation="Horizontal" Margin="0 4 0 0">
-                <TextBlock Text="NEW"
-                           FontWeight="Bold"
-                           FontSize="10"
-                           Foreground="#FF4CAF50"
-                           Margin="0 0 6 0"
-                           VerticalAlignment="Center"
-                           Visibility="{Binding IsNew, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                <TextBlock Text="{Binding Source}"
-                          Opacity="0.5"
-                          FontSize="11"
-                          VerticalAlignment="Center"/>
+                <!-- Source and Date -->
+                <StackPanel Orientation="Horizontal" Margin="0 4 0 0">
+                    <TextBlock Text="NEW"
+                               FontWeight="Bold"
+                               FontSize="10"
+                               Foreground="#FF4CAF50"
+                               Margin="0 0 6 0"
+                               VerticalAlignment="Center"
+                               Visibility="{Binding IsNew, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                    <TextBlock Text="{Binding Source}"
+                              Opacity="0.5"
+                              FontSize="11"
+                              VerticalAlignment="Center"/>
+                </StackPanel>
             </StackPanel>
-        </StackPanel>
+
+            <!-- Pin Button (bottom right, visible on hover or when pinned) -->
+            <Button x:Name="PinButton"
+                    Width="24" Height="24"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Cursor="Hand"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0 0 -4 -4"
+                    Visibility="Collapsed"
+                    Click="PinButton_Click">
+                <imaging:CrispImage x:Name="PinIcon" Moniker="{x:Static catalog:KnownMonikers.Pin}" Width="16" Height="16"/>
+            </Button>
+        </Grid>
 
         <!-- Context Menu -->
         <Border.ContextMenu>
             <ContextMenu>
-                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click">
-                    <MenuItem.Icon>
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.BrowserLink}"/>
-                    </MenuItem.Icon>
-                </MenuItem>
+                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click"/>
                 <Separator/>
-                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click">
-                    <MenuItem.Icon>
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Copy}"/>
-                    </MenuItem.Icon>
-                </MenuItem>
+                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click"/>
             </ContextMenu>
         </Border.ContextMenu>
     </Border>

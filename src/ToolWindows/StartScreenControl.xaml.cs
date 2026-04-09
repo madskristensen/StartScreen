@@ -85,12 +85,26 @@ namespace StartScreen.ToolWindows
 
         private void MruItemControl_PinToggleRequested(object sender, MruItem item)
         {
-            ViewModel?.TogglePinAsync(item);
+            if (ViewModel != null)
+            {
+                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.TogglePinAsync(item)).FileAndForget(nameof(StartScreenControl));
+            }
         }
 
         private void MruItemControl_RemoveRequested(object sender, MruItem item)
         {
-            ViewModel?.RemoveMruItemAsync(item);
+            if (ViewModel != null)
+            {
+                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.RemoveMruItemAsync(item)).FileAndForget(nameof(StartScreenControl));
+            }
+        }
+
+        private void NewsItemControl_PinToggleRequested(object sender, NewsPost post)
+        {
+            if (ViewModel != null)
+            {
+                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.ToggleNewsPinAsync(post)).FileAndForget(nameof(StartScreenControl));
+            }
         }
 
         private async void NewsFeedsSettings_Click(object sender, RoutedEventArgs e)

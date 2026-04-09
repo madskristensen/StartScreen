@@ -16,6 +16,13 @@ namespace StartScreen
         public string PinnedItems { get; set; } = "";
 
         /// <summary>
+        /// Semicolon-delimited list of pinned news article URLs.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue("")]
+        public string PinnedArticles { get; set; } = "";
+
+        /// <summary>
         /// JSON string containing user-added custom feeds.
         /// </summary>
         [Browsable(false)]
@@ -37,6 +44,6 @@ namespace StartScreen
 
         [Browsable(false)]
         [DefaultValue(true)]
-        public Boolean LoadOnStartup { get; set; } = true;
+        public bool LoadOnStartup { get; set; } = true;
     }
 }

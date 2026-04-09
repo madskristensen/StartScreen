@@ -19,6 +19,7 @@ namespace StartScreen.ToolWindows.Controls
     public partial class MruItemControl : UserControl
     {
         private MruItem MruItem => DataContext as MruItem;
+        private readonly MenuItem _pinMenuItem;
 
         public event EventHandler<MruItem> PinToggleRequested;
         public event EventHandler<MruItem> RemoveRequested;
@@ -27,6 +28,22 @@ namespace StartScreen.ToolWindows.Controls
         {
             InitializeComponent();
             DataContextChanged += OnDataContextChanged;
+
+            ContextMenu menu = RootBorder.ContextMenu;
+            ThemedContextMenuHelper.ApplyVsTheme(menu);
+
+            if (menu != null)
+            {
+                ((MenuItem)menu.Items[0]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Open);
+                ((MenuItem)menu.Items[1]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.NewWindow);
+                ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.FolderOpened);
+                // Items[3] is Separator
+                ((MenuItem)menu.Items[4]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
+                // Items[5] is Separator
+                _pinMenuItem = (MenuItem)menu.Items[6];
+                _pinMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Pin);
+                ((MenuItem)menu.Items[7]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.DeleteListItem);
+            }
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -56,7 +73,7 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (e.ChangedButton == MouseButton.Left && MruItem != null)
             {
-                _ = OpenItemAsync();
+                ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
             }
         }
 
@@ -71,6 +88,7 @@ namespace StartScreen.ToolWindows.Controls
             }
             catch (Exception ex)
             {
+                await ex.LogAsync();
                 await VS.MessageBox.ShowErrorAsync("Start Screen", 
                     $"Failed to open: {ex.Message}");
             }
@@ -84,7 +102,22 @@ namespace StartScreen.ToolWindows.Controls
 
         private void OpenMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            _ = OpenItemAsync();
+            ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
+        }
+
+        private void OpenInNewInstanceMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (MruItem == null || string.IsNullOrWhiteSpace(MruItem.Path))
+                return;
+
+            try
+            {
+                VsCommandService.OpenInNewInstance(MruItem.Path);
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+            }
         }
 
         private void OpenFolderMenuItem_Click(object sender, RoutedEventArgs e)
@@ -132,7 +165,11 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (MruItem != null)
             {
-                PinMenuItem.Header = MruItem.IsPinned ? "Unpin" : "Pin";
+                if (_pinMenuItem != null)
+                {
+                    _pinMenuItem.Header = MruItem.IsPinned ? "Unpin" : "Pin";
+                }
+
                 PinIcon.Moniker = MruItem.IsPinned
                     ? KnownMonikers.Unpin
                     : KnownMonikers.Pin;

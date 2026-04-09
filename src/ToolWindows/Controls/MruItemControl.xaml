@@ -142,33 +142,14 @@
         <!-- Context Menu -->
         <Border.ContextMenu>
             <ContextMenu>
-                <MenuItem Header="Open" Click="OpenMenuItem_Click">
-                    <MenuItem.Icon>
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Open}"/>
-                    </MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Open Containing Folder" Click="OpenFolderMenuItem_Click">
-                    <MenuItem.Icon>
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.FolderOpened}"/>
-                    </MenuItem.Icon>
-                </MenuItem>
+                <MenuItem Header="Open" Click="OpenMenuItem_Click"/>
+                <MenuItem Header="Open in New Instance" Click="OpenInNewInstanceMenuItem_Click"/>
+                <MenuItem Header="Open Containing Folder" Click="OpenFolderMenuItem_Click"/>
                 <Separator/>
-                <MenuItem Header="Copy Path" Click="CopyPathMenuItem_Click">
-                    <MenuItem.Icon>
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Copy}"/>
-                    </MenuItem.Icon>
-                </MenuItem>
+                <MenuItem Header="Copy Path" Click="CopyPathMenuItem_Click"/>
                 <Separator/>
-                <MenuItem x:Name="PinMenuItem" Header="Pin" Click="PinMenuItem_Click">
-                    <MenuItem.Icon>
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Pin}"/>
-                    </MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Remove from List" Click="RemoveMenuItem_Click">
-                    <MenuItem.Icon>
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.DeleteListItem}"/>
-                    </MenuItem.Icon>
-                </MenuItem>
+                <MenuItem Header="Pin" Click="PinMenuItem_Click"/>
+                <MenuItem Header="Remove from List" Click="RemoveMenuItem_Click"/>
             </ContextMenu>
         </Border.ContextMenu>
     </Border>

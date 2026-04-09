@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Shell;
@@ -48,6 +49,21 @@ namespace StartScreen.Services
         public static async Task CloneRepositoryAsync()
         {
             await VS.Commands.ExecuteAsync("Git.Clone");
+        }
+
+        /// <summary>
+        /// Opens a solution, project, or folder in a new Visual Studio instance.
+        /// </summary>
+        public static void OpenInNewInstance(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+
+            string devenvPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devenv.exe");
+            if (!File.Exists(devenvPath))
+                return;
+
+            Process.Start(devenvPath, $"\"{path}\"");
         }
 
         /// <summary>

@@ -18,12 +18,16 @@ namespace StartScreen.ToolWindows
         private string _searchFilter;
         private string _discoverySectionTitle;
         private string _discoverySectionVersion;
+        private string _currentTip;
         private ObservableCollection<MruItem> _allMruItems;
+        private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
+        private readonly ITipProvider _tipProvider;
 
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
         public ObservableCollection<MruTimeGroup> GroupedMruItems { get; private set; }
         public ObservableCollection<NewsPost> NewsPosts { get; private set; }
+        public ObservableCollection<NewsPost> PinnedNewsPosts { get; private set; }
         public ObservableCollection<RecentTemplate> RecentTemplates { get; private set; }
 
         public bool IsRefreshingNews
@@ -88,17 +92,42 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        public StartScreenViewModel()
+        /// <summary>
+        /// The current tip of the day to display.
+        /// </summary>
+        public string CurrentTip
         {
+            get => _currentTip;
+            set
+            {
+                if (_currentTip != value)
+                {
+                    _currentTip = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public StartScreenViewModel()
+            : this(new HardCodedTipProvider())
+        {
+        }
+
+        public StartScreenViewModel(ITipProvider tipProvider)
+        {
+            _tipProvider = tipProvider;
+
             MruItems = new ObservableCollection<MruItem>();
             PinnedItems = new ObservableCollection<MruItem>();
             GroupedMruItems = new ObservableCollection<MruTimeGroup>();
             NewsPosts = new ObservableCollection<NewsPost>();
+            PinnedNewsPosts = new ObservableCollection<NewsPost>();
             RecentTemplates = new ObservableCollection<RecentTemplate>();
 
             _allMruItems = new ObservableCollection<MruItem>();
             _discoverySectionTitle = "Discover what's new";
             _discoverySectionVersion = string.Empty;
+            _currentTip = _tipProvider.GetTipOfTheDay();
 
             // Start watching for feed file changes and subscribe to event
             FeedStore.StartWatching();
@@ -135,14 +164,14 @@ namespace StartScreen.ToolWindows
             if (cachedFeed != null)
             {
                 var posts = FeedService.ConvertToNewsPosts(cachedFeed);
-                foreach (var post in posts)
-                {
-                    NewsPosts.Add(post);
-                }
+                _allNewsPosts.Clear();
+                _allNewsPosts.AddRange(posts);
+                await ApplyPinnedStateToNewsAsync();
+                UpdateNewsCollections();
             }
 
             // Populate git status in background after UI is updated
-            MruService.PopulateGitStatusAsync(cachedMru);
+            MruService.PopulateGitStatusAsync(cachedMru).FileAndForget(nameof(StartScreenViewModel));
         }
 
         /// <summary>
@@ -177,7 +206,7 @@ namespace StartScreen.ToolWindows
                 UpdateMruCollections();
 
                 // Populate git status in background after UI is updated
-                MruService.PopulateGitStatusAsync(updatedMru);
+                MruService.PopulateGitStatusAsync(updatedMru).FileAndForget(nameof(StartScreenViewModel));
             }
             catch (Exception ex)
             {
@@ -258,8 +287,60 @@ namespace StartScreen.ToolWindows
             // Update on UI thread
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
+            _allNewsPosts.Clear();
+            _allNewsPosts.AddRange(posts);
+            await ApplyPinnedStateToNewsAsync();
+            UpdateNewsCollections();
+        }
+
+        /// <summary>
+        /// Toggles the pinned state of a news article.
+        /// </summary>
+        public async Task ToggleNewsPinAsync(NewsPost post)
+        {
+            if (post == null)
+                return;
+
+            post.IsPinned = !post.IsPinned;
+
+            var options = await Options.GetLiveInstanceAsync();
+            var pinnedUrls = _allNewsPosts.Where(p => p.IsPinned).Select(p => p.Url);
+            options.PinnedArticles = string.Join(";", pinnedUrls);
+            await options.SaveAsync();
+
+            UpdateNewsCollections();
+        }
+
+        /// <summary>
+        /// Applies the persisted pinned state to the current news posts.
+        /// </summary>
+        private async Task ApplyPinnedStateToNewsAsync()
+        {
+            var options = await Options.GetLiveInstanceAsync();
+            var pinnedUrls = new HashSet<string>(
+                (options.PinnedArticles ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var post in _allNewsPosts)
+            {
+                post.IsPinned = pinnedUrls.Contains(post.Url);
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds the pinned and unpinned news collections from the master list.
+        /// </summary>
+        private void UpdateNewsCollections()
+        {
+            PinnedNewsPosts.Clear();
             NewsPosts.Clear();
-            foreach (var post in posts)
+
+            foreach (var post in _allNewsPosts.Where(p => p.IsPinned))
+            {
+                PinnedNewsPosts.Add(post);
+            }
+
+            foreach (var post in _allNewsPosts.Where(p => !p.IsPinned))
             {
                 NewsPosts.Add(post);
             }

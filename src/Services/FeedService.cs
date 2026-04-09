@@ -137,7 +137,7 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
                 return null;
             }
         }
