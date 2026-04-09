@@ -189,8 +189,8 @@ namespace StartScreen.ToolWindows
         {
             try
             {
-                // Always load from cache first for instant display
-                var cachedFeed = FeedService.GetCachedFeed();
+                // Load from cache asynchronously to avoid blocking
+                var cachedFeed = await FeedService.GetCachedFeedAsync();
                 var posts = cachedFeed != null ? FeedService.ConvertToNewsPosts(cachedFeed) : null;
                 var hasCachedItems = posts != null && posts.Count > 0;
 
@@ -269,27 +269,36 @@ namespace StartScreen.ToolWindows
         {
             try
             {
-                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devenv.exe");
-                string title = "Visual Studio"; // fallback
-                if (File.Exists(path))
+                // Perform file I/O on background thread to avoid blocking UI
+                var (title, version) = await Task.Run(() =>
                 {
-                    var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
-                    string description = versionInfo.FileDescription ?? "Microsoft Visual Studio";
-                    if (description.StartsWith("Microsoft "))
+                    string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devenv.exe");
+                    string resultTitle = "Visual Studio"; // fallback
+                    string resultVersion = string.Empty;
+
+                    if (File.Exists(path))
                     {
-                        title = description.Substring("Microsoft ".Length);
-                    }
-                    else
-                    {
-                        title = description;
+                        var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
+                        string description = versionInfo.FileDescription ?? "Microsoft Visual Studio";
+                        if (description.StartsWith("Microsoft "))
+                        {
+                            resultTitle = description.Substring("Microsoft ".Length);
+                        }
+                        else
+                        {
+                            resultTitle = description;
+                        }
+
+                        resultVersion = $"v{versionInfo.FileMajorPart}.{versionInfo.FileMinorPart}";
                     }
 
-                    DiscoverySectionVersion = $"v{versionInfo.FileMajorPart}.{versionInfo.FileMinorPart}";
-                }
+                    return (resultTitle, resultVersion);
+                });
 
                 // Update on UI thread
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 DiscoverySectionTitle = title;
+                DiscoverySectionVersion = version;
             }
             catch (Exception ex)
             {

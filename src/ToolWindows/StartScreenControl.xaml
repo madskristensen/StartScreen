@@ -105,7 +105,7 @@
                 <StackPanel x:Name="ActionBar" DockPanel.Dock="Top" Orientation="Horizontal" Margin="0 0 0 24">
                     <Button Click="NewProjectButton_Click" Style="{StaticResource ActionButtonStyle}">
                         <StackPanel Orientation="Vertical" Margin="12 8">
-                            <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.AddDocument}" Width="32" Height="32"/>
+                            <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.NewDocumentCollection}" Width="32" Height="32"/>
                             <TextBlock Text="New Project" Margin="0 4 0 0" HorizontalAlignment="Center"/>
                         </StackPanel>
                     </Button>
@@ -212,9 +212,11 @@
                         </DockPanel>
                     </Border>
 
-        <!-- Right Pane: Links + News (subtle lighter background than left pane) -->
+        <!-- Right Pane: Links + News (subtle lighter background) -->
         <Border Grid.Column="1"
-                Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowContentGridBrushKey}}">
+                Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandShelfBackgroundGradientBeginBrushKey}}"
+                BorderThickness="1 0 0 0"
+                BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBorderBrushKey}}">
             <ScrollViewer x:Name="NewsScroll"
                           VerticalScrollBarVisibility="Auto"
                           Margin="40 16 24 16"

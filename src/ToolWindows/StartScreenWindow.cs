@@ -36,6 +36,7 @@ namespace StartScreen.ToolWindows
             public Pane()
             {
                 BitmapImageMoniker = KnownMonikers.Home;
+                Caption = "Start";
             }
         }
     }

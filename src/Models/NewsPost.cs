@@ -119,6 +119,11 @@ namespace StartScreen.Models
         }
 
         /// <summary>
+        /// Gets a value indicating whether the post is new (published within the last 3 days).
+        /// </summary>
+        public bool IsNew => (DateTime.Now - PublishDate).TotalDays < 3;
+
+        /// <summary>
         /// Creates a NewsPost from a SyndicationItem.
         /// </summary>
         public static NewsPost FromSyndicationItem(SyndicationItem item)

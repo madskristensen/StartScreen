@@ -11,6 +11,9 @@
              Background="Transparent"
              mc:Ignorable="d" 
              d:DesignHeight="100" d:DesignWidth="380">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+    </UserControl.Resources>
     <Border x:Name="RootBorder"
             BorderThickness="0"
             Background="Transparent"
@@ -37,11 +40,19 @@
                       Margin="0 6 0 6"/>
 
             <!-- Source and Date -->
-            <TextBlock Text="{Binding Source}"
-                      Opacity="0.5"
-                      FontSize="11"
-                      HorizontalAlignment="Left"
-                      Margin="0 4 0 0"/>
+            <StackPanel Orientation="Horizontal" Margin="0 4 0 0">
+                <TextBlock Text="NEW"
+                           FontWeight="Bold"
+                           FontSize="10"
+                           Foreground="#FF4CAF50"
+                           Margin="0 0 6 0"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding IsNew, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <TextBlock Text="{Binding Source}"
+                          Opacity="0.5"
+                          FontSize="11"
+                          VerticalAlignment="Center"/>
+            </StackPanel>
         </StackPanel>
 
         <!-- Context Menu -->

@@ -12,7 +12,7 @@ namespace StartScreen
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [InstalledProductRegistration(Vsix.Name, Vsix.Description, Vsix.Version)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
-    [ProvideToolWindow(typeof(ToolWindows.StartScreenWindow.Pane), Window = WindowGuids.DocumentWell, DocumentLikeTool = true, Style = VsDockStyle.MDI)]
+    [ProvideToolWindow(typeof(ToolWindows.StartScreenWindow.Pane), Window = WindowGuids.DocumentWell, DocumentLikeTool = true, Style = VsDockStyle.Tabbed)]
     [ProvideToolWindowVisibility(typeof(ToolWindows.StartScreenWindow.Pane), VSConstants.UICONTEXT.NoSolution_string)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string, PackageAutoLoadFlags.BackgroundLoad)]
     [Guid(PackageGuids.StartScreenString)]
@@ -35,12 +35,17 @@ namespace StartScreen
             // Don't await ShowAsync here — it deadlocks because the shell isn't ready yet.
             // ProvideToolWindowVisibility handles showing automatically in the NoSolution context.
             // Schedule a deferred show as backup in case the visibility attribute didn't trigger.
-            //JoinableTaskFactory.RunAsync(async () =>
-            //{
-            //    // Yield to let the shell finish initializing
-            //    await Task.Yield();
-            //    await ShowStartScreenAsync();
-            //}).FileAndForget(nameof(StartScreen));
+
+            var options = await Options.GetLiveInstanceAsync();
+            if (options.LoadOnStartup)
+            {
+                JoinableTaskFactory.RunAsync(async () =>
+                {
+                    // Yield to let the shell finish initializing
+                    await Task.Yield();
+                    await ShowStartScreenAsync();
+                }).FileAndForget(nameof(StartScreen));
+            }
         }
 
         private async Task ShowStartScreenAsync()

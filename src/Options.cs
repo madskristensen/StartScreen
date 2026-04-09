@@ -1,5 +1,3 @@
-using Community.VisualStudio.Toolkit;
-using System;
 using System.ComponentModel;
 
 namespace StartScreen
@@ -36,5 +34,9 @@ namespace StartScreen
         /// </summary>
         [Browsable(false)]
         public DateTime LastFeedRead { get; set; } = DateTime.MinValue;
+
+        [Browsable(false)]
+        [DefaultValue(true)]
+        public Boolean LoadOnStartup { get; set; } = true;
     }
 }

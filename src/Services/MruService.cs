@@ -67,7 +67,7 @@ namespace StartScreen.Services
             // IVsMRUItemsStore must be accessed on the main thread
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-            var vsItems = new List<MruItem>();
+            var rawEntries = new List<string>();
             IVsMRUItemsStore store = await VS.GetServiceAsync<SVsMRUItemsStore, IVsMRUItemsStore>();
 
             if (store != null)
@@ -78,13 +78,27 @@ namespace StartScreen.Services
 
                 for (uint i = 0; i < count; i++)
                 {
-                    MruItem item = ParseMruEntry(buffer[i]);
-                    if (item != null)
+                    if (!string.IsNullOrWhiteSpace(buffer[i]))
                     {
-                        vsItems.Add(item);
+                        rawEntries.Add(buffer[i]);
                     }
                 }
             }
+
+            // Parse MRU entries on background thread (includes file I/O for timestamps)
+            var vsItems = await Task.Run(() =>
+            {
+                var items = new List<MruItem>();
+                foreach (var raw in rawEntries)
+                {
+                    var item = ParseMruEntry(raw);
+                    if (item != null)
+                    {
+                        items.Add(item);
+                    }
+                }
+                return items;
+            });
 
             // Merge: VS items are primary (correct order), cached items provide pinned state
             var pinnedPaths = new HashSet<string>(

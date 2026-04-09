@@ -7,7 +7,10 @@
     "tags": [ "start", "news" ]
   },
   "assetFiles": [
-
+    {
+      "pathOnDisk": "art/startscreen.png",
+      "targetPath": "art/startscreen.png"
+    }
   ],
   "overview": "README.md",
   "publisher": "MadsKristensen",
