@@ -94,9 +94,10 @@ namespace StartScreen.Services
 
                 var items = JsonSerializer.Deserialize<List<MruItem>>(json) ?? new List<MruItem>();
 
-                // Deduplicate by path, keeping the item with the freshest timestamp
+                // Deduplicate by solution directory so .sln and .slnx in the same
+                // folder collapse to one entry, keeping the most recently accessed.
                 var deduped = items
-                    .GroupBy(i => NormalizePath(i.Path), StringComparer.OrdinalIgnoreCase)
+                    .GroupBy(i => GetDeduplicationKey(i), StringComparer.OrdinalIgnoreCase)
                     .Select(g => g.OrderByDescending(i => i.LastAccessed).First())
                     .ToList();
 
@@ -142,41 +143,42 @@ namespace StartScreen.Services
             }
 
             // Parse MRU entries on background thread (includes file I/O for timestamps)
-            // Deduplicate by normalized path, keeping the entry with the freshest timestamp
+            // Deduplicate so .sln and .slnx in the same directory collapse to one entry,
+            // keeping the most recently accessed.
             var vsItems = await Task.Run(() =>
             {
-                var itemsByPath = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
+                var itemsByKey = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
                 foreach (var raw in rawEntries)
                 {
                     var item = ParseMruEntry(raw);
                     if (item == null)
                         continue;
 
-                    var key = NormalizePath(item.Path);
-                    if (itemsByPath.TryGetValue(key, out var existing))
+                    var key = GetDeduplicationKey(item);
+                    if (itemsByKey.TryGetValue(key, out var existing))
                     {
                         if (item.LastAccessed > existing.LastAccessed)
                         {
-                            itemsByPath[key] = item;
+                            itemsByKey[key] = item;
                         }
                     }
                     else
                     {
-                        itemsByPath[key] = item;
+                        itemsByKey[key] = item;
                     }
                 }
-                return itemsByPath.Values.ToList();
+                return itemsByKey.Values.ToList();
             });
 
             // Merge: VS items are primary (correct order), cached items provide pinned state
-            var pinnedPaths = new HashSet<string>(
-                cachedItems.Where(c => c.IsPinned).Select(c => c.Path),
+            var pinnedKeys = new HashSet<string>(
+                cachedItems.Where(c => c.IsPinned).Select(c => GetDeduplicationKey(c)),
                 StringComparer.OrdinalIgnoreCase);
 
             // Apply pinned state from cache to VS items
             foreach (var item in vsItems)
             {
-                if (pinnedPaths.Contains(item.Path))
+                if (pinnedKeys.Contains(GetDeduplicationKey(item)))
                 {
                     item.IsPinned = true;
                 }
@@ -259,6 +261,10 @@ namespace StartScreen.Services
 
                 var rawPath = Environment.ExpandEnvironmentVariables(parts[0]);
                 if (string.IsNullOrWhiteSpace(rawPath))
+                    return null;
+
+                // Skip items that no longer exist on disk
+                if (!File.Exists(rawPath) && !Directory.Exists(rawPath))
                     return null;
 
                 var displayName = parts[3];
@@ -396,6 +402,33 @@ namespace StartScreen.Services
             catch
             {
                 return path;
+            }
+        }
+
+        /// <summary>
+        /// Gets a deduplication key that collapses solution files (.sln, .slnx) in the
+        /// same directory into one entry. This prevents duplicates when VS lists both
+        /// a .sln and a .slnx for the same project.
+        /// Folder entries keep their own normalized path as key.
+        /// </summary>
+        private static string GetDeduplicationKey(MruItem item)
+        {
+            if (item.Type == MruItemType.Folder)
+            {
+                return NormalizePath(item.Path);
+            }
+
+            try
+            {
+                var dir = Path.GetDirectoryName(item.Path);
+
+                return string.IsNullOrEmpty(dir)
+                    ? NormalizePath(item.Path)
+                    : NormalizePath(dir);
+            }
+            catch
+            {
+                return NormalizePath(item.Path);
             }
         }
 
