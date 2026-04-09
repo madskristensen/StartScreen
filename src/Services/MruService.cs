@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using StartScreen.Helpers;
 using StartScreen.Models;
@@ -23,7 +24,50 @@ namespace StartScreen.Services
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "StartScreen");
 
-        private static readonly string MruCacheFile = Path.Combine(LocalAppDataFolder, "mru.json");
+        private static string _mruCacheFile;
+
+        /// <summary>
+        /// Gets the MRU cache file path, which varies by VS version and root suffix.
+        /// </summary>
+        /// <remarks>
+        /// The cache file is named {MajorVersion}{RootSuffix}-mru.json, e.g.:
+        /// - 17-mru.json (VS 2022 regular)
+        /// - 17Exp-mru.json (VS 2022 experimental)
+        /// - 18-mru.json (VS 2025/2026 regular)
+        /// - 18Exp-mru.json (VS 2025/2026 experimental)
+        /// </remarks>
+        private static async Task<string> GetMruCacheFileAsync()
+        {
+            if (_mruCacheFile != null)
+            {
+                return _mruCacheFile;
+            }
+
+            int majorVersion = 17; // Fallback to VS 2022
+            string suffix = "";
+
+            try
+            {
+                // Ensure we're on the main thread for VS services
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                Version version = await VS.Shell.GetVsVersionAsync();
+                if (version != null)
+                {
+                    majorVersion = version.Major;
+                }
+
+                PackageUtilities.IsExperimentalVersionOfVsForVsipDevelopment(out string rootSuffix);
+                suffix = string.IsNullOrEmpty(rootSuffix) ? "" : rootSuffix;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+
+            _mruCacheFile = Path.Combine(LocalAppDataFolder, $"{majorVersion}{suffix}-mru.json");
+            return _mruCacheFile;
+        }
 
         /// <summary>
         /// Gets cached MRU items asynchronously for display on window open.
@@ -32,11 +76,13 @@ namespace StartScreen.Services
         {
             try
             {
-                if (!File.Exists(MruCacheFile))
+                string mruCacheFile = await GetMruCacheFileAsync();
+
+                if (!File.Exists(mruCacheFile))
                     return new List<MruItem>();
 
                 string json;
-                using (var stream = new FileStream(MruCacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
+                using (var stream = new FileStream(mruCacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
                 using (var reader = new StreamReader(stream))
                 {
                     json = await reader.ReadToEndAsync();
@@ -297,9 +343,11 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task SyncAndSaveAsync(IEnumerable<MruItem> items)
         {
-            await Task.Run(() =>
+            try
             {
-                try
+                string mruCacheFile = await GetMruCacheFileAsync();
+
+                await Task.Run(() =>
                 {
                     Directory.CreateDirectory(LocalAppDataFolder);
 
@@ -308,13 +356,13 @@ namespace StartScreen.Services
                         WriteIndented = true
                     });
 
-                    File.WriteAllText(MruCacheFile, json);
-                }
-                catch (Exception ex)
-                {
-                    ex.Log();
-                }
-            });
+                    File.WriteAllText(mruCacheFile, json);
+                });
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
         }
 
         /// <summary>

@@ -25,13 +25,6 @@ namespace StartScreen
             // Register tool window
             this.RegisterToolWindows();
 
-            // Switch to main thread to subscribe to solution events
-            await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-
-            // Subscribe to solution events for auto-show/hide behavior
-            VS.Events.SolutionEvents.OnAfterOpenSolution += OnSolutionOpened;
-            VS.Events.SolutionEvents.OnAfterCloseSolution += OnSolutionClosed;
-
             // Don't await ShowAsync here — it deadlocks because the shell isn't ready yet.
             // ProvideToolWindowVisibility handles showing automatically in the NoSolution context.
             // Schedule a deferred show as backup in case the visibility attribute didn't trigger.
@@ -46,6 +39,13 @@ namespace StartScreen
                 await ShowStartScreenAsync();
             }).FileAndForget(nameof(StartScreen));
             //}
+
+            // Switch to main thread to subscribe to solution events
+            await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+
+            // Subscribe to solution events for auto-show/hide behavior
+            VS.Events.SolutionEvents.OnAfterOpenSolution += OnSolutionOpened;
+            VS.Events.SolutionEvents.OnAfterCloseSolution += OnSolutionClosed;
         }
 
         private async Task ShowStartScreenAsync()
