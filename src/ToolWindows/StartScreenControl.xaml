@@ -130,7 +130,7 @@
                 </StackPanel>
 
                 <!-- Search Box -->
-                <Grid DockPanel.Dock="Top" Margin="0 16 0 2" HorizontalAlignment="Left" Width="300">
+                <Grid DockPanel.Dock="Top" Margin="0 25 0 2" HorizontalAlignment="Left" Width="300">
                     <TextBox x:Name="SearchBox"
                             Height="32"
                             Style="{StaticResource SearchBoxStyle}"

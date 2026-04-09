@@ -1,7 +1,9 @@
 using System.Globalization;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using Microsoft.VisualStudio.Shell;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -9,19 +11,38 @@ namespace StartScreen.ToolWindows
 {
     public partial class StartScreenControl : UserControl
     {
+        private readonly StartScreenViewModel _viewModel;
+        private readonly Task _cacheLoadTask;
+
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
-        public StartScreenControl()
+        public StartScreenControl(StartScreenViewModel viewModel, Task cacheLoadTask)
         {
+            _viewModel = viewModel;
+            _cacheLoadTask = cacheLoadTask;
             InitializeComponent();
         }
 
         private async void UserControl_Loaded(object sender, RoutedEventArgs e)
         {
+            // If already initialized, just refresh in background
             if (ViewModel != null)
             {
                 await ViewModel.RefreshInBackgroundAsync();
+                return;
             }
+
+            // Yield to let the window paint first
+            await Task.Yield();
+
+            // Wait for cache load to complete (likely already done)
+            await _cacheLoadTask;
+
+            // Bind ViewModel to trigger UI update
+            DataContext = _viewModel;
+
+            // Refresh from live sources in background
+            await _viewModel.RefreshInBackgroundAsync();
         }
 
         private async void ReleaseNotesLink_Click(object sender, RoutedEventArgs e)

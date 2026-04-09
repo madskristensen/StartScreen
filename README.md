@@ -47,6 +47,25 @@ Launch common workflows from one place:
 - Combines multiple RSS and Atom sources into one view
 - Uses local cache for fast startup and background refresh for freshness
 
+### Custom feed URLs
+
+Add your own RSS or Atom feeds by editing the `newsfeeds.json` file:
+
+- Location: `%USERPROFILE%\.vs\StartScreen\newsfeeds.json`
+- Add entries with `name`, `url`, and `enabled` properties
+- Changes are detected automatically - no restart required
+- JSON schema validation is available for IntelliSense support
+
+Example entry:
+
+```json
+{
+  "name": "My Custom Feed",
+  "url": "https://example.com/feed.xml",
+  "enabled": true
+}
+```
+
 ## Installation
 
 1. Install from the [Visual Studio Marketplace][marketplace].
