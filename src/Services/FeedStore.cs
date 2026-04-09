@@ -1,10 +1,8 @@
-using StartScreen.Models;
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading.Tasks;
+using StartScreen.Models;
 
 namespace StartScreen.Services
 {
@@ -19,30 +17,30 @@ namespace StartScreen.Services
 
         private static readonly string FeedsFile = Path.Combine(LocalAppDataFolder, "feeds.json");
 
-        private static readonly List<FeedInfo> DefaultFeeds = new List<FeedInfo>
+        private static readonly List<FeedInfo> DefaultFeeds = new()
         {
-            new FeedInfo { Name = "!Visual Studio", Url = "https://devblogs.microsoft.com/visualstudio/feed/", IsSelected = true, IsBuiltIn = true },
-            new FeedInfo { Name = "?.NET", Url = "https://devblogs.microsoft.com/dotnet/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Azure AI Foundry", Url = "https://devblogs.microsoft.com/foundry/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Azure Blog", Url = "https://azurecomcdn.azureedge.net/en-us/blog/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Azure DevOps", Url = "https://devblogs.microsoft.com/devops/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Azure SDKs", Url = "https://devblogs.microsoft.com/azure-sdk/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?C++", Url = "https://devblogs.microsoft.com/cppblog/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Command Line", Url = "https://devblogs.microsoft.com/commandline/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?CosmosDB", Url = "https://devblogs.microsoft.com/cosmosdb/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?DirectX", Url = "https://devblogs.microsoft.com/directx/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?IoT", Url = "https://devblogs.microsoft.com/iotdev/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Microsoft 365", Url = "https://devblogs.microsoft.com/microsoft365dev/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Microsoft Blog", Url = "https://blogs.microsoft.com/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Microsoft Education", Url = "https://www.microsoft.com/en-us/education/blog/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Microsoft News", Url = "https://news.microsoft.com/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?NuGet", Url = "https://devblogs.microsoft.com/nuget/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?PowerShell", Url = "https://devblogs.microsoft.com/powershell/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Python", Url = "https://devblogs.microsoft.com/python/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?SQL Server", Url = "https://cloudblogs.microsoft.com/sqlserver/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?TypeScript", Url = "https://devblogs.microsoft.com/typescript/feed/", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Visual Studio Code", Url = "https://code.visualstudio.com/feed.xml", IsSelected = false, IsBuiltIn = true },
-            new FeedInfo { Name = "?Windows Developer", Url = "https://blogs.windows.com/windowsdeveloper/feed/", IsSelected = false, IsBuiltIn = true }
+            new() { Name = "!Visual Studio", Url = "https://devblogs.microsoft.com/visualstudio/feed/", IsSelected = true, IsBuiltIn = true },
+            new() { Name = "?.NET", Url = "https://devblogs.microsoft.com/dotnet/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Azure AI Foundry", Url = "https://devblogs.microsoft.com/foundry/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Azure Blog", Url = "https://azurecomcdn.azureedge.net/en-us/blog/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Azure DevOps", Url = "https://devblogs.microsoft.com/devops/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Azure SDKs", Url = "https://devblogs.microsoft.com/azure-sdk/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?C++", Url = "https://devblogs.microsoft.com/cppblog/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Command Line", Url = "https://devblogs.microsoft.com/commandline/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?CosmosDB", Url = "https://devblogs.microsoft.com/cosmosdb/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?DirectX", Url = "https://devblogs.microsoft.com/directx/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?IoT", Url = "https://devblogs.microsoft.com/iotdev/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Microsoft 365", Url = "https://devblogs.microsoft.com/microsoft365dev/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Microsoft Blog", Url = "https://blogs.microsoft.com/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Microsoft Education", Url = "https://www.microsoft.com/en-us/education/blog/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Microsoft News", Url = "https://news.microsoft.com/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?NuGet", Url = "https://devblogs.microsoft.com/nuget/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?PowerShell", Url = "https://devblogs.microsoft.com/powershell/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Python", Url = "https://devblogs.microsoft.com/python/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?SQL Server", Url = "https://cloudblogs.microsoft.com/sqlserver/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?TypeScript", Url = "https://devblogs.microsoft.com/typescript/feed/", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Visual Studio Code", Url = "https://code.visualstudio.com/feed.xml", IsSelected = false, IsBuiltIn = true },
+            new() { Name = "?Windows Developer", Url = "https://blogs.windows.com/windowsdeveloper/feed/", IsSelected = false, IsBuiltIn = true }
         };
 
         /// <summary>

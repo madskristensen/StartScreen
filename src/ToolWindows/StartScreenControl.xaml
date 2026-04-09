@@ -213,7 +213,12 @@
         <!-- Right Pane: Links + News -->
         <Border Grid.Column="1"
                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}">
-            <ScrollViewer x:Name="NewsScroll" VerticalScrollBarVisibility="Auto" Margin="40 16 24 16">
+            <ScrollViewer x:Name="NewsScroll"
+                          VerticalScrollBarVisibility="Auto"
+                          Margin="40 16 24 16"
+                          BorderThickness="0"
+                          BorderBrush="Transparent"
+                          Background="Transparent">
                 <StackPanel>
                     <!-- Quick Links -->
                     <TextBlock Text="{Binding DiscoverySectionTitle}"
@@ -231,7 +236,7 @@
 
                     <!-- News Header -->
                     <Grid Margin="0 82 0 12">
-                        <TextBlock Text="Developer News"
+                        <TextBlock Text="News"
                                   FontSize="16"
                                   FontWeight="SemiBold"
                                   HorizontalAlignment="Left"/>
