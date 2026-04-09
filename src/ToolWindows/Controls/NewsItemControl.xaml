@@ -9,6 +9,8 @@
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              toolkit:Themes.UseVsTheme="True"
              Background="Transparent"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
              mc:Ignorable="d" 
              d:DesignHeight="100" d:DesignWidth="380">
     <UserControl.Resources>
