@@ -37,12 +37,13 @@ namespace StartScreen.ToolWindows.Controls
                 ((MenuItem)menu.Items[0]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Open);
                 ((MenuItem)menu.Items[1]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.NewWindow);
                 ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.FolderOpened);
-                // Items[3] is Separator
-                ((MenuItem)menu.Items[4]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
-                // Items[5] is Separator
-                _pinMenuItem = (MenuItem)menu.Items[6];
+                ((MenuItem)menu.Items[3]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Console);
+                // Items[4] is Separator
+                ((MenuItem)menu.Items[5]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
+                // Items[6] is Separator
+                _pinMenuItem = (MenuItem)menu.Items[7];
                 _pinMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Pin);
-                ((MenuItem)menu.Items[7]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.DeleteListItem);
+                ((MenuItem)menu.Items[8]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.DeleteListItem);
             }
         }
 
@@ -135,6 +136,21 @@ namespace StartScreen.ToolWindows.Controls
                 {
                     Process.Start("explorer.exe", folder);
                 }
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+            }
+        }
+
+        private void OpenTerminalMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (MruItem == null || string.IsNullOrWhiteSpace(MruItem.Path))
+                return;
+
+            try
+            {
+                VsCommandService.OpenTerminalAtPath(MruItem.Path);
             }
             catch (Exception ex)
             {

@@ -12,7 +12,7 @@ namespace StartScreen
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [InstalledProductRegistration(Vsix.Name, Vsix.Description, Vsix.Version)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
-    [ProvideToolWindow(typeof(ToolWindows.StartScreenWindow.Pane), Window = WindowGuids.DocumentWell, DocumentLikeTool = true, Style = VsDockStyle.Tabbed)]
+    [ProvideToolWindow(typeof(ToolWindows.StartScreenWindow.Pane), Window = WindowGuids.DocumentWell, DocumentLikeTool = true, Style = VsDockStyle.MDI)]
     [ProvideToolWindowVisibility(typeof(ToolWindows.StartScreenWindow.Pane), VSConstants.UICONTEXT.NoSolution_string)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string, PackageAutoLoadFlags.BackgroundLoad)]
     [Guid(PackageGuids.StartScreenString)]

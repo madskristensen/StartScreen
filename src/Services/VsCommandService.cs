@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Threading.Tasks;
-using Microsoft.VisualStudio.Shell;
 
 namespace StartScreen.Services
 {
@@ -10,6 +8,57 @@ namespace StartScreen.Services
     /// </summary>
     public static class VsCommandService
     {
+        /// <summary>
+        /// Opens a terminal (pwsh or cmd) at the given directory.
+        /// </summary>
+        public static void OpenTerminalAtPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+
+            string folder = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
+
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+                return;
+
+            // Prefer pwsh, fall back to cmd
+            string shell = FindPowerShell() ?? "cmd.exe";
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = shell,
+                WorkingDirectory = folder,
+                UseShellExecute = true
+            });
+        }
+
+        /// <summary>
+        /// Finds the pwsh executable path, or null if not installed.
+        /// </summary>
+        private static string FindPowerShell()
+        {
+            // Check common install locations for PowerShell 7+
+            string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string pwshPath = Path.Combine(programFiles, "PowerShell", "7", "pwsh.exe");
+
+            if (File.Exists(pwshPath))
+                return pwshPath;
+
+            // Fall back to PATH lookup
+            string pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            foreach (string dir in pathEnv.Split(';'))
+            {
+                if (string.IsNullOrWhiteSpace(dir))
+                    continue;
+
+                string candidate = Path.Combine(dir.Trim(), "pwsh.exe");
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// Opens the New Project dialog.
         /// </summary>

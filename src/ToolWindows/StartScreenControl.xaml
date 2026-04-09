@@ -12,6 +12,9 @@
              toolkit:Themes.UseVsTheme="True"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="1000"
+             AllowDrop="True"
+             DragOver="UserControl_DragOver"
+             Drop="UserControl_Drop"
              Loaded="UserControl_Loaded">
 
     <UserControl.Resources>
@@ -225,18 +228,20 @@
                           Background="Transparent">
                 <StackPanel>
                     <!-- Quick Links -->
-                    <TextBlock Text="{Binding DiscoverySectionTitle}"
-                              FontSize="24"
-                              FontWeight="SemiBold"
-                              Margin="0 0 0 8"/>
-                    <TextBlock Margin="0 0 0 20" FontSize="13" VerticalAlignment="Center">
-                        <Run Text="{Binding DiscoverySectionVersion}"/>
-                        <Run Text="  "/>
-                        <Hyperlink x:Name="ReleaseNotesLink" Click="ReleaseNotesLink_Click"
-                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                            Release notes
-                        </Hyperlink>
-                    </TextBlock>
+                    <DockPanel Margin="0 0 0 20">
+                        <TextBlock Text="{Binding DiscoverySectionTitle}"
+                                  FontSize="24"
+                                  FontWeight="SemiBold"
+                                  VerticalAlignment="Bottom"/>
+                        <TextBlock Margin="12 0 0 4" FontSize="13" VerticalAlignment="Bottom">
+                            <Run Text="{Binding DiscoverySectionVersion}"/>
+                            <Run Text="  "/>
+                            <Hyperlink x:Name="ReleaseNotesLink" Click="ReleaseNotesLink_Click"
+                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                                Release notes
+                            </Hyperlink>
+                        </TextBlock>
+                    </DockPanel>
 
                     <!-- Tip of the Day -->
                     <Border Margin="0 40 0 0"

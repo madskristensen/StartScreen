@@ -135,7 +135,7 @@
                       Text="{Binding Name}"
                       FontWeight="SemiBold"
                       VerticalAlignment="Center"
-                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                       TextTrimming="CharacterEllipsis"/>
         </DockPanel>
 
@@ -145,6 +145,7 @@
                 <MenuItem Header="Open" Click="OpenMenuItem_Click"/>
                 <MenuItem Header="Open in New Instance" Click="OpenInNewInstanceMenuItem_Click"/>
                 <MenuItem Header="Open Containing Folder" Click="OpenFolderMenuItem_Click"/>
+                <MenuItem Header="Open in Terminal" Click="OpenTerminalMenuItem_Click"/>
                 <Separator/>
                 <MenuItem Header="Copy Path" Click="CopyPathMenuItem_Click"/>
                 <Separator/>

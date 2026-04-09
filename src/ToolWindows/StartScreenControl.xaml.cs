@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -137,6 +139,61 @@ namespace StartScreen.ToolWindows
             {
                 ViewModel.ForceRefreshNews();
             }
+        }
+
+        private static readonly string[] OpenableExtensions = { ".sln", ".slnx", ".csproj", ".vbproj", ".fsproj", ".vcxproj" };
+
+        private void UserControl_DragOver(object sender, DragEventArgs e)
+        {
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+
+                if (files != null && files.Length > 0 && IsOpenablePath(files[0]))
+                {
+                    e.Effects = DragDropEffects.Copy;
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+        }
+
+        private async void UserControl_Drop(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+                return;
+
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            if (files == null || files.Length == 0)
+                return;
+
+            string path = files[0];
+            if (!IsOpenablePath(path))
+                return;
+
+            try
+            {
+                await VsCommandService.OpenPathAsync(path);
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        private static bool IsOpenablePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            if (Directory.Exists(path))
+                return true;
+
+            string ext = Path.GetExtension(path)?.ToLowerInvariant();
+            return ext != null && OpenableExtensions.Contains(ext);
         }
     }
 
