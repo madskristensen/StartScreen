@@ -36,6 +36,41 @@ namespace StartScreen.Services
         }
 
         /// <summary>
+        /// Gets the cached combined feed asynchronously (no network).
+        /// Returns null if no cache exists.
+        /// </summary>
+        public static async Task<SyndicationFeed> GetCachedFeedAsync()
+        {
+            try
+            {
+                if (!File.Exists(CombinedFeedFile))
+                    return null;
+
+                // Read file content asynchronously
+                byte[] fileBytes;
+                using (var stream = new FileStream(CombinedFeedFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
+                {
+                    fileBytes = new byte[stream.Length];
+                    await stream.ReadAsync(fileBytes, 0, fileBytes.Length);
+                }
+
+                // Parse the XML (CPU-bound, but fast for small feeds)
+                using (var memoryStream = new MemoryStream(fileBytes))
+                using (var reader = XmlReader.Create(memoryStream))
+                {
+                    var feed = SyndicationFeed.Load(reader);
+                    feed.LastUpdatedTime = File.GetLastWriteTimeUtc(CombinedFeedFile);
+                    return feed;
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Gets the cached combined feed synchronously (instant, no network).
         /// Returns null if no cache exists.
         /// </summary>

@@ -41,10 +41,13 @@ namespace StartScreen.ToolWindows.Controls
 
         private void RootBorder_MouseEnter(object sender, MouseEventArgs e)
         {
+            RootBorder.SetResourceReference(Border.BackgroundProperty,
+                EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey);
         }
 
         private void RootBorder_MouseLeave(object sender, MouseEventArgs e)
         {
+            RootBorder.Background = Brushes.Transparent;
         }
 
         private void RootBorder_MouseUp(object sender, MouseButtonEventArgs e)

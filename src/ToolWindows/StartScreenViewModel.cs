@@ -112,18 +112,26 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
-        /// Loads data synchronously from local cache for instant display.
-        /// Called before the control is shown, so the UI appears fully populated.
+        /// Loads data asynchronously from local cache for display.
+        /// Called before the control is shown, so the UI appears populated.
         /// </summary>
-        public void LoadFromCacheSync()
+        public async Task LoadFromCacheAsync()
         {
-            // Load MRU from cache
-            var cachedMru = MruService.GetCachedMruItems();
+            // Load MRU and news from cache in parallel
+            var mruTask = MruService.GetCachedMruItemsAsync();
+            var feedTask = FeedService.GetCachedFeedAsync();
+
+            await Task.WhenAll(mruTask, feedTask);
+
+            var cachedMru = await mruTask;
+            var cachedFeed = await feedTask;
+
+            // Switch to UI thread to update collections
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
             _allMruItems = new ObservableCollection<MruItem>(cachedMru);
             UpdateMruCollections();
 
-            // Load news from cache
-            var cachedFeed = FeedService.GetCachedFeed();
             if (cachedFeed != null)
             {
                 var posts = FeedService.ConvertToNewsPosts(cachedFeed);

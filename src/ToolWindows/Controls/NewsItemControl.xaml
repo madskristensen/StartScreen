@@ -13,11 +13,12 @@
              d:DesignHeight="100" d:DesignWidth="380">
     <Border x:Name="RootBorder"
             BorderThickness="0"
-            Padding="0 8"
+            Background="Transparent"
+            Padding="8"
+            CornerRadius="4"
             MouseEnter="RootBorder_MouseEnter"
             MouseLeave="RootBorder_MouseLeave"
             MouseUp="RootBorder_MouseUp"
-            ToolTip="{Binding ToolTip}"
             Cursor="Hand">
         <StackPanel Orientation="Vertical">
             <!-- Title -->

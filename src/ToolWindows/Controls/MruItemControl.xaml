@@ -18,7 +18,9 @@
             BorderThickness="0"
             Background="Transparent"
             Padding="8 6"
+            CornerRadius="4"
             ToolTip="{Binding ToolTipText}"
+            Cursor="Hand"
             MouseEnter="RootBorder_MouseEnter"
             MouseLeave="RootBorder_MouseLeave"
             MouseUp="RootBorder_MouseUp">

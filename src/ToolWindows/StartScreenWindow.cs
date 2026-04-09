@@ -17,9 +17,9 @@ namespace StartScreen.ToolWindows
 
         public override async Task<FrameworkElement> CreateAsync(int toolWindowId, CancellationToken cancellationToken)
         {
-            // Create ViewModel — MRU data will be read from IVsMRUItemsStore during background refresh
+            // Create ViewModel and load cache data asynchronously on background thread
             var viewModel = new StartScreenViewModel();
-            viewModel.LoadFromCacheSync();
+            await viewModel.LoadFromCacheAsync();
 
             // Create and return the control (UI is already populated from cache)
             var control = new StartScreenControl

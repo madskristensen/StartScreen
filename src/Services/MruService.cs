@@ -26,16 +26,22 @@ namespace StartScreen.Services
         private static readonly string MruCacheFile = Path.Combine(LocalAppDataFolder, "mru.json");
 
         /// <summary>
-        /// Gets cached MRU items synchronously for instant display on window open.
+        /// Gets cached MRU items asynchronously for display on window open.
         /// </summary>
-        public static List<MruItem> GetCachedMruItems()
+        public static async Task<List<MruItem>> GetCachedMruItemsAsync()
         {
             try
             {
                 if (!File.Exists(MruCacheFile))
                     return new List<MruItem>();
 
-                var json = File.ReadAllText(MruCacheFile);
+                string json;
+                using (var stream = new FileStream(MruCacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
+                using (var reader = new StreamReader(stream))
+                {
+                    json = await reader.ReadToEndAsync();
+                }
+
                 var items = JsonSerializer.Deserialize<List<MruItem>>(json) ?? new List<MruItem>();
 
                 // Sort: pinned first, then by last accessed
@@ -45,7 +51,7 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
                 return new List<MruItem>();
             }
         }
@@ -56,7 +62,7 @@ namespace StartScreen.Services
         public static async Task<List<MruItem>> GetMruItemsAsync()
         {
             // Read cached items (preserves pinned state) on background thread
-            var cachedItems = await Task.Run(() => GetCachedMruItems());
+            var cachedItems = await GetCachedMruItemsAsync();
 
             // IVsMRUItemsStore must be accessed on the main thread
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -279,10 +285,9 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task RemoveItemAsync(string path)
         {
-            var items = GetCachedMruItems();
+            var items = await GetCachedMruItemsAsync();
             items.RemoveAll(i => string.Equals(i.Path, path, StringComparison.OrdinalIgnoreCase));
             await SyncAndSaveAsync(items);
         }
-
-            }
-        }
+    }
+}
