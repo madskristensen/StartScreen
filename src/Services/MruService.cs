@@ -110,6 +110,28 @@ namespace StartScreen.Services
         }
 
         /// <summary>
+        /// Populates Git branch names for items in the background.
+        /// Updates each item's GitBranch property as it resolves, triggering UI updates via INotifyPropertyChanged.
+        /// </summary>
+        public static Task PopulateGitBranchesAsync(IEnumerable<MruItem> items)
+        {
+            return Task.Run(() =>
+            {
+                Parallel.ForEach(items, item =>
+                {
+                    try
+                    {
+                        item.GitBranch = GitHelper.GetCurrentBranch(item.Path);
+                    }
+                    catch (Exception ex)
+                    {
+                        ex.Log();
+                    }
+                });
+            });
+        }
+
+        /// <summary>
         /// Parses a single MRU entry from IVsMRUItemsStore into an MruItem.
         /// </summary>
         /// <remarks>
@@ -144,8 +166,7 @@ namespace StartScreen.Services
                     Name = displayName,
                     Type = DetermineType(rawPath),
                     LastAccessed = GetLastAccessTime(rawPath),
-                    IsPinned = false,
-                    GitBranch = GitHelper.GetCurrentBranch(rawPath)
+                    IsPinned = false
                 };
             }
             catch (Exception ex)

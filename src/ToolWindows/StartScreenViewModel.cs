@@ -140,6 +140,9 @@ namespace StartScreen.ToolWindows
                     NewsPosts.Add(post);
                 }
             }
+
+            // Populate git branches in background after UI is updated
+            _ = MruService.PopulateGitBranchesAsync(cachedMru);
         }
 
         /// <summary>
@@ -172,6 +175,9 @@ namespace StartScreen.ToolWindows
                 }
 
                 UpdateMruCollections();
+
+                // Populate git branches in background after UI is updated
+                _ = MruService.PopulateGitBranchesAsync(updatedMru);
             }
             catch (Exception ex)
             {

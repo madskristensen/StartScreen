@@ -130,7 +130,7 @@
                 </StackPanel>
 
                 <!-- Search Box -->
-                <Grid DockPanel.Dock="Top" Margin="0 0 0 2" HorizontalAlignment="Left" Width="300">
+                <Grid DockPanel.Dock="Top" Margin="0 16 0 2" HorizontalAlignment="Left" Width="300">
                     <TextBox x:Name="SearchBox"
                             Height="32"
                             Style="{StaticResource SearchBoxStyle}"
@@ -150,9 +150,10 @@
                     <StackPanel>
                         <!-- Pinned Items -->
                         <TextBlock Text="Pinned"
-                                  FontSize="14"
+                                  FontSize="13"
                                   FontWeight="SemiBold"
-                                  Margin="0 0 0 8"
+                                  Opacity="0.7"
+                                  Margin="0 12 0 4"
                                   Visibility="{Binding PinnedItems.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
                         <ItemsControl ItemsSource="{Binding PinnedItems}">
                             <ItemsControl.ItemsPanel>
@@ -237,7 +238,7 @@
 
                     <!-- News Header -->
                     <Grid Margin="0 82 0 12">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                             <TextBlock Text="News"
                                       FontSize="16"
                                       FontWeight="SemiBold"
@@ -251,7 +252,8 @@
                                     BorderThickness="0"
                                     VerticalAlignment="Center">
                                 <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}" 
-                                                    Width="16" Height="16"/>
+                                                    Width="16" Height="16"
+                                                    VerticalAlignment="Center"/>
                             </Button>
                         </StackPanel>
                         <ProgressBar Height="2" 

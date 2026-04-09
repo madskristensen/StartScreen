@@ -30,7 +30,7 @@ namespace StartScreen.ToolWindows
             return control;
         }
 
-        [Guid("213f7e97-d4de-4187-9163-a3c61916997a")]
+        [Guid("d0ffc7e5-4860-42ef-afbe-0dd5532e9906")]
         internal class Pane : ToolWindowPane
         {
             public Pane()

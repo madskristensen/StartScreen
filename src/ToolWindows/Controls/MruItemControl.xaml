@@ -19,11 +19,18 @@
             Background="Transparent"
             Padding="8 6"
             CornerRadius="4"
-            ToolTip="{Binding ToolTipText}"
             Cursor="Hand"
             MouseEnter="RootBorder_MouseEnter"
             MouseLeave="RootBorder_MouseLeave"
             MouseUp="RootBorder_MouseUp">
+        <Border.ToolTip>
+            <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                     BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                     BorderThickness="1">
+                <TextBlock Text="{Binding ToolTipText}" />
+            </ToolTip>
+        </Border.ToolTip>
         <DockPanel>
             <!-- Right side: timestamp and pin -->
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
