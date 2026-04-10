@@ -14,7 +14,7 @@ namespace StartScreen.ToolWindows
         private StartScreenViewModel _viewModel;
         private StartScreenControl _control;
 
-        public override string GetTitle(int toolWindowId) => "Start";
+        public override string GetTitle(int toolWindowId) => "🏠 Start";
 
         public override Type PaneType => typeof(Pane);
 

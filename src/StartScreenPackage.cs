@@ -5,7 +5,6 @@ global using Task = System.Threading.Tasks.Task;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.VisualStudio;
-using Microsoft.VisualStudio.Shell.Interop;
 
 namespace StartScreen
 {
@@ -44,8 +43,15 @@ namespace StartScreen
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
 
             // Subscribe to solution events for auto-show/hide behavior
-            VS.Events.SolutionEvents.OnAfterOpenSolution += OnSolutionOpened;
+            //VS.Events.SolutionEvents.OnBeforeOpenSolution += OnSolutionOpened;
+            VS.Events.SolutionEvents.OnBeforeOpenSolution += OnBeforeOpenSolution;
+            VS.Events.SolutionEvents.OnAfterOpenFolder += OnBeforeOpenSolution;
             VS.Events.SolutionEvents.OnAfterCloseSolution += OnSolutionClosed;
+        }
+
+        private void OnBeforeOpenSolution(string obj)
+        {
+            ToolWindows.StartScreenWindow.HideAsync().FireAndForget();
         }
 
         private async Task ShowStartScreenAsync()
@@ -53,42 +59,22 @@ namespace StartScreen
             await ToolWindows.StartScreenWindow.ShowAsync();
         }
 
-        private void OnSolutionOpened(Solution obj)
-        {
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
-            {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-                // Don't close if it's just the Miscellaneous Files project (no actual solution)
-                if (obj == null || string.IsNullOrEmpty(obj.FullPath))
-                {
-                    return;
-                }
-
-                // Hide Start Screen when a real solution is opened
-                try
-                {
-                    var uiShell = await GetServiceAsync(typeof(SVsUIShell)) as IVsUIShell;
-                    if (uiShell != null)
-                    {
-                        var paneGuid = typeof(ToolWindows.StartScreenWindow.Pane).GUID;
-                        uiShell.FindToolWindow((uint)__VSFINDTOOLWIN.FTW_fFindFirst, ref paneGuid, out IVsWindowFrame frame);
-                        frame?.CloseFrame((uint)__FRAMECLOSE.FRAMECLOSE_NoSave);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    ex.Log();
-                }
-            }).FileAndForget(nameof(StartScreen));
-        }
-
         private void OnSolutionClosed()
         {
+            if (VsShellUtilities.ShellIsShuttingDown)
+            {
+                return;
+            }
+
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
-                // Show Start Screen when solution is closed
-                await ShowStartScreenAsync();
+                await Task.Delay(500);
+
+                if (!await VS.Solutions.IsOpeningAsync() && !await VS.Solutions.IsOpenAsync())
+                {
+                    // Show Start Screen when solution is closed
+                    await ShowStartScreenAsync();
+                }
             }).FileAndForget(nameof(StartScreen));
         }
 
@@ -96,7 +82,8 @@ namespace StartScreen
         {
             if (disposing)
             {
-                VS.Events.SolutionEvents.OnAfterOpenSolution -= OnSolutionOpened;
+                VS.Events.SolutionEvents.OnBeforeOpenSolution -= OnBeforeOpenSolution;
+                VS.Events.SolutionEvents.OnAfterOpenFolder -= OnBeforeOpenSolution;
                 VS.Events.SolutionEvents.OnAfterCloseSolution -= OnSolutionClosed;
             }
 
