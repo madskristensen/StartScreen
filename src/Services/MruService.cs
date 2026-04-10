@@ -157,8 +157,9 @@ namespace StartScreen.Services
 
                 var itemList = items.ToList();
 
-                // Process items in parallel - each gets its own LibGit2Sharp Repository instance
-                Parallel.ForEach(itemList, item =>
+                // Process items in parallel - each gets its own LibGit2Sharp Repository instance.
+                // Cap concurrency to avoid saturating disk I/O during startup.
+                Parallel.ForEach(itemList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
                 {
                     try
                     {
@@ -208,12 +209,14 @@ namespace StartScreen.Services
                     displayName = Path.GetFileNameWithoutExtension(rawPath);
                 }
 
+                var type = DetermineType(rawPath);
+
                 var item = new MruItem
                 {
                     Path = rawPath,
                     Name = displayName,
-                    Type = DetermineType(rawPath),
-                    LastAccessed = GetLastAccessTime(rawPath),
+                    Type = type,
+                    LastAccessed = GetLastAccessTime(rawPath, type),
                     IsPinned = false
                 };
 
@@ -260,12 +263,10 @@ namespace StartScreen.Services
         /// For Open Folder, the .vs/ directory itself is updated on each session.
         /// Falls back to the path's own last write time if no .suo is found.
         /// </remarks>
-        private static DateTime GetLastAccessTime(string path)
+        private static DateTime GetLastAccessTime(string path, MruItemType type)
         {
             try
             {
-                var type = DetermineType(path);
-
                 if (type == MruItemType.Folder)
                 {
                     // Open Folder scenario: check the .vs/ folder inside it
