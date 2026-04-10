@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -14,6 +15,7 @@ namespace StartScreen.ToolWindows
     /// </summary>
     public class StartScreenViewModel : INotifyPropertyChanged
     {
+        private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromHours(4);
         private bool _isRefreshingNews;
         private string _searchFilter;
         private string _discoverySectionTitle;
@@ -22,6 +24,7 @@ namespace StartScreen.ToolWindows
         private ObservableCollection<MruItem> _allMruItems;
         private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
         private readonly ITipProvider _tipProvider;
+        private Timer _autoRefreshTimer;
 
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
@@ -132,12 +135,23 @@ namespace StartScreen.ToolWindows
             // Start watching for feed file changes and subscribe to event
             FeedStore.StartWatching();
             FeedStore.FeedsChanged += OnFeedsChanged;
+
+            // Auto-refresh news feeds periodically
+            _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, AutoRefreshInterval, AutoRefreshInterval);
         }
 
         private void OnFeedsChanged(object sender, EventArgs e)
         {
             // Force refresh news when feeds file changes
             ForceRefreshNews();
+        }
+
+        private void OnAutoRefreshTimerTick(object state)
+        {
+            if (FeedService.IsCacheStale())
+            {
+                ForceRefreshNews();
+            }
         }
 
         /// <summary>
@@ -225,8 +239,8 @@ namespace StartScreen.ToolWindows
                     await UpdateNewsPostsOnUIThreadAsync(posts);
                 }
 
-                // Only trigger background sync if no cache or empty cache
-                if (!hasCachedItems)
+                // Trigger background sync if no cache, empty cache, or stale cache
+                if (!hasCachedItems || FeedService.IsCacheStale())
                 {
                     StartBackgroundFeedRefresh();
                 }
