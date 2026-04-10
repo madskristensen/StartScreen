@@ -8,6 +8,10 @@
   },
   "assetFiles": [
     {
+      "pathOnDisk": "art/context-menu.png",
+      "targetPath": "art/context-menu.png"
+    },
+    {
       "pathOnDisk": "art/startscreen.png",
       "targetPath": "art/startscreen.png"
     }
