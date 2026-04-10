@@ -181,6 +181,32 @@ namespace StartScreen.Services
         }
 
         /// <summary>
+        /// Checks file/folder existence for each MRU item on a background thread.
+        /// Updates each item's Exists property, triggering UI updates via INotifyPropertyChanged.
+        /// </summary>
+        public static JoinableTask PopulateExistenceAsync(IEnumerable<MruItem> items)
+        {
+            return ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                await TaskScheduler.Default;
+
+                var itemList = items.ToList();
+
+                Parallel.ForEach(itemList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
+                {
+                    try
+                    {
+                        item.RefreshExists();
+                    }
+                    catch (Exception ex)
+                    {
+                        ex.Log();
+                    }
+                });
+            });
+        }
+
+        /// <summary>
         /// Parses a single MRU entry from IVsMRUItemsStore into an MruItem.
         /// </summary>
         /// <remarks>

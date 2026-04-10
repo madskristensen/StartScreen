@@ -324,6 +324,20 @@ namespace StartScreen.Models
             }
         }
 
+        /// <summary>
+        /// Re-checks file existence on disk and raises PropertyChanged if the value changed.
+        /// Safe to call from a background thread.
+        /// </summary>
+        public void RefreshExists()
+        {
+            bool newValue = CheckExists();
+            if (_exists != newValue)
+            {
+                _exists = newValue;
+                OnPropertyChanged(nameof(Exists));
+            }
+        }
+
         private bool CheckExists()
         {
             if (string.IsNullOrWhiteSpace(_path))

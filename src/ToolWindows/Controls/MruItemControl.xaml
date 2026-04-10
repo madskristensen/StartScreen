@@ -16,6 +16,8 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <controls:NullToCollapsedConverter x:Key="NullToCollapsedConverter"/>
+        <controls:ExistsToTextDecorationsConverter x:Key="ExistsToTextDecorationsConverter"/>
+        <controls:ExistsToOpacityConverter x:Key="ExistsToOpacityConverter"/>
     </UserControl.Resources>
     <Border x:Name="RootBorder"
             BorderThickness="0"
@@ -145,7 +147,9 @@
                       FontWeight="SemiBold"
                       VerticalAlignment="Center"
                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
-                      TextTrimming="CharacterEllipsis"/>
+                      TextTrimming="CharacterEllipsis"
+                      TextDecorations="{Binding Exists, Converter={StaticResource ExistsToTextDecorationsConverter}}"
+                      Opacity="{Binding Exists, Converter={StaticResource ExistsToOpacityConverter}}"/>
         </DockPanel>
 
         <!-- Context Menu -->

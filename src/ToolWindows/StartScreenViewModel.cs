@@ -213,8 +213,9 @@ namespace StartScreen.ToolWindows
                 UpdateNewsCollections();
             }
 
-            // Populate git status in background after UI is updated
+            // Populate git status and file existence in background after UI is updated
             MruService.PopulateGitStatusAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
+            MruService.PopulateExistenceAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
         }
 
         /// <summary>
@@ -245,8 +246,9 @@ namespace StartScreen.ToolWindows
                 _allMruItems = new ObservableCollection<MruItem>(updatedMru);
                 UpdateMruCollections();
 
-                // Populate git status in background after UI is updated
+                // Populate git status and file existence in background after UI is updated
                 MruService.PopulateGitStatusAsync(updatedMru).FileAndForget(nameof(StartScreenViewModel));
+                MruService.PopulateExistenceAsync(updatedMru).FileAndForget(nameof(StartScreenViewModel));
             }
             catch (Exception ex)
             {

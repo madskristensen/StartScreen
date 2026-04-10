@@ -390,4 +390,46 @@ namespace StartScreen.ToolWindows.Controls
             throw new NotImplementedException();
         }
     }
+
+    /// <summary>
+    /// Converter that returns Strikethrough text decorations when the bound value is false (item does not exist).
+    /// </summary>
+    public class ExistsToTextDecorationsConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool exists && !exists)
+            {
+                return TextDecorations.Strikethrough;
+            }
+
+            return null;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converter that returns a dimmed opacity when the bound value is false (item does not exist).
+    /// </summary>
+    public class ExistsToOpacityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool exists && !exists)
+            {
+                return 0.5;
+            }
+
+            return 1.0;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
 }

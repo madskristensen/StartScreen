@@ -85,7 +85,7 @@ learn something new.
 
 Have a tip to share? [Open an issue][repo] with your suggestion or submit
 a pull request directly to
-[tips.txt](src/Resources/tips.txt).
+[tips.txt](https://github.com/madskristensen/StartScreen/blob/master/src/Resources/tips.txt).
 
 ## Keyboard-first design
 
