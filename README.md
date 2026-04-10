@@ -91,6 +91,9 @@ a pull request directly to
 
 Every part of Start Screen is navigable without a mouse.
 
+Open the Start Screen any time from **File > Start Screen** or press
+**Ctrl+Shift+Alt+Backspace**.
+
 ### Recent solutions / folders
 
 | Shortcut   | Action                 |
