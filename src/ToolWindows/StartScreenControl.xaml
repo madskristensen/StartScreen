@@ -12,6 +12,8 @@
              toolkit:Themes.UseVsTheme="True"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="1000"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
              AllowDrop="True"
              DragOver="UserControl_DragOver"
              Drop="UserControl_Drop"
