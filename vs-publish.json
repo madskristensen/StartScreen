@@ -14,6 +14,10 @@
     {
       "pathOnDisk": "art/startscreen.png",
       "targetPath": "art/startscreen.png"
+    },
+    {
+      "pathOnDisk": "art/tip.png",
+      "targetPath": "art/tip.png"
     }
   ],
   "overview": "README.md",
