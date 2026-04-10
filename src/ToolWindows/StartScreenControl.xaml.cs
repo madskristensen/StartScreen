@@ -4,8 +4,11 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Media;
 using StartScreen.Models;
 using StartScreen.Services;
+using StartScreen.ToolWindows.Controls;
 
 namespace StartScreen.ToolWindows
 {
@@ -87,10 +90,22 @@ namespace StartScreen.ToolWindows
 
         private void MruItemControl_PinToggleRequested(object sender, MruItem item)
         {
-            if (ViewModel != null)
+            if (ViewModel == null)
+                return;
+
+            bool hadFocus = sender is MruItemControl ctrl && ctrl.IsItemFocused();
+
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
-                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.TogglePinAsync(item)).FileAndForget(nameof(StartScreenControl));
-            }
+                await ViewModel.TogglePinAsync(item);
+
+                if (hadFocus)
+                {
+                    // Allow layout to rebuild after collection change
+                    await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Loaded);
+                    FocusMruItemByPath(item.Path);
+                }
+            }).FileAndForget(nameof(StartScreenControl));
         }
 
         private void MruItemControl_RemoveRequested(object sender, MruItem item)
@@ -99,6 +114,132 @@ namespace StartScreen.ToolWindows
             {
                 ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.RemoveMruItemAsync(item)).FileAndForget(nameof(StartScreenControl));
             }
+        }
+
+        private void MruItemControl_FocusSearchBoxRequested(object sender, EventArgs e)
+        {
+            SearchBox.Focus();
+        }
+
+        private void MruItemControl_FocusNewsRequested(object sender, EventArgs e)
+        {
+            var firstNews = FindFirstControl<NewsItemControl>(NewsScroll);
+            if (firstNews != null)
+            {
+                firstNews.RootBorder.Focus();
+            }
+        }
+
+        private void MruItemControl_FocusActionBarRequested(object sender, EventArgs e)
+        {
+            // Focus the first action button
+            if (ActionBar.Children.Count > 0 && ActionBar.Children[0] is Button btn)
+            {
+                btn.Focus();
+            }
+        }
+
+        private void NewsItemControl_FocusMruRequested(object sender, EventArgs e)
+        {
+            FocusFirstMruItem();
+        }
+
+        private void ActionBar_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (!(e.OriginalSource is Button currentButton))
+                return;
+
+            int index = ActionBar.Children.IndexOf(currentButton);
+            if (index < 0)
+                return;
+
+            if (e.Key == Key.Right)
+            {
+                int next = index + 1;
+                if (next < ActionBar.Children.Count && ActionBar.Children[next] is Button nextBtn)
+                {
+                    nextBtn.Focus();
+                }
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Left)
+            {
+                int prev = index - 1;
+                if (prev >= 0 && ActionBar.Children[prev] is Button prevBtn)
+                {
+                    prevBtn.Focus();
+                }
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Down)
+            {
+                FocusFirstMruItem();
+                e.Handled = true;
+            }
+        }
+
+        private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Oem3 && Keyboard.Modifiers == ModifierKeys.Alt)
+            {
+                SearchBox.Focus();
+                e.Handled = true;
+            }
+        }
+
+        private void UserControl_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            // When the tool window gets focus and no inner item is focused, focus the first MRU item
+            if (e.NewFocus == this || e.NewFocus is ScrollViewer || e.NewFocus is Border b && b.Name != "RootBorder")
+            {
+                FocusFirstMruItem();
+            }
+        }
+
+        private void FocusFirstMruItem()
+        {
+            var firstMru = FindFirstControl<MruItemControl>(MruScroll);
+            firstMru?.FocusItem();
+        }
+
+        private static T FindFirstControl<T>(DependencyObject parent) where T : class
+        {
+            int count = VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T match)
+                    return match;
+
+                var result = FindFirstControl<T>(child);
+                if (result != null)
+                    return result;
+            }
+            return null;
+        }
+
+        private void FocusMruItemByPath(string path)
+        {
+            var mruControl = FindMruItemControlByPath(MruScroll, path);
+            mruControl?.FocusItem();
+        }
+
+        private static MruItemControl FindMruItemControlByPath(DependencyObject parent, string path)
+        {
+            int count = VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+                if (child is MruItemControl mru && mru.DataContext is MruItem item && item.Path == path)
+                {
+                    return mru;
+                }
+
+                var result = FindMruItemControlByPath(child, path);
+                if (result != null)
+                    return result;
+            }
+            return null;
         }
 
         private void NewsItemControl_PinToggleRequested(object sender, NewsPost post)

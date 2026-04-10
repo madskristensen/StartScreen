@@ -9,6 +9,7 @@
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              toolkit:Themes.UseVsTheme="True"
              Background="Transparent"
+             Focusable="False"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True"
              mc:Ignorable="d" 
@@ -21,9 +22,14 @@
             Background="Transparent"
             Padding="8"
             CornerRadius="4"
+            Focusable="True"
+            FocusVisualStyle="{x:Null}"
             MouseEnter="RootBorder_MouseEnter"
             MouseLeave="RootBorder_MouseLeave"
             MouseUp="RootBorder_MouseUp"
+            KeyDown="RootBorder_KeyDown"
+            GotKeyboardFocus="RootBorder_GotKeyboardFocus"
+            LostKeyboardFocus="RootBorder_LostKeyboardFocus"
             Cursor="Hand">
         <Grid>
             <StackPanel Orientation="Vertical" Margin="0 0 24 0">
@@ -64,6 +70,7 @@
                     Background="Transparent"
                     BorderThickness="0"
                     Cursor="Hand"
+                    Focusable="False"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Bottom"
                     Margin="0 0 -4 -4"
@@ -76,9 +83,9 @@
         <!-- Context Menu -->
         <Border.ContextMenu>
             <ContextMenu>
-                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click"/>
+                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
                 <Separator/>
-                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click"/>
+                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
             </ContextMenu>
         </Border.ContextMenu>
     </Border>

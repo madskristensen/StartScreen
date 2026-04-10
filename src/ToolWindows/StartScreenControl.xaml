@@ -15,7 +15,9 @@
              AllowDrop="True"
              DragOver="UserControl_DragOver"
              Drop="UserControl_Drop"
-             Loaded="UserControl_Loaded">
+             Loaded="UserControl_Loaded"
+             PreviewKeyDown="UserControl_PreviewKeyDown"
+             GotKeyboardFocus="UserControl_GotKeyboardFocus">
 
     <UserControl.Resources>
         <!-- Converters -->
@@ -29,6 +31,7 @@
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -46,6 +49,9 @@
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
                     <Setter Property="Opacity" Value="1.0"/>
+                </Trigger>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -105,7 +111,8 @@
                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
             <DockPanel Margin="16">
                 <!-- Action Bar at top -->
-                <StackPanel x:Name="ActionBar" DockPanel.Dock="Top" Orientation="Horizontal" Margin="0 0 0 24">
+                <StackPanel x:Name="ActionBar" DockPanel.Dock="Top" Orientation="Horizontal" Margin="0 0 0 24"
+                            PreviewKeyDown="ActionBar_PreviewKeyDown">
                     <Button Click="NewProjectButton_Click" Style="{StaticResource ActionButtonStyle}">
                         <StackPanel Orientation="Vertical" Margin="12 8">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.NewDocumentCollection}" Width="32" Height="32"/>
@@ -149,16 +156,17 @@
                 </Grid>
 
                 <!-- MRU Section -->
-                <ScrollViewer x:Name="MruScroll" VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
+                <ScrollViewer x:Name="MruScroll" VerticalScrollBarVisibility="Auto" Focusable="False">
+                    <StackPanel Focusable="False">
                         <!-- Pinned Items -->
                         <TextBlock Text="Pinned"
                                   FontSize="13"
                                   FontWeight="SemiBold"
                                   Opacity="0.7"
                                   Margin="0 12 0 4"
+                                  Focusable="False"
                                   Visibility="{Binding PinnedItems.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
-                        <ItemsControl ItemsSource="{Binding PinnedItems}">
+                        <ItemsControl ItemsSource="{Binding PinnedItems}" Focusable="False">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <VirtualizingStackPanel/>
@@ -168,25 +176,29 @@
                                 <DataTemplate>
                                     <controls:MruItemControl 
                                         PinToggleRequested="MruItemControl_PinToggleRequested"
-                                        RemoveRequested="MruItemControl_RemoveRequested"/>
+                                        RemoveRequested="MruItemControl_RemoveRequested"
+                                        FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"
+                                        FocusNewsRequested="MruItemControl_FocusNewsRequested"
+                                        FocusActionBarRequested="MruItemControl_FocusActionBarRequested"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
                         <!-- Recent Items (Time-Grouped) -->
-                        <ItemsControl ItemsSource="{Binding GroupedMruItems}">
+                        <ItemsControl ItemsSource="{Binding GroupedMruItems}" Focusable="False">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel>
+                                    <StackPanel Focusable="False">
                                         <!-- Time Group Header -->
                                         <TextBlock Text="{Binding GroupName}"
                                                   FontSize="13"
                                                   FontWeight="SemiBold"
                                                   Opacity="0.7"
-                                                  Margin="0 12 0 4"/>
+                                                  Margin="0 12 0 4"
+                                                  Focusable="False"/>
 
                                         <!-- Items in this group -->
-                                        <ItemsControl ItemsSource="{Binding Items}">
+                                        <ItemsControl ItemsSource="{Binding Items}" Focusable="False">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate>
                                                     <VirtualizingStackPanel/>
@@ -196,7 +208,10 @@
                                                 <DataTemplate>
                                                     <controls:MruItemControl 
                                                         PinToggleRequested="MruItemControl_PinToggleRequested"
-                                                        RemoveRequested="MruItemControl_RemoveRequested"/>
+                                                        RemoveRequested="MruItemControl_RemoveRequested"
+                                                        FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"
+                                                        FocusNewsRequested="MruItemControl_FocusNewsRequested"
+                                                        FocusActionBarRequested="MruItemControl_FocusActionBarRequested"/>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
@@ -225,8 +240,9 @@
                           Margin="40 16 24 16"
                           BorderThickness="0"
                           BorderBrush="Transparent"
-                          Background="Transparent">
-                <StackPanel>
+                          Background="Transparent"
+                          Focusable="False">
+                <StackPanel Focusable="False">
                     <!-- Quick Links -->
                     <DockPanel Margin="0 0 0 20">
                         <TextBlock Text="{Binding DiscoverySectionTitle}"
@@ -275,11 +291,19 @@
                             <Button x:Name="RefreshNewsButton"
                                     Click="RefreshNewsButton_Click"
                                     Style="{StaticResource ActionButtonStyle}"
-                                    ToolTip="Refresh news feeds"
                                     Margin="8 0 0 0"
                                     Padding="4"
                                     BorderThickness="0"
                                     VerticalAlignment="Center">
+                                <Button.ToolTip>
+                                    <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                                             BorderThickness="1"
+                                             Padding="4">
+                                        <TextBlock Text="Refresh news feeds"/>
+                                    </ToolTip>
+                                </Button.ToolTip>
                                 <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}" 
                                                     Width="16" Height="16"
                                                     VerticalAlignment="Center"/>
@@ -300,8 +324,9 @@
                               FontWeight="SemiBold"
                               Opacity="0.7"
                               Margin="0 0 0 4"
+                              Focusable="False"
                               Visibility="{Binding PinnedNewsPosts.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
-                    <ItemsControl ItemsSource="{Binding PinnedNewsPosts}">
+                    <ItemsControl ItemsSource="{Binding PinnedNewsPosts}" Focusable="False">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel Orientation="Horizontal"/>
@@ -310,13 +335,14 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <controls:NewsItemControl MinWidth="280" MaxWidth="380" Width="350" Margin="0 0 64 20"
-                                                          PinToggleRequested="NewsItemControl_PinToggleRequested"/>
+                                                          PinToggleRequested="NewsItemControl_PinToggleRequested"
+                                                          FocusMruRequested="NewsItemControl_FocusMruRequested"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
                     <!-- News Cards in flowing columns -->
-                    <ItemsControl ItemsSource="{Binding NewsPosts}">
+                    <ItemsControl ItemsSource="{Binding NewsPosts}" Focusable="False">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel Orientation="Horizontal"/>
@@ -325,7 +351,8 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <controls:NewsItemControl MinWidth="280" MaxWidth="380" Width="350" Margin="0 0 64 20"
-                                                          PinToggleRequested="NewsItemControl_PinToggleRequested"/>
+                                                          PinToggleRequested="NewsItemControl_PinToggleRequested"
+                                                          FocusMruRequested="NewsItemControl_FocusMruRequested"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

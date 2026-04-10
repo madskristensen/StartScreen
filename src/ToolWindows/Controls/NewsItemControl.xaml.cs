@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.PlatformUI;
 using StartScreen.Models;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -15,6 +16,7 @@ namespace StartScreen.ToolWindows.Controls
         private NewsPost NewsPost => DataContext as NewsPost;
 
         public event EventHandler<NewsPost> PinToggleRequested;
+        public event EventHandler FocusMruRequested;
 
         public NewsItemControl()
         {
@@ -50,11 +52,28 @@ namespace StartScreen.ToolWindows.Controls
 
         private void RootBorder_MouseLeave(object sender, MouseEventArgs e)
         {
-            RootBorder.Background = Brushes.Transparent;
+            if (!RootBorder.IsKeyboardFocused)
+            {
+                RootBorder.Background = Brushes.Transparent;
+            }
 
             if (NewsPost != null && !NewsPost.IsPinned)
             {
                 PinButton.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void RootBorder_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            RootBorder.SetResourceReference(Border.BackgroundProperty,
+                EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey);
+        }
+
+        private void RootBorder_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (!RootBorder.IsMouseOver)
+            {
+                RootBorder.Background = Brushes.Transparent;
             }
         }
 
@@ -63,6 +82,173 @@ namespace StartScreen.ToolWindows.Controls
             if (e.ChangedButton == MouseButton.Left)
             {
                 OpenInBrowser();
+            }
+        }
+
+        private void RootBorder_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (NewsPost == null)
+                return;
+
+            if (e.Key == Key.Enter)
+            {
+                OpenInBrowser();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                CopyUrlMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Down || e.Key == Key.Up)
+            {
+                MoveVertically(e.Key == Key.Down);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Left)
+            {
+                if (IsInFirstColumn())
+                {
+                    FocusMruRequested?.Invoke(this, EventArgs.Empty);
+                }
+                else
+                {
+                    MoveHorizontally(false);
+                }
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Right)
+            {
+                MoveHorizontally(true);
+                e.Handled = true;
+            }
+        }
+
+        private bool IsInFirstColumn()
+        {
+            var parent = FindNewsScrollViewer(this);
+            if (parent == null)
+                return true;
+
+            var allItems = new List<NewsItemControl>();
+            CollectNewsItemControls(parent, allItems);
+
+            int index = allItems.IndexOf(this);
+            if (index < 0)
+                return true;
+
+            int columnsPerRow = GetColumnsPerRow(allItems);
+            return index % columnsPerRow == 0;
+        }
+
+        private void MoveVertically(bool down)
+        {
+            var parent = FindNewsScrollViewer(this);
+            if (parent == null)
+                return;
+
+            var allItems = new List<NewsItemControl>();
+            CollectNewsItemControls(parent, allItems);
+
+            int index = allItems.IndexOf(this);
+            if (index < 0)
+                return;
+
+            int columnsPerRow = GetColumnsPerRow(allItems);
+            int next = down ? index + columnsPerRow : index - columnsPerRow;
+
+            if (next >= 0 && next < allItems.Count)
+            {
+                allItems[next].RootBorder.Focus();
+            }
+        }
+
+        private void MoveHorizontally(bool right)
+        {
+            var parent = FindNewsScrollViewer(this);
+            if (parent == null)
+                return;
+
+            var allItems = new List<NewsItemControl>();
+            CollectNewsItemControls(parent, allItems);
+
+            int index = allItems.IndexOf(this);
+            if (index < 0)
+                return;
+
+            int next = right ? index + 1 : index - 1;
+            if (next >= 0 && next < allItems.Count)
+            {
+                allItems[next].RootBorder.Focus();
+            }
+        }
+
+        private static int GetColumnsPerRow(List<NewsItemControl> items)
+        {
+            if (items.Count < 2)
+                return 1;
+
+            // Compare the Y position of consecutive items to find how many fit in one row
+            double firstY = items[0].TranslatePoint(new Point(0, 0), items[0]).Y;
+            var firstItemPos = items[0].PointToScreen(new Point(0, 0));
+
+            for (int i = 1; i < items.Count; i++)
+            {
+                var pos = items[i].PointToScreen(new Point(0, 0));
+                if (Math.Abs(pos.Y - firstItemPos.Y) > 5)
+                    return i;
+            }
+
+            return items.Count;
+        }
+
+        private void MoveToAdjacentNewsItem(bool forward)
+        {
+            var parent = FindNewsScrollViewer(this);
+            if (parent == null)
+                return;
+
+            var allItems = new List<NewsItemControl>();
+            CollectNewsItemControls(parent, allItems);
+
+            int index = allItems.IndexOf(this);
+            if (index < 0)
+                return;
+
+            int next = forward ? index + 1 : index - 1;
+            if (next >= 0 && next < allItems.Count)
+            {
+                allItems[next].RootBorder.Focus();
+            }
+        }
+
+        private static FrameworkElement FindNewsScrollViewer(DependencyObject element)
+        {
+            DependencyObject current = element;
+            while (current != null)
+            {
+                if (current is ScrollViewer sv && sv.Name == "NewsScroll")
+                    return sv;
+
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return null;
+        }
+
+        private static void CollectNewsItemControls(DependencyObject parent, List<NewsItemControl> results)
+        {
+            int count = VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+                if (child is NewsItemControl news)
+                {
+                    results.Add(news);
+                }
+                else
+                {
+                    CollectNewsItemControls(child, results);
+                }
             }
         }
 

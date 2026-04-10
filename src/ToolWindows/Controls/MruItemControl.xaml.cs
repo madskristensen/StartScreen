@@ -23,11 +23,17 @@ namespace StartScreen.ToolWindows.Controls
 
         public event EventHandler<MruItem> PinToggleRequested;
         public event EventHandler<MruItem> RemoveRequested;
+        public event EventHandler FocusSearchBoxRequested;
+        public event EventHandler FocusNewsRequested;
+        public event EventHandler FocusActionBarRequested;
 
         public MruItemControl()
         {
             InitializeComponent();
             DataContextChanged += OnDataContextChanged;
+
+            // Only show tooltip on mouse hover, not keyboard focus
+            ToolTipService.SetIsEnabled(RootBorder, false);
 
             ContextMenu menu = RootBorder.ContextMenu;
             ThemedContextMenuHelper.ApplyVsTheme(menu);
@@ -43,7 +49,7 @@ namespace StartScreen.ToolWindows.Controls
                 // Items[6] is Separator
                 _pinMenuItem = (MenuItem)menu.Items[7];
                 _pinMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Pin);
-                ((MenuItem)menu.Items[8]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.DeleteListItem);
+                ((MenuItem)menu.Items[8]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Cancel);
             }
         }
 
@@ -63,11 +69,30 @@ namespace StartScreen.ToolWindows.Controls
         {
             RootBorder.SetResourceReference(Border.BackgroundProperty,
                 EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey);
+            ToolTipService.SetIsEnabled(RootBorder, true);
         }
 
         private void RootBorder_MouseLeave(object sender, MouseEventArgs e)
         {
-            RootBorder.Background = Brushes.Transparent;
+            if (!RootBorder.IsKeyboardFocused)
+            {
+                RootBorder.Background = Brushes.Transparent;
+            }
+            ToolTipService.SetIsEnabled(RootBorder, false);
+        }
+
+        private void RootBorder_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            RootBorder.SetResourceReference(Border.BackgroundProperty,
+                EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey);
+        }
+
+        private void RootBorder_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (!RootBorder.IsMouseOver)
+            {
+                RootBorder.Background = Brushes.Transparent;
+            }
         }
 
         private void RootBorder_MouseUp(object sender, MouseButtonEventArgs e)
@@ -75,6 +100,119 @@ namespace StartScreen.ToolWindows.Controls
             if (e.ChangedButton == MouseButton.Left && MruItem != null)
             {
                 ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
+            }
+        }
+
+        private void RootBorder_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (MruItem == null)
+                return;
+
+            if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                OpenInNewInstanceMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter)
+            {
+                OpenMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.O && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                OpenFolderMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                CopyPathMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.P && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                PinMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                OpenTerminalMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Delete)
+            {
+                RemoveMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Oem3 && Keyboard.Modifiers == ModifierKeys.Alt)
+            {
+                FocusSearchBoxRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Down || e.Key == Key.Up)
+            {
+                bool moved = MoveToAdjacentMruItem(e.Key == Key.Down);
+                if (!moved && e.Key == Key.Up)
+                {
+                    FocusActionBarRequested?.Invoke(this, EventArgs.Empty);
+                }
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Right)
+            {
+                FocusNewsRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+            }
+        }
+
+        private bool MoveToAdjacentMruItem(bool forward)
+        {
+            var parent = FindMruScrollViewer(this);
+            if (parent == null)
+                return false;
+
+            var allItems = new System.Collections.Generic.List<MruItemControl>();
+            CollectMruItemControls(parent, allItems);
+
+            int index = allItems.IndexOf(this);
+            if (index < 0)
+                return false;
+
+            int next = forward ? index + 1 : index - 1;
+            if (next >= 0 && next < allItems.Count)
+            {
+                allItems[next].RootBorder.Focus();
+                return true;
+            }
+            return false;
+        }
+
+        private static FrameworkElement FindMruScrollViewer(DependencyObject element)
+        {
+            DependencyObject current = element;
+            while (current != null)
+            {
+                if (current is ScrollViewer sv && sv.Name == "MruScroll")
+                    return sv;
+
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return null;
+        }
+
+        private static void CollectMruItemControls(DependencyObject parent, System.Collections.Generic.List<MruItemControl> results)
+        {
+            int count = VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+                if (child is MruItemControl mru)
+                {
+                    results.Add(mru);
+                }
+                else
+                {
+                    CollectMruItemControls(child, results);
+                }
             }
         }
 
@@ -191,6 +329,22 @@ namespace StartScreen.ToolWindows.Controls
                     : KnownMonikers.Pin;
                 PinButton.ToolTip = MruItem.IsPinned ? "Unpin" : "Pin";
             }
+        }
+
+        /// <summary>
+        /// Returns true if the RootBorder currently has keyboard focus.
+        /// </summary>
+        internal bool IsItemFocused()
+        {
+            return RootBorder.IsKeyboardFocused;
+        }
+
+        /// <summary>
+        /// Sets keyboard focus to the RootBorder.
+        /// </summary>
+        internal void FocusItem()
+        {
+            RootBorder.Focus();
         }
     }
 
