@@ -162,12 +162,7 @@ namespace StartScreen.ToolWindows
             _currentTipIndex = DateTime.Now.DayOfYear % TipProvider.TipCount;
             _currentTip = TipProvider.GetTipOfTheDay();
 
-            // Start watching for feed file changes and subscribe to event
-            FeedStore.StartWatching();
             FeedStore.FeedsChanged += OnFeedsChanged;
-
-            // Auto-refresh news feeds periodically
-            _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, AutoRefreshInterval, AutoRefreshInterval);
         }
 
         private void OnFeedsChanged(object sender, EventArgs e)
@@ -189,13 +184,19 @@ namespace StartScreen.ToolWindows
         /// </summary>
         public async Task LoadMruAsync()
         {
-            // Load MRU and news in parallel
-            var mruTask = MruService.GetMruItemsAsync();
+            // Deferred from constructor to avoid blocking tool window creation
+            FeedStore.StartWatching();
+            _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, AutoRefreshInterval, AutoRefreshInterval);
+
+            // Load options once for both MRU pinned state and news pinned state
+            var options = await Options.GetLiveInstanceAsync();
+
+            // Start feed task first (pure file I/O, no main thread needed)
             var feedTask = FeedService.GetCachedFeedAsync();
 
-            await Task.WhenAll(mruTask, feedTask);
+            // MRU needs the main thread for IVsMRUItemsStore
+            var mruItems = await MruService.GetMruItemsAsync(options);
 
-            var mruItems = await mruTask;
             var cachedFeed = await feedTask;
 
             // Switch to UI thread to update collections
@@ -209,7 +210,7 @@ namespace StartScreen.ToolWindows
                 var posts = FeedService.ConvertToNewsPosts(cachedFeed);
                 _allNewsPosts.Clear();
                 _allNewsPosts.AddRange(posts);
-                await ApplyPinnedStateToNewsAsync();
+                ApplyPinnedStateToNews(options);
                 UpdateNewsCollections();
             }
 
@@ -222,12 +223,15 @@ namespace StartScreen.ToolWindows
         /// </summary>
         public async Task RefreshInBackgroundAsync()
         {
-            var mruTask = RefreshMruAsync();
+            // Background tasks (no main thread needed initially)
             var newsTask = RefreshNewsAsync();
             var versionTask = RefreshVersionTitleAsync();
-            var updateTask = CheckForUpdateAsync();
 
-            await Task.WhenAll(mruTask, newsTask, versionTask, updateTask);
+            // Main-thread tasks run sequentially to avoid contention
+            await RefreshMruAsync();
+            await CheckForUpdateAsync();
+
+            await Task.WhenAll(newsTask, versionTask);
         }
 
         private async Task RefreshMruAsync()
@@ -239,12 +243,7 @@ namespace StartScreen.ToolWindows
                 // Update on UI thread
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                _allMruItems.Clear();
-                foreach (var item in updatedMru)
-                {
-                    _allMruItems.Add(item);
-                }
-
+                _allMruItems = new ObservableCollection<MruItem>(updatedMru);
                 UpdateMruCollections();
 
                 // Populate git status in background after UI is updated
@@ -326,12 +325,14 @@ namespace StartScreen.ToolWindows
 
         private async Task UpdateNewsPostsOnUIThreadAsync(List<NewsPost> posts)
         {
+            var options = await Options.GetLiveInstanceAsync();
+
             // Update on UI thread
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             _allNewsPosts.Clear();
             _allNewsPosts.AddRange(posts);
-            await ApplyPinnedStateToNewsAsync();
+            ApplyPinnedStateToNews(options);
             UpdateNewsCollections();
         }
 
@@ -356,9 +357,8 @@ namespace StartScreen.ToolWindows
         /// <summary>
         /// Applies the persisted pinned state to the current news posts.
         /// </summary>
-        private async Task ApplyPinnedStateToNewsAsync()
+        private void ApplyPinnedStateToNews(Options options)
         {
-            var options = await Options.GetLiveInstanceAsync();
             var pinnedUrls = new HashSet<string>(
                 (options.PinnedArticles ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries),
                 StringComparer.OrdinalIgnoreCase);
@@ -374,18 +374,12 @@ namespace StartScreen.ToolWindows
         /// </summary>
         private void UpdateNewsCollections()
         {
-            PinnedNewsPosts.Clear();
-            NewsPosts.Clear();
+            // Bulk-replace to fire a single CollectionChanged.Reset per collection
+            PinnedNewsPosts = new ObservableCollection<NewsPost>(_allNewsPosts.Where(p => p.IsPinned));
+            OnPropertyChanged(nameof(PinnedNewsPosts));
 
-            foreach (var post in _allNewsPosts.Where(p => p.IsPinned))
-            {
-                PinnedNewsPosts.Add(post);
-            }
-
-            foreach (var post in _allNewsPosts.Where(p => !p.IsPinned))
-            {
-                NewsPosts.Add(post);
-            }
+            NewsPosts = new ObservableCollection<NewsPost>(_allNewsPosts.Where(p => !p.IsPinned));
+            OnPropertyChanged(nameof(NewsPosts));
         }
 
         private async Task RefreshVersionTitleAsync()
@@ -562,17 +556,15 @@ namespace StartScreen.ToolWindows
                 item.Path.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
                 .ToList();
 
-            PinnedItems.Clear();
-            MruItems.Clear();
-            GroupedMruItems.Clear();
+            // Bulk-replace to fire a single CollectionChanged.Reset per collection
+            PinnedItems = new ObservableCollection<MruItem>(filtered.Where(i => i.IsPinned));
+            OnPropertyChanged(nameof(PinnedItems));
 
-            // Pinned items keep their existing order (set by saved options or drag reorder)
-            foreach (var item in filtered.Where(i => i.IsPinned))
-            {
-                PinnedItems.Add(item);
-            }
+            MruItems = new ObservableCollection<MruItem>();
+            OnPropertyChanged(nameof(MruItems));
 
-            BuildTimeGroups(filtered.Where(i => !i.IsPinned));
+            GroupedMruItems = BuildTimeGroups(filtered.Where(i => !i.IsPinned));
+            OnPropertyChanged(nameof(GroupedMruItems));
         }
 
         /// <summary>
@@ -580,42 +572,35 @@ namespace StartScreen.ToolWindows
         /// </summary>
         private void UpdateMruCollections()
         {
-            MruItems.Clear();
-            PinnedItems.Clear();
-            GroupedMruItems.Clear();
-
-            // Pinned items keep their existing order (set by saved options or drag reorder)
-            foreach (var item in _allMruItems.Where(i => i.IsPinned))
-            {
-                PinnedItems.Add(item);
-            }
-
+            var pinned = _allMruItems.Where(i => i.IsPinned).ToList();
             var unpinned = _allMruItems.Where(i => !i.IsPinned)
                                        .OrderByDescending(i => i.LastAccessed)
                                        .ToList();
 
-            foreach (var item in unpinned)
-            {
-                MruItems.Add(item);
-            }
+            // Bulk-replace to fire a single CollectionChanged.Reset per collection
+            PinnedItems = new ObservableCollection<MruItem>(pinned);
+            OnPropertyChanged(nameof(PinnedItems));
 
-            BuildTimeGroups(unpinned);
+            MruItems = new ObservableCollection<MruItem>(unpinned);
+            OnPropertyChanged(nameof(MruItems));
+
+            GroupedMruItems = BuildTimeGroups(unpinned);
+            OnPropertyChanged(nameof(GroupedMruItems));
         }
 
         /// <summary>
         /// Builds time-grouped collections from the given items.
         /// Groups are ordered: Today, Yesterday, This week, This month, Older.
         /// </summary>
-        private void BuildTimeGroups(IEnumerable<MruItem> items)
+        private static ObservableCollection<MruTimeGroup> BuildTimeGroups(IEnumerable<MruItem> items)
         {
-            // Define the desired group order
             var groupOrder = new[] { "Today", "Yesterday", "This week", "This month", "Older" };
 
             var groups = items
                 .GroupBy(i => i.TimeGroup)
-                .OrderBy(g => Array.IndexOf(groupOrder, g.Key))
-                .ToList();
+                .OrderBy(g => Array.IndexOf(groupOrder, g.Key));
 
+            var result = new ObservableCollection<MruTimeGroup>();
             foreach (var group in groups)
             {
                 var timeGroup = new MruTimeGroup { GroupName = group.Key };
@@ -623,8 +608,9 @@ namespace StartScreen.ToolWindows
                 {
                     timeGroup.Items.Add(item);
                 }
-                GroupedMruItems.Add(timeGroup);
+                result.Add(timeGroup);
             }
+            return result;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

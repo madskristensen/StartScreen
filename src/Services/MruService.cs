@@ -16,14 +16,14 @@ namespace StartScreen.Services
     /// Manages the Most Recently Used (MRU) list by reading from VS's IVsMRUItemsStore.
     /// Pinned state is stored in VS Options.
     /// </summary>
-    public static class MruService
+    internal static class MruService
     {
         private const uint MaxVsItems = 50;
 
         /// <summary>
         /// Reads VS's MRU via IVsMRUItemsStore and applies pinned state from Options.
         /// </summary>
-        public static async Task<List<MruItem>> GetMruItemsAsync()
+        public static async Task<List<MruItem>> GetMruItemsAsync(Options options = null)
         {
             // IVsMRUItemsStore must be accessed on the main thread
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -46,8 +46,12 @@ namespace StartScreen.Services
                 }
             }
 
-            // Read pinned state from Options
-            var options = await Options.GetLiveInstanceAsync();
+            // Use caller-provided options or load from settings
+            if (options == null)
+            {
+                options = await Options.GetLiveInstanceAsync();
+            }
+
             var pinnedPaths = new HashSet<string>(
                 (options.PinnedItems ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries),
                 StringComparer.OrdinalIgnoreCase);
@@ -304,6 +308,11 @@ namespace StartScreen.Services
         /// Searches for a .suo file inside .vs/{name}/v*/ next to the given solution/project path.
         /// Returns the last write time of the most recently modified .suo found, or null.
         /// </summary>
+        /// <remarks>
+        /// The .suo lives at .vs/{SolutionName}/v{N}/.suo (exactly 2 levels deep).
+        /// Using a targeted search avoids walking the entire .vs tree which may contain
+        /// large intellisense caches, build artifacts, and other VS data.
+        /// </remarks>
         private static DateTime? FindSuoLastWriteTime(string filePath)
         {
             try
@@ -316,14 +325,21 @@ namespace StartScreen.Services
                 if (!Directory.Exists(vsDir))
                     return null;
 
-                // Search for .suo files recursively under .vs/
+                // Search only 2 levels deep: .vs/{name}/v{N}/.suo
                 DateTime? latest = null;
-                foreach (var suo in Directory.EnumerateFiles(vsDir, ".suo", SearchOption.AllDirectories))
+                foreach (var subDir in Directory.EnumerateDirectories(vsDir))
                 {
-                    var writeTime = File.GetLastWriteTime(suo);
-                    if (!latest.HasValue || writeTime > latest.Value)
+                    foreach (var versionDir in Directory.EnumerateDirectories(subDir, "v*"))
                     {
-                        latest = writeTime;
+                        var suoPath = System.IO.Path.Combine(versionDir, ".suo");
+                        if (File.Exists(suoPath))
+                        {
+                            var writeTime = File.GetLastWriteTime(suoPath);
+                            if (!latest.HasValue || writeTime > latest.Value)
+                            {
+                                latest = writeTime;
+                            }
+                        }
                     }
                 }
 
