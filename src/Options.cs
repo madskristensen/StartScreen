@@ -42,8 +42,11 @@ namespace StartScreen
         [Browsable(false)]
         public DateTime LastFeedRead { get; set; } = DateTime.MinValue;
 
+        /// <summary>
+        /// Width of the left (MRU) pane, persisted when the user drags the splitter.
+        /// </summary>
         [Browsable(false)]
-        [DefaultValue(true)]
-        public bool LoadOnStartup { get; set; } = true;
+        [DefaultValue(500d)]
+        public double SplitterPosition { get; set; } = 500d;
     }
 }

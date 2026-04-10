@@ -24,6 +24,7 @@ namespace StartScreen.ToolWindows
             _viewModel = viewModel;
             _loadTask = loadTask;
             InitializeComponent();
+            RestoreSplitterPosition();
         }
 
         private async void UserControl_Loaded(object sender, RoutedEventArgs e)
@@ -58,6 +59,21 @@ namespace StartScreen.ToolWindows
         private async void ReleaseNotesLink_Click(object sender, RoutedEventArgs e)
         {
             await VS.Commands.ExecuteAsync("Help.ReleaseNotes");
+        }
+
+        private void RestoreSplitterPosition()
+        {
+            double saved = Options.Instance.SplitterPosition;
+            if (saved >= 500)
+            {
+                LeftColumn.Width = new GridLength(saved);
+            }
+        }
+
+        private void GridSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+        {
+            Options.Instance.SplitterPosition = LeftColumn.ActualWidth;
+            Options.Instance.SaveAsync().FileAndForget(nameof(StartScreenControl));
         }
 
         private async void NewProjectButton_Click(object sender, RoutedEventArgs e)
@@ -123,7 +139,7 @@ namespace StartScreen.ToolWindows
 
         private void MruItemControl_FocusNewsRequested(object sender, EventArgs e)
         {
-            var firstNews = FindFirstControl<NewsItemControl>(NewsScroll);
+            var firstNews = FindFirstControl<NewsItemControl>(NewsPanel);
             if (firstNews != null)
             {
                 firstNews.RootBorder.Focus();
@@ -198,7 +214,7 @@ namespace StartScreen.ToolWindows
 
         private void FocusFirstMruItem()
         {
-            var firstMru = FindFirstControl<MruItemControl>(MruScroll);
+            var firstMru = FindFirstControl<MruItemControl>(MruPanel);
             firstMru?.FocusItem();
         }
 
@@ -220,7 +236,7 @@ namespace StartScreen.ToolWindows
 
         private void FocusMruItemByPath(string path)
         {
-            var mruControl = FindMruItemControlByPath(MruScroll, path);
+            var mruControl = FindMruItemControlByPath(MruPanel, path);
             mruControl?.FocusItem();
         }
 

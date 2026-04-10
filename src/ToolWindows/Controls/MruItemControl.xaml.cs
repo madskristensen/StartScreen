@@ -191,8 +191,8 @@ namespace StartScreen.ToolWindows.Controls
             DependencyObject current = element;
             while (current != null)
             {
-                if (current is ScrollViewer sv && sv.Name == "MruScroll")
-                    return sv;
+                if (current is StackPanel sp && sp.Name == "MruPanel")
+                    return sp;
 
                 current = VisualTreeHelper.GetParent(current);
             }

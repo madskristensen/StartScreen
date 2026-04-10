@@ -28,16 +28,12 @@ namespace StartScreen
             // ProvideToolWindowVisibility handles showing automatically in the NoSolution context.
             // Schedule a deferred show as backup in case the visibility attribute didn't trigger.
 
-            //var options = await Options.GetLiveInstanceAsync();
-            //if (options.LoadOnStartup)
-            //{
             JoinableTaskFactory.RunAsync(async () =>
             {
                 // Yield to let the shell finish initializing
                 await Task.Yield();
                 await ShowStartScreenAsync();
             }).FileAndForget(nameof(StartScreen));
-            //}
 
             // Switch to main thread to subscribe to solution events
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
