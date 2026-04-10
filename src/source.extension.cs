@@ -10,7 +10,7 @@ namespace StartScreen
     {
         public const string Id = "StartScreen.2d76ac3d-7ff2-47e1-82d8-e507cf765bbe";
         public const string Name = "Start Screen";
-        public const string Description = @"A modern start screen for Visual Studio with MRU, developer news, and quick actions.";
+        public const string Description = @"A modern start screen for Visual Studio with recent projects, developer news, daily tips, and quick actions.";
         public const string Language = "en-US";
         public const string Version = "1.0";
         public const string Author = "Mads Kristensen";

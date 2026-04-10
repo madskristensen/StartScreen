@@ -3,7 +3,7 @@
     <Metadata>
         <Identity Id="StartScreen.2d76ac3d-7ff2-47e1-82d8-e507cf765bbe" Version="1.0" Language="en-US" Publisher="Mads Kristensen" />
         <DisplayName>Start Screen</DisplayName>
-        <Description xml:space="preserve">A modern start screen for Visual Studio with recent projects, developer news, and quick actions.</Description>
+        <Description xml:space="preserve">A modern start screen for Visual Studio with recent projects, developer news, daily tips, and quick actions.</Description>
         <MoreInfo>https://github.com/madskristensen/StartScreen</MoreInfo>
         <License>Resources\LICENSE.txt</License>
         <Icon>Resources\Icon.png</Icon>
@@ -11,9 +11,12 @@
         <Tags>news, start</Tags>
     </Metadata>
     <Installation>
-        <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0, 19.0)">
+        <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0,)">
             <ProductArchitecture>amd64</ProductArchitecture>
         </InstallationTarget>
+      <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0,)">
+        <ProductArchitecture>arm64</ProductArchitecture>
+      </InstallationTarget>
     </Installation>
     <Prerequisites>
         <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[17.0,)" DisplayName="Visual Studio core editor" />
