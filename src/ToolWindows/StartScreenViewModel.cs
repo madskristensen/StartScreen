@@ -192,12 +192,12 @@ namespace StartScreen.ToolWindows
             var options = await Options.GetLiveInstanceAsync();
 
             // Start feed task first (pure file I/O, no main thread needed)
-            var feedTask = FeedService.GetCachedFeedAsync();
+            var feedTask = FeedService.GetCachedPostsAsync();
 
             // MRU needs the main thread for IVsMRUItemsStore
             var mruItems = await MruService.GetMruItemsAsync(options);
 
-            var cachedFeed = await feedTask;
+            var cachedPosts = await feedTask;
 
             // Switch to UI thread to update collections
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -205,11 +205,10 @@ namespace StartScreen.ToolWindows
             _allMruItems = new ObservableCollection<MruItem>(mruItems);
             UpdateMruCollections();
 
-            if (cachedFeed != null)
+            if (cachedPosts != null && cachedPosts.Count > 0)
             {
-                var posts = FeedService.ConvertToNewsPosts(cachedFeed);
                 _allNewsPosts.Clear();
-                _allNewsPosts.AddRange(posts);
+                _allNewsPosts.AddRange(cachedPosts);
                 ApplyPinnedStateToNews(options);
                 UpdateNewsCollections();
             }
@@ -260,8 +259,7 @@ namespace StartScreen.ToolWindows
             try
             {
                 // Load from cache asynchronously to avoid blocking
-                var cachedFeed = await FeedService.GetCachedFeedAsync();
-                var posts = cachedFeed != null ? FeedService.ConvertToNewsPosts(cachedFeed) : null;
+                var posts = await FeedService.GetCachedPostsAsync();
                 var hasCachedItems = posts != null && posts.Count > 0;
 
                 if (hasCachedItems)
@@ -304,11 +302,10 @@ namespace StartScreen.ToolWindows
                 try
                 {
                     var feeds = FeedStore.GetFeeds();
-                    var updatedFeed = await FeedService.DownloadFeedsAsync(feeds);
+                    var posts = await FeedService.DownloadFeedsAsync(feeds);
 
-                    if (updatedFeed != null)
+                    if (posts != null)
                     {
-                        var posts = FeedService.ConvertToNewsPosts(updatedFeed);
                         await UpdateNewsPostsOnUIThreadAsync(posts);
                     }
                 }

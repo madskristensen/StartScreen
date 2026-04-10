@@ -66,6 +66,7 @@
     <Compile Include="Models\MruItem.cs" />
     <Compile Include="Models\MruTimeGroup.cs" />
     <Compile Include="Models\FeedInfo.cs" />
+    <Compile Include="Models\FeedCacheEntry.cs" />
     <Compile Include="Models\NewsPost.cs" />
     <Compile Include="Models\RecentTemplate.cs" />
     <Compile Include="Services\MruService.cs" />

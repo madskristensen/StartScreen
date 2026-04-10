@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading;
 using StartScreen.Models;
 
 namespace StartScreen.Services
@@ -72,11 +73,17 @@ namespace StartScreen.Services
             }
         }
 
+        private static Timer _debounceTimer;
+        private static readonly object _debounceLock = new object();
+
         private static void OnFileChanged(object sender, FileSystemEventArgs e)
         {
-            // Debounce - file save can trigger multiple events
-            System.Threading.Thread.Sleep(100);
-            FeedsChanged?.Invoke(null, EventArgs.Empty);
+            // Timer-based debounce - file save can trigger multiple events
+            lock (_debounceLock)
+            {
+                _debounceTimer?.Dispose();
+                _debounceTimer = new Timer(_ => FeedsChanged?.Invoke(null, EventArgs.Empty), null, 200, Timeout.Infinite);
+            }
         }
 
         /// <summary>

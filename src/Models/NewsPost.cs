@@ -172,6 +172,42 @@ namespace StartScreen.Models
             return post;
         }
 
+        /// <summary>
+        /// Converts this NewsPost to a lightweight cache entry for JSON serialization.
+        /// </summary>
+        internal FeedCacheEntry ToCacheEntry()
+        {
+            return new FeedCacheEntry
+            {
+                Title = Title,
+                Summary = Summary,
+                Url = Url,
+                PublishDate = PublishDate,
+                Source = Source,
+                HasDescription = HasDescription,
+            };
+        }
+
+        /// <summary>
+        /// Creates a NewsPost from a cached JSON entry.
+        /// </summary>
+        internal static NewsPost FromCacheEntry(FeedCacheEntry entry)
+        {
+            if (entry == null)
+                return null;
+
+            return new NewsPost
+            {
+                Title = entry.Title ?? string.Empty,
+                Summary = entry.Summary ?? string.Empty,
+                Url = entry.Url ?? string.Empty,
+                PublishDate = entry.PublishDate,
+                Source = entry.Source ?? string.Empty,
+                HasDescription = entry.HasDescription,
+                ToolTip = $"{entry.Title}\r\n{entry.PublishDate:MMMM d, yyyy}",
+            };
+        }
+
         private static string TruncateHtml(string input)
         {
             if (string.IsNullOrEmpty(input))

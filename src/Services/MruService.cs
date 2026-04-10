@@ -180,15 +180,6 @@ namespace StartScreen.Services
         }
 
         /// <summary>
-        /// Populates Git branch names for items in the background (legacy compatibility method).
-        /// </summary>
-        [Obsolete("Use PopulateGitStatusAsync instead for full Git status information.")]
-        public static Task PopulateGitBranchesAsync(IEnumerable<MruItem> items)
-        {
-            return PopulateGitStatusAsync(items).Task;
-        }
-
-        /// <summary>
         /// Parses a single MRU entry from IVsMRUItemsStore into an MruItem.
         /// </summary>
         /// <remarks>
@@ -394,6 +385,5 @@ namespace StartScreen.Services
                 return NormalizePath(item.Path);
             }
         }
-
-            }
-        }
+    }
+}

@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.ServiceModel.Syndication;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
@@ -22,7 +23,7 @@ namespace StartScreen.Services
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "StartScreen", "FeedCache");
 
-        private static readonly string CombinedFeedFile = Path.Combine(CacheFolder, "_feed.xml");
+        private static readonly string CombinedFeedFile = Path.Combine(CacheFolder, "_feed.json");
 
         private static readonly HttpClient HttpClient = new HttpClient();
         private static readonly TimeSpan StaleThreshold = TimeSpan.FromHours(4);
@@ -36,10 +37,10 @@ namespace StartScreen.Services
         }
 
         /// <summary>
-        /// Gets the cached combined feed asynchronously (no network).
+        /// Gets the cached news posts asynchronously (no network).
         /// Returns null if no cache exists.
         /// </summary>
-        public static async Task<SyndicationFeed> GetCachedFeedAsync()
+        public static async Task<List<NewsPost>> GetCachedPostsAsync()
         {
             try
             {
@@ -54,43 +55,16 @@ namespace StartScreen.Services
                     await stream.ReadAsync(fileBytes, 0, fileBytes.Length);
                 }
 
-                // Parse the XML (CPU-bound, but fast for small feeds)
-                using (var memoryStream = new MemoryStream(fileBytes))
-                using (var reader = XmlReader.Create(memoryStream))
-                {
-                    var feed = SyndicationFeed.Load(reader);
-                    feed.LastUpdatedTime = File.GetLastWriteTimeUtc(CombinedFeedFile);
-                    return feed;
-                }
+                List<FeedCacheEntry> entries = JsonSerializer.Deserialize<List<FeedCacheEntry>>(fileBytes);
+
+                return entries
+                    ?.Select(NewsPost.FromCacheEntry)
+                    .Where(post => post != null)
+                    .ToList();
             }
             catch (Exception ex)
             {
                 await ex.LogAsync();
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Gets the cached combined feed synchronously (instant, no network).
-        /// Returns null if no cache exists.
-        /// </summary>
-        public static SyndicationFeed GetCachedFeed()
-        {
-            try
-            {
-                if (!File.Exists(CombinedFeedFile))
-                    return null;
-
-                using (var reader = XmlReader.Create(CombinedFeedFile))
-                {
-                    var feed = SyndicationFeed.Load(reader);
-                    feed.LastUpdatedTime = File.GetLastWriteTimeUtc(CombinedFeedFile);
-                    return feed;
-                }
-            }
-            catch (Exception ex)
-            {
-                ex.Log();
                 return null;
             }
         }
@@ -109,9 +83,9 @@ namespace StartScreen.Services
 
         /// <summary>
         /// Downloads and refreshes feeds from the network.
-        /// Returns the updated feed, or null if download failed.
+        /// Returns the updated news posts, or null if download failed.
         /// </summary>
-        public static async Task<SyndicationFeed> DownloadFeedsAsync(IEnumerable<FeedInfo> feeds)
+        public static async Task<List<NewsPost>> DownloadFeedsAsync(IEnumerable<FeedInfo> feeds)
         {
             if (feeds == null || !feeds.Any())
                 return null;
@@ -119,21 +93,19 @@ namespace StartScreen.Services
             // Download and combine feeds
             try
             {
-                var combinedFeed = await DownloadAndCombineFeedsAsync(feeds);
+                SyndicationFeed combinedFeed = await DownloadAndCombineFeedsAsync(feeds);
 
-                if (combinedFeed != null)
-                {
-                    // Write to cache
-                    Directory.CreateDirectory(CacheFolder);
-                    using (var writer = XmlWriter.Create(CombinedFeedFile))
-                    {
-                        combinedFeed.SaveAsRss20(writer);
-                    }
+                if (combinedFeed == null)
+                    return null;
 
-                    Trace.TraceInformation("Feed cache refreshed successfully.");
-                }
+                List<NewsPost> posts = ConvertToNewsPosts(combinedFeed);
 
-                return combinedFeed;
+                // Write slim JSON cache
+                WriteCacheToDisk(posts);
+
+                Trace.TraceInformation("Feed cache refreshed successfully.");
+
+                return posts;
             }
             catch (Exception ex)
             {
@@ -332,7 +304,7 @@ namespace StartScreen.Services
         /// <summary>
         /// Converts a SyndicationFeed to a list of NewsPost models.
         /// </summary>
-        public static List<NewsPost> ConvertToNewsPosts(SyndicationFeed feed)
+        private static List<NewsPost> ConvertToNewsPosts(SyndicationFeed feed)
         {
             if (feed?.Items == null)
                 return new List<NewsPost>();
@@ -341,6 +313,28 @@ namespace StartScreen.Services
                 .Select(item => NewsPost.FromSyndicationItem(item))
                 .Where(post => post != null)
                 .ToList();
+        }
+
+        /// <summary>
+        /// Writes the combined news posts to the JSON cache file.
+        /// </summary>
+        private static void WriteCacheToDisk(List<NewsPost> posts)
+        {
+            try
+            {
+                Directory.CreateDirectory(CacheFolder);
+
+                List<FeedCacheEntry> entries = posts
+                    .Select(p => p.ToCacheEntry())
+                    .ToList();
+
+                byte[] json = JsonSerializer.SerializeToUtf8Bytes(entries);
+                File.WriteAllBytes(CombinedFeedFile, json);
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+            }
         }
     }
 }

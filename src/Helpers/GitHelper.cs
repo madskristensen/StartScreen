@@ -84,14 +84,6 @@ namespace StartScreen.Helpers
         }
 
         /// <summary>
-        /// Gets the current Git branch name for a given path (lightweight, for backward compatibility).
-        /// </summary>
-        public static string GetCurrentBranch(string path)
-        {
-            return GetGitStatus(path).BranchName;
-        }
-
-        /// <summary>
         /// Walks up from the given directory looking for a Git repository root.
         /// </summary>
         private static string FindRepositoryPath(string startDir)
