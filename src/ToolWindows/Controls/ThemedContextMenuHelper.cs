@@ -153,7 +153,8 @@ namespace StartScreen.ToolWindows.Controls
             gestureText.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Right);
             gestureText.SetValue(FrameworkElement.MarginProperty, new Thickness(24, 4, 8, 4));
             gestureText.SetValue(TextBlock.FontSizeProperty, 11.0);
-            gestureText.SetResourceReference(TextBlock.ForegroundProperty, EnvironmentColors.CommandBarTextInactiveBrushKey);
+            gestureText.SetValue(UIElement.OpacityProperty, 0.7);
+            gestureText.SetResourceReference(TextBlock.ForegroundProperty, EnvironmentColors.CommandBarTextActiveBrushKey);
 
             // Submenu arrow
             var arrow = new FrameworkElementFactory(typeof(Path));
@@ -265,18 +266,12 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public static CrispImage CreateMenuIcon(ImageMoniker moniker)
         {
-            var image = new CrispImage
+            return new CrispImage
             {
                 Moniker = moniker,
                 Width = 16,
                 Height = 16,
             };
-
-            // Pin the background color so the icon doesn't shift when the hover highlight changes.
-            var brush = Application.Current.TryFindResource(VsBrushes.CommandBarMenuIconBackgroundKey) as SolidColorBrush;
-            ImageThemingUtilities.SetImageBackgroundColor(image, brush?.Color ?? Colors.White);
-
-            return image;
         }
     }
 }
