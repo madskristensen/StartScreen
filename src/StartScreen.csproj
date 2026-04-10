@@ -87,6 +87,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources\newsfeeds.json" />
+    <EmbeddedResource Include="Resources\tips.txt" />
     <None Include="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
       <Generator>VsixManifestGenerator</Generator>

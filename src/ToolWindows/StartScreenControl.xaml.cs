@@ -106,6 +106,23 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape)
+            {
+                if (!string.IsNullOrEmpty(SearchBox.Text))
+                {
+                    SearchBox.Clear();
+                }
+                else
+                {
+                    FocusFirstMruItem();
+                }
+
+                e.Handled = true;
+            }
+        }
+
         private void MruItemControl_PinToggleRequested(object sender, MruItem item)
         {
             if (ViewModel == null)

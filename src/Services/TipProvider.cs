@@ -1,114 +1,80 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+
 namespace StartScreen.Services
 {
     /// <summary>
-    /// Provides tips to display on the Start Screen.
-    /// Swap the implementation to pull tips from a remote source or other backing store.
+    /// Provides tips loaded from the embedded <c>tips.txt</c> resource.
+    /// Each non-blank line that does not start with <c>#</c> is treated as a tip.
+    /// Lines starting with <c>#</c> are category comments and are ignored.
     /// </summary>
-    public interface ITipProvider
+    public static class TipProvider
     {
-        /// <summary>
-        /// Gets the tip for today. Implementations should rotate through available tips.
-        /// </summary>
-        string GetTipOfTheDay();
+        private static readonly IReadOnlyList<string> _tips = LoadTipsFromResource();
 
         /// <summary>
         /// Gets the total number of available tips.
         /// </summary>
-        int TipCount { get; }
+        public static int TipCount => _tips.Count;
 
         /// <summary>
-        /// Gets the tip at the specified index.
+        /// Gets the tip at the specified index, wrapping around if out of range.
         /// </summary>
-        string GetTipAt(int index);
-    }
-
-    /// <summary>
-    /// Default tip provider with a small set of hard-coded Visual Studio productivity tips.
-    /// </summary>
-    public sealed class HardCodedTipProvider : ITipProvider
-    {
-        private static readonly string[] Tips = new[]
+        public static string GetTipAt(int index)
         {
-            // Navigation
-            "Press Ctrl+Q to quickly search menus, options, and commands in Visual Studio.",
-            "Use Ctrl+T to navigate to any file, type, or member in your solution.",
-            "Press Ctrl+. to trigger Quick Actions and refactorings on the current line.",
-            "Hold Ctrl and click a symbol to navigate to its definition (Go To Definition).",
-            "Press Ctrl+Shift+F to search across all files in your solution.",
-            "Press F12 to go to the definition of the symbol under the caret.",
-            "Press Shift+F12 to find all references to the symbol at the caret.",
-            "Press Ctrl+F to quickly find in the current document. Press Ctrl+H to find and replace.",
-            "Press Ctrl+-(minus) to navigate backward to your last caret position. Press Ctrl+Shift+-(minus) to navigate forward.",
-            "Press Ctrl+G to go to a specific line number in the current document.",
-            "Press Ctrl+] to jump to the matching brace or bracket.",
-            "Press Alt+F7 to cycle through open tool windows. Press Esc to return focus to the editor.",
-            "Press Ctrl+Tab to navigate through open document windows and tool windows.",
-            "Press Ctrl+M, Ctrl+G in an MVC controller action method to open the relevant View file.",
-
-            // Editing
-            "Press Shift+F2 to quickly add a new item to the current folder in Solution Explorer.",
-            "Press Ctrl+Enter to insert a new blank line above the current line without moving the caret.",
-            "Press Ctrl+R, Ctrl+G to remove and sort using statements in the current file.",
-            "Press Ctrl+K, C to comment selected code. Press Ctrl+K, U to uncomment it.",
-            "Press Ctrl+D to duplicate the current line or selection.",
-            "Press Ctrl+L to cut the entire current line to the clipboard.",
-            "Press Ctrl+Shift+L to delete the current line without copying it to the clipboard.",
-            "Press Ctrl+Shift+V to cycle through the clipboard ring and paste previous entries.",
-            "Press Ctrl+Backspace to delete the word to the left of the cursor. Ctrl+Delete deletes to the right.",
-            "Press Alt+Up/Down arrow to move the current line or selected lines up or down.",
-            "Press Shift+Alt+Enter to toggle full screen mode for maximum code viewing space.",
-            "Use Alt+mouse drag to create a box selection for editing multiple lines at once.",
-            "Press Shift+Alt+= to expand the selection. Press Shift+Alt+- to contract it.",
-            "Press Ctrl+K, D to format the entire document. Press Ctrl+K, F to format just the selection.",
-            "Press Ctrl+Shift+U to make the selected text uppercase. Press Ctrl+U for lowercase.",
-            "Press Ctrl+Shift+Space to display parameter info for the current method overload.",
-            "Hold Ctrl to make IntelliSense tooltips semi-transparent so you can see the code behind them.",
-            "Press Alt+F12 to peek at a definition inline without leaving your current file.",
-
-            // Code Snippets and Refactoring
-            "Type 'for' and press Tab twice to insert a for loop snippet. Use 'forr' for a reverse loop.",
-            "Press Ctrl+. on a 'for' keyword to convert between for and foreach loops.",
-            "Press Ctrl+. on an 'if' keyword to convert between if-else chains and switch statements.",
-            "Press Ctrl+. on unreachable (faded) code and choose 'Remove unused code' to clean it up.",
-            "Press Ctrl+R, R to rename a symbol and update all references across your solution.",
-            "Press Ctrl+. on a type to move it to a matching file name with Move Type To New File.",
-
-            // Outlining and Regions
-            "Press Ctrl+M, O to collapse all code to definitions for a quick overview of the file.",
-            "Press Ctrl+M, M to toggle the expansion of the current region or code block.",
-            "Press Ctrl+M, H to hide the current selection. Press Ctrl+M, U to unhide it.",
-
-            // Tool Windows and Shell
-            "Press Shift+Esc to close the current tool window and return to the editor.",
-            "Use the code map (minimap) on the scrollbar to see an outline of your code document.",
-            "Ctrl+K, K toggles a bookmark on the current line. Ctrl+K, N/P navigates between bookmarks.",
-            "Press Ctrl+R, Ctrl+W to toggle visible whitespace characters in the editor.",
-            "Press Ctrl+[, P to filter Solution Explorer to show only files with pending source control changes.",
-            "Use Ctrl+; to search in Solution Explorer and quickly locate files and folders.",
-            "Enable 'Track Active Item in Solution Explorer' to auto-highlight the file you are editing.",
-            "Use the Task List window (Ctrl+\\, T) to see all TODO, HACK, and UNDONE comments in your code.",
-            "Press Ctrl+Shift+F9 to delete all breakpoints in your solution at once.",
-            "Use Window > Split Tab to split the editor and view two parts of the same file simultaneously.",
-            "Enable 'Preview Selected Items' in Solution Explorer to preview files with a single click.",
-            "Hold Ctrl and scroll the mouse wheel to increase or decrease the editor font size.",
-            "Use an .editorconfig file to define portable, consistent code style rules across your team.",
-        };
-
-        /// <inheritdoc />
-        public int TipCount => Tips.Length;
-
-        /// <inheritdoc />
-        public string GetTipAt(int index)
-        {
-            int wrapped = ((index % Tips.Length) + Tips.Length) % Tips.Length;
-            return Tips[wrapped];
+            int wrapped = ((index % _tips.Count) + _tips.Count) % _tips.Count;
+            return _tips[wrapped];
         }
 
-        /// <inheritdoc />
-        public string GetTipOfTheDay()
+        /// <summary>
+        /// Gets a tip based on the current day of the year.
+        /// </summary>
+        public static string GetTipOfTheDay()
         {
-            int index = DateTime.Now.DayOfYear % Tips.Length;
-            return Tips[index];
+            int index = DateTime.Now.DayOfYear % _tips.Count;
+            return _tips[index];
+        }
+
+        private static IReadOnlyList<string> LoadTipsFromResource()
+        {
+            try
+            {
+                Assembly assembly = Assembly.GetExecutingAssembly();
+                string resourceName = assembly.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("tips.txt", StringComparison.OrdinalIgnoreCase));
+
+                if (resourceName != null)
+                {
+                    using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+                    using (var reader = new StreamReader(stream))
+                    {
+                        var tips = new List<string>();
+                        string line;
+
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            if (!string.IsNullOrWhiteSpace(line) && !line.TrimStart().StartsWith("#"))
+                            {
+                                tips.Add(line);
+                            }
+                        }
+
+                        if (tips.Count > 0)
+                        {
+                            return tips;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+            }
+
+            return new[] { "Explore Visual Studio shortcuts to boost your productivity." };
         }
     }
 }

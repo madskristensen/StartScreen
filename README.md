@@ -85,7 +85,7 @@ learn something new.
 
 Have a tip to share? [Open an issue][repo] with your suggestion or submit
 a pull request directly to
-[TipProvider.cs](src/Services/TipProvider.cs).
+[tips.txt](src/Resources/tips.txt).
 
 ## Keyboard-first design
 

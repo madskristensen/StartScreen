@@ -26,7 +26,6 @@ namespace StartScreen.ToolWindows
         private int _currentTipIndex;
         private ObservableCollection<MruItem> _allMruItems;
         private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
-        private readonly ITipProvider _tipProvider;
         private Timer _autoRefreshTimer;
 
         public ObservableCollection<MruItem> MruItems { get; private set; }
@@ -136,7 +135,7 @@ namespace StartScreen.ToolWindows
         public void NextTip()
         {
             _currentTipIndex++;
-            CurrentTip = _tipProvider.GetTipAt(_currentTipIndex);
+            CurrentTip = TipProvider.GetTipAt(_currentTipIndex);
         }
 
         /// <summary>
@@ -145,18 +144,11 @@ namespace StartScreen.ToolWindows
         public void PreviousTip()
         {
             _currentTipIndex--;
-            CurrentTip = _tipProvider.GetTipAt(_currentTipIndex);
+            CurrentTip = TipProvider.GetTipAt(_currentTipIndex);
         }
 
         public StartScreenViewModel()
-            : this(new HardCodedTipProvider())
         {
-        }
-
-        public StartScreenViewModel(ITipProvider tipProvider)
-        {
-            _tipProvider = tipProvider;
-
             MruItems = new ObservableCollection<MruItem>();
             PinnedItems = new ObservableCollection<MruItem>();
             GroupedMruItems = new ObservableCollection<MruTimeGroup>();
@@ -167,8 +159,8 @@ namespace StartScreen.ToolWindows
             _allMruItems = new ObservableCollection<MruItem>();
             _discoverySectionTitle = "Discover what's new";
             _discoverySectionVersion = string.Empty;
-            _currentTipIndex = DateTime.Now.DayOfYear % _tipProvider.TipCount;
-            _currentTip = _tipProvider.GetTipOfTheDay();
+            _currentTipIndex = DateTime.Now.DayOfYear % TipProvider.TipCount;
+            _currentTip = TipProvider.GetTipOfTheDay();
 
             // Start watching for feed file changes and subscribe to event
             FeedStore.StartWatching();

@@ -148,7 +148,8 @@
                     <TextBox x:Name="SearchBox"
                             Height="32"
                             Style="{StaticResource SearchBoxStyle}"
-                            TextChanged="SearchBox_TextChanged"/>
+                            TextChanged="SearchBox_TextChanged"
+                            PreviewKeyDown="SearchBox_PreviewKeyDown"/>
                     <TextBlock Text="Search recent..."
                                Margin="32 0 0 0"
                                IsHitTestVisible="False"
