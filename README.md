@@ -10,50 +10,74 @@
 Download this extension from the [Visual Studio Marketplace][marketplace]
 or get the latest CI build from [Open VSIX Gallery][vsixgallery].
 
-Start Screen brings a fast, modern, and developer-focused launch experience to Visual Studio.
+----------------------------------------------
 
-![Start Screen screenshot placeholder](art/startscreen.png)
+**Your first five seconds in Visual Studio should feel *fast*.** Start Screen
+replaces the default launch experience with a clean, modern dashboard that
+gets you into code immediately - no clicking through menus, no waiting.
 
-It replaces the default start page with a practical workspace hub that helps you get productive right away.
+![Start Screen screenshot](art/startscreen.png)
 
-## Why you will love it
+## Get to work in one click
 
-- Clean dashboard for opening, creating, and cloning projects
-- Smart recent list with search, pinning, and time-based grouping
-- Developer news feed with curated sources and background refresh
-- Native Visual Studio look and feel with full theme integration
-- Lightweight and designed for speed
+Open a recent solution, create a new project, open a folder, or clone a
+repo - all from a single, focused screen. The action bar puts every common
+workflow front and center so you never have to dig through File menus again.
 
-## Features
+## Your recent projects, supercharged
 
-### Quick actions
+Start Screen doesn't just list your recent files. It understands how you
+work:
 
-Launch common workflows from one place:
+**Find anything instantly.** Type a few characters and the search filter
+narrows your list in real time. Pin the projects you care about most so
+they always float to the top.
 
-- New Project
-- Open Project
-- Open Folder
-- Clone Repository
+**See your Git status at a glance.** Every repo shows its current branch,
+ahead/behind counts, uncommitted changes, and the last commit time - all
+loaded in the background so the UI stays snappy. Hover for the full
+picture, or spot a detached HEAD before you accidentally commit to nowhere.
 
-### Intelligent recent files
+**Stay organized.** Projects are grouped by when you last touched them -
+*Today*, *This week*, *This month* - so yesterday's prototype doesn't bury
+this morning's deadline.
 
-- Instant filtering with search
-- Pin important solutions and projects
-- Organize recents by time groups like Today and This week
-- Git branch name displayed for each repository
-- Ahead/behind commit counts relative to the upstream tracking branch
-- Uncommitted changes indicator for dirty working directories
-- Last commit timestamp shown as a relative time (e.g., 2h ago)
-- Rich tooltip with branch, ahead/behind, and last commit details
-- Detached HEAD state shown as an abbreviated commit SHA
-- Git status loaded in the background without blocking the UI
-- Right-click context menu with keyboard shortcuts
+**Right-click for power moves.** Open the containing folder, launch a
+terminal, copy the path, pin, unpin, or remove - all from a context menu
+with keyboard shortcuts.
 
-### Keyboard navigation
+![Context menu](art/context-menu.png)
 
-Full keyboard support across the entire Start Screen:
+## Developer news, built right in
 
-**Recent solutions/folders list**
+A curated feed of engineering news from the Visual Studio Blog, .NET Blog,
+and more lives right next to your project list. It refreshes in the
+background and caches locally, so it's always ready and never slows you
+down.
+
+Want different sources? Drop your own RSS or Atom feeds into a simple JSON
+file and Start Screen picks them up automatically - no restart needed.
+
+```txt
+%USERPROFILE%\.vs\StartScreen\newsfeeds.json
+```
+
+```json
+{
+  "name": "My Custom Feed",
+  "url": "https://example.com/feed.xml",
+  "enabled": true
+}
+```
+
+Full JSON schema validation is included so you get IntelliSense while
+editing.
+
+## Keyboard-first design
+
+Every part of Start Screen is navigable without a mouse.
+
+### Recent solutions / folders
 
 | Shortcut   | Action                 |
 | ---------- | ---------------------- |
@@ -66,9 +90,9 @@ Full keyboard support across the entire Start Screen:
 | P          | Pin / Unpin            |
 | Del        | Remove from list       |
 | Alt+`      | Focus search box       |
-| Right      | Move focus to news     |
+| Right      | Jump to news feed      |
 
-**News feed**
+### News feed
 
 | Shortcut            | Action                     |
 | ------------------- | -------------------------- |
@@ -76,55 +100,31 @@ Full keyboard support across the entire Start Screen:
 | Left / Right        | Move between columns       |
 | Enter               | Open in browser            |
 | Ctrl+C              | Copy URL                   |
-| Left (first column) | Move focus to recent files |
+| Left (first column) | Jump back to recent files  |
 
-**Action bar**
+### Action bar
 
 | Shortcut     | Action                     |
 | ------------ | -------------------------- |
 | Left / Right | Move between buttons       |
 | Down         | Move focus to recent files |
 
-### Built-in developer news
+## Looks right at home
 
-- Read fresh engineering news directly inside Visual Studio
-- Combines multiple RSS and Atom sources into one view
-- Uses local cache for fast startup and background refresh for freshness
+Start Screen inherits your Visual Studio theme - Light, Dark, Blue, or
+whatever you're running. No jarring color mismatches, no extra
+configuration. It just blends in.
 
-### Custom feed URLs
+## Install it
 
-Add your own RSS or Atom feeds by editing the `newsfeeds.json` file:
-
-- Location: `%USERPROFILE%\.vs\StartScreen\newsfeeds.json`
-- Add entries with `name`, `url`, and `enabled` properties
-- Changes are detected automatically - no restart required
-- JSON schema validation is available for IntelliSense support
-
-Example entry:
-
-```json
-{
-  "name": "My Custom Feed",
-  "url": "https://example.com/feed.xml",
-  "enabled": true
-}
-```
-
-## Installation
-
-1. Install from the [Visual Studio Marketplace][marketplace].
+1. Grab it from the [Visual Studio Marketplace][marketplace].
 2. Restart Visual Studio.
-3. Open Start Screen and start coding.
+3. That's it. Start Screen is already waiting for you.
 
-## Configuration
+It works out of the box. Feed preferences and pinned items are persisted
+automatically.
 
-Start Screen is designed to work out of the box. Feed preferences and pinned items are persisted automatically.
+## Get involved
 
-## Feedback and support
-
-- Report bugs and request features in the [GitHub repository][repo]
-- Share ideas to help shape future improvements
-
-## Contribute
-
-Check out the [issue tracker](https://github.com/madskristensen/StartScreen/issues) for ideas, bugs, and feature requests. Pull requests are welcome.
+Found a bug? Have an idea? Head to the [issue tracker][repo] - pull
+requests are always welcome.
