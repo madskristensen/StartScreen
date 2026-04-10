@@ -15,14 +15,14 @@ namespace StartScreen.ToolWindows
     public partial class StartScreenControl : UserControl
     {
         private readonly StartScreenViewModel _viewModel;
-        private readonly Task _cacheLoadTask;
+        private readonly Task _loadTask;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
-        public StartScreenControl(StartScreenViewModel viewModel, Task cacheLoadTask)
+        public StartScreenControl(StartScreenViewModel viewModel, Task loadTask)
         {
             _viewModel = viewModel;
-            _cacheLoadTask = cacheLoadTask;
+            _loadTask = loadTask;
             InitializeComponent();
         }
 
@@ -40,13 +40,13 @@ namespace StartScreen.ToolWindows
                 // Yield to let the window paint first
                 await Task.Yield();
 
-                // Wait for cache load to complete (likely already done)
-                await _cacheLoadTask;
+                // Wait for MRU load to complete (likely already done)
+                await _loadTask;
 
                 // Bind ViewModel to trigger UI update
                 DataContext = _viewModel;
 
-                // Refresh from live sources in background
+                // Refresh news and version info in background
                 await _viewModel.RefreshInBackgroundAsync();
             }
             catch (Exception ex)

@@ -141,24 +141,23 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
-        /// Loads data asynchronously from local cache for display.
-        /// Called before the control is shown, so the UI appears populated.
+        /// Loads MRU data from VS's MRU store and news from cache for initial display.
         /// </summary>
-        public async Task LoadFromCacheAsync()
+        public async Task LoadMruAsync()
         {
-            // Load MRU and news from cache in parallel
-            var mruTask = MruService.GetCachedMruItemsAsync();
+            // Load MRU and news in parallel
+            var mruTask = MruService.GetMruItemsAsync();
             var feedTask = FeedService.GetCachedFeedAsync();
 
             await Task.WhenAll(mruTask, feedTask);
 
-            var cachedMru = await mruTask;
+            var mruItems = await mruTask;
             var cachedFeed = await feedTask;
 
             // Switch to UI thread to update collections
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-            _allMruItems = new ObservableCollection<MruItem>(cachedMru);
+            _allMruItems = new ObservableCollection<MruItem>(mruItems);
             UpdateMruCollections();
 
             if (cachedFeed != null)
@@ -171,16 +170,14 @@ namespace StartScreen.ToolWindows
             }
 
             // Populate git status in background after UI is updated
-            MruService.PopulateGitStatusAsync(cachedMru).FileAndForget(nameof(StartScreenViewModel));
+            MruService.PopulateGitStatusAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
         }
 
         /// <summary>
-        /// Refreshes data in the background after the UI is shown.
-        /// Updates collections seamlessly when new data arrives.
+        /// Refreshes news and version info in the background after the UI is shown.
         /// </summary>
         public async Task RefreshInBackgroundAsync()
         {
-            // Start refresh tasks in parallel, including version title
             var mruTask = RefreshMruAsync();
             var newsTask = RefreshNewsAsync();
             var versionTask = RefreshVersionTitleAsync();
@@ -407,7 +404,7 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
-        /// Removes an MRU item from the list.
+        /// Removes an MRU item from VS's MRU store and the in-memory list.
         /// </summary>
         public async Task RemoveMruItemAsync(MruItem item)
         {
@@ -415,7 +412,7 @@ namespace StartScreen.ToolWindows
                 return;
 
             _allMruItems.Remove(item);
-            await MruService.RemoveItemAsync(item.Path);
+            await MruService.RemoveItemAsync(item);
 
             UpdateMruCollections();
         }

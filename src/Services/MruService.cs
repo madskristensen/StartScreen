@@ -7,120 +7,24 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Threading.Tasks;
 using static Microsoft.VisualStudio.VSConstants;
 
 namespace StartScreen.Services
 {
     /// <summary>
-    /// Manages the Most Recently Used (MRU) list by reading from VS's IVsMRUItemsStore
-    /// and merging with a private JSON cache for pinning support.
+    /// Manages the Most Recently Used (MRU) list by reading from VS's IVsMRUItemsStore.
+    /// Pinned state is stored in VS Options.
     /// </summary>
     public static class MruService
     {
         private const uint MaxVsItems = 50;
 
-        private static readonly string LocalAppDataFolder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "StartScreen");
-
-        private static string _mruCacheFile;
-
         /// <summary>
-        /// Gets the MRU cache file path, which varies by VS version and root suffix.
-        /// </summary>
-        /// <remarks>
-        /// The cache file is named {MajorVersion}{RootSuffix}-mru.json, e.g.:
-        /// - 17-mru.json (VS 2022 regular)
-        /// - 17Exp-mru.json (VS 2022 experimental)
-        /// - 18-mru.json (VS 2025/2026 regular)
-        /// - 18Exp-mru.json (VS 2025/2026 experimental)
-        /// </remarks>
-        private static async Task<string> GetMruCacheFileAsync()
-        {
-            if (_mruCacheFile != null)
-            {
-                return _mruCacheFile;
-            }
-
-            int majorVersion = 17; // Fallback to VS 2022
-            string suffix = "";
-
-            try
-            {
-                // Ensure we're on the main thread for VS services
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-                Version version = await VS.Shell.GetVsVersionAsync();
-                if (version != null)
-                {
-                    majorVersion = version.Major;
-                }
-
-                PackageUtilities.IsExperimentalVersionOfVsForVsipDevelopment(out string rootSuffix);
-                suffix = string.IsNullOrEmpty(rootSuffix) ? "" : rootSuffix;
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-            }
-
-            _mruCacheFile = Path.Combine(LocalAppDataFolder, $"{majorVersion}{suffix}-mru.json");
-            return _mruCacheFile;
-        }
-
-        /// <summary>
-        /// Gets cached MRU items asynchronously for display on window open.
-        /// </summary>
-        public static async Task<List<MruItem>> GetCachedMruItemsAsync()
-        {
-            try
-            {
-                string mruCacheFile = await GetMruCacheFileAsync();
-
-                // Switch to background thread for file I/O to avoid blocking the UI thread
-                await TaskScheduler.Default;
-
-                if (!File.Exists(mruCacheFile))
-                    return new List<MruItem>();
-
-                string json;
-                using (var stream = new FileStream(mruCacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
-                using (var reader = new StreamReader(stream))
-                {
-                    json = await reader.ReadToEndAsync();
-                }
-
-                var items = JsonSerializer.Deserialize<List<MruItem>>(json) ?? new List<MruItem>();
-
-                // Deduplicate by solution directory so .sln and .slnx in the same
-                // folder collapse to one entry, keeping the most recently accessed.
-                var deduped = items
-                    .GroupBy(i => GetDeduplicationKey(i), StringComparer.OrdinalIgnoreCase)
-                    .Select(g => g.OrderByDescending(i => i.LastAccessed).First())
-                    .ToList();
-
-                // Sort: pinned first, then by last accessed
-                return deduped.OrderByDescending(i => i.IsPinned)
-                              .ThenByDescending(i => i.LastAccessed)
-                              .ToList();
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-                return new List<MruItem>();
-            }
-        }
-
-        /// <summary>
-        /// Reads VS's MRU via IVsMRUItemsStore and merges with cached items asynchronously.
+        /// Reads VS's MRU via IVsMRUItemsStore and applies pinned state from Options.
         /// </summary>
         public static async Task<List<MruItem>> GetMruItemsAsync()
         {
-            // Read cached items (preserves pinned state) on background thread
-            var cachedItems = await GetCachedMruItemsAsync();
-
             // IVsMRUItemsStore must be accessed on the main thread
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
@@ -142,6 +46,12 @@ namespace StartScreen.Services
                 }
             }
 
+            // Read pinned state from Options
+            var options = await Options.GetLiveInstanceAsync();
+            var pinnedPaths = new HashSet<string>(
+                (options.PinnedItems ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries),
+                StringComparer.OrdinalIgnoreCase);
+
             // Parse MRU entries on background thread (includes file I/O for timestamps)
             // Deduplicate so .sln and .slnx in the same directory collapse to one entry,
             // keeping the most recently accessed.
@@ -159,7 +69,13 @@ namespace StartScreen.Services
                     {
                         if (item.LastAccessed > existing.LastAccessed)
                         {
+                            // Keep the newer item but collect all raw entries
+                            item.RawMruEntries.AddRange(existing.RawMruEntries);
                             itemsByKey[key] = item;
+                        }
+                        else
+                        {
+                            existing.RawMruEntries.AddRange(item.RawMruEntries);
                         }
                     }
                     else
@@ -170,29 +86,44 @@ namespace StartScreen.Services
                 return itemsByKey.Values.ToList();
             });
 
-            // Merge: VS items are primary (correct order), cached items provide pinned state
-            var pinnedKeys = new HashSet<string>(
-                cachedItems.Where(c => c.IsPinned).Select(c => GetDeduplicationKey(c)),
-                StringComparer.OrdinalIgnoreCase);
-
-            // Apply pinned state from cache to VS items
+            // Apply pinned state from Options
             foreach (var item in vsItems)
             {
-                if (pinnedKeys.Contains(GetDeduplicationKey(item)))
-                {
-                    item.IsPinned = true;
-                }
+                item.IsPinned = pinnedPaths.Contains(item.Path);
             }
 
             // Sort: pinned first, then by last accessed (date and time)
-            var mruItems = vsItems.OrderByDescending(i => i.IsPinned)
-                                  .ThenByDescending(i => i.LastAccessed)
-                                  .ToList();
+            return vsItems.OrderByDescending(i => i.IsPinned)
+                          .ThenByDescending(i => i.LastAccessed)
+                          .ToList();
+        }
 
-            // Save merged list back to cache
-            await SyncAndSaveAsync(mruItems);
+        /// <summary>
+        /// Removes an item from VS's MRU store via IVsMRUItemsStore.DeleteMRUItem.
+        /// </summary>
+        public static async Task RemoveItemAsync(MruItem item)
+        {
+            if (item == null)
+                return;
 
-            return mruItems;
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                IVsMRUItemsStore store = await VS.GetServiceAsync<SVsMRUItemsStore, IVsMRUItemsStore>();
+                if (store == null)
+                    return;
+
+                Guid projectsGuid = MruList.Projects;
+                foreach (var rawEntry in item.RawMruEntries)
+                {
+                    store.DeleteMRUItem(ref projectsGuid, rawEntry);
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
         }
 
         /// <summary>
@@ -273,7 +204,7 @@ namespace StartScreen.Services
                     displayName = Path.GetFileNameWithoutExtension(rawPath);
                 }
 
-                return new MruItem
+                var item = new MruItem
                 {
                     Path = rawPath,
                     Name = displayName,
@@ -281,6 +212,9 @@ namespace StartScreen.Services
                     LastAccessed = GetLastAccessTime(rawPath),
                     IsPinned = false
                 };
+
+                item.RawMruEntries.Add(raw);
+                return item;
             }
             catch (Exception ex)
             {
@@ -432,41 +366,5 @@ namespace StartScreen.Services
             }
         }
 
-        /// <summary>
-        /// Saves the MRU list to the JSON cache file.
-        /// </summary>
-        public static async Task SyncAndSaveAsync(IEnumerable<MruItem> items)
-        {
-            try
-            {
-                string mruCacheFile = await GetMruCacheFileAsync();
-
-                await Task.Run(() =>
-                {
-                    Directory.CreateDirectory(LocalAppDataFolder);
-
-                    var json = JsonSerializer.Serialize(items, new JsonSerializerOptions
-                    {
-                        WriteIndented = true
-                    });
-
-                    File.WriteAllText(mruCacheFile, json);
-                });
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
             }
         }
-
-        /// <summary>
-        /// Removes an item from the MRU cache.
-        /// </summary>
-        public static async Task RemoveItemAsync(string path)
-        {
-            var items = await GetCachedMruItemsAsync();
-            items.RemoveAll(i => string.Equals(i.Path, path, StringComparison.OrdinalIgnoreCase));
-            await SyncAndSaveAsync(items);
-        }
-    }
-}

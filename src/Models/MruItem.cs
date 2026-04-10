@@ -32,6 +32,12 @@ namespace StartScreen.Models
         private DateTime? _lastCommitTime;
         private bool? _exists;
 
+        /// <summary>
+        /// The raw MRU entry strings from IVsMRUItemsStore, used for deletion.
+        /// Multiple entries may exist when deduplication collapses .sln and .slnx.
+        /// </summary>
+        internal System.Collections.Generic.List<string> RawMruEntries { get; } = new System.Collections.Generic.List<string>();
+
         public string Name
         {
             get => _name;
