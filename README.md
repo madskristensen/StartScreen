@@ -47,6 +47,43 @@ Launch common workflows from one place:
 - Rich tooltip with branch, ahead/behind, and last commit details
 - Detached HEAD state shown as an abbreviated commit SHA
 - Git status loaded in the background without blocking the UI
+- Right-click context menu with keyboard shortcuts
+
+### Keyboard navigation
+
+Full keyboard support across the entire Start Screen:
+
+**Recent solutions/folders list**
+
+| Shortcut   | Action                 |
+| ---------- | ---------------------- |
+| Up / Down  | Move between items     |
+| Enter      | Open                   |
+| Ctrl+Enter | Open in new instance   |
+| O          | Open containing folder |
+| T          | Open in terminal       |
+| Ctrl+C     | Copy path              |
+| P          | Pin / Unpin            |
+| Del        | Remove from list       |
+| Alt+`      | Focus search box       |
+| Right      | Move focus to news     |
+
+**News feed**
+
+| Shortcut            | Action                     |
+| ------------------- | -------------------------- |
+| Up / Down           | Move between rows          |
+| Left / Right        | Move between columns       |
+| Enter               | Open in browser            |
+| Ctrl+C              | Copy URL                   |
+| Left (first column) | Move focus to recent files |
+
+**Action bar**
+
+| Shortcut     | Action                     |
+| ------------ | -------------------------- |
+| Left / Right | Move between buttons       |
+| Down         | Move focus to recent files |
 
 ### Built-in developer news
 
