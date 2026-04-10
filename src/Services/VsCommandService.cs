@@ -133,8 +133,8 @@ namespace StartScreen.Services
 
             if (Directory.Exists(path))
             {
-                // Open as folder
-                await VS.Commands.ExecuteAsync("File.OpenFolder", path);
+                // Quote the path so spaces don't break command argument parsing
+                await VS.Commands.ExecuteAsync("File.OpenFolder", $"\"{path}\"");
             }
             else if (extension == ".sln" || extension == ".slnx")
             {
@@ -142,7 +142,7 @@ namespace StartScreen.Services
             }
             else
             {
-                // Project file or other — use open project command
+                // Project file or other - use open project command
                 dte.Solution.AddFromFile(path);
             }
         }
