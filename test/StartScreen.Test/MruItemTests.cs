@@ -263,5 +263,146 @@ namespace StartScreen.Test
 
             Assert.IsFalse(raised);
         }
+
+        [TestMethod]
+        public void PropertyChanged_WhenGitBranchChanges_RaisesHasGitBranch()
+        {
+            var item = new MruItem();
+            var changedProperties = new List<string>();
+            item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
+
+            item.GitBranch = "main";
+
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.HasGitBranch));
+        }
+
+        [TestMethod]
+        public void PropertyChanged_WhenGitBranchChanges_RaisesToolTipText()
+        {
+            var item = new MruItem();
+            var changedProperties = new List<string>();
+            item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
+
+            item.GitBranch = "main";
+
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.ToolTipText));
+        }
+
+        [TestMethod]
+        public void PropertyChanged_WhenCommitsAheadChanges_RaisesHasAheadBehind()
+        {
+            var item = new MruItem();
+            var changedProperties = new List<string>();
+            item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
+
+            item.CommitsAhead = 3;
+
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.HasAheadBehind));
+        }
+
+        [TestMethod]
+        public void PropertyChanged_WhenCommitsAheadChanges_RaisesAheadBehindText()
+        {
+            var item = new MruItem();
+            var changedProperties = new List<string>();
+            item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
+
+            item.CommitsAhead = 3;
+
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.AheadBehindText));
+        }
+
+        [TestMethod]
+        public void PropertyChanged_WhenCommitsBehindChanges_RaisesToolTipText()
+        {
+            var item = new MruItem();
+            var changedProperties = new List<string>();
+            item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
+
+            item.CommitsBehind = 2;
+
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.ToolTipText));
+        }
+
+        [TestMethod]
+        public void PropertyChanged_WhenHasUncommittedChangesChanges_RaisesToolTipText()
+        {
+            var item = new MruItem();
+            var changedProperties = new List<string>();
+            item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
+
+            item.HasUncommittedChanges = true;
+
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.ToolTipText));
+        }
+
+        [TestMethod]
+        public void PropertyChanged_WhenLastCommitTimeChanges_RaisesLastCommitTimeText()
+        {
+            var item = new MruItem();
+            var changedProperties = new List<string>();
+            item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
+
+            item.LastCommitTime = DateTime.Now.AddHours(-1);
+
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.LastCommitTimeText));
+        }
+
+        [TestMethod]
+        public void PropertyChanged_WhenPathChanges_RaisesExists()
+        {
+            var item = new MruItem();
+            var changedProperties = new List<string>();
+            item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
+
+            item.Path = @"C:\nonexistent\path.sln";
+
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.Exists));
+        }
+
+        [TestMethod]
+        public void AheadBehindText_WhenBothZero_ReturnsEmpty()
+        {
+            var item = new MruItem { CommitsAhead = 0, CommitsBehind = 0 };
+
+            Assert.AreEqual(string.Empty, item.AheadBehindText);
+        }
+
+        [TestMethod]
+        public void ToolTipText_WhenLastCommitTime_IncludesLastCommitLine()
+        {
+            var item = new MruItem
+            {
+                Path = @"C:\Projects\Test.sln",
+                LastCommitTime = DateTime.Now.AddHours(-2),
+            };
+
+            StringAssert.Contains(item.ToolTipText, "Last commit:");
+        }
+
+        [TestMethod]
+        public void FormattedDate_ReturnsShortDateString()
+        {
+            var date = new DateTime(2025, 6, 15, 14, 30, 0);
+            var item = new MruItem { LastAccessed = date };
+
+            Assert.AreEqual(date.ToString("d"), item.FormattedDate);
+        }
+
+        [TestMethod]
+        public void Exists_WhenPathIsNull_ReturnsFalse()
+        {
+            var item = new MruItem();
+
+            Assert.IsFalse(item.Exists);
+        }
+
+        [TestMethod]
+        public void Exists_WhenPathIsWhitespace_ReturnsFalse()
+        {
+            var item = new MruItem { Path = "   " };
+
+            Assert.IsFalse(item.Exists);
+        }
     }
 }

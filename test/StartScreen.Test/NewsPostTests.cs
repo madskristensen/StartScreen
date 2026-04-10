@@ -123,5 +123,169 @@ namespace StartScreen.Test
 
             Assert.AreEqual("C# & .NET", result.Title);
         }
+
+        [TestMethod]
+        public void FromSyndicationItem_WhenNoLinks_SetsUrlToEmpty()
+        {
+            var item = new SyndicationItem
+            {
+                Title = new TextSyndicationContent("No Link Post"),
+            };
+
+            NewsPost result = NewsPost.FromSyndicationItem(item);
+
+            Assert.AreEqual(string.Empty, result.Url);
+        }
+
+        [TestMethod]
+        public void FromSyndicationItem_WhenSummaryExceedsMaxLength_Truncates()
+        {
+            var longContent = new string('A', 2000);
+            var item = new SyndicationItem
+            {
+                Title = new TextSyndicationContent("Title"),
+                Summary = new TextSyndicationContent(longContent),
+            };
+
+            NewsPost result = NewsPost.FromSyndicationItem(item);
+
+            Assert.AreEqual(1000, result.Summary.Length);
+        }
+
+        [TestMethod]
+        public void FromSyndicationItem_WhenSummaryUnderMaxLength_IsNotTruncated()
+        {
+            var shortContent = "This is a short summary.";
+            var item = new SyndicationItem
+            {
+                Title = new TextSyndicationContent("Title"),
+                Summary = new TextSyndicationContent(shortContent),
+            };
+
+            NewsPost result = NewsPost.FromSyndicationItem(item);
+
+            Assert.AreEqual(shortContent, result.Summary);
+        }
+
+        [TestMethod]
+        public void FromSyndicationItem_SetsPublishDate()
+        {
+            var publishDate = new DateTimeOffset(2025, 5, 20, 14, 0, 0, TimeSpan.Zero);
+            var item = new SyndicationItem("Title", "Content", null)
+            {
+                PublishDate = publishDate,
+            };
+
+            NewsPost result = NewsPost.FromSyndicationItem(item);
+
+            Assert.AreEqual(publishDate.DateTime, result.PublishDate);
+        }
+
+        [TestMethod]
+        public void IsNew_WhenPublishedExactlyThreeDaysAgo_ReturnsFalse()
+        {
+            var post = new NewsPost { PublishDate = DateTime.Now.AddDays(-3) };
+
+            Assert.IsFalse(post.IsNew);
+        }
+
+        [TestMethod]
+        public void IsNew_WhenPublishedJustUnderThreeDaysAgo_ReturnsTrue()
+        {
+            var post = new NewsPost { PublishDate = DateTime.Now.AddDays(-2.99) };
+
+            Assert.IsTrue(post.IsNew);
+        }
+
+        [TestMethod]
+        public void ToCacheEntry_PreservesAllFields()
+        {
+            var original = new NewsPost
+            {
+                Title = "Test Title",
+                Summary = "Test Summary",
+                Url = "https://example.com/post",
+                PublishDate = new DateTime(2025, 6, 15, 10, 30, 0),
+                Source = "Jun 15 in Test Feed",
+                HasDescription = true,
+            };
+
+            FeedCacheEntry entry = original.ToCacheEntry();
+
+            Assert.AreEqual("Test Title", entry.Title);
+            Assert.AreEqual("Test Summary", entry.Summary);
+            Assert.AreEqual("https://example.com/post", entry.Url);
+            Assert.AreEqual(new DateTime(2025, 6, 15, 10, 30, 0), entry.PublishDate);
+            Assert.AreEqual("Jun 15 in Test Feed", entry.Source);
+            Assert.IsTrue(entry.HasDescription);
+        }
+
+        [TestMethod]
+        public void FromCacheEntry_PreservesAllFields()
+        {
+            var entry = new FeedCacheEntry
+            {
+                Title = "Cached Title",
+                Summary = "Cached Summary",
+                Url = "https://example.com/cached",
+                PublishDate = new DateTime(2025, 3, 10),
+                Source = "Mar 10 in Blog",
+                HasDescription = true,
+            };
+
+            NewsPost post = NewsPost.FromCacheEntry(entry);
+
+            Assert.AreEqual("Cached Title", post.Title);
+            Assert.AreEqual("Cached Summary", post.Summary);
+            Assert.AreEqual("https://example.com/cached", post.Url);
+            Assert.AreEqual(new DateTime(2025, 3, 10), post.PublishDate);
+            Assert.AreEqual("Mar 10 in Blog", post.Source);
+            Assert.IsTrue(post.HasDescription);
+        }
+
+        [TestMethod]
+        public void FromCacheEntry_WhenNull_ReturnsNull()
+        {
+            NewsPost result = NewsPost.FromCacheEntry(null);
+
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public void FromCacheEntry_WhenFieldsNull_DefaultsToEmptyStrings()
+        {
+            var entry = new FeedCacheEntry();
+
+            NewsPost post = NewsPost.FromCacheEntry(entry);
+
+            Assert.AreEqual(string.Empty, post.Title);
+            Assert.AreEqual(string.Empty, post.Summary);
+            Assert.AreEqual(string.Empty, post.Url);
+            Assert.AreEqual(string.Empty, post.Source);
+        }
+
+        [TestMethod]
+        public void CacheRoundTrip_PreservesData()
+        {
+            var original = new NewsPost
+            {
+                Title = "Round Trip",
+                Summary = "Summary text",
+                Url = "https://example.com/rt",
+                PublishDate = new DateTime(2025, 1, 20, 8, 0, 0),
+                Source = "Jan 20 in Blog",
+                HasDescription = true,
+            };
+
+            FeedCacheEntry entry = original.ToCacheEntry();
+            NewsPost restored = NewsPost.FromCacheEntry(entry);
+
+            Assert.AreEqual(original.Title, restored.Title);
+            Assert.AreEqual(original.Summary, restored.Summary);
+            Assert.AreEqual(original.Url, restored.Url);
+            Assert.AreEqual(original.PublishDate, restored.PublishDate);
+            Assert.AreEqual(original.Source, restored.Source);
+            Assert.AreEqual(original.HasDescription, restored.HasDescription);
+        }
     }
 }
