@@ -12,6 +12,16 @@ namespace StartScreen.Services
         /// Gets the tip for today. Implementations should rotate through available tips.
         /// </summary>
         string GetTipOfTheDay();
+
+        /// <summary>
+        /// Gets the total number of available tips.
+        /// </summary>
+        int TipCount { get; }
+
+        /// <summary>
+        /// Gets the tip at the specified index.
+        /// </summary>
+        string GetTipAt(int index);
     }
 
     /// <summary>
@@ -85,6 +95,16 @@ namespace StartScreen.Services
             "Hold Ctrl and scroll the mouse wheel to increase or decrease the editor font size.",
             "Use an .editorconfig file to define portable, consistent code style rules across your team.",
         };
+
+        /// <inheritdoc />
+        public int TipCount => Tips.Length;
+
+        /// <inheritdoc />
+        public string GetTipAt(int index)
+        {
+            int wrapped = ((index % Tips.Length) + Tips.Length) % Tips.Length;
+            return Tips[wrapped];
+        }
 
         /// <inheritdoc />
         public string GetTipOfTheDay()

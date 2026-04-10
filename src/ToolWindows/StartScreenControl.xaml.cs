@@ -298,6 +298,31 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        private async void UpdateNowButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (ViewModel != null)
+                {
+                    await ViewModel.UpdateVisualStudioAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        private void NextTipButton_Click(object sender, RoutedEventArgs e)
+        {
+            ViewModel?.NextTip();
+        }
+
+        private void PrevTipButton_Click(object sender, RoutedEventArgs e)
+        {
+            ViewModel?.PreviousTip();
+        }
+
         private static readonly string[] OpenableExtensions = { ".sln", ".slnx", ".csproj", ".vbproj", ".fsproj", ".vcxproj" };
 
         private void UserControl_DragOver(object sender, DragEventArgs e)

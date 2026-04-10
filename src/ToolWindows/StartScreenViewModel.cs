@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Microsoft.VisualStudio.Shell.Interop;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -17,10 +18,12 @@ namespace StartScreen.ToolWindows
     {
         private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromHours(4);
         private bool _isRefreshingNews;
+        private bool _isUpdateAvailable;
         private string _searchFilter;
         private string _discoverySectionTitle;
         private string _discoverySectionVersion;
         private string _currentTip;
+        private int _currentTipIndex;
         private ObservableCollection<MruItem> _allMruItems;
         private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
         private readonly ITipProvider _tipProvider;
@@ -41,6 +44,22 @@ namespace StartScreen.ToolWindows
                 if (_isRefreshingNews != value)
                 {
                     _isRefreshingNews = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when a Visual Studio update is available.
+        /// </summary>
+        public bool IsUpdateAvailable
+        {
+            get => _isUpdateAvailable;
+            set
+            {
+                if (_isUpdateAvailable != value)
+                {
+                    _isUpdateAvailable = value;
                     OnPropertyChanged();
                 }
             }
@@ -111,6 +130,24 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        /// <summary>
+        /// Advances to the next tip.
+        /// </summary>
+        public void NextTip()
+        {
+            _currentTipIndex++;
+            CurrentTip = _tipProvider.GetTipAt(_currentTipIndex);
+        }
+
+        /// <summary>
+        /// Goes back to the previous tip.
+        /// </summary>
+        public void PreviousTip()
+        {
+            _currentTipIndex--;
+            CurrentTip = _tipProvider.GetTipAt(_currentTipIndex);
+        }
+
         public StartScreenViewModel()
             : this(new HardCodedTipProvider())
         {
@@ -130,6 +167,7 @@ namespace StartScreen.ToolWindows
             _allMruItems = new ObservableCollection<MruItem>();
             _discoverySectionTitle = "Discover what's new";
             _discoverySectionVersion = string.Empty;
+            _currentTipIndex = DateTime.Now.DayOfYear % _tipProvider.TipCount;
             _currentTip = _tipProvider.GetTipOfTheDay();
 
             // Start watching for feed file changes and subscribe to event
@@ -195,8 +233,9 @@ namespace StartScreen.ToolWindows
             var mruTask = RefreshMruAsync();
             var newsTask = RefreshNewsAsync();
             var versionTask = RefreshVersionTitleAsync();
+            var updateTask = CheckForUpdateAsync();
 
-            await Task.WhenAll(mruTask, newsTask, versionTask);
+            await Task.WhenAll(mruTask, newsTask, versionTask, updateTask);
         }
 
         private async Task RefreshMruAsync()
@@ -395,6 +434,46 @@ namespace StartScreen.ToolWindows
             catch (Exception ex)
             {
                 ex.Log();
+            }
+        }
+
+        /// <summary>
+        /// Checks whether a Visual Studio update is available via the setup composition service.
+        /// </summary>
+        private async Task CheckForUpdateAsync()
+        {
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                var setupService = await VS.GetServiceAsync<SVsSetupCompositionService, IVsSetupCompositionService>();
+                if (setupService != null)
+                {
+                    IsUpdateAvailable = setupService.IsManifestRefreshedAndUpdateAvailable;
+                }
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+            }
+        }
+
+        /// <summary>
+        /// Triggers the Visual Studio update flow.
+        /// </summary>
+        public async Task UpdateVisualStudioAsync()
+        {
+            try
+            {
+                //await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                //var setupService = await VS.GetServiceAsync<SVsSetupCompositionService, IVsSetupCompositionService3>();
+                //setupService?.UpdateVisualStudioInstance();
+                await VS.Commands.ExecuteAsync("Help.Help.CheckForUpdates");
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
             }
         }
 
