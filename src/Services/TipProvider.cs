@@ -1,5 +1,3 @@
-using System;
-
 namespace StartScreen.Services
 {
     /// <summary>
@@ -90,7 +88,7 @@ namespace StartScreen.Services
             "Enable 'Track Active Item in Solution Explorer' to auto-highlight the file you are editing.",
             "Use the Task List window (Ctrl+\\, T) to see all TODO, HACK, and UNDONE comments in your code.",
             "Press Ctrl+Shift+F9 to delete all breakpoints in your solution at once.",
-            "Use Window > Split to split the editor and view two parts of the same file simultaneously.",
+            "Use Window > Split Tab to split the editor and view two parts of the same file simultaneously.",
             "Enable 'Preview Selected Items' in Solution Explorer to preview files with a single click.",
             "Hold Ctrl and scroll the mouse wheel to increase or decrease the editor font size.",
             "Use an .editorconfig file to define portable, consistent code style rules across your team.",

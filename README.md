@@ -73,6 +73,20 @@ file and Start Screen picks them up automatically - no restart needed.
 Full JSON schema validation is included so you get IntelliSense while
 editing.
 
+## Tip of the day
+
+Every time Visual Studio starts, a short productivity tip appears at the
+bottom of the Start Screen. The tips rotate daily and cover navigation
+shortcuts, editing tricks, refactoring commands, and other features you
+might not know about. No configuration required - just glance down and
+learn something new.
+
+![Tip of the day screenshot](art/tip.png)
+
+Have a tip to share? [Open an issue][repo] with your suggestion or submit
+a pull request directly to
+[TipProvider.cs](src/Services/TipProvider.cs).
+
 ## Keyboard-first design
 
 Every part of Start Screen is navigable without a mouse.
