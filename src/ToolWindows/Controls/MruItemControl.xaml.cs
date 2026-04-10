@@ -20,6 +20,7 @@ namespace StartScreen.ToolWindows.Controls
     {
         private MruItem MruItem => DataContext as MruItem;
         private readonly MenuItem _pinMenuItem;
+        private Point? _dragStartPoint;
 
         public event EventHandler<MruItem> PinToggleRequested;
         public event EventHandler<MruItem> RemoveRequested;
@@ -97,9 +98,35 @@ namespace StartScreen.ToolWindows.Controls
 
         private void RootBorder_MouseUp(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton == MouseButton.Left && MruItem != null)
+            if (e.ChangedButton == MouseButton.Left && MruItem != null && _dragStartPoint.HasValue)
             {
+                _dragStartPoint = null;
                 ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
+            }
+        }
+
+        internal void HandlePreviewMouseLeftButtonDown(MouseButtonEventArgs e)
+        {
+            if (MruItem != null && MruItem.IsPinned)
+            {
+                _dragStartPoint = e.GetPosition(this);
+            }
+        }
+
+        internal void HandlePreviewMouseMove(MouseEventArgs e)
+        {
+            if (_dragStartPoint == null || e.LeftButton != MouseButtonState.Pressed || MruItem == null || !MruItem.IsPinned)
+                return;
+
+            Point currentPos = e.GetPosition(this);
+            Vector diff = currentPos - _dragStartPoint.Value;
+
+            if (Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance ||
+                Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance)
+            {
+                _dragStartPoint = null;
+                var data = new DataObject("PinnedMruItem", MruItem);
+                DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
             }
         }
 

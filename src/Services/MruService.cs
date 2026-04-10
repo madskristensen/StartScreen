@@ -86,16 +86,29 @@ namespace StartScreen.Services
                 return itemsByKey.Values.ToList();
             });
 
-            // Apply pinned state from Options
+            // Apply pinned state from Options and build an ordered list for stable pin ordering
+            var pinnedOrderList = (options.PinnedItems ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+            var pinnedOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < pinnedOrderList.Length; i++)
+            {
+                pinnedOrder[pinnedOrderList[i]] = i;
+            }
+
             foreach (var item in vsItems)
             {
                 item.IsPinned = pinnedPaths.Contains(item.Path);
             }
 
-            // Sort: pinned first, then by last accessed (date and time)
-            return vsItems.OrderByDescending(i => i.IsPinned)
-                          .ThenByDescending(i => i.LastAccessed)
-                          .ToList();
+            // Sort: pinned first (in saved order), then unpinned by last accessed
+            var pinned = vsItems.Where(i => i.IsPinned)
+                                .OrderBy(i => pinnedOrder.TryGetValue(i.Path, out int idx) ? idx : int.MaxValue)
+                                .ToList();
+            var unpinned = vsItems.Where(i => !i.IsPinned)
+                                  .OrderByDescending(i => i.LastAccessed)
+                                  .ToList();
+
+            pinned.AddRange(unpinned);
+            return pinned;
         }
 
         /// <summary>

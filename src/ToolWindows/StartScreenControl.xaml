@@ -167,7 +167,13 @@
                                   Margin="0 12 0 4"
                                   Focusable="False"
                                   Visibility="{Binding PinnedItems.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
-                        <ItemsControl ItemsSource="{Binding PinnedItems}" Focusable="False">
+                        <ItemsControl x:Name="PinnedItemsControl" ItemsSource="{Binding PinnedItems}" Focusable="False"
+                                      AllowDrop="True"
+                                      DragOver="PinnedItems_DragOver"
+                                      Drop="PinnedItems_Drop"
+                                      DragLeave="PinnedItems_DragLeave"
+                                      PreviewMouseLeftButtonDown="PinnedItems_PreviewMouseLeftButtonDown"
+                                      PreviewMouseMove="PinnedItems_PreviewMouseMove">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <VirtualizingStackPanel/>

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using StartScreen.Models;
@@ -16,6 +17,7 @@ namespace StartScreen.ToolWindows
     {
         private readonly StartScreenViewModel _viewModel;
         private readonly Task _loadTask;
+        private DropIndicatorAdorner _dropAdorner;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -258,6 +260,124 @@ namespace StartScreen.ToolWindows
             return null;
         }
 
+        private void PinnedItems_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var mruControl = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
+            mruControl?.HandlePreviewMouseLeftButtonDown(e);
+        }
+
+        private void PinnedItems_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            var mruControl = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
+            mruControl?.HandlePreviewMouseMove(e);
+        }
+
+        private void PinnedItems_DragOver(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent("PinnedMruItem"))
+            {
+                return;
+            }
+
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+
+            // Find the MruItemControl under the cursor to show drop indicator
+            var target = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
+            if (target == null)
+            {
+                RemoveDropAdorner();
+                return;
+            }
+
+            // Determine if dropping above or below the target
+            Point pos = e.GetPosition(target);
+            bool insertAfter = pos.Y > target.ActualHeight / 2;
+
+            ShowDropAdorner(target, insertAfter);
+        }
+
+        private void PinnedItems_DragLeave(object sender, DragEventArgs e)
+        {
+            RemoveDropAdorner();
+        }
+
+        private void PinnedItems_Drop(object sender, DragEventArgs e)
+        {
+            RemoveDropAdorner();
+
+            if (!e.Data.GetDataPresent("PinnedMruItem") || ViewModel == null)
+                return;
+
+            var draggedItem = e.Data.GetData("PinnedMruItem") as MruItem;
+            if (draggedItem == null)
+                return;
+
+            // Find the target MruItemControl
+            var target = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
+            if (target == null || !(target.DataContext is MruItem targetItem) || !targetItem.IsPinned)
+                return;
+
+            // Determine insert index
+            int targetIndex = ViewModel.PinnedItems.IndexOf(targetItem);
+            if (targetIndex < 0)
+                return;
+
+            Point pos = e.GetPosition(target);
+            if (pos.Y > target.ActualHeight / 2)
+            {
+                targetIndex++;
+            }
+
+            // Adjust if dragging from before the target position
+            int currentIndex = ViewModel.PinnedItems.IndexOf(draggedItem);
+            if (currentIndex >= 0 && currentIndex < targetIndex)
+            {
+                targetIndex--;
+            }
+
+            e.Handled = true;
+
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                await ViewModel.MovePinnedItemAsync(draggedItem, targetIndex);
+            }).FileAndForget(nameof(StartScreenControl));
+        }
+
+        private void ShowDropAdorner(MruItemControl target, bool below)
+        {
+            RemoveDropAdorner();
+
+            var layer = AdornerLayer.GetAdornerLayer(target);
+            if (layer == null)
+                return;
+
+            _dropAdorner = new DropIndicatorAdorner(target, below);
+            layer.Add(_dropAdorner);
+        }
+
+        private void RemoveDropAdorner()
+        {
+            if (_dropAdorner != null)
+            {
+                var layer = AdornerLayer.GetAdornerLayer(_dropAdorner.AdornedElement);
+                layer?.Remove(_dropAdorner);
+                _dropAdorner = null;
+            }
+        }
+
+        private static T FindAncestor<T>(DependencyObject element) where T : DependencyObject
+        {
+            while (element != null)
+            {
+                if (element is T match)
+                    return match;
+
+                element = VisualTreeHelper.GetParent(element);
+            }
+            return null;
+        }
+
         private void NewsItemControl_PinToggleRequested(object sender, NewsPost post)
         {
             if (ViewModel != null)
@@ -396,6 +516,36 @@ namespace StartScreen.ToolWindows
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         {
             throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Adorner that draws a horizontal line to indicate where a dragged pinned item will be dropped.
+    /// </summary>
+    internal sealed class DropIndicatorAdorner : Adorner
+    {
+        private readonly bool _below;
+        private static readonly Pen IndicatorPen = CreateIndicatorPen();
+
+        public DropIndicatorAdorner(UIElement adornedElement, bool below)
+            : base(adornedElement)
+        {
+            _below = below;
+            IsHitTestVisible = false;
+        }
+
+        private static Pen CreateIndicatorPen()
+        {
+            var pen = new Pen(new SolidColorBrush(Color.FromRgb(0, 122, 204)), 2);
+            pen.Freeze();
+            return pen;
+        }
+
+        protected override void OnRender(DrawingContext drawingContext)
+        {
+            var size = AdornedElement.RenderSize;
+            double y = _below ? size.Height : 0;
+            drawingContext.DrawLine(IndicatorPen, new Point(0, y), new Point(size.Width, y));
         }
     }
 }

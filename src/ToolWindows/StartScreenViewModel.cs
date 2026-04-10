@@ -478,6 +478,50 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
+        /// Moves a pinned item to a new position within the pinned list and persists the order.
+        /// </summary>
+        public async Task MovePinnedItemAsync(MruItem item, int newIndex)
+        {
+            if (item == null || !item.IsPinned)
+                return;
+
+            // Build the current pinned list in order
+            var pinned = _allMruItems.Where(i => i.IsPinned).ToList();
+            int oldIndex = pinned.IndexOf(item);
+            if (oldIndex < 0 || oldIndex == newIndex)
+                return;
+
+            // Clamp
+            if (newIndex < 0) newIndex = 0;
+            if (newIndex >= pinned.Count) newIndex = pinned.Count - 1;
+
+            // Reorder in _allMruItems: remove and reinsert at the correct position
+            _allMruItems.Remove(item);
+
+            // Find the target position in _allMruItems relative to other pinned items
+            var pinnedInAll = _allMruItems.Where(i => i.IsPinned).ToList();
+            if (newIndex >= pinnedInAll.Count)
+            {
+                // Insert after the last pinned item
+                int lastPinnedIdx = _allMruItems.IndexOf(pinnedInAll.Last());
+                _allMruItems.Insert(lastPinnedIdx + 1, item);
+            }
+            else
+            {
+                int targetIdx = _allMruItems.IndexOf(pinnedInAll[newIndex]);
+                _allMruItems.Insert(targetIdx, item);
+            }
+
+            // Persist new order
+            var options = await Options.GetLiveInstanceAsync();
+            var pinnedPaths = _allMruItems.Where(i => i.IsPinned).Select(i => i.Path);
+            options.PinnedItems = string.Join(";", pinnedPaths);
+            await options.SaveAsync();
+
+            UpdateMruCollections();
+        }
+
+        /// <summary>
         /// Toggles the pinned state of an MRU item.
         /// </summary>
         public async Task TogglePinAsync(MruItem item)
@@ -530,6 +574,7 @@ namespace StartScreen.ToolWindows
             MruItems.Clear();
             GroupedMruItems.Clear();
 
+            // Pinned items keep their existing order (set by saved options or drag reorder)
             foreach (var item in filtered.Where(i => i.IsPinned))
             {
                 PinnedItems.Add(item);
@@ -547,16 +592,16 @@ namespace StartScreen.ToolWindows
             PinnedItems.Clear();
             GroupedMruItems.Clear();
 
-            var sorted = _allMruItems.OrderByDescending(i => i.IsPinned)
-                                    .ThenByDescending(i => i.LastAccessed)
-                                    .ToList();
-
-            foreach (var item in sorted.Where(i => i.IsPinned))
+            // Pinned items keep their existing order (set by saved options or drag reorder)
+            foreach (var item in _allMruItems.Where(i => i.IsPinned))
             {
                 PinnedItems.Add(item);
             }
 
-            var unpinned = sorted.Where(i => !i.IsPinned);
+            var unpinned = _allMruItems.Where(i => !i.IsPinned)
+                                       .OrderByDescending(i => i.LastAccessed)
+                                       .ToList();
+
             foreach (var item in unpinned)
             {
                 MruItems.Add(item);
