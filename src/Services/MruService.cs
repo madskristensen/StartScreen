@@ -211,10 +211,6 @@ namespace StartScreen.Services
                 if (string.IsNullOrWhiteSpace(rawPath))
                     return null;
 
-                // Skip items that no longer exist on disk
-                if (!File.Exists(rawPath) && !Directory.Exists(rawPath))
-                    return null;
-
                 var displayName = parts[3];
                 if (string.IsNullOrWhiteSpace(displayName))
                 {
@@ -250,13 +246,14 @@ namespace StartScreen.Services
 
             var extension = Path.GetExtension(path)?.ToLowerInvariant();
 
-            if (extension == ".sln")
+            if (extension == ".sln" || extension == ".slnx")
                 return MruItemType.Solution;
 
             if (extension == ".csproj" || extension == ".vbproj" || extension == ".fsproj" || extension == ".vcxproj")
                 return MruItemType.Project;
 
-            if (Directory.Exists(path) || string.IsNullOrEmpty(extension))
+            // No extension means it is a folder path (avoids Directory.Exists I/O)
+            if (string.IsNullOrEmpty(extension))
                 return MruItemType.Folder;
 
             return MruItemType.Solution;
@@ -276,25 +273,28 @@ namespace StartScreen.Services
         {
             try
             {
-                if (Directory.Exists(path))
+                var type = DetermineType(path);
+
+                if (type == MruItemType.Folder)
                 {
                     // Open Folder scenario: check the .vs/ folder inside it
                     var vsDir = System.IO.Path.Combine(path, ".vs");
-                    if (Directory.Exists(vsDir))
+                    try
+                    {
                         return Directory.GetLastWriteTime(vsDir);
-
-                    return Directory.GetLastWriteTime(path);
+                    }
+                    catch
+                    {
+                        return Directory.GetLastWriteTime(path);
+                    }
                 }
 
-                if (File.Exists(path))
-                {
-                    // Solution/project file: look for .suo in the .vs/ folder
-                    var suoTime = FindSuoLastWriteTime(path);
-                    if (suoTime.HasValue)
-                        return suoTime.Value;
+                // Solution/project file: look for .suo in the .vs/ folder
+                var suoTime = FindSuoLastWriteTime(path);
+                if (suoTime.HasValue)
+                    return suoTime.Value;
 
-                    return File.GetLastWriteTime(path);
-                }
+                return File.GetLastWriteTime(path);
             }
             catch (Exception ex)
             {
