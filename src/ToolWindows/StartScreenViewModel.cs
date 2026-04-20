@@ -197,25 +197,28 @@ namespace StartScreen.ToolWindows
             // MRU needs the main thread for IVsMRUItemsStore
             List<MruItem> mruItems = await MruService.GetMruItemsAsync(options);
 
-            List<NewsPost> cachedPosts = await feedTask;
-
-            // Switch to UI thread to update collections
+            // Show MRU immediately without waiting for the feed task
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             _allMruItems = new ObservableCollection<MruItem>(mruItems);
             UpdateMruCollections();
 
+            // Populate git status and file existence in background after UI is updated
+            MruService.PopulateGitStatusAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
+            MruService.PopulateExistenceAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
+
+            // Now await the feed task and update news when ready
+            List<NewsPost> cachedPosts = await feedTask;
+
             if (cachedPosts != null && cachedPosts.Count > 0)
             {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
                 _allNewsPosts.Clear();
                 _allNewsPosts.AddRange(cachedPosts);
                 ApplyPinnedStateToNews(options);
                 UpdateNewsCollections();
             }
-
-            // Populate git status and file existence in background after UI is updated
-            MruService.PopulateGitStatusAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
-            MruService.PopulateExistenceAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
         }
 
         /// <summary>
