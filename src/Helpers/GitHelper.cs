@@ -36,11 +36,17 @@ namespace StartScreen.Helpers
                 {
                     var status = new GitStatus();
 
-                    // Branch name (or detached HEAD SHA)
+                    // Branch name (or tag/detached HEAD SHA)
                     if (repo.Head.FriendlyName == "(no branch)")
                     {
-                        // Detached HEAD - show abbreviated commit SHA
-                        status.BranchName = repo.Head.Tip?.Sha?.Substring(0, 7);
+                        // Detached HEAD - prefer tag name if HEAD points to a tag
+                        var tag = repo.Head.Tip != null
+                            ? repo.Tags.FirstOrDefault(t => t.Target.Sha == repo.Head.Tip.Sha)
+                            : null;
+
+                        status.BranchName = tag != null
+                            ? tag.FriendlyName
+                            : repo.Head.Tip?.Sha?.Substring(0, 7);
                     }
                     else
                     {
