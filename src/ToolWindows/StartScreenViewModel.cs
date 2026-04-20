@@ -18,6 +18,7 @@ namespace StartScreen.ToolWindows
     {
         private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromHours(4);
         private bool _isRefreshingNews;
+        private bool _isRefreshingYouTube;
         private bool _isUpdateAvailable;
         private string _searchFilter;
         private string _discoverySectionTitle;
@@ -36,6 +37,7 @@ namespace StartScreen.ToolWindows
         public ObservableCollection<NewsPost> NewsPosts { get; private set; }
         public ObservableCollection<NewsPost> PinnedNewsPosts { get; private set; }
         public ObservableCollection<RecentTemplate> RecentTemplates { get; private set; }
+        public ObservableCollection<YouTubeVideo> YouTubeVideos { get; private set; }
 
         public bool IsRefreshingNews
         {
@@ -45,6 +47,19 @@ namespace StartScreen.ToolWindows
                 if (_isRefreshingNews != value)
                 {
                     _isRefreshingNews = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool IsRefreshingYouTube
+        {
+            get => _isRefreshingYouTube;
+            set
+            {
+                if (_isRefreshingYouTube != value)
+                {
+                    _isRefreshingYouTube = value;
                     OnPropertyChanged();
                 }
             }
@@ -201,6 +216,7 @@ namespace StartScreen.ToolWindows
             NewsPosts = new ObservableCollection<NewsPost>();
             PinnedNewsPosts = new ObservableCollection<NewsPost>();
             RecentTemplates = new ObservableCollection<RecentTemplate>();
+            YouTubeVideos = new ObservableCollection<YouTubeVideo>();
 
             _allMruItems = new ObservableCollection<MruItem>();
             _discoverySectionTitle = "Discover what's new";
@@ -232,6 +248,11 @@ namespace StartScreen.ToolWindows
             {
                 ForceRefreshNews();
             }
+
+            if (YouTubeService.IsCacheStale())
+            {
+                StartBackgroundYouTubeRefresh();
+            }
         }
 
         /// <summary>
@@ -248,6 +269,7 @@ namespace StartScreen.ToolWindows
 
             // Start feed task first (pure file I/O, no main thread needed)
             System.Threading.Tasks.Task<List<NewsPost>> feedTask = FeedService.GetCachedPostsAsync();
+            System.Threading.Tasks.Task<List<YouTubeVideo>> youtubeTask = YouTubeService.GetCachedVideosAsync();
 
             // MRU needs the main thread for IVsMRUItemsStore
             List<MruItem> mruItems = await MruService.GetMruItemsAsync(options);
@@ -274,6 +296,16 @@ namespace StartScreen.ToolWindows
                 ApplyPinnedStateToNews(options);
                 UpdateNewsCollections();
             }
+
+            // Await YouTube cache and update
+            List<YouTubeVideo> cachedVideos = await youtubeTask;
+
+            if (cachedVideos != null && cachedVideos.Count > 0)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                YouTubeVideos = new ObservableCollection<YouTubeVideo>(cachedVideos);
+                OnPropertyChanged(nameof(YouTubeVideos));
+            }
         }
 
         /// <summary>
@@ -283,13 +315,14 @@ namespace StartScreen.ToolWindows
         {
             // Background tasks (no main thread needed initially)
             Task newsTask = RefreshNewsAsync();
+            Task youtubeTask = RefreshYouTubeAsync();
             Task versionTask = RefreshVersionTitleAsync();
 
             // Main-thread tasks run sequentially to avoid contention
             await RefreshMruAsync();
             await CheckForUpdateAsync();
 
-            await Task.WhenAll(newsTask, versionTask);
+            await Task.WhenAll(newsTask, youtubeTask, versionTask);
         }
 
         private async Task RefreshMruAsync()
@@ -391,6 +424,81 @@ namespace StartScreen.ToolWindows
             _allNewsPosts.AddRange(posts);
             ApplyPinnedStateToNews(options);
             UpdateNewsCollections();
+        }
+
+        private async Task RefreshYouTubeAsync()
+        {
+            try
+            {
+                var videos = await YouTubeService.GetCachedVideosAsync();
+                var hasCached = videos != null && videos.Count > 0;
+
+                if (hasCached)
+                {
+                    await UpdateYouTubeOnUIThreadAsync(videos);
+                }
+
+                if (!hasCached || YouTubeService.IsCacheStale())
+                {
+                    var downloaded = await YouTubeService.DownloadVideosAsync();
+
+                    if (downloaded != null)
+                    {
+                        await UpdateYouTubeOnUIThreadAsync(downloaded);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+            }
+        }
+
+        /// <summary>
+        /// Forces a refresh of the YouTube feed regardless of cache state.
+        /// </summary>
+        public void ForceRefreshYouTube()
+        {
+            if (IsRefreshingYouTube)
+                return;
+
+            StartBackgroundYouTubeRefresh();
+        }
+
+        /// <summary>
+        /// Starts a fire-and-forget background refresh of the YouTube feed.
+        /// </summary>
+        private void StartBackgroundYouTubeRefresh()
+        {
+            IsRefreshingYouTube = true;
+
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    var videos = await YouTubeService.DownloadVideosAsync();
+
+                    if (videos != null)
+                    {
+                        await UpdateYouTubeOnUIThreadAsync(videos);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ex.Log();
+                }
+                finally
+                {
+                    IsRefreshingYouTube = false;
+                }
+            }).FileAndForget(nameof(StartScreenViewModel));
+        }
+
+        private async Task UpdateYouTubeOnUIThreadAsync(List<YouTubeVideo> videos)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            YouTubeVideos = new ObservableCollection<YouTubeVideo>(videos);
+            OnPropertyChanged(nameof(YouTubeVideos));
         }
 
         /// <summary>

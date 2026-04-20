@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
@@ -69,9 +69,12 @@
     <Compile Include="Models\FeedCacheEntry.cs" />
     <Compile Include="Models\NewsPost.cs" />
     <Compile Include="Models\RecentTemplate.cs" />
+    <Compile Include="Models\YouTubeCacheEntry.cs" />
+    <Compile Include="Models\YouTubeVideo.cs" />
     <Compile Include="Services\MruService.cs" />
     <Compile Include="Services\FeedService.cs" />
     <Compile Include="Services\FeedStore.cs" />
+    <Compile Include="Services\YouTubeService.cs" />
     <Compile Include="Services\VsCommandService.cs" />
     <Compile Include="Helpers\FileIconHelper.cs" />
     <Compile Include="ToolWindows\StartScreenViewModel.cs" />
@@ -84,6 +87,9 @@
     </Compile>
     <Compile Include="ToolWindows\Controls\NewsItemControl.xaml.cs">
       <DependentUpon>NewsItemControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="ToolWindows\Controls\YouTubeVideoControl.xaml.cs">
+      <DependentUpon>YouTubeVideoControl.xaml</DependentUpon>
     </Compile>
     <Compile Include="Models\SuggestedExtension.cs" />
     <Compile Include="Services\InstalledExtensionChecker.cs" />
@@ -153,6 +159,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="ToolWindows\Controls\NewsItemControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="ToolWindows\Controls\YouTubeVideoControl.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

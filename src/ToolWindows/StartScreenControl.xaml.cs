@@ -435,6 +435,14 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        private void RefreshYouTubeButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel != null)
+            {
+                ViewModel.ForceRefreshYouTube();
+            }
+        }
+
         private async void UpdateNowButton_Click(object sender, RoutedEventArgs e)
         {
             try

@@ -411,6 +411,16 @@
                                     </Border>
                                 </Grid>
 
+                    <!-- News + YouTube Row -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- News (left, flowing columns) -->
+                        <StackPanel Grid.Column="0" Margin="0 0 24 0">
+
                     <!-- News Header -->
                     <Grid Margin="0 0 0 12">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
@@ -494,6 +504,56 @@
                             Customize news feeds...
                         </Hyperlink>
                     </TextBlock>
+
+                        </StackPanel>
+
+                        <!-- YouTube Feed (right, single column) -->
+                        <StackPanel Grid.Column="1" Width="280" VerticalAlignment="Top">
+                            <Grid Margin="0 0 0 12">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                    <TextBlock Text="YouTube"
+                                              FontSize="16"
+                                              FontWeight="SemiBold"
+                                              VerticalAlignment="Center"/>
+                                    <Button x:Name="RefreshYouTubeButton"
+                                            Click="RefreshYouTubeButton_Click"
+                                            Style="{StaticResource ActionButtonStyle}"
+                                            Margin="8 0 0 0"
+                                            Padding="4"
+                                            BorderThickness="0"
+                                            VerticalAlignment="Center">
+                                        <Button.ToolTip>
+                                            <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                                                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                                                     BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                                                     BorderThickness="1"
+                                                     Padding="4">
+                                                <TextBlock Text="Refresh YouTube feed"/>
+                                            </ToolTip>
+                                        </Button.ToolTip>
+                                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}" 
+                                                            Width="16" Height="16"
+                                                            VerticalAlignment="Center"/>
+                                    </Button>
+                                </StackPanel>
+                                <ProgressBar Height="2" 
+                                            VerticalAlignment="Bottom"
+                                            IsIndeterminate="True"
+                                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+                                            Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                                            BorderThickness="0"
+                                            Visibility="{Binding IsRefreshingYouTube, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding YouTubeVideos}" Focusable="False">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <controls:YouTubeVideoControl Margin="0 0 0 16"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                    </Grid>
                                         </StackPanel>
                                     </Border>
                                 </Grid>

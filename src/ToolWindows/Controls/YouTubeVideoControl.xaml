@@ -1,0 +1,66 @@
+<UserControl x:Class="StartScreen.ToolWindows.Controls.YouTubeVideoControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
+             xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             toolkit:Themes.UseVsTheme="True"
+             Background="Transparent"
+             Focusable="False"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             mc:Ignorable="d" 
+             d:DesignHeight="200" d:DesignWidth="280">
+  <UserControl.Resources>
+    <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+  </UserControl.Resources>
+  <Border x:Name="RootBorder"
+          BorderThickness="0"
+          Background="Transparent"
+          Padding="6"
+          CornerRadius="4"
+          Focusable="True"
+          FocusVisualStyle="{x:Null}"
+          MouseEnter="RootBorder_MouseEnter"
+          MouseLeave="RootBorder_MouseLeave"
+          MouseUp="RootBorder_MouseUp"
+          KeyDown="RootBorder_KeyDown"
+          GotKeyboardFocus="RootBorder_GotKeyboardFocus"
+          LostKeyboardFocus="RootBorder_LostKeyboardFocus"
+          Cursor="Hand">
+    <StackPanel>
+      <!-- Thumbnail (16:9 aspect ratio) -->
+      <Border CornerRadius="4" ClipToBounds="True">
+        <Image Source="{Binding ThumbnailUrl, IsAsync=True}"
+               Stretch="Uniform"
+               RenderOptions.BitmapScalingMode="HighQuality"/>
+      </Border>
+
+      <!-- Title -->
+      <TextBlock Text="{Binding Title}"
+                 FontSize="12"
+                 FontWeight="SemiBold"
+                 TextWrapping="Wrap"
+                 TextTrimming="WordEllipsis"
+                 MaxHeight="36"
+                 Margin="0 6 0 0"
+                 Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+
+      <!-- Date and NEW badge -->
+      <StackPanel Orientation="Horizontal" Margin="0 4 0 0">
+        <TextBlock Text="NEW"
+                   FontWeight="Bold"
+                   FontSize="10"
+                   Foreground="#FF4CAF50"
+                   Margin="0 0 6 0"
+                   VerticalAlignment="Center"
+                   Visibility="{Binding IsNew, Converter={StaticResource BoolToVisibilityConverter}}"/>
+        <TextBlock Text="{Binding PublishDate, StringFormat='{}{0:MMM d}'}"
+                   Opacity="0.5"
+                   FontSize="11"
+                   VerticalAlignment="Center"/>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>
