@@ -126,36 +126,36 @@ namespace StartScreen.ToolWindows.Controls
 
         private bool IsInFirstColumn()
         {
-            var parent = FindNewsScrollViewer(this);
+            FrameworkElement parent = FindNewsScrollViewer(this);
             if (parent == null)
                 return true;
 
             var allItems = new List<NewsItemControl>();
             CollectNewsItemControls(parent, allItems);
 
-            int index = allItems.IndexOf(this);
+            var index = allItems.IndexOf(this);
             if (index < 0)
                 return true;
 
-            int columnsPerRow = GetColumnsPerRow(allItems);
+            var columnsPerRow = GetColumnsPerRow(allItems);
             return index % columnsPerRow == 0;
         }
 
         private void MoveVertically(bool down)
         {
-            var parent = FindNewsScrollViewer(this);
+            FrameworkElement parent = FindNewsScrollViewer(this);
             if (parent == null)
                 return;
 
             var allItems = new List<NewsItemControl>();
             CollectNewsItemControls(parent, allItems);
 
-            int index = allItems.IndexOf(this);
+            var index = allItems.IndexOf(this);
             if (index < 0)
                 return;
 
-            int columnsPerRow = GetColumnsPerRow(allItems);
-            int next = down ? index + columnsPerRow : index - columnsPerRow;
+            var columnsPerRow = GetColumnsPerRow(allItems);
+            var next = down ? index + columnsPerRow : index - columnsPerRow;
 
             if (next >= 0 && next < allItems.Count)
             {
@@ -165,18 +165,18 @@ namespace StartScreen.ToolWindows.Controls
 
         private void MoveHorizontally(bool right)
         {
-            var parent = FindNewsScrollViewer(this);
+            FrameworkElement parent = FindNewsScrollViewer(this);
             if (parent == null)
                 return;
 
             var allItems = new List<NewsItemControl>();
             CollectNewsItemControls(parent, allItems);
 
-            int index = allItems.IndexOf(this);
+            var index = allItems.IndexOf(this);
             if (index < 0)
                 return;
 
-            int next = right ? index + 1 : index - 1;
+            var next = right ? index + 1 : index - 1;
             if (next >= 0 && next < allItems.Count)
             {
                 allItems[next].RootBorder.Focus();
@@ -189,12 +189,12 @@ namespace StartScreen.ToolWindows.Controls
                 return 1;
 
             // Compare the Y position of consecutive items to find how many fit in one row
-            double firstY = items[0].TranslatePoint(new Point(0, 0), items[0]).Y;
-            var firstItemPos = items[0].PointToScreen(new Point(0, 0));
+            var firstY = items[0].TranslatePoint(new Point(0, 0), items[0]).Y;
+            Point firstItemPos = items[0].PointToScreen(new Point(0, 0));
 
-            for (int i = 1; i < items.Count; i++)
+            for (var i = 1; i < items.Count; i++)
             {
-                var pos = items[i].PointToScreen(new Point(0, 0));
+                Point pos = items[i].PointToScreen(new Point(0, 0));
                 if (Math.Abs(pos.Y - firstItemPos.Y) > 5)
                     return i;
             }
@@ -204,18 +204,18 @@ namespace StartScreen.ToolWindows.Controls
 
         private void MoveToAdjacentNewsItem(bool forward)
         {
-            var parent = FindNewsScrollViewer(this);
+            FrameworkElement parent = FindNewsScrollViewer(this);
             if (parent == null)
                 return;
 
             var allItems = new List<NewsItemControl>();
             CollectNewsItemControls(parent, allItems);
 
-            int index = allItems.IndexOf(this);
+            var index = allItems.IndexOf(this);
             if (index < 0)
                 return;
 
-            int next = forward ? index + 1 : index - 1;
+            var next = forward ? index + 1 : index - 1;
             if (next >= 0 && next < allItems.Count)
             {
                 allItems[next].RootBorder.Focus();
@@ -237,8 +237,8 @@ namespace StartScreen.ToolWindows.Controls
 
         private static void CollectNewsItemControls(DependencyObject parent, List<NewsItemControl> results)
         {
-            int count = VisualTreeHelper.GetChildrenCount(parent);
-            for (int i = 0; i < count; i++)
+            var count = VisualTreeHelper.GetChildrenCount(parent);
+            for (var i = 0; i < count; i++)
             {
                 DependencyObject child = VisualTreeHelper.GetChild(parent, i);
                 if (child is NewsItemControl news)

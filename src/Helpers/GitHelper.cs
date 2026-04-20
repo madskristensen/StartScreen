@@ -1,5 +1,6 @@
-using System;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using LibGit2Sharp;
 using StartScreen.Models;
 
@@ -49,13 +50,13 @@ namespace StartScreen.Helpers
                     // Ahead/behind tracking branch
                     if (repo.Head.IsTracking && repo.Head.TrackedBranch != null)
                     {
-                        var tracking = repo.Head.TrackingDetails;
+                        BranchTrackingDetails tracking = repo.Head.TrackingDetails;
                         status.CommitsAhead = tracking.AheadBy;
                         status.CommitsBehind = tracking.BehindBy;
                     }
 
                     // Uncommitted changes (staged or unstaged)
-                    var repoStatus = repo.RetrieveStatus(new StatusOptions
+                    RepositoryStatus repoStatus = repo.RetrieveStatus(new StatusOptions
                     {
                         IncludeUntracked = false,
                         RecurseUntrackedDirs = false
@@ -67,6 +68,12 @@ namespace StartScreen.Helpers
                     {
                         status.LastCommitTime = repo.Head.Tip.Author.When.LocalDateTime;
                     }
+
+                    // Stash count
+                    status.StashCount = repo.Stashes.Count();
+
+                    // Current operation (merge, rebase, cherry-pick, etc.)
+                    status.CurrentOperation = GetCurrentOperationDisplayString(repo.Info.CurrentOperation);
 
                     return status;
                 }
@@ -86,14 +93,14 @@ namespace StartScreen.Helpers
         /// <summary>
         /// Walks up from the given directory looking for a Git repository root.
         /// </summary>
-        private static string FindRepositoryPath(string startDir)
+        internal static string FindRepositoryPath(string startDir)
         {
             if (string.IsNullOrEmpty(startDir))
                 return null;
 
             var current = startDir;
 
-            for (int i = 0; i < MaxParentWalk && current != null; i++)
+            for (var i = 0; i < MaxParentWalk && current != null; i++)
             {
                 var gitPath = Path.Combine(current, ".git");
 
@@ -109,6 +116,107 @@ namespace StartScreen.Helpers
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Maps LibGit2Sharp CurrentOperation enum to a user-friendly display string.
+        /// </summary>
+        private static string GetCurrentOperationDisplayString(CurrentOperation operation)
+        {
+            return operation switch
+            {
+                CurrentOperation.Merge => "Merge",
+                CurrentOperation.Rebase => "Rebase",
+                CurrentOperation.RebaseInteractive => "Rebase",
+                CurrentOperation.RebaseMerge => "Rebase",
+                CurrentOperation.CherryPick => "Cherry-pick",
+                CurrentOperation.Revert => "Revert",
+                CurrentOperation.Bisect => "Bisect",
+                _ => null,
+            };
+        }
+
+        /// <summary>
+        /// Runs git fetch --all --quiet for the specified repository.
+        /// Best-effort: returns silently on any failure (offline, timeout, no remote, etc.).
+        /// </summary>
+        internal static void FetchAll(string repoPath)
+        {
+            if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
+                return;
+
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "fetch --all --quiet",
+                    WorkingDirectory = repoPath,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                using (var process = Process.Start(psi))
+                {
+                    if (process == null)
+                        return;
+
+                    // 15-second timeout
+                    if (!process.WaitForExit(15000))
+                    {
+                        try
+                        {
+                            process.Kill();
+                        }
+                        catch
+                        {
+                            // Best-effort kill
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Best-effort: silent failure for offline, no git, no remote, etc.
+            }
+        }
+
+        /// <summary>
+        /// Re-reads only the ahead/behind counts for a repository after fetch.
+        /// Returns (ahead, behind) or (null, null) on error.
+        /// </summary>
+        internal static (int? ahead, int? behind) GetUpdatedAheadBehind(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return (null, null);
+
+            try
+            {
+                var startDir = Directory.Exists(path)
+                    ? path
+                    : Path.GetDirectoryName(path);
+
+                var repoPath = FindRepositoryPath(startDir);
+                if (repoPath == null)
+                    return (null, null);
+
+                using (var repo = new Repository(repoPath))
+                {
+                    if (repo.Head.IsTracking && repo.Head.TrackedBranch != null)
+                    {
+                        BranchTrackingDetails tracking = repo.Head.TrackingDetails;
+                        return (tracking.AheadBy, tracking.BehindBy);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+            }
+
+            return (null, null);
         }
     }
 }

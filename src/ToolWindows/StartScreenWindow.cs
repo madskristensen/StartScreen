@@ -27,7 +27,7 @@ namespace StartScreen.ToolWindows
 
             // Start loading data immediately (head start while window renders)
             _viewModel = new StartScreenViewModel();
-            var loadTask = _viewModel.LoadMruAsync();
+            Task loadTask = _viewModel.LoadMruAsync();
 
             // Return control immediately for fast window paint
             _control = new StartScreenControl(_viewModel, loadTask);

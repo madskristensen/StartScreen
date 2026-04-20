@@ -70,6 +70,23 @@
                             <TextBlock Text="Last commit: " Opacity="0.7"/>
                             <TextBlock Text="{Binding LastCommitTimeText}"/>
                         </StackPanel>
+
+                        <!-- Stashes -->
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0 2 0 0"
+                                    Visibility="{Binding HasStashes, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Text="Stashes: " Opacity="0.7"/>
+                            <TextBlock Text="{Binding StashCount}"/>
+                        </StackPanel>
+
+                        <!-- Current operation -->
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0 2 0 0"
+                                    Visibility="{Binding HasCurrentOperation, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Text="Operation: " Opacity="0.7"/>
+                            <TextBlock Text="{Binding CurrentOperation}" Foreground="#E8A838" FontWeight="SemiBold"/>
+                            <TextBlock Text=" in progress" Opacity="0.7"/>
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- Path -->
@@ -118,6 +135,23 @@
                               VerticalAlignment="Center"
                               ToolTip="Uncommitted changes"
                               Visibility="{Binding HasUncommittedChanges, Converter={StaticResource BoolToVisibilityConverter}}"/>
+
+                    <!-- Stash indicator -->
+                    <TextBlock Text="📦"
+                              FontSize="11"
+                              Margin="6 0 0 0"
+                              VerticalAlignment="Center"
+                              ToolTip="{Binding StashText}"
+                              Visibility="{Binding HasStashes, Converter={StaticResource BoolToVisibilityConverter}}"/>
+
+                    <!-- Current operation indicator -->
+                    <TextBlock Text="⚠"
+                              FontSize="11"
+                              Foreground="#E8A838"
+                              Margin="6 0 0 0"
+                              VerticalAlignment="Center"
+                              ToolTip="{Binding CurrentOperation}"
+                              Visibility="{Binding HasCurrentOperation, Converter={StaticResource BoolToVisibilityConverter}}"/>
                 </StackPanel>
 
                 <!-- Pin Button -->

@@ -189,15 +189,15 @@ namespace StartScreen.ToolWindows
             _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, AutoRefreshInterval, AutoRefreshInterval);
 
             // Load options once for both MRU pinned state and news pinned state
-            var options = await Options.GetLiveInstanceAsync();
+            Options options = await Options.GetLiveInstanceAsync();
 
             // Start feed task first (pure file I/O, no main thread needed)
-            var feedTask = FeedService.GetCachedPostsAsync();
+            System.Threading.Tasks.Task<List<NewsPost>> feedTask = FeedService.GetCachedPostsAsync();
 
             // MRU needs the main thread for IVsMRUItemsStore
-            var mruItems = await MruService.GetMruItemsAsync(options);
+            List<MruItem> mruItems = await MruService.GetMruItemsAsync(options);
 
-            var cachedPosts = await feedTask;
+            List<NewsPost> cachedPosts = await feedTask;
 
             // Switch to UI thread to update collections
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -224,8 +224,8 @@ namespace StartScreen.ToolWindows
         public async Task RefreshInBackgroundAsync()
         {
             // Background tasks (no main thread needed initially)
-            var newsTask = RefreshNewsAsync();
-            var versionTask = RefreshVersionTitleAsync();
+            Task newsTask = RefreshNewsAsync();
+            Task versionTask = RefreshVersionTitleAsync();
 
             // Main-thread tasks run sequentially to avoid contention
             await RefreshMruAsync();
@@ -238,7 +238,7 @@ namespace StartScreen.ToolWindows
         {
             try
             {
-                var updatedMru = await MruService.GetMruItemsAsync();
+                List<MruItem> updatedMru = await MruService.GetMruItemsAsync();
 
                 // Update on UI thread
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -261,7 +261,7 @@ namespace StartScreen.ToolWindows
             try
             {
                 // Load from cache asynchronously to avoid blocking
-                var posts = await FeedService.GetCachedPostsAsync();
+                List<NewsPost> posts = await FeedService.GetCachedPostsAsync();
                 var hasCachedItems = posts != null && posts.Count > 0;
 
                 if (hasCachedItems)
@@ -303,8 +303,8 @@ namespace StartScreen.ToolWindows
             {
                 try
                 {
-                    var feeds = FeedStore.GetFeeds();
-                    var posts = await FeedService.DownloadFeedsAsync(feeds);
+                    List<FeedInfo> feeds = FeedStore.GetFeeds();
+                    List<NewsPost> posts = await FeedService.DownloadFeedsAsync(feeds);
 
                     if (posts != null)
                     {
@@ -324,7 +324,7 @@ namespace StartScreen.ToolWindows
 
         private async Task UpdateNewsPostsOnUIThreadAsync(List<NewsPost> posts)
         {
-            var options = await Options.GetLiveInstanceAsync();
+            Options options = await Options.GetLiveInstanceAsync();
 
             // Update on UI thread
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -345,8 +345,8 @@ namespace StartScreen.ToolWindows
 
             post.IsPinned = !post.IsPinned;
 
-            var options = await Options.GetLiveInstanceAsync();
-            var pinnedUrls = _allNewsPosts.Where(p => p.IsPinned).Select(p => p.Url);
+            Options options = await Options.GetLiveInstanceAsync();
+            IEnumerable<string> pinnedUrls = _allNewsPosts.Where(p => p.IsPinned).Select(p => p.Url);
             options.PinnedArticles = string.Join(";", pinnedUrls);
             await options.SaveAsync();
 
@@ -362,7 +362,7 @@ namespace StartScreen.ToolWindows
                 (options.PinnedArticles ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries),
                 StringComparer.OrdinalIgnoreCase);
 
-            foreach (var post in _allNewsPosts)
+            foreach (NewsPost post in _allNewsPosts)
             {
                 post.IsPinned = pinnedUrls.Contains(post.Url);
             }
@@ -386,16 +386,16 @@ namespace StartScreen.ToolWindows
             try
             {
                 // Perform file I/O on background thread to avoid blocking UI
-                var (title, version) = await Task.Run(() =>
+                (var title, var version) = await Task.Run(() =>
                 {
-                    string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devenv.exe");
-                    string resultTitle = "Visual Studio"; // fallback
-                    string resultVersion = string.Empty;
+                    var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devenv.exe");
+                    var resultTitle = "Visual Studio"; // fallback
+                    var resultVersion = string.Empty;
 
                     if (File.Exists(path))
                     {
                         var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
-                        string description = versionInfo.FileDescription ?? "Microsoft Visual Studio";
+                        var description = versionInfo.FileDescription ?? "Microsoft Visual Studio";
                         if (description.StartsWith("Microsoft "))
                         {
                             resultTitle = description.Substring("Microsoft ".Length);
@@ -431,7 +431,7 @@ namespace StartScreen.ToolWindows
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                var setupService = await VS.GetServiceAsync<SVsSetupCompositionService, IVsSetupCompositionService>();
+                IVsSetupCompositionService setupService = await VS.GetServiceAsync<SVsSetupCompositionService, IVsSetupCompositionService>();
                 if (setupService != null)
                 {
                     IsUpdateAvailable = setupService.IsManifestRefreshedAndUpdateAvailable;
@@ -472,7 +472,7 @@ namespace StartScreen.ToolWindows
 
             // Build the current pinned list in order
             var pinned = _allMruItems.Where(i => i.IsPinned).ToList();
-            int oldIndex = pinned.IndexOf(item);
+            var oldIndex = pinned.IndexOf(item);
             if (oldIndex < 0 || oldIndex == newIndex)
                 return;
 
@@ -488,18 +488,18 @@ namespace StartScreen.ToolWindows
             if (newIndex >= pinnedInAll.Count)
             {
                 // Insert after the last pinned item
-                int lastPinnedIdx = _allMruItems.IndexOf(pinnedInAll.Last());
+                var lastPinnedIdx = _allMruItems.IndexOf(pinnedInAll.Last());
                 _allMruItems.Insert(lastPinnedIdx + 1, item);
             }
             else
             {
-                int targetIdx = _allMruItems.IndexOf(pinnedInAll[newIndex]);
+                var targetIdx = _allMruItems.IndexOf(pinnedInAll[newIndex]);
                 _allMruItems.Insert(targetIdx, item);
             }
 
             // Persist new order
-            var options = await Options.GetLiveInstanceAsync();
-            var pinnedPaths = _allMruItems.Where(i => i.IsPinned).Select(i => i.Path);
+            Options options = await Options.GetLiveInstanceAsync();
+            IEnumerable<string> pinnedPaths = _allMruItems.Where(i => i.IsPinned).Select(i => i.Path);
             options.PinnedItems = string.Join(";", pinnedPaths);
             await options.SaveAsync();
 
@@ -517,8 +517,8 @@ namespace StartScreen.ToolWindows
             item.IsPinned = !item.IsPinned;
 
             // Save pinned items to options
-            var options = await Options.GetLiveInstanceAsync();
-            var pinnedPaths = _allMruItems.Where(i => i.IsPinned).Select(i => i.Path);
+            Options options = await Options.GetLiveInstanceAsync();
+            IEnumerable<string> pinnedPaths = _allMruItems.Where(i => i.IsPinned).Select(i => i.Path);
             options.PinnedItems = string.Join(";", pinnedPaths);
             await options.SaveAsync();
 
@@ -595,15 +595,15 @@ namespace StartScreen.ToolWindows
         {
             var groupOrder = new[] { "Today", "Yesterday", "This week", "This month", "Older" };
 
-            var groups = items
+            IOrderedEnumerable<IGrouping<string, MruItem>> groups = items
                 .GroupBy(i => i.TimeGroup)
                 .OrderBy(g => Array.IndexOf(groupOrder, g.Key));
 
             var result = new ObservableCollection<MruTimeGroup>();
-            foreach (var group in groups)
+            foreach (IGrouping<string, MruItem> group in groups)
             {
                 var timeGroup = new MruTimeGroup { GroupName = group.Key };
-                foreach (var item in group)
+                foreach (MruItem item in group)
                 {
                     timeGroup.Items.Add(item);
                 }

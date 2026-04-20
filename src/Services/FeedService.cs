@@ -77,7 +77,7 @@ namespace StartScreen.Services
             if (!File.Exists(CombinedFeedFile))
                 return true;
 
-            var lastModified = File.GetLastWriteTimeUtc(CombinedFeedFile);
+            DateTime lastModified = File.GetLastWriteTimeUtc(CombinedFeedFile);
             return DateTime.UtcNow - lastModified >= StaleThreshold;
         }
 
@@ -127,12 +127,12 @@ namespace StartScreen.Services
 
             using (var semaphore = new SemaphoreSlim(MaxConcurrentDownloads, MaxConcurrentDownloads))
             {
-                var downloadTasks = selectedFeeds.Select(async feedInfo =>
+                IEnumerable<Task<SyndicationFeed>> downloadTasks = selectedFeeds.Select(async feedInfo =>
                 {
                     await semaphore.WaitAsync();
                     try
                     {
-                        var feed = await DownloadFeedAsync(feedInfo);
+                        SyndicationFeed feed = await DownloadFeedAsync(feedInfo);
                         if (feed != null)
                         {
                             feed.Title = new TextSyndicationContent(feedInfo.Name);
@@ -140,7 +140,7 @@ namespace StartScreen.Services
                             // Set source feed for all items
                             if (feed.Items != null)
                             {
-                                foreach (var item in feed.Items)
+                                foreach (SyndicationItem item in feed.Items)
                                 {
                                     item.SourceFeed = feed;
                                 }
@@ -183,7 +183,7 @@ namespace StartScreen.Services
             // Try download if cache is stale
             if (DateTime.UtcNow - lastModified >= StaleThreshold)
             {
-                var feed = await DownloadFromUrlAsync(feedInfo.Url, lastModified);
+                SyndicationFeed feed = await DownloadFromUrlAsync(feedInfo.Url, lastModified);
                 if (feed != null)
                 {
                     WriteFeedToDisk(cacheFile, feed);
@@ -224,10 +224,10 @@ namespace StartScreen.Services
                 {
                     request.Headers.IfModifiedSince = lastModified;
 
-                    var response = await HttpClient.SendAsync(request);
+                    HttpResponseMessage response = await HttpClient.SendAsync(request);
                     if (response.IsSuccessStatusCode)
                     {
-                        using (var stream = await response.Content.ReadAsStreamAsync())
+                        using (Stream stream = await response.Content.ReadAsStreamAsync())
                         using (var reader = XmlReader.Create(stream))
                         {
                             var feed = SyndicationFeed.Load(reader);
@@ -328,7 +328,7 @@ namespace StartScreen.Services
                     .Select(p => p.ToCacheEntry())
                     .ToList();
 
-                byte[] json = JsonSerializer.SerializeToUtf8Bytes(entries);
+                var json = JsonSerializer.SerializeToUtf8Bytes(entries);
                 File.WriteAllBytes(CombinedFeedFile, json);
             }
             catch (Exception ex)

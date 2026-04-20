@@ -65,7 +65,7 @@ namespace StartScreen.ToolWindows
 
         private void RestoreSplitterPosition()
         {
-            double saved = Options.Instance.SplitterPosition;
+            var saved = Options.Instance.SplitterPosition;
             if (saved >= 500)
             {
                 LeftColumn.Width = new GridLength(saved);
@@ -128,7 +128,7 @@ namespace StartScreen.ToolWindows
             if (ViewModel == null)
                 return;
 
-            bool hadFocus = sender is MruItemControl ctrl && ctrl.IsItemFocused();
+            var hadFocus = sender is MruItemControl ctrl && ctrl.IsItemFocused();
 
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
@@ -158,7 +158,7 @@ namespace StartScreen.ToolWindows
 
         private void MruItemControl_FocusNewsRequested(object sender, EventArgs e)
         {
-            var firstNews = FindFirstControl<NewsItemControl>(NewsPanel);
+            NewsItemControl firstNews = FindFirstControl<NewsItemControl>(NewsPanel);
             if (firstNews != null)
             {
                 firstNews.RootBorder.Focus();
@@ -184,13 +184,13 @@ namespace StartScreen.ToolWindows
             if (!(e.OriginalSource is Button currentButton))
                 return;
 
-            int index = ActionBar.Children.IndexOf(currentButton);
+            var index = ActionBar.Children.IndexOf(currentButton);
             if (index < 0)
                 return;
 
             if (e.Key == Key.Right)
             {
-                int next = index + 1;
+                var next = index + 1;
                 if (next < ActionBar.Children.Count && ActionBar.Children[next] is Button nextBtn)
                 {
                     nextBtn.Focus();
@@ -199,7 +199,7 @@ namespace StartScreen.ToolWindows
             }
             else if (e.Key == Key.Left)
             {
-                int prev = index - 1;
+                var prev = index - 1;
                 if (prev >= 0 && ActionBar.Children[prev] is Button prevBtn)
                 {
                     prevBtn.Focus();
@@ -233,20 +233,20 @@ namespace StartScreen.ToolWindows
 
         private void FocusFirstMruItem()
         {
-            var firstMru = FindFirstControl<MruItemControl>(MruPanel);
+            MruItemControl firstMru = FindFirstControl<MruItemControl>(MruPanel);
             firstMru?.FocusItem();
         }
 
         private static T FindFirstControl<T>(DependencyObject parent) where T : class
         {
-            int count = VisualTreeHelper.GetChildrenCount(parent);
-            for (int i = 0; i < count; i++)
+            var count = VisualTreeHelper.GetChildrenCount(parent);
+            for (var i = 0; i < count; i++)
             {
                 DependencyObject child = VisualTreeHelper.GetChild(parent, i);
                 if (child is T match)
                     return match;
 
-                var result = FindFirstControl<T>(child);
+                T result = FindFirstControl<T>(child);
                 if (result != null)
                     return result;
             }
@@ -255,14 +255,14 @@ namespace StartScreen.ToolWindows
 
         private void FocusMruItemByPath(string path)
         {
-            var mruControl = FindMruItemControlByPath(MruPanel, path);
+            MruItemControl mruControl = FindMruItemControlByPath(MruPanel, path);
             mruControl?.FocusItem();
         }
 
         private static MruItemControl FindMruItemControlByPath(DependencyObject parent, string path)
         {
-            int count = VisualTreeHelper.GetChildrenCount(parent);
-            for (int i = 0; i < count; i++)
+            var count = VisualTreeHelper.GetChildrenCount(parent);
+            for (var i = 0; i < count; i++)
             {
                 DependencyObject child = VisualTreeHelper.GetChild(parent, i);
                 if (child is MruItemControl mru && mru.DataContext is MruItem item && item.Path == path)
@@ -270,7 +270,7 @@ namespace StartScreen.ToolWindows
                     return mru;
                 }
 
-                var result = FindMruItemControlByPath(child, path);
+                MruItemControl result = FindMruItemControlByPath(child, path);
                 if (result != null)
                     return result;
             }
@@ -279,13 +279,13 @@ namespace StartScreen.ToolWindows
 
         private void PinnedItems_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            var mruControl = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
+            MruItemControl mruControl = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
             mruControl?.HandlePreviewMouseLeftButtonDown(e);
         }
 
         private void PinnedItems_PreviewMouseMove(object sender, MouseEventArgs e)
         {
-            var mruControl = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
+            MruItemControl mruControl = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
             mruControl?.HandlePreviewMouseMove(e);
         }
 
@@ -300,7 +300,7 @@ namespace StartScreen.ToolWindows
             e.Handled = true;
 
             // Find the MruItemControl under the cursor to show drop indicator
-            var target = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
+            MruItemControl target = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
             if (target == null)
             {
                 RemoveDropAdorner();
@@ -309,7 +309,7 @@ namespace StartScreen.ToolWindows
 
             // Determine if dropping above or below the target
             Point pos = e.GetPosition(target);
-            bool insertAfter = pos.Y > target.ActualHeight / 2;
+            var insertAfter = pos.Y > target.ActualHeight / 2;
 
             ShowDropAdorner(target, insertAfter);
         }
@@ -331,12 +331,12 @@ namespace StartScreen.ToolWindows
                 return;
 
             // Find the target MruItemControl
-            var target = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
+            MruItemControl target = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
             if (target == null || !(target.DataContext is MruItem targetItem) || !targetItem.IsPinned)
                 return;
 
             // Determine insert index
-            int targetIndex = ViewModel.PinnedItems.IndexOf(targetItem);
+            var targetIndex = ViewModel.PinnedItems.IndexOf(targetItem);
             if (targetIndex < 0)
                 return;
 
@@ -347,7 +347,7 @@ namespace StartScreen.ToolWindows
             }
 
             // Adjust if dragging from before the target position
-            int currentIndex = ViewModel.PinnedItems.IndexOf(draggedItem);
+            var currentIndex = ViewModel.PinnedItems.IndexOf(draggedItem);
             if (currentIndex >= 0 && currentIndex < targetIndex)
             {
                 targetIndex--;
@@ -489,7 +489,7 @@ namespace StartScreen.ToolWindows
             if (files == null || files.Length == 0)
                 return;
 
-            string path = files[0];
+            var path = files[0];
             if (!IsOpenablePath(path))
                 return;
 
@@ -511,7 +511,7 @@ namespace StartScreen.ToolWindows
             if (Directory.Exists(path))
                 return true;
 
-            string ext = Path.GetExtension(path)?.ToLowerInvariant();
+            var ext = Path.GetExtension(path)?.ToLowerInvariant();
             return ext != null && OpenableExtensions.Contains(ext);
         }
     }
@@ -560,8 +560,8 @@ namespace StartScreen.ToolWindows
 
         protected override void OnRender(DrawingContext drawingContext)
         {
-            var size = AdornedElement.RenderSize;
-            double y = _below ? size.Height : 0;
+            Size size = AdornedElement.RenderSize;
+            var y = _below ? size.Height : 0;
             drawingContext.DrawLine(IndicatorPen, new Point(0, y), new Point(size.Width, y));
         }
     }

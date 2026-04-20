@@ -104,7 +104,7 @@ namespace StartScreen.Services
                 if (File.Exists(NewsFeedsFile))
                 {
                     var json = File.ReadAllText(NewsFeedsFile);
-                    var wrapper = JsonSerializer.Deserialize<NewsFeedsWrapper>(json);
+                    NewsFeedsWrapper wrapper = JsonSerializer.Deserialize<NewsFeedsWrapper>(json);
                     return wrapper?.Feeds ?? GetHardcodedDefaultFeeds();
                 }
 
@@ -175,7 +175,7 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task AddCustomFeedAsync(string name, string url)
         {
-            var feeds = GetFeeds();
+            List<FeedInfo> feeds = GetFeeds();
 
             // Check for duplicates
             if (feeds.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase) ||
@@ -199,7 +199,7 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task RemoveFeedAsync(string name)
         {
-            var feeds = GetFeeds();
+            List<FeedInfo> feeds = GetFeeds();
             feeds.RemoveAll(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
             await SaveFeedsAsync(feeds);
         }
@@ -222,7 +222,7 @@ namespace StartScreen.Services
 
                 if (resourceName != null)
                 {
-                    using (var stream = assembly.GetManifestResourceStream(resourceName))
+                    using (Stream stream = assembly.GetManifestResourceStream(resourceName))
                     {
                         if (stream != null)
                         {

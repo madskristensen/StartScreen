@@ -16,13 +16,13 @@ namespace StartScreen.Services
             if (string.IsNullOrWhiteSpace(path))
                 return;
 
-            string folder = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
+            var folder = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
 
             if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
                 return;
 
             // Prefer pwsh, fall back to cmd
-            string shell = FindPowerShell() ?? "cmd.exe";
+            var shell = FindPowerShell() ?? "cmd.exe";
 
             Process.Start(new ProcessStartInfo
             {
@@ -38,20 +38,20 @@ namespace StartScreen.Services
         private static string FindPowerShell()
         {
             // Check common install locations for PowerShell 7+
-            string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-            string pwshPath = Path.Combine(programFiles, "PowerShell", "7", "pwsh.exe");
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var pwshPath = Path.Combine(programFiles, "PowerShell", "7", "pwsh.exe");
 
             if (File.Exists(pwshPath))
                 return pwshPath;
 
             // Fall back to PATH lookup
-            string pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-            foreach (string dir in pathEnv.Split(';'))
+            var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            foreach (var dir in pathEnv.Split(';'))
             {
                 if (string.IsNullOrWhiteSpace(dir))
                     continue;
 
-                string candidate = Path.Combine(dir.Trim(), "pwsh.exe");
+                var candidate = Path.Combine(dir.Trim(), "pwsh.exe");
                 if (File.Exists(candidate))
                     return candidate;
             }
@@ -108,7 +108,7 @@ namespace StartScreen.Services
             if (string.IsNullOrWhiteSpace(path))
                 return;
 
-            string devenvPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devenv.exe");
+            var devenvPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devenv.exe");
             if (!File.Exists(devenvPath))
                 return;
 
@@ -125,11 +125,11 @@ namespace StartScreen.Services
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-            var dte = await VS.GetServiceAsync<EnvDTE.DTE, EnvDTE.DTE>();
+            EnvDTE.DTE dte = await VS.GetServiceAsync<EnvDTE.DTE, EnvDTE.DTE>();
             if (dte == null)
                 return;
 
-            string extension = Path.GetExtension(path)?.ToLowerInvariant();
+            var extension = Path.GetExtension(path)?.ToLowerInvariant();
 
             if (Directory.Exists(path))
             {

@@ -1,4 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using StartScreen.Models;
 
 namespace StartScreen.Test
@@ -129,7 +128,7 @@ namespace StartScreen.Test
         [TestMethod]
         public void LastCommitTimeText_WhenOverMonth_ReturnsDateFormat()
         {
-            var commitTime = DateTime.Now.AddDays(-45);
+            DateTime commitTime = DateTime.Now.AddDays(-45);
             var item = new MruItem { LastCommitTime = commitTime };
 
             Assert.AreEqual(commitTime.ToString("MMM d"), item.LastCommitTimeText);
@@ -192,10 +191,10 @@ namespace StartScreen.Test
                 GitBranch = "main"
             };
 
-            string tooltip = item.ToolTipText;
+            var tooltip = item.ToolTipText;
 
-            StringAssert.Contains(tooltip, @"C:\Projects\Test.sln");
-            StringAssert.Contains(tooltip, "Branch: main");
+            Assert.Contains(@"C:\Projects\Test.sln", tooltip);
+            Assert.Contains("Branch: main", tooltip);
         }
 
         [TestMethod]
@@ -208,7 +207,7 @@ namespace StartScreen.Test
                 HasUncommittedChanges = true
             };
 
-            StringAssert.Contains(item.ToolTipText, "*");
+            Assert.Contains("*", item.ToolTipText);
         }
 
         [TestMethod]
@@ -222,10 +221,10 @@ namespace StartScreen.Test
                 CommitsBehind = 1
             };
 
-            string tooltip = item.ToolTipText;
+            var tooltip = item.ToolTipText;
 
-            StringAssert.Contains(tooltip, "\u21912");
-            StringAssert.Contains(tooltip, "\u21931");
+            Assert.Contains("\u21912", tooltip);
+            Assert.Contains("\u21931", tooltip);
         }
 
         [TestMethod]
@@ -256,7 +255,7 @@ namespace StartScreen.Test
         public void PropertyChanged_WhenSameValue_DoesNotRaise()
         {
             var item = new MruItem { Name = "Test" };
-            bool raised = false;
+            var raised = false;
             item.PropertyChanged += (s, e) => raised = true;
 
             item.Name = "Test";
@@ -377,7 +376,7 @@ namespace StartScreen.Test
                 LastCommitTime = DateTime.Now.AddHours(-2),
             };
 
-            StringAssert.Contains(item.ToolTipText, "Last commit:");
+            Assert.Contains("Last commit:", item.ToolTipText);
         }
 
         [TestMethod]
@@ -403,6 +402,134 @@ namespace StartScreen.Test
             var item = new MruItem { Path = "   " };
 
             Assert.IsFalse(item.Exists);
+        }
+
+        [TestMethod]
+        public void HasStashes_WhenStashCountIsZero_ReturnsFalse()
+        {
+            var item = new MruItem { StashCount = 0 };
+
+            Assert.IsFalse(item.HasStashes);
+        }
+
+        [TestMethod]
+        public void HasStashes_WhenStashCountIsOne_ReturnsTrue()
+        {
+            var item = new MruItem { StashCount = 1 };
+
+            Assert.IsTrue(item.HasStashes);
+        }
+
+        [TestMethod]
+        public void HasStashes_WhenStashCountIsMultiple_ReturnsTrue()
+        {
+            var item = new MruItem { StashCount = 3 };
+
+            Assert.IsTrue(item.HasStashes);
+        }
+
+        [TestMethod]
+        public void StashText_WhenStashCountIsZero_ReturnsEmpty()
+        {
+            var item = new MruItem { StashCount = 0 };
+
+            Assert.AreEqual(string.Empty, item.StashText);
+        }
+
+        [TestMethod]
+        public void StashText_WhenStashCountIsOne_ReturnsSingular()
+        {
+            var item = new MruItem { StashCount = 1 };
+
+            Assert.AreEqual("1 stash", item.StashText);
+        }
+
+        [TestMethod]
+        public void StashText_WhenStashCountIsMultiple_ReturnsPlural()
+        {
+            var item = new MruItem { StashCount = 3 };
+
+            Assert.AreEqual("3 stashes", item.StashText);
+        }
+
+        [TestMethod]
+        public void HasCurrentOperation_WhenCurrentOperationIsNull_ReturnsFalse()
+        {
+            var item = new MruItem { CurrentOperation = null };
+
+            Assert.IsFalse(item.HasCurrentOperation);
+        }
+
+        [TestMethod]
+        public void HasCurrentOperation_WhenCurrentOperationIsEmpty_ReturnsFalse()
+        {
+            var item = new MruItem { CurrentOperation = string.Empty };
+
+            Assert.IsFalse(item.HasCurrentOperation);
+        }
+
+        [TestMethod]
+        public void HasCurrentOperation_WhenCurrentOperationIsSet_ReturnsTrue()
+        {
+            var item = new MruItem { CurrentOperation = "Merge" };
+
+            Assert.IsTrue(item.HasCurrentOperation);
+        }
+
+        [TestMethod]
+        public void ToolTipText_WithStashCount_IncludesStashInfo()
+        {
+            var item = new MruItem
+            {
+                Path = @"C:\Projects\MyApp",
+                GitBranch = "main",
+                StashCount = 2
+            };
+
+            Assert.Contains("Stashes: 2", item.ToolTipText);
+        }
+
+        [TestMethod]
+        public void ToolTipText_WithCurrentOperation_IncludesOperationInfo()
+        {
+            var item = new MruItem
+            {
+                Path = @"C:\Projects\MyApp",
+                GitBranch = "main",
+                CurrentOperation = "Rebase"
+            };
+
+            Assert.Contains("Operation: Rebase in progress", item.ToolTipText);
+        }
+
+        [TestMethod]
+        public void ToolTipText_WithStashAndOperation_IncludesBoth()
+        {
+            var item = new MruItem
+            {
+                Path = @"C:\Projects\MyApp",
+                GitBranch = "main",
+                StashCount = 1,
+                CurrentOperation = "Merge"
+            };
+
+            Assert.Contains("Stashes: 1", item.ToolTipText);
+            Assert.Contains("Operation: Merge in progress", item.ToolTipText);
+        }
+
+        [TestMethod]
+        public void ToolTipText_WithoutStashOrOperation_DoesNotIncludeExtraInfo()
+        {
+            var item = new MruItem
+            {
+                Path = @"C:\Projects\MyApp",
+                GitBranch = "main",
+                StashCount = 0,
+                CurrentOperation = null
+            };
+
+            Assert.DoesNotContain("Stash", item.ToolTipText);
+            Assert.DoesNotContain("Operation", item.ToolTipText);
         }
     }
 }

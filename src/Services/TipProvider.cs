@@ -25,7 +25,7 @@ namespace StartScreen.Services
         /// </summary>
         public static string GetTipAt(int index)
         {
-            int wrapped = ((index % _tips.Count) + _tips.Count) % _tips.Count;
+            var wrapped = ((index % _tips.Count) + _tips.Count) % _tips.Count;
             return _tips[wrapped];
         }
 
@@ -34,7 +34,7 @@ namespace StartScreen.Services
         /// </summary>
         public static string GetTipOfTheDay()
         {
-            int index = DateTime.Now.DayOfYear % _tips.Count;
+            var index = DateTime.Now.DayOfYear % _tips.Count;
             return _tips[index];
         }
 
@@ -43,7 +43,7 @@ namespace StartScreen.Services
             try
             {
                 Assembly assembly = Assembly.GetExecutingAssembly();
-                string resourceName = assembly.GetManifestResourceNames()
+                var resourceName = assembly.GetManifestResourceNames()
                     .FirstOrDefault(n => n.EndsWith("tips.txt", StringComparison.OrdinalIgnoreCase));
 
                 if (resourceName != null)

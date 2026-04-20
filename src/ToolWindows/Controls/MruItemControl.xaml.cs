@@ -177,7 +177,7 @@ namespace StartScreen.ToolWindows.Controls
             }
             else if (e.Key == Key.Down || e.Key == Key.Up)
             {
-                bool moved = MoveToAdjacentMruItem(e.Key == Key.Down);
+                var moved = MoveToAdjacentMruItem(e.Key == Key.Down);
                 if (!moved && e.Key == Key.Up)
                 {
                     FocusActionBarRequested?.Invoke(this, EventArgs.Empty);
@@ -193,18 +193,18 @@ namespace StartScreen.ToolWindows.Controls
 
         private bool MoveToAdjacentMruItem(bool forward)
         {
-            var parent = FindMruScrollViewer(this);
+            FrameworkElement parent = FindMruScrollViewer(this);
             if (parent == null)
                 return false;
 
             var allItems = new System.Collections.Generic.List<MruItemControl>();
             CollectMruItemControls(parent, allItems);
 
-            int index = allItems.IndexOf(this);
+            var index = allItems.IndexOf(this);
             if (index < 0)
                 return false;
 
-            int next = forward ? index + 1 : index - 1;
+            var next = forward ? index + 1 : index - 1;
             if (next >= 0 && next < allItems.Count)
             {
                 allItems[next].RootBorder.Focus();
@@ -228,8 +228,8 @@ namespace StartScreen.ToolWindows.Controls
 
         private static void CollectMruItemControls(DependencyObject parent, System.Collections.Generic.List<MruItemControl> results)
         {
-            int count = VisualTreeHelper.GetChildrenCount(parent);
-            for (int i = 0; i < count; i++)
+            var count = VisualTreeHelper.GetChildrenCount(parent);
+            for (var i = 0; i < count; i++)
             {
                 DependencyObject child = VisualTreeHelper.GetChild(parent, i);
                 if (child is MruItemControl mru)

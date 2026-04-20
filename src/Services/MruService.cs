@@ -1,13 +1,11 @@
-using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Shell.Interop;
-using Microsoft.VisualStudio.Threading;
-using StartScreen.Helpers;
-using StartScreen.Models;
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Threading;
+using StartScreen.Helpers;
+using StartScreen.Models;
 using static Microsoft.VisualStudio.VSConstants;
 
 namespace StartScreen.Services
@@ -53,23 +51,23 @@ namespace StartScreen.Services
             }
 
             var pinnedPaths = new HashSet<string>(
-                (options.PinnedItems ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries),
+                (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries),
                 StringComparer.OrdinalIgnoreCase);
 
             // Parse MRU entries on background thread (includes file I/O for timestamps)
             // Deduplicate so .sln and .slnx in the same directory collapse to one entry,
             // keeping the most recently accessed.
-            var vsItems = await Task.Run(() =>
+            List<MruItem> vsItems = await Task.Run(() =>
             {
                 var itemsByKey = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
                 foreach (var raw in rawEntries)
                 {
-                    var item = ParseMruEntry(raw);
+                    MruItem item = ParseMruEntry(raw);
                     if (item == null)
                         continue;
 
                     var key = GetDeduplicationKey(item);
-                    if (itemsByKey.TryGetValue(key, out var existing))
+                    if (itemsByKey.TryGetValue(key, out MruItem existing))
                     {
                         if (item.LastAccessed > existing.LastAccessed)
                         {
@@ -91,21 +89,21 @@ namespace StartScreen.Services
             });
 
             // Apply pinned state from Options and build an ordered list for stable pin ordering
-            var pinnedOrderList = (options.PinnedItems ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+            var pinnedOrderList = (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries);
             var pinnedOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < pinnedOrderList.Length; i++)
+            for (var i = 0; i < pinnedOrderList.Length; i++)
             {
                 pinnedOrder[pinnedOrderList[i]] = i;
             }
 
-            foreach (var item in vsItems)
+            foreach (MruItem item in vsItems)
             {
                 item.IsPinned = pinnedPaths.Contains(item.Path);
             }
 
             // Sort: pinned first (in saved order), then unpinned by last accessed
             var pinned = vsItems.Where(i => i.IsPinned)
-                                .OrderBy(i => pinnedOrder.TryGetValue(i.Path, out int idx) ? idx : int.MaxValue)
+                                .OrderBy(i => pinnedOrder.TryGetValue(i.Path, out var idx) ? idx : int.MaxValue)
                                 .ToList();
             var unpinned = vsItems.Where(i => !i.IsPinned)
                                   .OrderByDescending(i => i.LastAccessed)
@@ -145,6 +143,8 @@ namespace StartScreen.Services
 
         /// <summary>
         /// Populates Git status information for items in the background.
+        /// Phase 1: Reads local status (branch, stash, dirty, operation) immediately.
+        /// Phase 2: Fetches from remotes and updates ahead/behind counts as they complete.
         /// Updates each item's Git properties as they resolve, triggering UI updates via INotifyPropertyChanged.
         /// Uses JoinableTaskFactory to avoid blocking and ensure proper thread handling.
         /// </summary>
@@ -157,13 +157,15 @@ namespace StartScreen.Services
 
                 var itemList = items.ToList();
 
-                // Process items in parallel - each gets its own LibGit2Sharp Repository instance.
-                // Cap concurrency to avoid saturating disk I/O during startup.
+                // Track item-to-repo mapping for phase 2
+                var itemRepoMap = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Generic.List<MruItem>>(StringComparer.OrdinalIgnoreCase);
+
+                // Phase 1: Read local status (fast, no network)
                 Parallel.ForEach(itemList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
                 {
                     try
                     {
-                        var status = GitHelper.GetGitStatus(item.Path);
+                        GitStatus status = GitHelper.GetGitStatus(item.Path);
 
                         // Update properties (INotifyPropertyChanged handles UI marshaling)
                         item.GitBranch = status.BranchName;
@@ -171,12 +173,61 @@ namespace StartScreen.Services
                         item.CommitsBehind = status.CommitsBehind;
                         item.HasUncommittedChanges = status.HasUncommittedChanges;
                         item.LastCommitTime = status.LastCommitTime;
+                        item.StashCount = status.StashCount;
+                        item.CurrentOperation = status.CurrentOperation;
+
+                        // Track repo path for phase 2 (if item is in a git repo)
+                        if (status.IsGitRepository)
+                        {
+                            var startDir = Directory.Exists(item.Path) ? item.Path : Path.GetDirectoryName(item.Path);
+                            var repoPath = GitHelper.FindRepositoryPath(startDir);
+                            if (!string.IsNullOrEmpty(repoPath))
+                            {
+                                itemRepoMap.AddOrUpdate(
+                                    repoPath,
+                                    _ => [item],
+                                    (_, list) => { lock (list) { list.Add(item); } return list; });
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
                         ex.Log();
                     }
                 });
+
+                // Phase 2: Fetch and update ahead/behind (slow, network)
+                if (itemRepoMap.Count > 0)
+                {
+                    Parallel.ForEach(itemRepoMap.Keys, new ParallelOptions { MaxDegreeOfParallelism = 4 }, repoPath =>
+                    {
+                        try
+                        {
+                            // Fetch from all remotes (best-effort, silent on failure)
+                            GitHelper.FetchAll(repoPath);
+
+                            // Re-read ahead/behind for all items in this repo
+                            (var ahead, var behind) = GitHelper.GetUpdatedAheadBehind(repoPath);
+
+                            if (itemRepoMap.TryGetValue(repoPath, out List<MruItem> itemsInRepo))
+                            {
+                                foreach (MruItem item in itemsInRepo)
+                                {
+                                    // Only update if fetch succeeded and tracking branch exists
+                                    if (ahead.HasValue || behind.HasValue)
+                                    {
+                                        item.CommitsAhead = ahead;
+                                        item.CommitsBehind = behind;
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            ex.Log();
+                        }
+                    });
+                }
             });
         }
 
@@ -235,7 +286,7 @@ namespace StartScreen.Services
                     displayName = Path.GetFileNameWithoutExtension(rawPath);
                 }
 
-                var type = DetermineType(rawPath);
+                MruItemType type = DetermineType(rawPath);
 
                 var item = new MruItem
                 {
@@ -308,7 +359,7 @@ namespace StartScreen.Services
                 }
 
                 // Solution/project file: look for .suo in the .vs/ folder
-                var suoTime = FindSuoLastWriteTime(path);
+                DateTime? suoTime = FindSuoLastWriteTime(path);
                 if (suoTime.HasValue)
                     return suoTime.Value;
 
@@ -352,7 +403,7 @@ namespace StartScreen.Services
                         var suoPath = System.IO.Path.Combine(versionDir, ".suo");
                         if (File.Exists(suoPath))
                         {
-                            var writeTime = File.GetLastWriteTime(suoPath);
+                            DateTime writeTime = File.GetLastWriteTime(suoPath);
                             if (!latest.HasValue || writeTime > latest.Value)
                             {
                                 latest = writeTime;

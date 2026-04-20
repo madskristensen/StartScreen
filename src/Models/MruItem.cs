@@ -1,4 +1,3 @@
-using System;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -30,13 +29,15 @@ namespace StartScreen.Models
         private int? _commitsBehind;
         private bool _hasUncommittedChanges;
         private DateTime? _lastCommitTime;
+        private int _stashCount;
+        private string _currentOperation;
         private bool? _exists;
 
         /// <summary>
         /// The raw MRU entry strings from IVsMRUItemsStore, used for deletion.
         /// Multiple entries may exist when deduplication collapses .sln and .slnx.
         /// </summary>
-        internal System.Collections.Generic.List<string> RawMruEntries { get; } = new System.Collections.Generic.List<string>();
+        internal System.Collections.Generic.List<string> RawMruEntries { get; } = [];
 
         public string Name
         {
@@ -204,9 +205,57 @@ namespace StartScreen.Models
         }
 
         /// <summary>
+        /// Number of stashed changes in the repository.
+        /// </summary>
+        public int StashCount
+        {
+            get => _stashCount;
+            set
+            {
+                if (_stashCount != value)
+                {
+                    _stashCount = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasStashes));
+                    OnPropertyChanged(nameof(StashText));
+                    OnPropertyChanged(nameof(ToolTipText));
+                }
+            }
+        }
+
+        /// <summary>
+        /// The current git operation in progress (e.g., "Merge", "Rebase").
+        /// Null if no operation is active.
+        /// </summary>
+        public string CurrentOperation
+        {
+            get => _currentOperation;
+            set
+            {
+                if (_currentOperation != value)
+                {
+                    _currentOperation = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasCurrentOperation));
+                    OnPropertyChanged(nameof(ToolTipText));
+                }
+            }
+        }
+
+        /// <summary>
         /// Whether ahead/behind information is available for display.
         /// </summary>
         public bool HasAheadBehind => _commitsAhead.HasValue || _commitsBehind.HasValue;
+
+        /// <summary>
+        /// Whether stash information is available for display.
+        /// </summary>
+        public bool HasStashes => _stashCount > 0;
+
+        /// <summary>
+        /// Whether a git operation is currently in progress.
+        /// </summary>
+        public bool HasCurrentOperation => !string.IsNullOrEmpty(_currentOperation);
 
         /// <summary>
         /// Formatted ahead/behind text (e.g., "up arrow 2 down arrow 3").
@@ -229,6 +278,20 @@ namespace StartScreen.Models
         }
 
         /// <summary>
+        /// Formatted stash text (e.g., "2 stashes").
+        /// </summary>
+        public string StashText
+        {
+            get
+            {
+                if (_stashCount == 0)
+                    return string.Empty;
+
+                return _stashCount == 1 ? "1 stash" : $"{_stashCount} stashes";
+            }
+        }
+
+        /// <summary>
         /// Formatted relative time for last commit (e.g., "2 hours ago").
         /// </summary>
         public string LastCommitTimeText
@@ -238,7 +301,7 @@ namespace StartScreen.Models
                 if (!_lastCommitTime.HasValue)
                     return string.Empty;
 
-                var span = DateTime.Now - _lastCommitTime.Value;
+                TimeSpan span = DateTime.Now - _lastCommitTime.Value;
 
                 if (span.TotalMinutes < 1)
                     return "just now";
@@ -277,6 +340,12 @@ namespace StartScreen.Models
                 if (_lastCommitTime.HasValue)
                     lines.Add($"Last commit: {LastCommitTimeText}");
 
+                if (HasStashes)
+                    lines.Add($"Stashes: {StashCount}");
+
+                if (HasCurrentOperation)
+                    lines.Add($"Operation: {CurrentOperation} in progress");
+
                 return string.Join("\n", lines);
             }
         }
@@ -288,8 +357,8 @@ namespace StartScreen.Models
         {
             get
             {
-                var today = DateTime.Today;
-                var date = _lastAccessed.Date;
+                DateTime today = DateTime.Today;
+                DateTime date = _lastAccessed.Date;
 
                 if (date == today)
                     return "Today";
@@ -330,7 +399,7 @@ namespace StartScreen.Models
         /// </summary>
         public void RefreshExists()
         {
-            bool newValue = CheckExists();
+            var newValue = CheckExists();
             if (_exists != newValue)
             {
                 _exists = newValue;
