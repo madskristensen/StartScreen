@@ -98,8 +98,12 @@ namespace StartScreen.ToolWindows.Controls
 
         private void RootBorder_MouseUp(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton == MouseButton.Left && MruItem != null && _dragStartPoint.HasValue)
+            if (e.ChangedButton == MouseButton.Left && MruItem != null)
             {
+                // For pinned items, only open if we haven't started a drag operation
+                if (MruItem.IsPinned && !_dragStartPoint.HasValue)
+                    return;
+
                 _dragStartPoint = null;
                 ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
             }
