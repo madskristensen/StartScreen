@@ -388,23 +388,24 @@
                                                    FontSize="12" Opacity="0.7"
                                                    Margin="0 2 0 0"
                                                    TextTrimming="CharacterEllipsis"/>
-                                        <!-- Installed badge -->
-                                        <StackPanel Orientation="Horizontal" Margin="0 4 0 0"
-                                                    Visibility="{Binding CurrentSuggestedExtension.IsInstalled, Converter={StaticResource BoolToVisibilityConverter}}">
-                                            <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.StatusOK}"
-                                                                Width="12" Height="12"
-                                                                Margin="0 0 4 0"
-                                                                VerticalAlignment="Center"/>
-                                            <TextBlock Text="Installed" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                        <!-- Install link (visible when not installed) -->
-                                        <TextBlock Margin="0 4 0 0" FontSize="12"
-                                                   Visibility="{Binding CurrentSuggestedExtension.IsInstalled, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                                            <Hyperlink Click="InstallExtension_Click"
-                                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                                                Install extension...
-                                            </Hyperlink>
-                                        </TextBlock>
+                                        <!-- Installed badge / Install link (same slot to prevent height change) -->
+                                        <Grid Margin="0 4 0 0">
+                                            <StackPanel Orientation="Horizontal"
+                                                        Visibility="{Binding CurrentSuggestedExtension.IsInstalled, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.StatusOK}"
+                                                                    Width="12" Height="12"
+                                                                    Margin="0 0 4 0"
+                                                                    VerticalAlignment="Center"/>
+                                                <TextBlock Text="Installed" FontSize="12" Opacity="0.7" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <TextBlock FontSize="12"
+                                                       Visibility="{Binding CurrentSuggestedExtension.IsInstalled, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                                                <Hyperlink Click="InstallExtension_Click"
+                                                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                                                    Learn more and install...
+                                                </Hyperlink>
+                                            </TextBlock>
+                                        </Grid>
                                     </StackPanel>
                                         </DockPanel>
                                     </Border>
