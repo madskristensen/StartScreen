@@ -309,7 +309,7 @@
                                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
                             <DockPanel Margin="16 12">
                                 <!-- Nav buttons -->
-                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="8 0 0 0">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8 0 0 0">
                                     <Button Click="PrevTipButton_Click"
                                             Style="{StaticResource ActionButtonStyle}"
                                             Padding="4"
@@ -333,16 +333,15 @@
                                                     Moniker="{x:Static catalog:KnownMonikers.IntellisenseLightBulb}"
                                                     Width="28" Height="28"
                                                     Margin="0 0 12 0"
-                                                    VerticalAlignment="Center"/>
+                                                    VerticalAlignment="Top"/>
                                     <!-- Text -->
-                                    <TextBlock FontSize="12"
-                                               TextWrapping="Wrap"
-                                               Opacity="0.8"
-                                               VerticalAlignment="Center">
-                                        <Run Text="Tip of the Day" FontWeight="SemiBold" FontSize="13"/>
-                                        <Run Text=" "/>
-                                        <Run Text="{Binding CurrentTip}"/>
-                                    </TextBlock>
+                                    <StackPanel VerticalAlignment="Top">
+                                        <TextBlock Text="Tip of the Day" FontSize="11" Opacity="0.5"/>
+                                        <TextBlock Text="{Binding CurrentTip}"
+                                                   FontSize="12" Opacity="0.8"
+                                                   Margin="0 2 0 0"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
                                     </DockPanel>
                                 </Border>
 
@@ -352,7 +351,7 @@
                                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
                             <DockPanel Margin="16 12">
                                 <!-- Nav buttons -->
-                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="8 0 0 0">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8 0 0 0">
                                     <Button Click="PrevExtensionButton_Click"
                                             Style="{StaticResource ActionButtonStyle}"
                                             Padding="4"
@@ -373,21 +372,22 @@
                                 </StackPanel>
                                 <!-- Icon -->
                                 <imaging:CrispImage DockPanel.Dock="Left"
-                                                    Moniker="{x:Static catalog:KnownMonikers.StatusInformation}"
+                                                    Moniker="{x:Static catalog:KnownMonikers.Extension}"
                                                     Width="28" Height="28"
                                                     Margin="0 0 12 0"
-                                                    VerticalAlignment="Center"/>
+                                                    VerticalAlignment="Top"/>
                                     <!-- Text and Install/Installed Status -->
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock FontSize="12"
-                                                   TextWrapping="Wrap"
-                                                   Opacity="0.8">
-                                            <Run Text="Suggested Extension" FontWeight="SemiBold" FontSize="13"/>
-                                            <Run Text=" "/>
-                                            <Run Text="{Binding CurrentSuggestedExtension.Name}" FontWeight="SemiBold"/>
-                                            <Run Text=" - "/>
-                                            <Run Text="{Binding CurrentSuggestedExtension.Description}"/>
+                                    <StackPanel VerticalAlignment="Top">
+                                        <TextBlock Text="Suggested Extension" FontSize="11" Opacity="0.5"/>
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Margin="0 2 0 0">
+                                            <Run Text="{Binding CurrentSuggestedExtension.Name}"/>
                                         </TextBlock>
+                                        <TextBlock Text="{Binding CurrentSuggestedExtension.Description}"
+                                                   FontSize="12" Opacity="0.7"
+                                                   Margin="0 2 0 0"
+                                                   TextTrimming="CharacterEllipsis"/>
                                         <!-- Installed badge -->
                                         <StackPanel Orientation="Horizontal" Margin="0 4 0 0"
                                                     Visibility="{Binding CurrentSuggestedExtension.IsInstalled, Converter={StaticResource BoolToVisibilityConverter}}">
