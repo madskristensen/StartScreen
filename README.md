@@ -87,6 +87,26 @@ Have a tip to share? [Open an issue][repo] with your suggestion or submit
 a pull request directly to
 [tips.txt](https://github.com/madskristensen/StartScreen/blob/master/src/Resources/tips.txt).
 
+## Suggested extensions
+
+Right next to the Tip of the Day, Start Screen showcases a curated
+extension from the Visual Studio Marketplace. The suggestion rotates
+daily and highlights free, open-source extensions that enhance your
+development workflow.
+
+Extensions you've already installed show an "Installed" badge.
+Extensions you haven't tried yet display an "Install" link that takes
+you straight to the Marketplace page.
+
+Want to suggest an extension? Submit a pull request to
+[extensions.json](https://github.com/madskristensen/StartScreen/blob/master/src/Resources/extensions.json).
+We're looking for extensions that are:
+
+- Free
+- Open source (with a GitHub repository link)
+- Support both ARM and x86 architectures
+- Compatible with Visual Studio 2022+
+
 ## Keyboard-first design
 
 Every part of Start Screen is navigable without a mouse.

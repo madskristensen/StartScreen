@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
@@ -85,8 +85,12 @@
     <Compile Include="ToolWindows\Controls\NewsItemControl.xaml.cs">
       <DependentUpon>NewsItemControl.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Models\SuggestedExtension.cs" />
+    <Compile Include="Services\InstalledExtensionChecker.cs" />
+    <Compile Include="Services\SuggestedExtensionProvider.cs" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Resources\extensions.json" />
     <EmbeddedResource Include="Resources\newsfeeds.json" />
     <EmbeddedResource Include="Resources\tips.txt" />
     <None Include="source.extension.vsixmanifest">

@@ -460,6 +460,32 @@ namespace StartScreen.ToolWindows
             ViewModel?.PreviousTip();
         }
 
+        private void NextExtensionButton_Click(object sender, RoutedEventArgs e)
+        {
+            ViewModel?.NextExtension();
+        }
+
+        private void PrevExtensionButton_Click(object sender, RoutedEventArgs e)
+        {
+            ViewModel?.PreviousExtension();
+        }
+
+        private void InstallExtension_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (ViewModel?.CurrentSuggestedExtension != null &&
+                    !string.IsNullOrWhiteSpace(ViewModel.CurrentSuggestedExtension.MarketplaceUrl))
+                {
+                    System.Diagnostics.Process.Start(ViewModel.CurrentSuggestedExtension.MarketplaceUrl);
+                }
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+            }
+        }
+
         private static readonly string[] OpenableExtensions = { ".sln", ".slnx", ".csproj", ".vbproj", ".fsproj", ".vcxproj" };
 
         private void UserControl_DragOver(object sender, DragEventArgs e)
@@ -513,6 +539,26 @@ namespace StartScreen.ToolWindows
 
             var ext = Path.GetExtension(path)?.ToLowerInvariant();
             return ext != null && OpenableExtensions.Contains(ext);
+        }
+    }
+
+    /// <summary>
+    /// Converter that returns Visible if false, Collapsed if true (inverse of BooleanToVisibilityConverter).
+    /// </summary>
+    public class InverseBoolToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool b && b)
+            {
+                return Visibility.Collapsed;
+            }
+            return Visibility.Visible;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
         }
     }
 

@@ -24,6 +24,8 @@ namespace StartScreen.ToolWindows
         private string _discoverySectionVersion;
         private string _currentTip;
         private int _currentTipIndex;
+        private SuggestedExtension _currentSuggestedExtension;
+        private int _currentExtensionIndex;
         private ObservableCollection<MruItem> _allMruItems;
         private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
         private Timer _autoRefreshTimer;
@@ -130,6 +132,22 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
+        /// The current suggested extension to display.
+        /// </summary>
+        public SuggestedExtension CurrentSuggestedExtension
+        {
+            get => _currentSuggestedExtension;
+            set
+            {
+                if (_currentSuggestedExtension != value)
+                {
+                    _currentSuggestedExtension = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
         /// Advances to the next tip.
         /// </summary>
         public void NextTip()
@@ -147,6 +165,34 @@ namespace StartScreen.ToolWindows
             CurrentTip = TipProvider.GetTipAt(_currentTipIndex);
         }
 
+        /// <summary>
+        /// Advances to the next suggested extension.
+        /// </summary>
+        public void NextExtension()
+        {
+            _currentExtensionIndex++;
+            var extension = SuggestedExtensionProvider.GetSuggestionAt(_currentExtensionIndex);
+            if (extension != null)
+            {
+                extension.IsInstalled = InstalledExtensionChecker.IsInstalled(extension.Id);
+                CurrentSuggestedExtension = extension;
+            }
+        }
+
+        /// <summary>
+        /// Goes back to the previous suggested extension.
+        /// </summary>
+        public void PreviousExtension()
+        {
+            _currentExtensionIndex--;
+            var extension = SuggestedExtensionProvider.GetSuggestionAt(_currentExtensionIndex);
+            if (extension != null)
+            {
+                extension.IsInstalled = InstalledExtensionChecker.IsInstalled(extension.Id);
+                CurrentSuggestedExtension = extension;
+            }
+        }
+
         public StartScreenViewModel()
         {
             MruItems = new ObservableCollection<MruItem>();
@@ -161,6 +207,15 @@ namespace StartScreen.ToolWindows
             _discoverySectionVersion = string.Empty;
             _currentTipIndex = DateTime.Now.DayOfYear % TipProvider.TipCount;
             _currentTip = TipProvider.GetTipOfTheDay();
+
+            // Initialize suggested extension
+            _currentExtensionIndex = DateTime.Now.DayOfYear % SuggestedExtensionProvider.SuggestionCount;
+            var suggestedExtension = SuggestedExtensionProvider.GetSuggestionOfTheDay();
+            if (suggestedExtension != null)
+            {
+                suggestedExtension.IsInstalled = InstalledExtensionChecker.IsInstalled(suggestedExtension.Id);
+                _currentSuggestedExtension = suggestedExtension;
+            }
 
             FeedStore.FeedsChanged += OnFeedsChanged;
         }

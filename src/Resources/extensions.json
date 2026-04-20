@@ -1,0 +1,128 @@
+[
+  {
+    "id": "1209461d-57f8-46a4-814a-dbe5fecef941",
+    "name": "EditorConfig Language Service",
+    "description": "Language support for .editorconfig files",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.EditorConfig"
+  },
+  {
+    "id": "3a7b4930-a5fb-46ec-a9b8-9610c8f953b8",
+    "name": "File Icons",
+    "description": "Adds icons for files that are not recognized by Solution Explorer",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.FileIcons"
+  },
+  {
+    "id": "MarkdownEditor2022.2347dc70-1875-4775-bf48-f2b9fdfee8d4",
+    "name": "Markdown Editor",
+    "description": "A full featured Markdown editor with live preview and syntax highlighting",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.MarkdownEditor2"
+  },
+  {
+    "id": "SolutionFavorites.9f81ec6e-5c91-4809-9dde-9b3166c327fd",
+    "name": "Solution Favorites",
+    "description": "Quick access to favorite files and folders in any solution",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.SolutionFavorites"
+  },
+  {
+    "id": "GitDiffMargin..5ef9f816-d9ce-45cd-a8fa-cd67a807df0e",
+    "name": "Git Diff Margin",
+    "description": "Displays live Git changes in the editor margin and scrollbar",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=LaurentKempe.GitDiffMargin"
+  },
+  {
+    "id": "fc4e241f-57de-4032-9c89-527984c0a0ae",
+    "name": "Image Optimizer",
+    "description": "Compresses images directly in Solution Explorer",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.ImageOptimizer"
+  },
+  {
+    "id": "VsVim.Microsoft.e97cd707-324b-4e35-a669-eef8dae4b8cf",
+    "name": "VsVim",
+    "description": "Vim emulation layer for Visual Studio",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=JaredParMSFT.VsVim"
+  },
+  {
+    "id": "GitHubNode.24524560-9858-4489-a36e-945dea8eea44",
+    "name": ".github + MCP",
+    "description": "Adds a GitHub node to Solution Explorer that displays the contents of your repository's .github folder and MCP servers",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.GitHubNode"
+  },
+  {
+    "id": "WorkspaceFiles.e5308ac4-ca47-4992-945b-9b144a10c2d0",
+    "name": "File Explorer",
+    "description": "Gives access to all files and folders from the file system under the repo or solution root folder in Solution Explorer",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.WorkflowBrowser"
+  },
+  {
+    "id": "MarkdownLintVS.86d3a7c7-0313-4f57-ad29-3cb41e022405",
+    "name": "Markdown Lint",
+    "description": "Real-time Markdown linting with warnings and errors based on markdownlint rules",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.MarkdownLint"
+  },
+  {
+    "id": "VSPets.74ced5aa-4286-436c-b92c-806b823c7e64",
+    "name": "VS Pets",
+    "description": "Animated pets that walk along the Visual Studio status bar and react to builds",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.VSPets"
+  },
+  {
+    "id": "CSVEditor.5164fa67-5caa-4d84-9087-bbaedc2a5539",
+    "name": "CSV Editor",
+    "description": "Full-featured CSV/TSV editor with table view, navigation, and highlighting",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.CSVEditor"
+  },
+  {
+    "id": "SqlFormatter.fdf96f87-bc61-43ec-bc52-50fd011fd54f",
+    "name": "SQL Formatter",
+    "description": "Adds support for the Format Document command for SQL files",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.SqlFormatter"
+  },
+  {
+    "id": "DocumentHealth.ebd2f3af-c274-4af6-bc9d-3e929361845d",
+    "name": "Document Health",
+    "description": "Shows inline diagnostics, margin glyphs, and document health status icon",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.DocumentHealth"
+  },
+  {
+    "id": "41521019-e4c7-480c-8ea8-fc4a2c6f50aa",
+    "name": "SQLite / SQL Server Compact Toolbox",
+    "description": "Explore, script, query, and manage SQLite and SQL Server Compact databases",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=ErikEJ.SQLServerCompactSQLiteToolbox"
+  },
+  {
+    "id": "VSOutputEnhancer.Nikolay Balakin.a06be4c3-f97e-425c-8a0d-bdef08ac2abb",
+    "name": "Output Enhancer",
+    "description": "Adds color highlighting and styling to the Output window and Build results",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=NikolayBalakin.Outputenhancer"
+  },
+  {
+    "id": "BlueSteel.e1e706e2-05d3-4da9-8754-652cd8ab65f4",
+    "name": "Blue Steel Theme Pack",
+    "description": "Collection of beautiful light, dark, and solarized themes for Visual Studio 2026",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.BlueSteel"
+  },
+  {
+    "id": "SolutionColors.dfa813d0-736b-491d-921a-4a3503d41543",
+    "name": "Solution Colors",
+    "description": "Color code solutions and folders to easily distinguish between multiple open instances",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.SolutionColors"
+  },
+  {
+    "id": "TomlEditor.4e804652-a783-473b-827f-6e41f5a48b9b",
+    "name": "TOML Editor",
+    "description": "First-class TOML support with syntax highlighting, validation, outlining, and IntelliSense",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.TomlEditor"
+  },
+  {
+    "id": "SvgViewer.7a08d0d4-985c-4415-93d5-ddd9135d8f4f",
+    "name": "SVG Viewer",
+    "description": "Live SVG preview, IntelliSense, and custom file icons for easier SVG editing",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.SvgViewer"
+  },
+  {
+    "id": "9def4441-acfd-4dd6-bffd-4531a57dee37",
+    "name": "Insert Guid",
+    "description": "Quickly insert a new GUID into any editor or input field with a keyboard shortcut",
+    "marketplaceUrl": "https://marketplace.visualstudio.com/items?itemName=MadsKristensen.insertguid"
+  }
+]
