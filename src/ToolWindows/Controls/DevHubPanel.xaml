@@ -168,14 +168,24 @@
                            Opacity="0.6"
                            TextWrapping="Wrap"
                            Margin="0 0 0 6"/>
-                <TextBox x:Name="SearchQueryTextBox"
-                         FontSize="11"
-                         Padding="4 3"
-                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
-                         Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                         BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}"
-                         LostFocus="SearchQueryTextBox_LostFocus"
-                         KeyDown="SearchQueryTextBox_KeyDown"/>
+                <Grid>
+                    <TextBox x:Name="SearchQueryTextBox"
+                             FontSize="11"
+                             Padding="4 3"
+                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                             Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}"
+                             LostFocus="SearchQueryTextBox_LostFocus"
+                             KeyDown="SearchQueryTextBox_KeyDown"
+                             TextChanged="SearchQueryTextBox_TextChanged"/>
+                    <TextBlock x:Name="SearchQueryPlaceholder"
+                               Text="e.g. state:open archived:false (user:octocat OR org:MyOrg)"
+                               FontSize="11"
+                               Padding="6 4"
+                               Opacity="0.4"
+                               IsHitTestVisible="False"
+                               VerticalAlignment="Center"/>
+                </Grid>
                 <TextBlock Text="Leave empty to use the default (issues/PRs involving you). &quot;is:issue&quot; or &quot;is:pr&quot; is added automatically."
                            FontSize="10"
                            Opacity="0.5"

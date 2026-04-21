@@ -19,7 +19,7 @@ namespace StartScreen.Services
     public static class YouTubeService
     {
         private const string FeedUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=UChqrDOwARrxdJF-ykAptc7w";
-        private const int MaxVideos = 5;
+        private const int MaxVideos = 10;
 
         private static readonly string CacheFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -82,44 +82,67 @@ namespace StartScreen.Services
 
         /// <summary>
         /// Downloads and refreshes the YouTube feed from the network.
-        /// Returns the updated videos, or null if download failed.
+        /// Retries up to 3 times with exponential backoff for transient failures.
+        /// Returns the updated videos, or null if all attempts failed.
         /// </summary>
         public static async Task<List<YouTubeVideo>> DownloadVideosAsync()
         {
-            try
+            const int maxAttempts = 3;
+            const int baseDelayMs = 2000;
+
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                using (var response = await HttpClient.GetAsync(FeedUrl))
+                try
                 {
-                    if (!response.IsSuccessStatusCode)
-                        return null;
-
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    using (var reader = XmlReader.Create(stream))
+                    using (var response = await HttpClient.GetAsync(FeedUrl))
                     {
-                        var feed = SyndicationFeed.Load(reader);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            Trace.TraceWarning($"YouTube feed returned {(int)response.StatusCode} on attempt {attempt}/{maxAttempts}.");
 
-                        if (feed?.Items == null)
+                            if (attempt < maxAttempts)
+                            {
+                                await Task.Delay(baseDelayMs * attempt);
+                                continue;
+                            }
+
                             return null;
+                        }
 
-                        var videos = feed.Items
-                            .Take(MaxVideos)
-                            .Select(YouTubeVideo.FromSyndicationItem)
-                            .Where(v => v != null)
-                            .ToList();
+                        using (var stream = await response.Content.ReadAsStreamAsync())
+                        using (var reader = XmlReader.Create(stream))
+                        {
+                            var feed = SyndicationFeed.Load(reader);
 
-                        WriteCacheToDisk(videos);
+                            if (feed?.Items == null)
+                                return null;
 
-                        Trace.TraceInformation("YouTube feed cache refreshed successfully.");
+                            var videos = feed.Items
+                                .Take(MaxVideos)
+                                .Select(YouTubeVideo.FromSyndicationItem)
+                                .Where(v => v != null)
+                                .ToList();
 
-                        return videos;
+                            WriteCacheToDisk(videos);
+
+                            Trace.TraceInformation("YouTube feed cache refreshed successfully.");
+
+                            return videos;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
+
+                    if (attempt < maxAttempts)
+                    {
+                        await Task.Delay(baseDelayMs * attempt);
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-                return null;
-            }
+
+            return null;
         }
 
         /// <summary>

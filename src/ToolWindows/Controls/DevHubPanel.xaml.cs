@@ -18,6 +18,7 @@ namespace StartScreen.ToolWindows.Controls
         private bool _isLoading;
         private List<Border> _cachedBorders;
         private ItemsControl _cachedBordersList;
+        private bool _suppressSaveOnLostFocus;
 
         public DevHubPanel()
         {
@@ -253,6 +254,9 @@ namespace StartScreen.ToolWindows.Controls
             else
             {
                 SearchQueryTextBox.Text = Options.Instance.DevHubSearchQuery ?? "";
+                SearchQueryPlaceholder.Visibility = string.IsNullOrEmpty(SearchQueryTextBox.Text)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
                 SettingsPanel.Visibility = Visibility.Visible;
                 SearchQueryTextBox.Focus();
             }
@@ -260,7 +264,20 @@ namespace StartScreen.ToolWindows.Controls
 
         private void SearchQueryTextBox_LostFocus(object sender, RoutedEventArgs e)
         {
+            if (_suppressSaveOnLostFocus)
+            {
+                _suppressSaveOnLostFocus = false;
+                return;
+            }
+
             SaveSearchQuery();
+        }
+
+        private void SearchQueryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            SearchQueryPlaceholder.Visibility = string.IsNullOrEmpty(SearchQueryTextBox.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         private void SearchQueryTextBox_KeyDown(object sender, KeyEventArgs e)
@@ -274,6 +291,8 @@ namespace StartScreen.ToolWindows.Controls
             }
             else if (e.Key == Key.Escape)
             {
+                _suppressSaveOnLostFocus = true;
+                SearchQueryTextBox.Text = Options.Instance.DevHubSearchQuery ?? "";
                 SettingsPanel.Visibility = Visibility.Collapsed;
                 e.Handled = true;
             }

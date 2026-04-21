@@ -90,6 +90,49 @@ Drop a solution, project, or folder from File Explorer directly onto the
 Start Screen to open it. You can also drag pinned items to reorder them -
 a visual indicator shows exactly where the item will land.
 
+## Dev Hub
+
+The Dev Hub panel shows your open pull requests, assigned issues, and
+recent CI runs from GitHub and Azure DevOps - right next to your project
+list. Data loads in the background and is cached locally so the UI stays
+responsive.
+
+### Custom search query (GitHub)
+
+By default the Dev Hub shows issues and PRs that "involve" your GitHub
+account. Click the gear icon next to the Dev Hub header to enter a custom
+GitHub search query. The extension prepends `is:issue` or `is:pr`
+automatically, so you only need to provide the filtering part.
+
+Use the `{login}` placeholder to reference the authenticated username.
+
+**Example - show open issues across multiple orgs:**
+
+```
+state:open archived:false sort:updated-desc (user:madskristensen OR org:VsixCommunity OR org:ligershark)
+```
+
+**Example - only issues assigned to you:**
+
+```
+state:open assignee:{login}
+```
+
+**Example - issues in a single org:**
+
+```
+state:open org:dotnet
+```
+
+Leave the field empty to restore the default behavior (`involves:{login}`).
+
+The custom query applies to the Issues and Pull Requests tabs. The CI
+Runs tab always fetches from your recently pushed repositories and is not
+affected by the query.
+
+> The custom search query setting only applies to GitHub. Azure DevOps
+> uses dedicated REST APIs for each repository and is not affected.
+
 ## Tip of the day
 
 Every time Visual Studio starts, a short productivity tip appears at the

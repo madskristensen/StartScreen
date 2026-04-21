@@ -59,6 +59,7 @@ namespace StartScreen.ToolWindows
 
                 // Bind ViewModel to trigger UI update
                 DataContext = _viewModel;
+                UpdateResponsiveColumns();
 
                 // Refresh news/version in background, Dev Hub already started
                 _viewModel.PropertyChanged += ViewModel_PropertyChanged;
@@ -89,6 +90,72 @@ namespace StartScreen.ToolWindows
         {
             Options.Instance.SplitterPosition = LeftColumn.ActualWidth;
             Options.Instance.SaveAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private void RightPaneBorder_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdateResponsiveColumns();
+        }
+
+        private void UpdateResponsiveColumns()
+        {
+            if (ViewModel == null || RightPaneBorder.ActualWidth == 0)
+                return;
+
+            double available = RightPaneBorder.ActualWidth - 64; // subtract left+right margins (32+32)
+
+            // DevHub(520) + gap(24) = 544, news col = 372 (360+12), YouTube col = 292 (280+12), section gap = 24
+            const double baseWidth = 544 + 24; // DevHub + gap after it
+            const double newsCol = 372;
+            const double youTubeCol = 292;
+            const double sectionGap = 24;
+            const int maxNewsCols = 4;
+            const int maxYouTubeCols = 2;
+
+            // Start with minimum: 2 news columns, 1 YouTube column
+            double used = baseWidth + 2 * newsCol + sectionGap + youTubeCol;
+            int newsColumns = 2;
+            int youTubeColumns = 1;
+
+            // Expansion order: +news, +youtube, +news, +youtube, ...
+            bool tryNews = true;
+
+            while (true)
+            {
+                bool canAddNews = newsColumns < maxNewsCols && used + newsCol <= available;
+                bool canAddYouTube = youTubeColumns < maxYouTubeCols && used + youTubeCol <= available;
+
+                if (tryNews && canAddNews)
+                {
+                    newsColumns++;
+                    used += newsCol;
+                    tryNews = false;
+                }
+                else if (!tryNews && canAddYouTube)
+                {
+                    youTubeColumns++;
+                    used += youTubeCol;
+                    tryNews = true;
+                }
+                else if (canAddNews)
+                {
+                    newsColumns++;
+                    used += newsCol;
+                    tryNews = false;
+                }
+                else if (canAddYouTube)
+                {
+                    youTubeColumns++;
+                    used += youTubeCol;
+                    tryNews = true;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            ViewModel.UpdateColumnCounts(newsColumns, youTubeColumns);
         }
 
         private async void NewProjectButton_Click(object sender, RoutedEventArgs e)
@@ -239,7 +306,12 @@ namespace StartScreen.ToolWindows
             {
                 try
                 {
-                    DevHubPanelControl.ShowLoading();
+                    // Only show loading spinner if we have no data to display
+                    if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
+                    {
+                        DevHubPanelControl.ShowLoading();
+                    }
+
                     var progress = new Progress<DevHubDashboard>(_ => UpdateDevHubPanel());
                     await _devHubService.RefreshAsync(CancellationToken.None, progress);
                     UpdateDevHubPanel();
@@ -247,7 +319,12 @@ namespace StartScreen.ToolWindows
                 catch (Exception ex)
                 {
                     await ex.LogAsync();
-                    DevHubPanelControl.ShowError("Failed to refresh. Check your connection and try again.");
+
+                    // Only show error if we have no cached data to fall back to
+                    if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
+                    {
+                        DevHubPanelControl.ShowError("Failed to refresh. Check your connection and try again.");
+                    }
                 }
             }).FileAndForget(nameof(StartScreenControl));
         }

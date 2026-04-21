@@ -18,7 +18,9 @@ namespace StartScreen.ToolWindows
     {
         private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromHours(4);
         private bool _isRefreshingNews;
+        private bool _isNewsUnavailable;
         private bool _isRefreshingYouTube;
+        private bool _isYouTubeUnavailable;
         private bool _isUpdateAvailable;
         private string _searchFilter;
         private string _discoverySectionTitle;
@@ -29,6 +31,9 @@ namespace StartScreen.ToolWindows
         private int _currentExtensionIndex;
         private ObservableCollection<MruItem> _allMruItems;
         private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
+        private readonly List<YouTubeVideo> _allYouTubeVideos = new List<YouTubeVideo>();
+        private int _newsColumnCount = 2;
+        private int _youTubeColumnCount = 1;
         private Timer _autoRefreshTimer;
         private Timer _filterDebounceTimer;
         private MruItem _selectedMruItem;
@@ -43,6 +48,32 @@ namespace StartScreen.ToolWindows
         public ObservableCollection<RecentTemplate> RecentTemplates { get; private set; }
         public ObservableCollection<YouTubeVideo> YouTubeVideos { get; private set; }
 
+        public int NewsColumnCount
+        {
+            get => _newsColumnCount;
+            private set
+            {
+                if (_newsColumnCount != value)
+                {
+                    _newsColumnCount = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public int YouTubeColumnCount
+        {
+            get => _youTubeColumnCount;
+            private set
+            {
+                if (_youTubeColumnCount != value)
+                {
+                    _youTubeColumnCount = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         public bool IsRefreshingNews
         {
             get => _isRefreshingNews;
@@ -56,6 +87,19 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        public bool IsNewsUnavailable
+        {
+            get => _isNewsUnavailable;
+            set
+            {
+                if (_isNewsUnavailable != value)
+                {
+                    _isNewsUnavailable = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         public bool IsRefreshingYouTube
         {
             get => _isRefreshingYouTube;
@@ -64,6 +108,19 @@ namespace StartScreen.ToolWindows
                 if (_isRefreshingYouTube != value)
                 {
                     _isRefreshingYouTube = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool IsYouTubeUnavailable
+        {
+            get => _isYouTubeUnavailable;
+            set
+            {
+                if (_isYouTubeUnavailable != value)
+                {
+                    _isYouTubeUnavailable = value;
                     OnPropertyChanged();
                 }
             }
@@ -368,8 +425,9 @@ namespace StartScreen.ToolWindows
             if (cachedVideos != null && cachedVideos.Count > 0)
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                YouTubeVideos = new ObservableCollection<YouTubeVideo>(cachedVideos);
-                OnPropertyChanged(nameof(YouTubeVideos));
+                _allYouTubeVideos.Clear();
+                _allYouTubeVideos.AddRange(cachedVideos);
+                UpdateYouTubeCollections();
             }
         }
 
@@ -463,16 +521,24 @@ namespace StartScreen.ToolWindows
                     if (posts != null)
                     {
                         await UpdateNewsPostsOnUIThreadAsync(posts);
+                        IsNewsUnavailable = false;
+                        LastNewsRefreshText = "Updated just now";
+                    }
+                    else
+                    {
+                        IsNewsUnavailable = _allNewsPosts.Count == 0;
+                        LastNewsRefreshText = "Feed unavailable";
                     }
                 }
                 catch (Exception ex)
                 {
                     ex.Log();
+                    IsNewsUnavailable = _allNewsPosts.Count == 0;
+                    LastNewsRefreshText = "Feed unavailable";
                 }
                 finally
                 {
                     IsRefreshingNews = false;
-                    LastNewsRefreshText = "Updated just now";
                 }
             }).FileAndForget(nameof(StartScreenViewModel));
         }
@@ -541,16 +607,24 @@ namespace StartScreen.ToolWindows
                     if (videos != null)
                     {
                         await UpdateYouTubeOnUIThreadAsync(videos);
+                        IsYouTubeUnavailable = false;
+                        LastYouTubeRefreshText = "Updated just now";
+                    }
+                    else
+                    {
+                        IsYouTubeUnavailable = _allYouTubeVideos.Count == 0;
+                        LastYouTubeRefreshText = "Feed unavailable";
                     }
                 }
                 catch (Exception ex)
                 {
                     ex.Log();
+                    IsYouTubeUnavailable = _allYouTubeVideos.Count == 0;
+                    LastYouTubeRefreshText = "Feed unavailable";
                 }
                 finally
                 {
                     IsRefreshingYouTube = false;
-                    LastYouTubeRefreshText = "Updated just now";
                 }
             }).FileAndForget(nameof(StartScreenViewModel));
         }
@@ -558,8 +632,9 @@ namespace StartScreen.ToolWindows
         private async Task UpdateYouTubeOnUIThreadAsync(List<YouTubeVideo> videos)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            YouTubeVideos = new ObservableCollection<YouTubeVideo>(videos);
-            OnPropertyChanged(nameof(YouTubeVideos));
+            _allYouTubeVideos.Clear();
+            _allYouTubeVideos.AddRange(videos);
+            UpdateYouTubeCollections();
         }
 
         /// <summary>
@@ -597,6 +672,7 @@ namespace StartScreen.ToolWindows
 
         /// <summary>
         /// Rebuilds the pinned and unpinned news collections from the master list.
+        /// Limits visible unpinned items to 10 per column.
         /// </summary>
         private void UpdateNewsCollections()
         {
@@ -604,8 +680,43 @@ namespace StartScreen.ToolWindows
             PinnedNewsPosts = new ObservableCollection<NewsPost>(_allNewsPosts.Where(p => p.IsPinned));
             OnPropertyChanged(nameof(PinnedNewsPosts));
 
-            NewsPosts = new ObservableCollection<NewsPost>(_allNewsPosts.Where(p => !p.IsPinned));
+            NewsPosts = new ObservableCollection<NewsPost>(
+                _allNewsPosts.Where(p => !p.IsPinned).Take(NewsColumnCount * 10));
             OnPropertyChanged(nameof(NewsPosts));
+        }
+
+        /// <summary>
+        /// Rebuilds the visible YouTube collection from the master list.
+        /// Limits visible items to 5 per column.
+        /// </summary>
+        private void UpdateYouTubeCollections()
+        {
+            YouTubeVideos = new ObservableCollection<YouTubeVideo>(
+                _allYouTubeVideos.Take(YouTubeColumnCount * 5));
+            OnPropertyChanged(nameof(YouTubeVideos));
+        }
+
+        /// <summary>
+        /// Updates the number of news and YouTube columns based on available width.
+        /// Called from the view when the right pane resizes.
+        /// </summary>
+        public void UpdateColumnCounts(int newsColumns, int youTubeColumns)
+        {
+            bool newsChanged = _newsColumnCount != newsColumns;
+            bool ytChanged = _youTubeColumnCount != youTubeColumns;
+
+            NewsColumnCount = newsColumns;
+            YouTubeColumnCount = youTubeColumns;
+
+            if (newsChanged)
+            {
+                UpdateNewsCollections();
+            }
+
+            if (ytChanged)
+            {
+                UpdateYouTubeCollections();
+            }
         }
 
         private async Task RefreshVersionTitleAsync()

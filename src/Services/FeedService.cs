@@ -28,7 +28,7 @@ namespace StartScreen.Services
         private static readonly HttpClient HttpClient = new HttpClient();
         private static readonly TimeSpan StaleThreshold = TimeSpan.FromHours(4);
         private const int MaxConcurrentDownloads = 6;
-        private const int MaxNewsItems = 20;
+        private const int MaxNewsItems = 40;
 
         static FeedService()
         {
@@ -83,35 +83,50 @@ namespace StartScreen.Services
 
         /// <summary>
         /// Downloads and refreshes feeds from the network.
-        /// Returns the updated news posts, or null if download failed.
+        /// Retries the full download up to 2 times for transient failures.
+        /// Returns the updated news posts, or null if all attempts failed.
         /// </summary>
         public static async Task<List<NewsPost>> DownloadFeedsAsync(IEnumerable<FeedInfo> feeds)
         {
             if (feeds == null || !feeds.Any())
                 return null;
 
-            // Download and combine feeds
-            try
+            const int maxAttempts = 2;
+            const int baseDelayMs = 3000;
+
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                SyndicationFeed combinedFeed = await DownloadAndCombineFeedsAsync(feeds);
+                try
+                {
+                    SyndicationFeed combinedFeed = await DownloadAndCombineFeedsAsync(feeds);
 
-                if (combinedFeed == null)
-                    return null;
+                    if (combinedFeed?.Items != null && combinedFeed.Items.Any())
+                    {
+                        List<NewsPost> posts = ConvertToNewsPosts(combinedFeed);
+                        WriteCacheToDisk(posts);
+                        Trace.TraceInformation("Feed cache refreshed successfully.");
+                        return posts;
+                    }
 
-                List<NewsPost> posts = ConvertToNewsPosts(combinedFeed);
+                    Trace.TraceWarning($"News feed download returned no items on attempt {attempt}/{maxAttempts}.");
 
-                // Write slim JSON cache
-                WriteCacheToDisk(posts);
+                    if (attempt < maxAttempts)
+                    {
+                        await Task.Delay(baseDelayMs * attempt);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
 
-                Trace.TraceInformation("Feed cache refreshed successfully.");
-
-                return posts;
+                    if (attempt < maxAttempts)
+                    {
+                        await Task.Delay(baseDelayMs * attempt);
+                    }
+                }
             }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-                return null;
-            }
+
+            return null;
         }
 
         /// <summary>
