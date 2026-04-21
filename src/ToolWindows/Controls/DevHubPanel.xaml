@@ -38,14 +38,9 @@
                                 Padding="{TemplateBinding Padding}"
                                 BorderThickness="0 0 0 2"
                                 BorderBrush="Transparent">
-                            <Border x:Name="FocusBorder"
-                                    BorderThickness="1"
-                                    BorderBrush="Transparent"
-                                    Padding="0">
-                                <ContentPresenter ContentSource="Header"
-                                                  HorizontalAlignment="Center"
-                                                  VerticalAlignment="Center"/>
-                            </Border>
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
@@ -57,8 +52,8 @@
                                         Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="FocusBorder" Property="BorderBrush"
-                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                                <Setter TargetName="TabBorder" Property="Background"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -213,9 +208,17 @@
                                                        VerticalAlignment="Top"
                                                        Margin="8 0 0 0"/>
                                             <StackPanel>
-                                                <TextBlock Text="{Binding Title}"
-                                                           FontSize="12"
-                                                           TextTrimming="CharacterEllipsis"/>
+                                                <DockPanel>
+                                                    <TextBlock DockPanel.Dock="Left"
+                                                               Text="{Binding Number}"
+                                                               FontSize="11"
+                                                               Opacity="0.5"
+                                                               VerticalAlignment="Center"
+                                                               Margin="0 0 4 0"/>
+                                                    <TextBlock Text="{Binding Title}"
+                                                               FontSize="12"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </DockPanel>
                                                 <TextBlock Text="{Binding RepoFullName}"
                                                            FontSize="11"
                                                            Opacity="0.5"
@@ -233,9 +236,7 @@
                                                             <Border CornerRadius="8"
                                                                     Padding="6 1"
                                                                     Margin="0 0 4 2"
-                                                                    Background="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}"
-                                                                    BorderBrush="{Binding Color, Converter={StaticResource HexColorToForegroundConverter}}"
-                                                                    BorderThickness="1">
+                                                                    Background="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}">
                                                                 <TextBlock Text="{Binding Name}"
                                                                            FontSize="10"
                                                                            Foreground="{Binding Color, Converter={StaticResource HexColorToForegroundConverter}}"/>
@@ -249,7 +250,7 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock x:Name="NoIssuesText" Text="No assigned issues"
+                        <TextBlock x:Name="NoIssuesText" Text="No open issues"
                                    FontSize="12" Opacity="0.4"
                                    Margin="4 4 0 0"
                                    Visibility="Collapsed"/>
@@ -280,10 +281,18 @@
                                                        VerticalAlignment="Top"
                                                        Margin="8 0 0 0"/>
                                             <StackPanel>
-                                                <TextBlock Text="{Binding Title}"
-                                                           FontSize="12"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                                <StackPanel Orientation="Horizontal" Margin="0 2 0 0">
+                                                <DockPanel>
+                                                    <TextBlock DockPanel.Dock="Left"
+                                                               Text="{Binding Number}"
+                                                               FontSize="11"
+                                                               Opacity="0.5"
+                                                               VerticalAlignment="Center"
+                                                               Margin="0 0 4 0"/>
+                                                    <TextBlock Text="{Binding Title}"
+                                                               FontSize="12"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </DockPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0 3 0 0">
                                                     <TextBlock Text="{Binding RepoFullName}"
                                                                FontSize="11"
                                                                Opacity="0.5"/>
@@ -292,7 +301,20 @@
                                                                Margin="6 0 0 0"
                                                                VerticalAlignment="Center"
                                                                Visibility="{Binding CiStatus, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                                    <!-- Draft badge -->
+                                                    <Border CornerRadius="8" Padding="6 1" Margin="6 0 0 0"
+                                                            Background="#30848d97" BorderThickness="1" BorderBrush="#50848d97"
+                                                            Visibility="{Binding IsDraft, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                        <TextBlock Text="Draft" FontSize="10" Opacity="0.7"/>
+                                                    </Border>
                                                 </StackPanel>
+                                                <!-- Branch info -->
+                                                <TextBlock Text="{Binding BranchDisplayText}"
+                                                           FontSize="10.5"
+                                                           Opacity="0.4"
+                                                           Margin="0 2 0 0"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Visibility="{Binding BranchDisplayText, Converter={StaticResource NullToCollapsedConverter}}"/>
                                             </StackPanel>
                                         </DockPanel>
                                     </Border>

@@ -439,7 +439,7 @@
                                               FocusNewsRequested="DevHubPanel_FocusNewsRequested"/>
 
                         <!-- News (flexible width, center) -->
-                        <StackPanel Grid.Column="1" Margin="0 0 24 0">
+                        <StackPanel Grid.Column="1" Margin="20 0 24 0">
 
                     <!-- News Header -->
                     <Grid Margin="0 0 0 12">
@@ -505,7 +505,7 @@
                     <ItemsControl ItemsSource="{Binding NewsPosts}" Focusable="False">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <UniformGrid Columns="3"/>
+                                <UniformGrid Columns="2"/>
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>

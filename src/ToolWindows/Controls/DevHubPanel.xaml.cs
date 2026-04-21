@@ -485,12 +485,11 @@ namespace StartScreen.ToolWindows.Controls
                     byte.TryParse(hex.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte g) &&
                     byte.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))
                 {
-                    // Semi-transparent background like GitHub dark mode labels
-                    return new SolidColorBrush(Color.FromArgb(50, r, g, b));
+                    return new SolidColorBrush(Color.FromRgb(r, g, b));
                 }
             }
 
-            return new SolidColorBrush(Color.FromArgb(30, 128, 128, 128));
+            return new SolidColorBrush(Color.FromRgb(128, 128, 128));
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -500,7 +499,8 @@ namespace StartScreen.ToolWindows.Controls
     }
 
     /// <summary>
-    /// Converts a hex color string to a foreground brush (the label's own color at higher opacity).
+    /// Converts a hex color string to a contrasting foreground brush (black or white)
+    /// based on the perceived luminance of the color. Works in both light and dark themes.
     /// </summary>
     public class HexColorToForegroundConverter : System.Windows.Data.IValueConverter
     {
@@ -513,11 +513,11 @@ namespace StartScreen.ToolWindows.Controls
                     byte.TryParse(hex.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte g) &&
                     byte.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))
                 {
-                    // Lighten the color for readability on dark backgrounds
-                    r = (byte)Math.Min(255, r + 80);
-                    g = (byte)Math.Min(255, g + 80);
-                    b = (byte)Math.Min(255, b + 80);
-                    return new SolidColorBrush(Color.FromRgb(r, g, b));
+                    // Perceived luminance (W3C formula)
+                    double luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+                    return luminance > 0.5
+                        ? new SolidColorBrush(Color.FromRgb(30, 30, 30))
+                        : new SolidColorBrush(Color.FromRgb(255, 255, 255));
                 }
             }
 

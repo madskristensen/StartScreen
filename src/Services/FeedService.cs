@@ -28,7 +28,7 @@ namespace StartScreen.Services
         private static readonly HttpClient HttpClient = new HttpClient();
         private static readonly TimeSpan StaleThreshold = TimeSpan.FromHours(4);
         private const int MaxConcurrentDownloads = 6;
-        private const int MaxNewsItems = 25;
+        private const int MaxNewsItems = 20;
 
         static FeedService()
         {

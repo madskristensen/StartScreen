@@ -102,5 +102,45 @@ namespace StartScreen.Test.DevHub
 
             Assert.AreEqual(string.Empty, pr.RepoFullName);
         }
+
+        [TestMethod]
+        public void IsDraft_WhenStatusIsDraft_ReturnsTrue()
+        {
+            var pr = new DevHubPullRequest { Status = "draft" };
+
+            Assert.IsTrue(pr.IsDraft);
+        }
+
+        [TestMethod]
+        public void IsDraft_WhenStatusIsOpen_ReturnsFalse()
+        {
+            var pr = new DevHubPullRequest { Status = "open" };
+
+            Assert.IsFalse(pr.IsDraft);
+        }
+
+        [TestMethod]
+        public void BranchDisplayText_WithBothBranches_ReturnsArrowFormat()
+        {
+            var pr = new DevHubPullRequest { SourceBranch = "feature/test", TargetBranch = "main" };
+
+            Assert.AreEqual("feature/test \u2192 main", pr.BranchDisplayText);
+        }
+
+        [TestMethod]
+        public void BranchDisplayText_WithOnlySource_ReturnsSourceOnly()
+        {
+            var pr = new DevHubPullRequest { SourceBranch = "feature/test", TargetBranch = null };
+
+            Assert.AreEqual("feature/test", pr.BranchDisplayText);
+        }
+
+        [TestMethod]
+        public void BranchDisplayText_WithNoSource_ReturnsNull()
+        {
+            var pr = new DevHubPullRequest { SourceBranch = null, TargetBranch = "main" };
+
+            Assert.IsNull(pr.BranchDisplayText);
+        }
     }
 }

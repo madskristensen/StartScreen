@@ -143,8 +143,8 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 using (var client = CreateHttpClient(credential))
                 {
-                    var query = Uri.EscapeDataString($"is:issue is:open assignee:{login}");
-                    var url = $"https://api.github.com/search/issues?q={query}&sort=created&order=desc&per_page=20";
+                    var query = Uri.EscapeDataString($"is:issue is:open involves:{login}");
+                    var url = $"https://api.github.com/search/issues?q={query}&sort=updated&order=desc&per_page=20";
 
                     var response = await client.GetAsync(url, cancellationToken);
                     if (!response.IsSuccessStatusCode)

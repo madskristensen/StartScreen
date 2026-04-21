@@ -93,6 +93,28 @@ namespace StartScreen.Models.DevHub
         public bool IsAuthoredByCurrentUser { get; set; }
 
         /// <summary>
+        /// Whether this PR is a draft.
+        /// </summary>
+        public bool IsDraft => string.Equals(Status, "draft", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Returns the source branch display text (e.g., "feature/my-branch -> main"), or null if unavailable.
+        /// </summary>
+        public string BranchDisplayText
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(SourceBranch))
+                    return null;
+
+                if (!string.IsNullOrEmpty(TargetBranch))
+                    return $"{SourceBranch} \u2192 {TargetBranch}";
+
+                return SourceBranch;
+            }
+        }
+
+        /// <summary>
         /// Returns a human-readable relative time since last update.
         /// </summary>
         public string UpdatedAgoText

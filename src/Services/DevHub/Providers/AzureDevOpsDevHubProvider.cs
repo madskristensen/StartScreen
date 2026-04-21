@@ -212,6 +212,10 @@ namespace StartScreen.Services.DevHub.Providers
                         ? createdBy.GetProperty("displayName").GetString()
                         : "Unknown";
 
+                    var reviewerCount = 0;
+                    if (pr.TryGetProperty("reviewers", out var reviewers) && reviewers.ValueKind == JsonValueKind.Array)
+                        reviewerCount = reviewers.GetArrayLength();
+
                     results.Add(new DevHubPullRequest
                     {
                         ProviderName = "Azure DevOps",
@@ -229,6 +233,7 @@ namespace StartScreen.Services.DevHub.Providers
                             : pr.GetProperty("creationDate").GetDateTime().ToUniversalTime(),
                         CreatedAt = pr.GetProperty("creationDate").GetDateTime().ToUniversalTime(),
                         WebUrl = $"https://dev.azure.com/{repo.Owner}/{repo.Project}/_git/{repo.Repo}/pullrequest/{id}",
+                        ApprovalCount = reviewerCount,
                     });
                 }
             }
