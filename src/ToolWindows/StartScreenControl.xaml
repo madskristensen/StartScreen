@@ -104,6 +104,7 @@
     </UserControl.Resources>
 
     <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False"
+                  KeyboardNavigation.DirectionalNavigation="None"
                   PreviewMouseWheel="PageScroll_PreviewMouseWheel">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -417,6 +418,7 @@
 
                     <!-- Content Row: Dev Hub | News | YouTube -->
                     <ScrollViewer x:Name="ContentScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Focusable="False"
+                                  KeyboardNavigation.DirectionalNavigation="None"
                                   PreviewMouseWheel="ContentScroll_PreviewMouseWheel">
                     <Grid>
                         <Grid.ColumnDefinitions>

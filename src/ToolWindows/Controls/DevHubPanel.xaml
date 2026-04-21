@@ -62,6 +62,9 @@
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
                 </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                </Trigger>
             </Style.Triggers>
         </Style>
     </UserControl.Resources>

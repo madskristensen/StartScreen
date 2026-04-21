@@ -227,8 +227,8 @@ namespace StartScreen.ToolWindows.Controls
             DependencyObject current = element;
             while (current != null)
             {
-                if (current is StackPanel sp && sp.Name == "NewsPanel")
-                    return sp;
+                if (current is FrameworkElement fe && fe.Name == "NewsPanel")
+                    return fe;
 
                 current = VisualTreeHelper.GetParent(current);
             }

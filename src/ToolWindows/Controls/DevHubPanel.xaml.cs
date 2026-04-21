@@ -282,7 +282,7 @@ namespace StartScreen.ToolWindows.Controls
                 return false;
 
             var list = GetActiveItemsList();
-            if (list == null || list.Items.Count == 0)
+            if (list == null)
             {
                 Keyboard.Focus(DevHubSubTabs);
                 return true;
@@ -290,21 +290,14 @@ namespace StartScreen.ToolWindows.Controls
 
             list.UpdateLayout();
 
-            // Try to find the focusable border inside the first item container
-            var container = list.ItemContainerGenerator.ContainerFromIndex(0);
-            if (container is FrameworkElement fe)
+            var borders = CollectFocusableBorders(list);
+            if (borders.Count > 0)
             {
-                var border = FindFirstFocusable(fe);
-                if (border != null)
-                {
-                    Keyboard.Focus(border);
-                    return true;
-                }
+                Keyboard.Focus(borders[0]);
+                return true;
             }
 
-            // Fallback: focus the tab control and use MoveFocus to go to first child
             Keyboard.Focus(DevHubSubTabs);
-            DevHubSubTabs.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
             return true;
         }
 
@@ -321,6 +314,12 @@ namespace StartScreen.ToolWindows.Controls
 
         private void DevHubSubTabs_PreviewKeyDown(object sender, KeyEventArgs e)
         {
+            // Only handle navigation when a tab header is focused, not when
+            // content inside the tab has focus (otherwise we intercept item keys).
+            var focused = Keyboard.FocusedElement as DependencyObject;
+            if (!IsInsideTabHeader(focused))
+                return;
+
             if (e.Key == Key.Down)
             {
                 FocusFirstItem();
@@ -338,11 +337,33 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
+        private bool IsInsideTabHeader(DependencyObject element)
+        {
+            while (element != null && element != DevHubSubTabs)
+            {
+                if (element is TabItem)
+                    return true;
+                element = VisualTreeHelper.GetParent(element);
+            }
+
+            // Also true if the TabControl itself has focus
+            return element == DevHubSubTabs;
+        }
+
         private void DevHubItem_KeyDown(object sender, KeyEventArgs e)
         {
+            if (!(sender is Border currentBorder))
+                return;
+
             if (e.Key == Key.Up)
             {
-                if (!MoveToPreviousItem(sender as FrameworkElement))
+                var borders = CollectFocusableBorders(GetActiveItemsList());
+                int index = borders.IndexOf(currentBorder);
+                if (index > 0)
+                {
+                    Keyboard.Focus(borders[index - 1]);
+                }
+                else
                 {
                     // At top of list - go to tabs
                     DevHubSubTabs.Focus();
@@ -351,7 +372,12 @@ namespace StartScreen.ToolWindows.Controls
             }
             else if (e.Key == Key.Down)
             {
-                MoveToNextItem(sender as FrameworkElement);
+                var borders = CollectFocusableBorders(GetActiveItemsList());
+                int index = borders.IndexOf(currentBorder);
+                if (index >= 0 && index < borders.Count - 1)
+                {
+                    Keyboard.Focus(borders[index + 1]);
+                }
                 e.Handled = true;
             }
             else if (e.Key == Key.Left)
@@ -366,85 +392,40 @@ namespace StartScreen.ToolWindows.Controls
             }
             else if (e.Key == Key.Enter)
             {
-                if (sender is Border border)
+                // Simulate click
+                currentBorder.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
                 {
-                    // Simulate click
-                    border.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
-                    {
-                        RoutedEvent = Border.MouseUpEvent,
-                    });
-                }
+                    RoutedEvent = Border.MouseUpEvent,
+                });
                 e.Handled = true;
             }
         }
 
-        private bool MoveToPreviousItem(FrameworkElement current)
+        private static List<Border> CollectFocusableBorders(ItemsControl list)
         {
-            var list = GetActiveItemsList();
-            if (list == null || current == null)
-                return false;
-
-            int index = FindItemIndex(list, current);
-            if (index <= 0)
-                return false;
-
-            FocusItemAtIndex(list, index - 1);
-            return true;
-        }
-
-        private void MoveToNextItem(FrameworkElement current)
-        {
-            var list = GetActiveItemsList();
-            if (list == null || current == null)
-                return;
-
-            int index = FindItemIndex(list, current);
-            if (index < 0 || index >= list.Items.Count - 1)
-                return;
-
-            FocusItemAtIndex(list, index + 1);
-        }
-
-        private static int FindItemIndex(ItemsControl list, FrameworkElement element)
-        {
-            for (int i = 0; i < list.Items.Count; i++)
+            var result = new List<Border>();
+            if (list != null)
             {
-                var container = list.ItemContainerGenerator.ContainerFromIndex(i);
-                if (container is FrameworkElement fe && (fe == element || fe.IsAncestorOf(element)))
-                    return i;
+                CollectFocusableBordersRecursive(list, result);
             }
-            return -1;
+            return result;
         }
 
-        private static void FocusItemAtIndex(ItemsControl list, int index)
+        private static void CollectFocusableBordersRecursive(DependencyObject parent, List<Border> results)
         {
-            var container = list.ItemContainerGenerator.ContainerFromIndex(index);
-            if (container is FrameworkElement fe)
-            {
-                var border = FindFirstFocusable(fe);
-                border?.Focus();
-            }
-        }
-
-        private static FrameworkElement FindFirstFocusable(DependencyObject parent)
-        {
-            if (parent is Border border && border.Focusable)
-                return border;
-
             int count = VisualTreeHelper.GetChildrenCount(parent);
             for (int i = 0; i < count; i++)
             {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                var result = FindFirstFocusable(child);
-                if (result != null)
-                    return result;
+                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+                if (child is Border b && b.Focusable)
+                {
+                    results.Add(b);
+                }
+                else
+                {
+                    CollectFocusableBordersRecursive(child, results);
+                }
             }
-
-            // Fallback: any focusable element
-            if (parent is FrameworkElement fe && fe.Focusable && !(parent is Panel))
-                return fe;
-
-            return null;
         }
     }
 
