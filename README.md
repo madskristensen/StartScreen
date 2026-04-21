@@ -109,7 +109,7 @@ Use the `{login}` placeholder to reference the authenticated username.
 **Example - show open issues across multiple orgs:**
 
 ```
-state:open archived:false sort:updated-desc (user:madskristensen OR org:VsixCommunity OR org:ligershark)
+state:open archived:false sort:updated-desc user:madskristensen org:VsixCommunity org:ligershark
 ```
 
 **Example - only issues assigned to you:**

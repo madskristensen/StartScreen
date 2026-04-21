@@ -233,6 +233,56 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public void HasProvider_ReturnsTrue_WhenUserWithHostExists()
+        {
+            var dashboard = new DevHubDashboard
+            {
+                Users = new List<DevHubUser>
+                {
+                    new DevHubUser { Username = "user", Host = "github.com", ProviderName = "GitHub" }
+                }
+            };
+
+            Assert.IsTrue(dashboard.HasProvider("github.com"));
+        }
+
+        [TestMethod]
+        public void HasProvider_ReturnsFalse_WhenHostNotPresent()
+        {
+            var dashboard = new DevHubDashboard
+            {
+                Users = new List<DevHubUser>
+                {
+                    new DevHubUser { Username = "user", Host = "github.com", ProviderName = "GitHub" }
+                }
+            };
+
+            Assert.IsFalse(dashboard.HasProvider("dev.azure.com"));
+        }
+
+        [TestMethod]
+        public void HasProvider_ReturnsFalse_WhenNoUsers()
+        {
+            var dashboard = new DevHubDashboard();
+
+            Assert.IsFalse(dashboard.HasProvider("github.com"));
+        }
+
+        [TestMethod]
+        public void HasProvider_IsCaseInsensitive()
+        {
+            var dashboard = new DevHubDashboard
+            {
+                Users = new List<DevHubUser>
+                {
+                    new DevHubUser { Username = "user", Host = "Dev.Azure.Com", ProviderName = "Azure DevOps" }
+                }
+            };
+
+            Assert.IsTrue(dashboard.HasProvider("dev.azure.com"));
+        }
+
+        [TestMethod]
         public void HasData_WithPRs_ReturnsTrue()
         {
             var dashboard = CreateTestDashboard();

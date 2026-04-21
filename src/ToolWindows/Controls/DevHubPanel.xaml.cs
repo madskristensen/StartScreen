@@ -58,13 +58,16 @@ namespace StartScreen.ToolWindows.Controls
 
             if (dashboard == null)
             {
-                ShowNotConnected();
+                ShowNotConnected(hasGitHub: false, hasAdo: false);
                 return;
             }
 
+            bool hasGitHub = dashboard.HasProvider("github.com");
+            bool hasAdo = dashboard.HasProvider("dev.azure.com");
+
             if (!dashboard.HasAuthentication)
             {
-                ShowNotConnected();
+                ShowNotConnected(hasGitHub, hasAdo);
                 return;
             }
 
@@ -85,6 +88,7 @@ namespace StartScreen.ToolWindows.Controls
                 UpdateCiRuns(dashboard.CiRuns);
             }
 
+            UpdateSettingsAccountStatus(hasGitHub, hasAdo);
             UpdateLastRefresh(dashboard.FetchedAt);
             ShowDashboard();
         }
@@ -115,13 +119,24 @@ namespace StartScreen.ToolWindows.Controls
             ErrorMessageText.Text = message;
         }
 
-        private void ShowNotConnected()
+        private void ShowNotConnected(bool hasGitHub, bool hasAdo)
         {
             _isLoading = false;
             DashboardPanel.Visibility = Visibility.Collapsed;
             LoadingPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Collapsed;
             NotConnectedPanel.Visibility = Visibility.Visible;
+
+            ConnectGitHubTextBlock.Visibility = hasGitHub ? Visibility.Collapsed : Visibility.Visible;
+            ConnectAdoTextBlock.Visibility = hasAdo ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private void UpdateSettingsAccountStatus(bool hasGitHub, bool hasAdo)
+        {
+            ConnectedGitHubStatus.Visibility = hasGitHub ? Visibility.Visible : Visibility.Collapsed;
+            SettingsConnectGitHubTextBlock.Visibility = hasGitHub ? Visibility.Collapsed : Visibility.Visible;
+            ConnectedAdoStatus.Visibility = hasAdo ? Visibility.Visible : Visibility.Collapsed;
+            AdoPatEntryPanel.Visibility = hasAdo ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void ShowDashboard()
@@ -257,8 +272,14 @@ namespace StartScreen.ToolWindows.Controls
                 SearchQueryPlaceholder.Visibility = string.IsNullOrEmpty(SearchQueryTextBox.Text)
                     ? Visibility.Visible
                     : Visibility.Collapsed;
+
+                bool hasGitHub = _currentDashboard?.HasProvider("github.com") == true;
+                bool hasAdo = _currentDashboard?.HasProvider("dev.azure.com") == true
+                    || Services.DevHub.DevHubCredentialHelper.HasCredential("dev.azure.com");
+                UpdateSettingsAccountStatus(hasGitHub, hasAdo);
+                AdoPatBox.Clear();
+
                 SettingsPanel.Visibility = Visibility.Visible;
-                SearchQueryTextBox.Focus();
             }
         }
 
@@ -315,7 +336,68 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ConnectAdo_Click(object sender, RoutedEventArgs e)
         {
-            ConnectAccountRequested?.Invoke(this, "dev.azure.com");
+            // Open settings panel to show the ADO PAT entry
+            if (SettingsPanel.Visibility != Visibility.Visible)
+            {
+                Settings_Click(sender, e);
+            }
+
+            AdoPatBox.Focus();
+        }
+
+        private void AdoPatBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                var pat = AdoPatBox.Password?.Trim();
+                if (!string.IsNullOrEmpty(pat))
+                {
+                    Services.DevHub.DevHubCredentialHelper.StoreCredential("dev.azure.com", string.Empty, pat);
+                    Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
+                    AdoPatBox.Clear();
+                    SettingsPanel.Visibility = Visibility.Collapsed;
+                    RefreshRequested?.Invoke(this, EventArgs.Empty);
+                }
+
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                AdoPatBox.Clear();
+                SettingsPanel.Visibility = Visibility.Collapsed;
+                e.Handled = true;
+            }
+        }
+
+        private void AdoPatBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            AdoPatPlaceholder.Visibility = string.IsNullOrEmpty(AdoPatBox.Password)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        private void OpenAdoPatPage_Click(object sender, RoutedEventArgs e)
+        {
+            OpenUrl("https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate");
+        }
+
+        private void ChangeAdoPat_Click(object sender, RoutedEventArgs e)
+        {
+            // Show the PAT entry panel so the user can enter a new token
+            ConnectedAdoStatus.Visibility = Visibility.Collapsed;
+            AdoPatEntryPanel.Visibility = Visibility.Visible;
+            AdoPatBox.Clear();
+            AdoPatBox.Focus();
+        }
+
+        private void DisconnectAdo_Click(object sender, RoutedEventArgs e)
+        {
+            Services.DevHub.DevHubCredentialHelper.RemoveCredential("dev.azure.com");
+            Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
+            ConnectedAdoStatus.Visibility = Visibility.Collapsed;
+            AdoPatEntryPanel.Visibility = Visibility.Visible;
+            AdoPatBox.Clear();
+            RefreshRequested?.Invoke(this, EventArgs.Empty);
         }
 
         /// <summary>

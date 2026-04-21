@@ -342,12 +342,13 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_ConnectAccountRequested(object sender, string host)
         {
-            // GCM handles auth automatically. Prompt user to push/pull to trigger credential flow.
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                host == "dev.azure.com"
-                    ? "https://dev.azure.com"
-                    : "https://github.com/login")
-            { UseShellExecute = true });
+            // GCM handles GitHub auth - open the login page to trigger credential flow.
+            if (string.Equals(host, "github.com", System.StringComparison.OrdinalIgnoreCase))
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    "https://github.com/login")
+                { UseShellExecute = true });
+            }
         }
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)

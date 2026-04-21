@@ -41,6 +41,20 @@ namespace StartScreen.Models.DevHub
         public bool HasAuthentication => Users.Count > 0;
 
         /// <summary>
+        /// Whether a user authenticated against the given host is present.
+        /// </summary>
+        public bool HasProvider(string host)
+        {
+            for (int i = 0; i < Users.Count; i++)
+            {
+                if (string.Equals(Users[i].Host, host, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Whether the dashboard has any data to display.
         /// </summary>
         public bool HasData => PullRequests.Count > 0 || Issues.Count > 0 || CiRuns.Count > 0;
