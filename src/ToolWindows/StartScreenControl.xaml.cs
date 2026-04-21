@@ -143,6 +143,14 @@ namespace StartScreen.ToolWindows
                     e.Handled = true;
                 }
             }
+            else if (e.Key == Key.Up)
+            {
+                if (ActionBar.Children.Count > 0 && ActionBar.Children[0] is Button btn)
+                {
+                    btn.Focus();
+                }
+                e.Handled = true;
+            }
         }
 
         private void MruItemControl_PinToggleRequested(object sender, MruItem item)
@@ -341,6 +349,58 @@ namespace StartScreen.ToolWindows
             DevHubPanelControl.FocusFirstItem();
         }
 
+        private void NewsItemControl_FocusYouTubeRequested(object sender, EventArgs e)
+        {
+            FocusFirstYouTubeItem();
+        }
+
+        private void YouTubeVideoControl_FocusNewsRequested(object sender, EventArgs e)
+        {
+            FocusTopOfSecondNewsColumn();
+        }
+
+        private void FocusFirstYouTubeItem()
+        {
+            YouTubeVideoControl firstYt = FindFirstControl<YouTubeVideoControl>(NewsPanel);
+            if (firstYt != null)
+            {
+                firstYt.RootBorder.Focus();
+            }
+        }
+
+        private void FocusTopOfSecondNewsColumn()
+        {
+            var allItems = new System.Collections.Generic.List<NewsItemControl>();
+            CollectNewsItemControls(NewsPanel, allItems);
+
+            if (allItems.Count >= 2)
+            {
+                // The second column starts at index 1 in a multi-column grid
+                allItems[1].RootBorder.Focus();
+            }
+            else if (allItems.Count > 0)
+            {
+                allItems[0].RootBorder.Focus();
+            }
+        }
+
+        private static void CollectNewsItemControls(DependencyObject parent, System.Collections.Generic.List<NewsItemControl> results)
+        {
+            var count = VisualTreeHelper.GetChildrenCount(parent);
+            for (var i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+                if (child is NewsItemControl news)
+                {
+                    results.Add(news);
+                }
+                else
+                {
+                    CollectNewsItemControls(child, results);
+                }
+            }
+        }
+
         private void ActionBar_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (!(e.OriginalSource is Button currentButton))
@@ -370,14 +430,15 @@ namespace StartScreen.ToolWindows
             }
             else if (e.Key == Key.Down)
             {
-                FocusFirstMruItem();
+                SearchBox.Focus();
                 e.Handled = true;
             }
         }
 
         private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Oem3 && Keyboard.Modifiers == ModifierKeys.Alt)
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (key == Key.Oem3 && Keyboard.Modifiers == ModifierKeys.Alt)
             {
                 SearchBox.Focus();
                 e.Handled = true;
@@ -388,22 +449,7 @@ namespace StartScreen.ToolWindows
         {
             if (Keyboard.Modifiers == ModifierKeys.Shift)
             {
-                ContentScroll.ScrollToHorizontalOffset(ContentScroll.HorizontalOffset - e.Delta);
-                e.Handled = true;
-            }
-        }
-
-        private void ContentScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (Keyboard.Modifiers == ModifierKeys.Shift)
-            {
-                ContentScroll.ScrollToHorizontalOffset(ContentScroll.HorizontalOffset - e.Delta);
-                e.Handled = true;
-            }
-            else
-            {
-                // Forward vertical scroll to the outer PageScroll
-                PageScroll.ScrollToVerticalOffset(PageScroll.VerticalOffset - e.Delta);
+                PageScroll.ScrollToHorizontalOffset(PageScroll.HorizontalOffset - e.Delta);
                 e.Handled = true;
             }
         }
@@ -412,7 +458,7 @@ namespace StartScreen.ToolWindows
         {
             // Only redirect focus to MRU when the outer control itself or a non-interactive
             // container gets focus (not when an inner control like Dev Hub items get focus)
-            if (e.NewFocus == this || e.NewFocus == PageScroll || e.NewFocus == ContentScroll)
+            if (e.NewFocus == this || e.NewFocus == PageScroll)
             {
                 FocusFirstMruItem();
             }

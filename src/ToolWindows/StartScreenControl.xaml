@@ -103,8 +103,7 @@
         </Style>
     </UserControl.Resources>
 
-    <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False"
-                  KeyboardNavigation.DirectionalNavigation="None"
+    <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Focusable="False"
                   PreviewMouseWheel="PageScroll_PreviewMouseWheel">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -260,9 +259,9 @@
         <!-- Right Pane: Links + News (subtle lighter background) -->
         <Border Grid.Column="2"
                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandShelfBackgroundGradientBeginBrushKey}}">
-            <DockPanel x:Name="NewsPanel" Margin="0 24 0 0" Focusable="False">
+            <StackPanel x:Name="NewsPanel" Margin="32 24 32 24" Focusable="False">
                     <!-- Update Available Banner -->
-                    <Border DockPanel.Dock="Top" Margin="32 0 32 16"
+                    <Border Margin="0 0 0 16"
                             Padding="12 10"
                             CornerRadius="4"
                             Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
@@ -285,7 +284,7 @@
                     </Border>
 
                     <!-- Quick Links -->
-                    <DockPanel DockPanel.Dock="Top" Margin="32 0 32 20">
+                    <DockPanel Margin="0 0 0 20">
                         <TextBlock Text="{Binding DiscoverySectionTitle}"
                                   FontSize="24"
                                   FontWeight="SemiBold"
@@ -301,7 +300,7 @@
                     </DockPanel>
 
                     <!-- Tip of the Day and Suggested Extension Cards -->
-                    <Grid DockPanel.Dock="Top" Margin="32 32 32 32">
+                    <Grid Margin="0 32 0 32">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="16"/>
@@ -417,10 +416,6 @@
                                 </Grid>
 
                     <!-- Content Row: Dev Hub | News | YouTube -->
-                    <ScrollViewer x:Name="ContentScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Focusable="False"
-                                  KeyboardNavigation.DirectionalNavigation="None"
-                                  Padding="32 0 32 0"
-                                  PreviewMouseWheel="ContentScroll_PreviewMouseWheel">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -440,7 +435,7 @@
                                               FocusNewsRequested="DevHubPanel_FocusNewsRequested"/>
 
                         <!-- News (flexible width, center) -->
-                        <StackPanel Grid.Column="1" Margin="20 0 24 0">
+                        <StackPanel Grid.Column="1" Margin="0 0 24 0">
 
                     <!-- News Header -->
                     <Grid Margin="0 0 0 12">
@@ -497,7 +492,8 @@
                             <DataTemplate>
                                 <controls:NewsItemControl Margin="0 0 0 12"
                                                           PinToggleRequested="NewsItemControl_PinToggleRequested"
-                                                          FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"/>
+                                                          FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
+                                                          FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -513,7 +509,8 @@
                             <DataTemplate>
                                 <controls:NewsItemControl Margin="0 0 12 12" MaxWidth="360"
                                                           PinToggleRequested="NewsItemControl_PinToggleRequested"
-                                                          FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"/>
+                                                          FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
+                                                          FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -568,15 +565,15 @@
                             <ItemsControl ItemsSource="{Binding YouTubeVideos}" Focusable="False">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <controls:YouTubeVideoControl Margin="0 0 0 16"/>
+                                        <controls:YouTubeVideoControl Margin="0 0 0 16"
+                                                                       FocusNewsRequested="YouTubeVideoControl_FocusNewsRequested"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
 
                     </Grid>
-                    </ScrollViewer>
-            </DockPanel>
+            </StackPanel>
         </Border>
     </Grid>
     </ScrollViewer>

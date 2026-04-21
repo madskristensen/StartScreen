@@ -17,6 +17,7 @@ namespace StartScreen.ToolWindows.Controls
 
         public event EventHandler<NewsPost> PinToggleRequested;
         public event EventHandler FocusDevHubRequested;
+        public event EventHandler FocusYouTubeRequested;
 
         public NewsItemControl()
         {
@@ -119,7 +120,14 @@ namespace StartScreen.ToolWindows.Controls
             }
             else if (e.Key == Key.Right)
             {
-                MoveHorizontally(true);
+                if (IsInLastColumn())
+                {
+                    FocusYouTubeRequested?.Invoke(this, EventArgs.Empty);
+                }
+                else
+                {
+                    MoveHorizontally(true);
+                }
                 e.Handled = true;
             }
         }
@@ -139,6 +147,23 @@ namespace StartScreen.ToolWindows.Controls
 
             var columnsPerRow = GetColumnsPerRow(allItems);
             return index % columnsPerRow == 0;
+        }
+
+        private bool IsInLastColumn()
+        {
+            FrameworkElement parent = FindNewsScrollViewer(this);
+            if (parent == null)
+                return false;
+
+            var allItems = new List<NewsItemControl>();
+            CollectNewsItemControls(parent, allItems);
+
+            var index = allItems.IndexOf(this);
+            if (index < 0)
+                return false;
+
+            var columnsPerRow = GetColumnsPerRow(allItems);
+            return index % columnsPerRow == columnsPerRow - 1;
         }
 
         private void MoveVertically(bool down)

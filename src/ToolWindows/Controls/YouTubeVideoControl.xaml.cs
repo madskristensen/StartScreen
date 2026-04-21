@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,6 +12,8 @@ namespace StartScreen.ToolWindows.Controls
 {
     public partial class YouTubeVideoControl : UserControl
     {
+        public event EventHandler FocusNewsRequested;
+
         public YouTubeVideoControl()
         {
             InitializeComponent();
@@ -45,6 +49,16 @@ namespace StartScreen.ToolWindows.Controls
                 OpenVideo(video);
                 e.Handled = true;
             }
+            else if (e.Key == Key.Up || e.Key == Key.Down)
+            {
+                MoveVertically(e.Key == Key.Down);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Left)
+            {
+                FocusNewsRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+            }
         }
 
         private void RootBorder_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -58,6 +72,56 @@ namespace StartScreen.ToolWindows.Controls
             if (!RootBorder.IsMouseOver)
             {
                 RootBorder.Background = Brushes.Transparent;
+            }
+        }
+
+        private void MoveVertically(bool down)
+        {
+            var allItems = CollectSiblingControls();
+            var index = allItems.IndexOf(this);
+            if (index < 0)
+                return;
+
+            var next = down ? index + 1 : index - 1;
+            if (next >= 0 && next < allItems.Count)
+            {
+                allItems[next].RootBorder.Focus();
+            }
+        }
+
+        private List<YouTubeVideoControl> CollectSiblingControls()
+        {
+            var results = new List<YouTubeVideoControl>();
+            DependencyObject current = VisualTreeHelper.GetParent(this);
+
+            while (current != null)
+            {
+                if (current is ItemsControl)
+                {
+                    CollectYouTubeControls(current, results);
+                    return results;
+                }
+
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            return results;
+        }
+
+        private static void CollectYouTubeControls(DependencyObject parent, List<YouTubeVideoControl> results)
+        {
+            var count = VisualTreeHelper.GetChildrenCount(parent);
+            for (var i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+                if (child is YouTubeVideoControl yt)
+                {
+                    results.Add(yt);
+                }
+                else
+                {
+                    CollectYouTubeControls(child, results);
+                }
             }
         }
 

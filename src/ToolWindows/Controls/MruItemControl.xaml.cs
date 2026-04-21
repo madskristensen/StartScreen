@@ -200,17 +200,20 @@ namespace StartScreen.ToolWindows.Controls
                 RemoveMenuItem_Click(sender, null);
                 e.Handled = true;
             }
-            else if (e.Key == Key.Oem3 && Keyboard.Modifiers == ModifierKeys.Alt)
+            else if (e.Key == Key.Oem3 || e.SystemKey == Key.Oem3)
             {
-                FocusSearchBoxRequested?.Invoke(this, EventArgs.Empty);
-                e.Handled = true;
+                if (Keyboard.Modifiers == ModifierKeys.Alt)
+                {
+                    FocusSearchBoxRequested?.Invoke(this, EventArgs.Empty);
+                    e.Handled = true;
+                }
             }
             else if (e.Key == Key.Down || e.Key == Key.Up)
             {
                 var moved = MoveToAdjacentMruItem(e.Key == Key.Down);
                 if (!moved && e.Key == Key.Up)
                 {
-                    FocusActionBarRequested?.Invoke(this, EventArgs.Empty);
+                    FocusSearchBoxRequested?.Invoke(this, EventArgs.Empty);
                 }
                 e.Handled = true;
             }
