@@ -176,8 +176,8 @@ namespace StartScreen.Helpers
                     if (process == null)
                         return;
 
-                    // 15-second timeout
-                    if (!process.WaitForExit(15000))
+                    // 5-second timeout (best-effort, silent failure on slow networks)
+                    if (!process.WaitForExit(5000))
                     {
                         try
                         {

@@ -16,6 +16,8 @@ namespace StartScreen.ToolWindows.Controls
     {
         private DevHubDashboard _currentDashboard;
         private bool _isLoading;
+        private List<Border> _cachedBorders;
+        private ItemsControl _cachedBordersList;
 
         public DevHubPanel()
         {
@@ -132,9 +134,10 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdatePullRequests(IReadOnlyList<DevHubPullRequest> pullRequests)
         {
+            InvalidateBorderCache();
             if (pullRequests != null && pullRequests.Count > 0)
             {
-                PullRequestsList.ItemsSource = pullRequests.OrderByDescending(pr => pr.UpdatedAt).ToList();
+                PullRequestsList.ItemsSource = pullRequests;
                 PrCountBadge.Text = $"({pullRequests.Count})";
                 NoPrsText.Visibility = Visibility.Collapsed;
             }
@@ -148,9 +151,10 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateIssues(IReadOnlyList<DevHubIssue> issues)
         {
+            InvalidateBorderCache();
             if (issues != null && issues.Count > 0)
             {
-                IssuesList.ItemsSource = issues.OrderByDescending(i => i.CreatedAt).ToList();
+                IssuesList.ItemsSource = issues;
                 IssueCountBadge.Text = $"({issues.Count})";
                 NoIssuesText.Visibility = Visibility.Collapsed;
             }
@@ -164,9 +168,10 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateCiRuns(IReadOnlyList<DevHubCiRun> ciRuns)
         {
+            InvalidateBorderCache();
             if (ciRuns != null && ciRuns.Count > 0)
             {
-                CiRunsList.ItemsSource = ciRuns.OrderByDescending(r => r.Timestamp).ToList();
+                CiRunsList.ItemsSource = ciRuns;
                 CiCountBadge.Text = $"({ciRuns.Count})";
                 NoCiText.Visibility = Visibility.Collapsed;
             }
@@ -296,9 +301,7 @@ namespace StartScreen.ToolWindows.Controls
                 return true;
             }
 
-            list.UpdateLayout();
-
-            var borders = CollectFocusableBorders(list);
+            var borders = GetCachedBorders(list);
             if (borders.Count > 0)
             {
                 borders[0].Focus();
@@ -333,7 +336,7 @@ namespace StartScreen.ToolWindows.Controls
             var list = GetActiveItemsList();
             if (list != null)
             {
-                var borders = CollectFocusableBorders(list);
+                var borders = GetCachedBorders(list);
                 var focusedBorder = focused as Border;
                 int index = focusedBorder != null ? borders.IndexOf(focusedBorder) : -1;
 
@@ -418,6 +421,22 @@ namespace StartScreen.ToolWindows.Controls
             return element == DevHubSubTabs;
         }
 
+        private List<Border> GetCachedBorders(ItemsControl list)
+        {
+            if (_cachedBorders != null && _cachedBordersList == list)
+                return _cachedBorders;
+
+            _cachedBordersList = list;
+            _cachedBorders = CollectFocusableBorders(list);
+            return _cachedBorders;
+        }
+
+        private void InvalidateBorderCache()
+        {
+            _cachedBorders = null;
+            _cachedBordersList = null;
+        }
+
         private static List<Border> CollectFocusableBorders(ItemsControl list)
         {
             var result = new List<Border>();
@@ -476,16 +495,24 @@ namespace StartScreen.ToolWindows.Controls
     /// </summary>
     public class HexColorToBrushConverter : System.Windows.Data.IValueConverter
     {
+        private static readonly Dictionary<string, SolidColorBrush> _cache = new Dictionary<string, SolidColorBrush>(StringComparer.OrdinalIgnoreCase);
+
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             if (value is string hex && hex.Length >= 6)
             {
                 hex = hex.TrimStart('#');
+                if (_cache.TryGetValue(hex, out var cached))
+                    return cached;
+
                 if (byte.TryParse(hex.Substring(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte r) &&
                     byte.TryParse(hex.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte g) &&
                     byte.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))
                 {
-                    return new SolidColorBrush(Color.FromRgb(r, g, b));
+                    var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+                    brush.Freeze();
+                    _cache[hex] = brush;
+                    return brush;
                 }
             }
 
@@ -504,6 +531,9 @@ namespace StartScreen.ToolWindows.Controls
     /// </summary>
     public class HexColorToForegroundConverter : System.Windows.Data.IValueConverter
     {
+        private static readonly SolidColorBrush DarkBrush = CreateFrozen(Color.FromRgb(30, 30, 30));
+        private static readonly SolidColorBrush LightBrush = CreateFrozen(Color.FromRgb(255, 255, 255));
+
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             if (value is string hex && hex.Length >= 6)
@@ -513,15 +543,19 @@ namespace StartScreen.ToolWindows.Controls
                     byte.TryParse(hex.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte g) &&
                     byte.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))
                 {
-                    // Perceived luminance (W3C formula)
                     double luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
-                    return luminance > 0.5
-                        ? new SolidColorBrush(Color.FromRgb(30, 30, 30))
-                        : new SolidColorBrush(Color.FromRgb(255, 255, 255));
+                    return luminance > 0.5 ? DarkBrush : LightBrush;
                 }
             }
 
             return SystemColors.ControlTextBrush;
+        }
+
+        private static SolidColorBrush CreateFrozen(Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

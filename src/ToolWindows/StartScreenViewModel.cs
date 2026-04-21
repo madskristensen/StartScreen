@@ -30,6 +30,7 @@ namespace StartScreen.ToolWindows
         private ObservableCollection<MruItem> _allMruItems;
         private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
         private Timer _autoRefreshTimer;
+        private Timer _filterDebounceTimer;
         private MruItem _selectedMruItem;
         private string _lastNewsRefreshText;
         private string _lastYouTubeRefreshText;
@@ -168,8 +169,7 @@ namespace StartScreen.ToolWindows
                 {
                     _searchFilter = value;
                     OnPropertyChanged();
-                    FilterMru(value);
-                    OnPropertyChanged(nameof(HasNoSearchResults));
+                    DebounceFilterMru(value);
                 }
             }
         }
@@ -378,16 +378,13 @@ namespace StartScreen.ToolWindows
         /// </summary>
         public async Task RefreshInBackgroundAsync()
         {
-            // Background tasks (no main thread needed initially)
             Task newsTask = RefreshNewsAsync();
             Task youtubeTask = RefreshYouTubeAsync();
             Task versionTask = RefreshVersionTitleAsync();
+            Task mruTask = RefreshMruAsync();
+            Task updateTask = CheckForUpdateAsync();
 
-            // Main-thread tasks run sequentially to avoid contention
-            await RefreshMruAsync();
-            await CheckForUpdateAsync();
-
-            await Task.WhenAll(newsTask, youtubeTask, versionTask);
+            await Task.WhenAll(newsTask, youtubeTask, versionTask, mruTask, updateTask);
         }
 
         private async Task RefreshMruAsync()
@@ -508,12 +505,7 @@ namespace StartScreen.ToolWindows
 
                 if (!hasCached || YouTubeService.IsCacheStale())
                 {
-                    var downloaded = await YouTubeService.DownloadVideosAsync();
-
-                    if (downloaded != null)
-                    {
-                        await UpdateYouTubeOnUIThreadAsync(downloaded);
-                    }
+                    StartBackgroundYouTubeRefresh();
                 }
             }
             catch (Exception ex)
@@ -772,6 +764,23 @@ namespace StartScreen.ToolWindows
             await MruService.RemoveItemAsync(item);
 
             UpdateMruCollections();
+        }
+
+        /// <summary>
+        /// Debounces the search filter to avoid rebuilding collections on every keystroke.
+        /// </summary>
+        private void DebounceFilterMru(string query)
+        {
+            _filterDebounceTimer?.Dispose();
+            _filterDebounceTimer = new Timer(_ =>
+            {
+                ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    FilterMru(query);
+                    OnPropertyChanged(nameof(HasNoSearchResults));
+                }).FileAndForget(nameof(StartScreenViewModel));
+            }, null, 200, Timeout.Infinite);
         }
 
         /// <summary>

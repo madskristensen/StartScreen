@@ -193,7 +193,23 @@
                         </StackPanel>
                     </TabItem.Header>
                     <StackPanel Margin="0 8 0 0">
-                        <ItemsControl x:Name="IssuesList" Focusable="False">
+                        <ItemsControl x:Name="IssuesList" Focusable="False"
+                                      VirtualizingPanel.IsVirtualizing="True"
+                                      VirtualizingPanel.VirtualizationMode="Recycling"
+                                      ScrollViewer.CanContentScroll="True"
+                                      MaxHeight="600">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.Template>
+                                <ControlTemplate TargetType="ItemsControl">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </ControlTemplate>
+                            </ItemsControl.Template>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
@@ -266,7 +282,23 @@
                         </StackPanel>
                     </TabItem.Header>
                     <StackPanel Margin="0 8 0 0">
-                        <ItemsControl x:Name="PullRequestsList" Focusable="False">
+                        <ItemsControl x:Name="PullRequestsList" Focusable="False"
+                                      VirtualizingPanel.IsVirtualizing="True"
+                                      VirtualizingPanel.VirtualizationMode="Recycling"
+                                      ScrollViewer.CanContentScroll="True"
+                                      MaxHeight="600">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.Template>
+                                <ControlTemplate TargetType="ItemsControl">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </ControlTemplate>
+                            </ItemsControl.Template>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
@@ -337,7 +369,23 @@
                         </StackPanel>
                     </TabItem.Header>
                     <StackPanel Margin="0 8 0 0">
-                        <ItemsControl x:Name="CiRunsList" Focusable="False">
+                        <ItemsControl x:Name="CiRunsList" Focusable="False"
+                                      VirtualizingPanel.IsVirtualizing="True"
+                                      VirtualizingPanel.VirtualizationMode="Recycling"
+                                      ScrollViewer.CanContentScroll="True"
+                                      MaxHeight="600">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.Template>
+                                <ControlTemplate TargetType="ItemsControl">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </ControlTemplate>
+                            </ItemsControl.Template>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Padding="4 6" CornerRadius="2" Cursor="Hand"

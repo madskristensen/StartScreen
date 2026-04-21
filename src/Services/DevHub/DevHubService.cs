@@ -97,34 +97,48 @@ namespace StartScreen.Services.DevHub
                     return dashboard;
                 }
 
-                // Phase 2: Fetch issues first (default visible tab)
-                var issueTasks = authenticated.Select(p => p.GetUserIssuesAsync(cancellationToken)).ToList();
-                var issueResults = await Task.WhenAll(issueTasks);
-                foreach (var issues in issueResults)
-                    dashboard.Issues.AddRange(issues);
-                dashboard.Issues = dashboard.Issues.OrderByDescending(i => i.CreatedAt).ToList();
-                _currentDashboard = dashboard;
-                progress?.Report(dashboard);
+                // Fetch issues, PRs, and CI runs in parallel; report each as it arrives
+                var issueTask = Task.Run(async () =>
+                {
+                    var tasks = authenticated.Select(p => p.GetUserIssuesAsync(cancellationToken)).ToList();
+                    var results = await Task.WhenAll(tasks);
+                    return results.SelectMany(r => r).OrderByDescending(i => i.CreatedAt).ToList();
+                });
 
-                // Phase 3: Fetch PRs (second tab)
-                var prTasks = authenticated.Select(p => p.GetUserPullRequestsAsync(cancellationToken)).ToList();
-                var prResults = await Task.WhenAll(prTasks);
-                foreach (var prs in prResults)
-                    dashboard.PullRequests.AddRange(prs);
-                dashboard.PullRequests = dashboard.PullRequests.OrderByDescending(pr => pr.UpdatedAt).ToList();
-                _currentDashboard = dashboard;
-                progress?.Report(dashboard);
+                var prTask = Task.Run(async () =>
+                {
+                    var tasks = authenticated.Select(p => p.GetUserPullRequestsAsync(cancellationToken)).ToList();
+                    var results = await Task.WhenAll(tasks);
+                    return results.SelectMany(r => r).OrderByDescending(pr => pr.UpdatedAt).ToList();
+                });
 
-                // Phase 4: Fetch CI runs last (slowest - multiple API calls per repo)
-                var ciTasks = authenticated.Select(p => p.GetUserCiRunsAsync(cancellationToken)).ToList();
-                var ciResults = await Task.WhenAll(ciTasks);
-                foreach (var ci in ciResults)
-                    dashboard.CiRuns.AddRange(ci);
-                dashboard.CiRuns = dashboard.CiRuns.OrderByDescending(r => r.Timestamp).ToList();
+                var ciTask = Task.Run(async () =>
+                {
+                    var tasks = authenticated.Select(p => p.GetUserCiRunsAsync(cancellationToken)).ToList();
+                    var results = await Task.WhenAll(tasks);
+                    return results.SelectMany(r => r).OrderByDescending(r => r.Timestamp).ToList();
+                });
+
+                // Report each category as it completes
+                var remaining = new List<Task> { issueTask, prTask, ciTask };
+                while (remaining.Count > 0)
+                {
+                    var completed = await Task.WhenAny(remaining);
+                    remaining.Remove(completed);
+
+                    if (completed == issueTask)
+                        dashboard.Issues = issueTask.Result;
+                    else if (completed == prTask)
+                        dashboard.PullRequests = prTask.Result;
+                    else if (completed == ciTask)
+                        dashboard.CiRuns = ciTask.Result;
+
+                    _currentDashboard = dashboard;
+                    progress?.Report(dashboard);
+                }
 
                 // Cache the final result
                 _cache.WriteDashboard(dashboard);
-                _currentDashboard = dashboard;
 
                 return dashboard;
             }

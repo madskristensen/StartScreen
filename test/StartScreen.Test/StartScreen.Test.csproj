@@ -13,7 +13,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="PresentationCore" />
     <Reference Include="System.ServiceModel" />
+    <Reference Include="WindowsBase" />
   </ItemGroup>
 
 </Project>
