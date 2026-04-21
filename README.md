@@ -187,7 +187,17 @@ Open the Start Screen any time from **File > Start Screen** or press
 | P          | Pin / Unpin            |
 | Del        | Remove from list       |
 | Alt+`      | Focus search box       |
-| Right      | Jump to news feed      |
+| Right      | Jump to Dev Hub        |
+
+### Dev Hub
+
+| Shortcut            | Action                      |
+| ------------------- | --------------------------- |
+| Up / Down           | Move between items          |
+| Enter               | Open in browser             |
+| Ctrl+C              | Copy URL                    |
+| Left                | Jump to recent files        |
+| Right               | Jump to news feed           |
 
 ### News feed
 
@@ -197,7 +207,17 @@ Open the Start Screen any time from **File > Start Screen** or press
 | Left / Right        | Move between columns       |
 | Enter               | Open in browser            |
 | Ctrl+C              | Copy URL                   |
-| Left (first column) | Jump back to recent files  |
+| Left (first column) | Jump to Dev Hub            |
+| Right (last column) | Jump to YouTube videos     |
+
+### YouTube videos
+
+| Shortcut   | Action                    |
+| ---------- | ------------------------- |
+| Up / Down  | Move between items        |
+| Enter      | Open in browser           |
+| Ctrl+C     | Copy URL                  |
+| Left       | Jump to news feed         |
 
 ### Action bar
 
