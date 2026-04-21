@@ -97,6 +97,8 @@ recent CI runs from GitHub and Azure DevOps - right next to your project
 list. Data loads in the background and is cached locally so the UI stays
 responsive.
 
+![Dev Hub](dev-hub.png)
+
 ### Custom search query (GitHub)
 
 By default the Dev Hub shows issues and PRs that "involve" your GitHub
@@ -108,19 +110,19 @@ Use the `{login}` placeholder to reference the authenticated username.
 
 **Example - show open issues across multiple orgs:**
 
-```
+```text
 state:open archived:false sort:updated-desc user:madskristensen org:VsixCommunity org:ligershark
 ```
 
 **Example - only issues assigned to you:**
 
-```
+```text
 state:open assignee:{login}
 ```
 
 **Example - issues in a single org:**
 
-```
+```text
 state:open org:dotnet
 ```
 
@@ -153,6 +155,8 @@ Right next to the Tip of the Day, Start Screen showcases a curated
 extension from the Visual Studio Marketplace. The suggestion rotates
 daily and highlights free, open-source extensions that enhance your
 development workflow.
+
+![Suggested extensions](art/suggested-extensions.png)
 
 Extensions you've already installed show an "Installed" badge.
 Extensions you haven't tried yet display an "Install" link that takes
@@ -191,33 +195,33 @@ Open the Start Screen any time from **File > Start Screen** or press
 
 ### Dev Hub
 
-| Shortcut            | Action                      |
-| ------------------- | --------------------------- |
-| Up / Down           | Move between items          |
-| Enter               | Open in browser             |
-| Ctrl+C              | Copy URL                    |
-| Left                | Jump to recent files        |
-| Right               | Jump to news feed           |
+| Shortcut  | Action               |
+| --------- | -------------------- |
+| Up / Down | Move between items   |
+| Enter     | Open in browser      |
+| Ctrl+C    | Copy URL             |
+| Left      | Jump to recent files |
+| Right     | Jump to news feed    |
 
 ### News feed
 
-| Shortcut            | Action                     |
-| ------------------- | -------------------------- |
-| Up / Down           | Move between rows          |
-| Left / Right        | Move between columns       |
-| Enter               | Open in browser            |
-| Ctrl+C              | Copy URL                   |
-| Left (first column) | Jump to Dev Hub            |
-| Right (last column) | Jump to YouTube videos     |
+| Shortcut            | Action                 |
+| ------------------- | ---------------------- |
+| Up / Down           | Move between rows      |
+| Left / Right        | Move between columns   |
+| Enter               | Open in browser        |
+| Ctrl+C              | Copy URL               |
+| Left (first column) | Jump to Dev Hub        |
+| Right (last column) | Jump to YouTube videos |
 
 ### YouTube videos
 
-| Shortcut   | Action                    |
-| ---------- | ------------------------- |
-| Up / Down  | Move between items        |
-| Enter      | Open in browser           |
-| Ctrl+C     | Copy URL                  |
-| Left       | Jump to news feed         |
+| Shortcut  | Action             |
+| --------- | ------------------ |
+| Up / Down | Move between items |
+| Enter     | Open in browser    |
+| Ctrl+C    | Copy URL           |
+| Left      | Jump to news feed  |
 
 ### Action bar
 

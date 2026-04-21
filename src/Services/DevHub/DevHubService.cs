@@ -127,11 +127,11 @@ namespace StartScreen.Services.DevHub
                     remaining.Remove(completed);
 
                     if (completed == issueTask)
-                        dashboard.Issues = issueTask.Result;
+                        dashboard.Issues = await issueTask;
                     else if (completed == prTask)
-                        dashboard.PullRequests = prTask.Result;
+                        dashboard.PullRequests = await prTask;
                     else if (completed == ciTask)
-                        dashboard.CiRuns = ciTask.Result;
+                        dashboard.CiRuns = await ciTask;
 
                     _currentDashboard = dashboard;
                     progress?.Report(dashboard);

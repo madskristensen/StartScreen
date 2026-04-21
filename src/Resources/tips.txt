@@ -65,5 +65,5 @@ Use an .editorconfig file to define portable, consistent code style rules across
 
 # Visual Studio Subscription Benefits
 Access all your Visual Studio subscription benefits on [my.visualstudio.com](https://my.visualstudio.com/) - including software downloads, Azure DevOps, training resources, and much more.
-Subscribe to the [Visual Studio newsletter](https://aka.ms/VSSOptin) to get tips, updates, and special offers delivered to your inbox
-Join us in person! Get up to $900 discount on conference tickets for VS Live! conferences and other events on [my.visualstudio.com](https://my.visualstudio.com/)
+Subscribe to the [Visual Studio newsletter](https://devblogs.microsoft.com/visualstudio/vss-newsletter-opt-in/) to get tips, updates, and special offers delivered to your inbox.
+Join us in person! Get up to $900 discount on conference tickets for VS Live! conferences and other events on [my.visualstudio.com](https://my.visualstudio.com/).
