@@ -197,36 +197,42 @@ namespace StartScreen.Services
                     }
                 });
 
-                // Phase 2: Fetch and update ahead/behind (slow, network)
+                // Phase 2: Fetch and update ahead/behind (slow, network).
+                // Run on a pure thread-pool task outside JoinableTaskFactory so that VS's
+                // hang-detection does not attribute these blocking git-fetch calls (up to
+                // 5 s each) to the extension and show the "stopped responding" bar.
                 if (itemRepoMap.Count > 0)
                 {
-                    Parallel.ForEach(itemRepoMap.Keys, new ParallelOptions { MaxDegreeOfParallelism = 4 }, repoPath =>
+                    _ = Task.Run(() =>
                     {
-                        try
+                        Parallel.ForEach(itemRepoMap.Keys, new ParallelOptions { MaxDegreeOfParallelism = 2 }, repoPath =>
                         {
-                            // Fetch from all remotes (best-effort, silent on failure)
-                            GitHelper.FetchAll(repoPath);
-
-                            // Re-read ahead/behind for all items in this repo
-                            (var ahead, var behind) = GitHelper.GetUpdatedAheadBehind(repoPath);
-
-                            if (itemRepoMap.TryGetValue(repoPath, out List<MruItem> itemsInRepo))
+                            try
                             {
-                                foreach (MruItem item in itemsInRepo)
+                                // Fetch from all remotes (best-effort, silent on failure)
+                                GitHelper.FetchAll(repoPath);
+
+                                // Re-read ahead/behind for all items in this repo
+                                (var ahead, var behind) = GitHelper.GetUpdatedAheadBehind(repoPath);
+
+                                if (itemRepoMap.TryGetValue(repoPath, out List<MruItem> itemsInRepo))
                                 {
-                                    // Only update if fetch succeeded and tracking branch exists
-                                    if (ahead.HasValue || behind.HasValue)
+                                    foreach (MruItem item in itemsInRepo)
                                     {
-                                        item.CommitsAhead = ahead;
-                                        item.CommitsBehind = behind;
+                                        // Only update if fetch succeeded and tracking branch exists
+                                        if (ahead.HasValue || behind.HasValue)
+                                        {
+                                            item.CommitsAhead = ahead;
+                                            item.CommitsBehind = behind;
+                                        }
                                     }
                                 }
                             }
-                        }
-                        catch (Exception ex)
-                        {
-                            ex.Log();
-                        }
+                            catch (Exception ex)
+                            {
+                                ex.Log();
+                            }
+                        });
                     });
                 }
             });
