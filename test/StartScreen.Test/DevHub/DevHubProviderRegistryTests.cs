@@ -76,7 +76,7 @@ namespace StartScreen.Test.DevHub
         {
             var providers = DevHubProviderRegistry.GetAllProviders();
 
-            Assert.IsTrue(providers.Count >= 2);
+            Assert.IsGreaterThanOrEqualTo(2, providers.Count);
         }
 
         [TestMethod]

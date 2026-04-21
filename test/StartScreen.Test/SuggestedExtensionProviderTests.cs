@@ -8,7 +8,7 @@ namespace StartScreen.Test
         [TestMethod]
         public void SuggestionCount_IsGreaterThanZero()
         {
-            Assert.IsTrue(SuggestedExtensionProvider.SuggestionCount > 0, "SuggestionCount should be greater than 0");
+            Assert.IsGreaterThan(0, SuggestedExtensionProvider.SuggestionCount, "SuggestionCount should be greater than 0");
         }
 
         [TestMethod]
@@ -57,7 +57,7 @@ namespace StartScreen.Test
             var extensions = SuggestedExtensionProvider.Extensions;
 
             Assert.IsNotNull(extensions);
-            Assert.IsTrue(extensions.Count == SuggestedExtensionProvider.SuggestionCount, "Extensions count should match SuggestionCount");
+            Assert.HasCount(SuggestedExtensionProvider.SuggestionCount, extensions, "Extensions count should match SuggestionCount");
         }
 
         [TestMethod]

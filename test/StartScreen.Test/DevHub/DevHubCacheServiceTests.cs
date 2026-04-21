@@ -74,9 +74,9 @@ namespace StartScreen.Test.DevHub
             var result = await _cache.ReadDashboardAsync();
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(1, result.Users.Count);
+            Assert.HasCount(1, result.Users);
             Assert.AreEqual("testuser", result.Users[0].Username);
-            Assert.AreEqual(1, result.PullRequests.Count);
+            Assert.HasCount(1, result.PullRequests);
             Assert.AreEqual("Test PR", result.PullRequests[0].Title);
         }
 
@@ -104,7 +104,7 @@ namespace StartScreen.Test.DevHub
             var timestamp = _cache.GetCacheTimestamp();
 
             Assert.IsNotNull(timestamp);
-            Assert.IsTrue((DateTime.UtcNow - timestamp.Value).TotalSeconds < 5);
+            Assert.IsLessThan(5, (DateTime.UtcNow - timestamp.Value).TotalSeconds);
         }
 
         [TestMethod]

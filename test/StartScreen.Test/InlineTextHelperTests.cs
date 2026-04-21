@@ -12,7 +12,7 @@ namespace StartScreen.Test
         {
             var inlines = InlineTextHelper.ParseInlines("Just plain text.");
 
-            Assert.AreEqual(1, inlines.Count);
+            Assert.HasCount(1, inlines);
             Assert.IsInstanceOfType(inlines[0], typeof(Run));
             Assert.AreEqual("Just plain text.", ((Run)inlines[0]).Text);
         }
@@ -22,7 +22,7 @@ namespace StartScreen.Test
         {
             var inlines = InlineTextHelper.ParseInlines("[click here](https://example.com)");
 
-            Assert.AreEqual(1, inlines.Count);
+            Assert.HasCount(1, inlines);
             Assert.IsInstanceOfType(inlines[0], typeof(Hyperlink));
 
             var hyperlink = (Hyperlink)inlines[0];
@@ -35,7 +35,7 @@ namespace StartScreen.Test
         {
             var inlines = InlineTextHelper.ParseInlines("Visit [Azure](https://azure.microsoft.com) for cloud services.");
 
-            Assert.AreEqual(3, inlines.Count);
+            Assert.HasCount(3, inlines);
             Assert.IsInstanceOfType(inlines[0], typeof(Run));
             Assert.IsInstanceOfType(inlines[1], typeof(Hyperlink));
             Assert.IsInstanceOfType(inlines[2], typeof(Run));
@@ -52,7 +52,7 @@ namespace StartScreen.Test
         {
             var inlines = InlineTextHelper.ParseInlines("Use [VS](https://visualstudio.com) and [Azure](https://azure.com) together.");
 
-            Assert.AreEqual(5, inlines.Count);
+            Assert.HasCount(5, inlines);
             Assert.IsInstanceOfType(inlines[0], typeof(Run));
             Assert.IsInstanceOfType(inlines[1], typeof(Hyperlink));
             Assert.IsInstanceOfType(inlines[2], typeof(Run));
@@ -65,7 +65,7 @@ namespace StartScreen.Test
         {
             var inlines = InlineTextHelper.ParseInlines("");
 
-            Assert.AreEqual(0, inlines.Count);
+            Assert.IsEmpty(inlines);
         }
 
         [TestMethod]
@@ -73,7 +73,7 @@ namespace StartScreen.Test
         {
             var inlines = InlineTextHelper.ParseInlines("[text](not a url)");
 
-            Assert.AreEqual(1, inlines.Count);
+            Assert.HasCount(1, inlines);
             Assert.IsInstanceOfType(inlines[0], typeof(Run));
             Assert.AreEqual("[text](not a url)", ((Run)inlines[0]).Text);
         }
@@ -83,7 +83,7 @@ namespace StartScreen.Test
         {
             var inlines = InlineTextHelper.ParseInlines("Press Ctrl+Q to search.");
 
-            Assert.AreEqual(1, inlines.Count);
+            Assert.HasCount(1, inlines);
             Assert.IsInstanceOfType(inlines[0], typeof(Run));
             Assert.AreEqual("Press Ctrl+Q to search.", ((Run)inlines[0]).Text);
         }
@@ -93,7 +93,7 @@ namespace StartScreen.Test
         {
             var inlines = InlineTextHelper.ParseInlines("[Start](https://example.com) of the line.");
 
-            Assert.AreEqual(2, inlines.Count);
+            Assert.HasCount(2, inlines);
             Assert.IsInstanceOfType(inlines[0], typeof(Hyperlink));
             Assert.IsInstanceOfType(inlines[1], typeof(Run));
             Assert.AreEqual(" of the line.", ((Run)inlines[1]).Text);
@@ -104,7 +104,7 @@ namespace StartScreen.Test
         {
             var inlines = InlineTextHelper.ParseInlines("End of the line [here](https://example.com)");
 
-            Assert.AreEqual(2, inlines.Count);
+            Assert.HasCount(2, inlines);
             Assert.IsInstanceOfType(inlines[0], typeof(Run));
             Assert.IsInstanceOfType(inlines[1], typeof(Hyperlink));
             Assert.AreEqual("End of the line ", ((Run)inlines[0]).Text);

@@ -1,7 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using StartScreen.Models.DevHub;
-using System;
-using System.Collections.Generic;
 
 namespace StartScreen.Test.DevHub
 {
@@ -99,7 +96,7 @@ namespace StartScreen.Test.DevHub
 
             var detail = dashboard.FilterByRepo(repo);
 
-            Assert.AreEqual(1, detail.PullRequests.Count);
+            Assert.HasCount(1, detail.PullRequests);
             Assert.AreEqual("#142", detail.PullRequests[0].Number);
         }
 
@@ -111,7 +108,7 @@ namespace StartScreen.Test.DevHub
 
             var detail = dashboard.FilterByRepo(repo);
 
-            Assert.AreEqual(1, detail.Issues.Count);
+            Assert.HasCount(1, detail.Issues);
             Assert.AreEqual("#201", detail.Issues[0].Number);
         }
 
@@ -123,7 +120,7 @@ namespace StartScreen.Test.DevHub
 
             var detail = dashboard.FilterByRepo(repo);
 
-            Assert.AreEqual(2, detail.CiRuns.Count);
+            Assert.HasCount(2, detail.CiRuns);
         }
 
         [TestMethod]
@@ -134,11 +131,11 @@ namespace StartScreen.Test.DevHub
 
             var detail = dashboard.FilterByRepo(repo);
 
-            Assert.AreEqual(1, detail.PullRequests.Count);
+            Assert.HasCount(1, detail.PullRequests);
             Assert.AreEqual("!731", detail.PullRequests[0].Number);
-            Assert.AreEqual(1, detail.Issues.Count);
+            Assert.HasCount(1, detail.Issues);
             Assert.AreEqual("#44", detail.Issues[0].Number);
-            Assert.AreEqual(0, detail.CiRuns.Count);
+            Assert.IsEmpty(detail.CiRuns);
         }
 
         [TestMethod]
@@ -150,9 +147,9 @@ namespace StartScreen.Test.DevHub
             var detail = dashboard.FilterByRepo(unknownRepo);
 
             Assert.IsNotNull(detail);
-            Assert.AreEqual(0, detail.PullRequests.Count);
-            Assert.AreEqual(0, detail.Issues.Count);
-            Assert.AreEqual(0, detail.CiRuns.Count);
+            Assert.IsEmpty(detail.PullRequests);
+            Assert.IsEmpty(detail.Issues);
+            Assert.IsEmpty(detail.CiRuns);
             Assert.IsFalse(detail.HasData);
         }
 
