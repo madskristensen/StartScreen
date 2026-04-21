@@ -260,9 +260,9 @@
         <!-- Right Pane: Links + News (subtle lighter background) -->
         <Border Grid.Column="2"
                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandShelfBackgroundGradientBeginBrushKey}}">
-            <DockPanel x:Name="NewsPanel" Margin="32 24 32 24" Focusable="False">
+            <DockPanel x:Name="NewsPanel" Margin="0 24 0 0" Focusable="False">
                     <!-- Update Available Banner -->
-                    <Border DockPanel.Dock="Top" Margin="0 0 0 16"
+                    <Border DockPanel.Dock="Top" Margin="32 0 32 16"
                             Padding="12 10"
                             CornerRadius="4"
                             Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
@@ -285,7 +285,7 @@
                     </Border>
 
                     <!-- Quick Links -->
-                    <DockPanel DockPanel.Dock="Top" Margin="0 0 0 20">
+                    <DockPanel DockPanel.Dock="Top" Margin="32 0 32 20">
                         <TextBlock Text="{Binding DiscoverySectionTitle}"
                                   FontSize="24"
                                   FontWeight="SemiBold"
@@ -301,7 +301,7 @@
                     </DockPanel>
 
                     <!-- Tip of the Day and Suggested Extension Cards -->
-                    <Grid DockPanel.Dock="Top" Margin="0 32 0 32">
+                    <Grid DockPanel.Dock="Top" Margin="32 32 32 32">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="16"/>
@@ -419,6 +419,7 @@
                     <!-- Content Row: Dev Hub | News | YouTube -->
                     <ScrollViewer x:Name="ContentScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Focusable="False"
                                   KeyboardNavigation.DirectionalNavigation="None"
+                                  Padding="32 0 32 0"
                                   PreviewMouseWheel="ContentScroll_PreviewMouseWheel">
                     <Grid>
                         <Grid.ColumnDefinitions>
