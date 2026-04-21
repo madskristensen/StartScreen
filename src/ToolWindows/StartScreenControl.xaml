@@ -103,7 +103,8 @@
         </Style>
     </UserControl.Resources>
 
-    <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+    <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False"
+                  PreviewMouseWheel="PageScroll_PreviewMouseWheel">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="LeftColumn" Width="462" MinWidth="462"/>
@@ -188,8 +189,9 @@
                                     <controls:MruItemControl 
                                         PinToggleRequested="MruItemControl_PinToggleRequested"
                                         RemoveRequested="MruItemControl_RemoveRequested"
+                                        SelectionRequested="MruItemControl_SelectionRequested"
                                         FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"
-                                        FocusNewsRequested="MruItemControl_FocusNewsRequested"
+                                        FocusDevHubRequested="MruItemControl_FocusDevHubRequested"
                                         FocusActionBarRequested="MruItemControl_FocusActionBarRequested"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -220,8 +222,9 @@
                                                     <controls:MruItemControl 
                                                         PinToggleRequested="MruItemControl_PinToggleRequested"
                                                         RemoveRequested="MruItemControl_RemoveRequested"
+                                                        SelectionRequested="MruItemControl_SelectionRequested"
                                                         FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"
-                                                        FocusNewsRequested="MruItemControl_FocusNewsRequested"
+                                                        FocusDevHubRequested="MruItemControl_FocusDevHubRequested"
                                                         FocusActionBarRequested="MruItemControl_FocusActionBarRequested"/>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -230,15 +233,16 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                                    <!-- No search results message -->
-                                    <TextBlock Text="No matching projects or solutions found."
-                                               Opacity="0.5"
-                                               FontSize="13"
-                                               Margin="0 16 0 0"
-                                               Visibility="{Binding HasNoSearchResults, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                                </StackPanel>
-                        </DockPanel>
-                    </Border>
+
+                        <!-- No search results message -->
+                        <TextBlock Text="No matching projects or solutions found."
+                                   Opacity="0.5"
+                                   FontSize="13"
+                                   Margin="0 16 0 0"
+                                   Visibility="{Binding HasNoSearchResults, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
 
         <!-- Draggable Splitter -->
         <GridSplitter Grid.Column="1"
@@ -255,9 +259,9 @@
         <!-- Right Pane: Links + News (subtle lighter background) -->
         <Border Grid.Column="2"
                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandShelfBackgroundGradientBeginBrushKey}}">
-            <StackPanel x:Name="NewsPanel" Margin="32 24 32 24" Focusable="False">
+            <DockPanel x:Name="NewsPanel" Margin="32 24 32 24" Focusable="False">
                     <!-- Update Available Banner -->
-                    <Border Margin="0 0 0 16"
+                    <Border DockPanel.Dock="Top" Margin="0 0 0 16"
                             Padding="12 10"
                             CornerRadius="4"
                             Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
@@ -280,7 +284,7 @@
                     </Border>
 
                     <!-- Quick Links -->
-                    <DockPanel Margin="0 0 0 20">
+                    <DockPanel DockPanel.Dock="Top" Margin="0 0 0 20">
                         <TextBlock Text="{Binding DiscoverySectionTitle}"
                                   FontSize="24"
                                   FontWeight="SemiBold"
@@ -296,7 +300,7 @@
                     </DockPanel>
 
                     <!-- Tip of the Day and Suggested Extension Cards -->
-                    <Grid Margin="0 32 0 32">
+                    <Grid DockPanel.Dock="Top" Margin="0 32 0 32">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="16"/>
@@ -411,15 +415,29 @@
                                     </Border>
                                 </Grid>
 
-                    <!-- News + YouTube Row -->
+                    <!-- Content Row: Dev Hub | News | YouTube -->
+                    <ScrollViewer x:Name="ContentScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Focusable="False"
+                                  PreviewMouseWheel="ContentScroll_PreviewMouseWheel">
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*" MinWidth="400"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <!-- News (left, flowing columns) -->
-                        <StackPanel Grid.Column="0" Margin="0 0 24 0">
+                        <!-- Dev Hub (fixed width, left) -->
+                        <controls:DevHubPanel x:Name="DevHubPanelControl"
+                                              Grid.Column="0"
+                                              Margin="0 0 24 0"
+                                              VerticalAlignment="Top"
+                                              RefreshRequested="DevHubPanel_RefreshRequested"
+                                              ClearFilterRequested="DevHubPanel_ClearFilterRequested"
+                                              ConnectAccountRequested="DevHubPanel_ConnectAccountRequested"
+                                              FocusMruRequested="DevHubPanel_FocusMruRequested"
+                                              FocusNewsRequested="DevHubPanel_FocusNewsRequested"/>
+
+                        <!-- News (flexible width, center) -->
+                        <StackPanel Grid.Column="1" Margin="0 0 24 0">
 
                     <!-- News Header -->
                     <Grid Margin="0 0 0 12">
@@ -449,7 +467,7 @@
                                                     VerticalAlignment="Center"/>
                             </Button>
                         </StackPanel>
-                        <ProgressBar Height="2" 
+                        <ProgressBar Height="2"
                                     VerticalAlignment="Bottom"
                                     IsIndeterminate="True"
                                     Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
@@ -474,25 +492,25 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <controls:NewsItemControl MinWidth="280" MaxWidth="380" Width="350" Margin="0 0 64 20"
+                                <controls:NewsItemControl Margin="0 0 0 12"
                                                           PinToggleRequested="NewsItemControl_PinToggleRequested"
-                                                          FocusMruRequested="NewsItemControl_FocusMruRequested"/>
+                                                          FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- News Cards in flowing columns -->
+                    <!-- News Cards -->
                     <ItemsControl ItemsSource="{Binding NewsPosts}" Focusable="False">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <WrapPanel Orientation="Horizontal"/>
+                                <UniformGrid Columns="3"/>
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <controls:NewsItemControl MinWidth="280" MaxWidth="380" Width="350" Margin="0 0 64 20"
+                                <controls:NewsItemControl Margin="0 0 12 12" MaxWidth="360"
                                                           PinToggleRequested="NewsItemControl_PinToggleRequested"
-                                                          FocusMruRequested="NewsItemControl_FocusMruRequested"/>
+                                                          FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -507,8 +525,8 @@
 
                         </StackPanel>
 
-                        <!-- YouTube Feed (right, single column) -->
-                        <StackPanel Grid.Column="1" Width="280" VerticalAlignment="Top">
+                        <!-- YouTube Feed (fixed width, right) -->
+                        <StackPanel Grid.Column="2" Width="280" VerticalAlignment="Top">
                             <Grid Margin="0 0 0 12">
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <TextBlock Text="YouTube"
@@ -554,8 +572,9 @@
                         </StackPanel>
 
                     </Grid>
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-                                </ScrollViewer>
-                            </UserControl>
+                    </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+    </ScrollViewer>
+</UserControl>

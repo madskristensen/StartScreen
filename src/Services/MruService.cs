@@ -175,6 +175,7 @@ namespace StartScreen.Services
                         item.LastCommitTime = status.LastCommitTime;
                         item.StashCount = status.StashCount;
                         item.CurrentOperation = status.CurrentOperation;
+                        item.RemoteUrl = status.RemoteUrl;
 
                         // Track repo path for phase 2 (if item is in a git repo)
                         if (status.IsGitRepository)

@@ -1,6 +1,8 @@
+using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -8,7 +10,9 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using StartScreen.Models;
+using StartScreen.Models.DevHub;
 using StartScreen.Services;
+using StartScreen.Services.DevHub;
 using StartScreen.ToolWindows.Controls;
 
 namespace StartScreen.ToolWindows
@@ -18,6 +22,7 @@ namespace StartScreen.ToolWindows
         private readonly StartScreenViewModel _viewModel;
         private readonly Task _loadTask;
         private DropIndicatorAdorner _dropAdorner;
+        private readonly DevHubService _devHubService = new DevHubService();
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -43,14 +48,19 @@ namespace StartScreen.ToolWindows
                 // Yield to let the window paint first
                 await Task.Yield();
 
+                // Start Dev Hub cache load immediately (don't wait for MRU)
+                var devHubTask = LoadDevHubAsync();
+
                 // Wait for MRU load to complete (likely already done)
                 await _loadTask;
 
                 // Bind ViewModel to trigger UI update
                 DataContext = _viewModel;
 
-                // Refresh news and version info in background
-                await _viewModel.RefreshInBackgroundAsync();
+                // Refresh news/version in background, Dev Hub already started
+                _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+                var newsTask = _viewModel.RefreshInBackgroundAsync();
+                await Task.WhenAll(newsTask, devHubTask);
             }
             catch (Exception ex)
             {
@@ -121,6 +131,15 @@ namespace StartScreen.ToolWindows
 
                 e.Handled = true;
             }
+            else if (e.Key == Key.Down)
+            {
+                MruItemControl firstMru = FindFirstControl<MruItemControl>(MruPanel);
+                if (firstMru != null)
+                {
+                    firstMru.FocusItem();
+                    e.Handled = true;
+                }
+            }
         }
 
         private void MruItemControl_PinToggleRequested(object sender, MruItem item)
@@ -151,12 +170,41 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        private void MruItemControl_SelectionRequested(object sender, MruItem item)
+        {
+            if (ViewModel != null)
+            {
+                // Toggle selection: clicking the already-selected item deselects it
+                ViewModel.SelectedMruItem = ViewModel.SelectedMruItem == item ? null : item;
+            }
+        }
+
         private void MruItemControl_FocusSearchBoxRequested(object sender, EventArgs e)
         {
             SearchBox.Focus();
         }
 
-        private void MruItemControl_FocusNewsRequested(object sender, EventArgs e)
+        private void MruItemControl_FocusDevHubRequested(object sender, EventArgs e)
+        {
+            DevHubPanelControl.FocusFirstItem();
+        }
+
+        private void DevHubPanel_FocusMruRequested(object sender, EventArgs e)
+        {
+            // Focus the currently selected MRU item, or the first one
+            MruItemControl mru = FindFirstControl<MruItemControl>(MruPanel);
+            if (mru != null)
+            {
+                mru.RootBorder.Focus();
+            }
+        }
+
+        private void DevHubPanel_FocusNewsRequested(object sender, EventArgs e)
+        {
+            FocusFirstNewsItem();
+        }
+
+        private void FocusFirstNewsItem()
         {
             NewsItemControl firstNews = FindFirstControl<NewsItemControl>(NewsPanel);
             if (firstNews != null)
@@ -174,9 +222,107 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private void NewsItemControl_FocusMruRequested(object sender, EventArgs e)
+        private void DevHubPanel_RefreshRequested(object sender, EventArgs e)
         {
-            FocusFirstMruItem();
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    DevHubPanelControl.ShowLoading();
+                    var progress = new Progress<DevHubDashboard>(_ => UpdateDevHubPanel());
+                    await _devHubService.RefreshAsync(CancellationToken.None, progress);
+                    UpdateDevHubPanel();
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
+                    DevHubPanelControl.ShowError("Failed to refresh. Check your connection and try again.");
+                }
+            }).FileAndForget(nameof(StartScreenControl));
+        }
+
+        private void DevHubPanel_ClearFilterRequested(object sender, EventArgs e)
+        {
+            if (ViewModel != null)
+            {
+                ViewModel.SelectedMruItem = null;
+            }
+        }
+
+        private void DevHubPanel_ConnectAccountRequested(object sender, string host)
+        {
+            // GCM handles auth automatically. Prompt user to push/pull to trigger credential flow.
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                host == "dev.azure.com"
+                    ? "https://dev.azure.com"
+                    : "https://github.com/login")
+            { UseShellExecute = true });
+        }
+
+        private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(StartScreenViewModel.SelectedMruItem))
+            {
+                UpdateDevHubPanel();
+            }
+        }
+
+        private async Task LoadDevHubAsync()
+        {
+            try
+            {
+                if (!Options.Instance.DevHubEnabled)
+                    return;
+
+                // Try cache first for instant display
+                var cached = await _devHubService.LoadFromCacheAsync();
+                if (cached != null && cached.HasAuthentication)
+                {
+                    UpdateDevHubPanel();
+                }
+                else
+                {
+                    // Show not-connected state while we check
+                    DevHubPanelControl.UpdateView(null);
+                }
+
+                // Refresh in background if stale or no cache
+                if (_devHubService.IsCacheStale() || cached == null)
+                {
+                    if (cached == null || !cached.HasAuthentication)
+                    {
+                        DevHubPanelControl.ShowLoading("Signing in to GitHub and Azure DevOps...");
+                    }
+
+                    // Use progress callback to render data incrementally
+                    var progress = new Progress<DevHubDashboard>(_ => UpdateDevHubPanel());
+                    await _devHubService.RefreshAsync(CancellationToken.None, progress);
+                    UpdateDevHubPanel();
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                DevHubPanelControl.ShowError("Could not load Dev Hub data.");
+            }
+        }
+
+        private void UpdateDevHubPanel()
+        {
+            var dashboard = _devHubService.CurrentDashboard;
+            RemoteRepoIdentifier filterRepo = null;
+
+            if (ViewModel?.SelectedMruItem != null && !string.IsNullOrEmpty(ViewModel.SelectedMruItem.RemoteUrl))
+            {
+                filterRepo = RemoteRepoIdentifier.TryParse(ViewModel.SelectedMruItem.RemoteUrl);
+            }
+
+            DevHubPanelControl.UpdateView(dashboard, filterRepo);
+        }
+
+        private void NewsItemControl_FocusDevHubRequested(object sender, EventArgs e)
+        {
+            DevHubPanelControl.FocusFirstItem();
         }
 
         private void ActionBar_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -222,10 +368,35 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        private void PageScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Shift)
+            {
+                ContentScroll.ScrollToHorizontalOffset(ContentScroll.HorizontalOffset - e.Delta);
+                e.Handled = true;
+            }
+        }
+
+        private void ContentScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Shift)
+            {
+                ContentScroll.ScrollToHorizontalOffset(ContentScroll.HorizontalOffset - e.Delta);
+                e.Handled = true;
+            }
+            else
+            {
+                // Forward vertical scroll to the outer PageScroll
+                PageScroll.ScrollToVerticalOffset(PageScroll.VerticalOffset - e.Delta);
+                e.Handled = true;
+            }
+        }
+
         private void UserControl_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         {
-            // When the tool window gets focus and no inner item is focused, focus the first MRU item
-            if (e.NewFocus == this || e.NewFocus is ScrollViewer || e.NewFocus is Border b && b.Name != "RootBorder")
+            // Only redirect focus to MRU when the outer control itself or a non-interactive
+            // container gets focus (not when an inner control like Dev Hub items get focus)
+            if (e.NewFocus == this || e.NewFocus == PageScroll || e.NewFocus == ContentScroll)
             {
                 FocusFirstMruItem();
             }

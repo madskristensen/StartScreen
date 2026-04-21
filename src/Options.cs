@@ -48,5 +48,12 @@ namespace StartScreen
         [Browsable(false)]
         [DefaultValue(500d)]
         public double SplitterPosition { get; set; } = 500d;
+
+        /// <summary>
+        /// Whether the Dev Hub feature is enabled.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue(true)]
+        public bool DevHubEnabled { get; set; } = true;
     }
 }

@@ -13,7 +13,8 @@
              UseLayoutRounding="True"
              SnapsToDevicePixels="True"
              mc:Ignorable="d" 
-             d:DesignHeight="100" d:DesignWidth="380">
+             d:DesignHeight="100" d:DesignWidth="380"
+             MinWidth="300">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
     </UserControl.Resources>
@@ -27,7 +28,7 @@
             MouseEnter="RootBorder_MouseEnter"
             MouseLeave="RootBorder_MouseLeave"
             MouseUp="RootBorder_MouseUp"
-            KeyDown="RootBorder_KeyDown"
+            PreviewKeyDown="RootBorder_KeyDown"
             GotKeyboardFocus="RootBorder_GotKeyboardFocus"
             LostKeyboardFocus="RootBorder_LostKeyboardFocus"
             Cursor="Hand">

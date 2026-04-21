@@ -16,7 +16,7 @@ namespace StartScreen.ToolWindows.Controls
         private NewsPost NewsPost => DataContext as NewsPost;
 
         public event EventHandler<NewsPost> PinToggleRequested;
-        public event EventHandler FocusMruRequested;
+        public event EventHandler FocusDevHubRequested;
 
         public NewsItemControl()
         {
@@ -109,7 +109,7 @@ namespace StartScreen.ToolWindows.Controls
             {
                 if (IsInFirstColumn())
                 {
-                    FocusMruRequested?.Invoke(this, EventArgs.Empty);
+                    FocusDevHubRequested?.Invoke(this, EventArgs.Empty);
                 }
                 else
                 {

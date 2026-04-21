@@ -73,6 +73,23 @@ file and Start Screen picks them up automatically - no restart needed.
 Full JSON schema validation is included so you get IntelliSense while
 editing.
 
+## YouTube video feed
+
+The latest videos from the Visual Studio YouTube channel are shown
+alongside the news feed. Each video displays a thumbnail, title, and
+publish date - videos published in the last three days get a "NEW"
+badge so you never miss fresh content.
+
+The feed is cached locally and refreshes automatically every four hours.
+Click the refresh button next to the header to force an update at any
+time.
+
+## Drag and drop
+
+Drop a solution, project, or folder from File Explorer directly onto the
+Start Screen to open it. You can also drag pinned items to reorder them -
+a visual indicator shows exactly where the item will land.
+
 ## Tip of the day
 
 Every time Visual Studio starts, a short productivity tip appears at the

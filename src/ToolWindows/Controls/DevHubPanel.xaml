@@ -1,0 +1,370 @@
+<UserControl x:Class="StartScreen.ToolWindows.Controls.DevHubPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:imaging="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.Imaging"
+             xmlns:catalog="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.ImageCatalog"
+             xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
+             xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:controls="clr-namespace:StartScreen.ToolWindows.Controls"
+             toolkit:Themes.UseVsTheme="True"
+             Background="Transparent"
+             Focusable="True"
+             IsTabStop="True"
+             GotFocus="DevHubPanel_GotFocus"
+             mc:Ignorable="d"
+             d:DesignHeight="400" d:DesignWidth="520"
+             Width="520">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <controls:NullToCollapsedConverter x:Key="NullToCollapsedConverter"/>
+        <controls:HexColorToBrushConverter x:Key="HexColorToBrushConverter"/>
+        <controls:HexColorToForegroundConverter x:Key="HexColorToForegroundConverter"/>
+        <controls:CiStatusToMonikerConverter x:Key="CiStatusToMonikerConverter"/>
+        <!-- Tab item style for sub-tabs -->
+        <Style x:Key="DevHubTabItemStyle" TargetType="TabItem">
+            <Setter Property="Padding" Value="8 4"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}"
+                                BorderThickness="0 0 0 2"
+                                BorderBrush="Transparent">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder" Property="BorderBrush"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- Hover style for list item borders -->
+        <Style x:Key="HoverItemBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <!-- Header: Dev Hub title + context + refresh (always visible) -->
+        <StackPanel Margin="0 0 0 8">
+            <Grid Margin="0 0 0 4">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <TextBlock Text="Dev Hub"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                    <Button x:Name="RefreshButton" Click="Refresh_Click"
+                            Style="{DynamicResource ActionButtonStyle}"
+                            Margin="8 0 0 0"
+                            Padding="4"
+                            BorderThickness="0"
+                            VerticalAlignment="Center">
+                        <Button.ToolTip>
+                            <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                                     BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                                     BorderThickness="1"
+                                     Padding="4">
+                                <TextBlock Text="Refresh Dev Hub"/>
+                            </ToolTip>
+                        </Button.ToolTip>
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}"
+                                            Width="16" Height="16"/>
+                    </Button>
+                </StackPanel>
+                <TextBlock x:Name="LastRefreshText"
+                           FontSize="10"
+                           Opacity="0.3"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"/>
+            </Grid>
+            <!-- Context header (shown when MRU item is selected) -->
+            <StackPanel x:Name="RepoContextHeader" Orientation="Horizontal" Visibility="Collapsed">
+                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.GitRepository}"
+                                    Width="12" Height="12"
+                                    Margin="0 0 4 0"
+                                    VerticalAlignment="Center"
+                                    Opacity="0.6"/>
+                <TextBlock x:Name="RepoContextName"
+                           FontSize="12"
+                           Opacity="0.6"
+                           VerticalAlignment="Center"/>
+                <Button x:Name="ClearFilterButton" Click="ClearFilter_Click"
+                        Style="{DynamicResource ActionButtonStyle}"
+                        Padding="2 0"
+                        Margin="6 0 0 0"
+                        BorderThickness="0"
+                        VerticalAlignment="Center"
+                        Content="x"
+                        FontSize="10"
+                        Opacity="0.5"
+                        ToolTip="Clear selection"/>
+            </StackPanel>
+        </StackPanel>
+
+        <Grid>
+        <!-- Not Connected State -->
+        <StackPanel x:Name="NotConnectedPanel" Visibility="Collapsed">
+            <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.GoToSourceCode}"
+                                Width="32" Height="32"
+                                HorizontalAlignment="Left"
+                                Margin="0 0 0 12"/>
+            <TextBlock Text="Connect your accounts"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Margin="0 0 0 8"/>
+            <TextBlock Text="Sign in to GitHub or Azure DevOps to see your pull requests, issues, and CI status here."
+                       FontSize="13"
+                       Opacity="0.7"
+                       TextWrapping="Wrap"
+                       Margin="0 0 0 16"/>
+            <TextBlock FontSize="13" Margin="0 0 0 8">
+                <Hyperlink x:Name="ConnectGitHubLink" Click="ConnectGitHub_Click"
+                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                    Connect GitHub account...
+                </Hyperlink>
+            </TextBlock>
+            <TextBlock FontSize="13">
+                <Hyperlink x:Name="ConnectAdoLink" Click="ConnectAdo_Click"
+                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                    Connect Azure DevOps account...
+                </Hyperlink>
+            </TextBlock>
+        </StackPanel>
+
+        <!-- Loading State -->
+        <StackPanel x:Name="LoadingPanel" Visibility="Collapsed" VerticalAlignment="Top">
+            <ProgressBar IsIndeterminate="True"
+                         Height="2"
+                         Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                         BorderThickness="0"
+                         Margin="0 0 0 12"/>
+            <TextBlock x:Name="LoadingText"
+                       Text="Loading your activity..."
+                       FontSize="13"
+                       Opacity="0.5"/>
+        </StackPanel>
+
+        <!-- Dashboard Content -->
+        <DockPanel x:Name="DashboardPanel" Visibility="Collapsed">
+
+            <!-- Sub-tabs for Issues / PRs / CI -->
+            <TabControl x:Name="DevHubSubTabs"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="0"
+                        PreviewKeyDown="DevHubSubTabs_PreviewKeyDown">
+                <!-- Issues Tab (first) -->
+                <TabItem Style="{StaticResource DevHubTabItemStyle}">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Issues"/>
+                            <TextBlock x:Name="IssueCountBadge" FontSize="10" Opacity="0.5" Margin="4 0 0 0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </TabItem.Header>
+                    <StackPanel Margin="0 8 0 0">
+                        <ItemsControl x:Name="IssuesList" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
+                                            Focusable="True" FocusVisualStyle="{x:Null}"
+                                            MouseUp="IssueItem_MouseUp"
+                                            PreviewKeyDown="DevHubItem_KeyDown"
+                                            Style="{StaticResource HoverItemBorderStyle}">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right"
+                                                       Text="{Binding CreatedAgoText}"
+                                                       FontSize="11"
+                                                       Opacity="0.5"
+                                                       VerticalAlignment="Top"
+                                                       Margin="8 0 0 0"/>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding RepoFullName}"
+                                                           FontSize="11"
+                                                           Opacity="0.5"
+                                                           Margin="0 2 0 0"/>
+                                                <ItemsControl ItemsSource="{Binding Labels}"
+                                                              Margin="0 3 0 0"
+                                                              Focusable="False">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel Orientation="Horizontal"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border CornerRadius="8"
+                                                                    Padding="6 1"
+                                                                    Margin="0 0 4 2"
+                                                                    Background="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}"
+                                                                    BorderBrush="{Binding Color, Converter={StaticResource HexColorToForegroundConverter}}"
+                                                                    BorderThickness="1">
+                                                                <TextBlock Text="{Binding Name}"
+                                                                           FontSize="10"
+                                                                           Foreground="{Binding Color, Converter={StaticResource HexColorToForegroundConverter}}"/>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="NoIssuesText" Text="No assigned issues"
+                                   FontSize="12" Opacity="0.4"
+                                   Margin="4 4 0 0"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
+                </TabItem>
+
+                <!-- Pull Requests Tab -->
+                <TabItem Style="{StaticResource DevHubTabItemStyle}">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="PRs"/>
+                            <TextBlock x:Name="PrCountBadge" FontSize="10" Opacity="0.5" Margin="4 0 0 0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </TabItem.Header>
+                    <StackPanel Margin="0 8 0 0">
+                        <ItemsControl x:Name="PullRequestsList" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
+                                            Focusable="True" FocusVisualStyle="{x:Null}"
+                                            MouseUp="PrItem_MouseUp"
+                                            PreviewKeyDown="DevHubItem_KeyDown"
+                                            Style="{StaticResource HoverItemBorderStyle}">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right"
+                                                       Text="{Binding UpdatedAgoText}"
+                                                       FontSize="11"
+                                                       Opacity="0.5"
+                                                       VerticalAlignment="Top"
+                                                       Margin="8 0 0 0"/>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <StackPanel Orientation="Horizontal" Margin="0 2 0 0">
+                                                    <TextBlock Text="{Binding RepoFullName}"
+                                                               FontSize="11"
+                                                               Opacity="0.5"/>
+                                                    <imaging:CrispImage Moniker="{Binding CiStatus, Converter={StaticResource CiStatusToMonikerConverter}}"
+                                                               Width="12" Height="12"
+                                                               Margin="6 0 0 0"
+                                                               VerticalAlignment="Center"
+                                                               Visibility="{Binding CiStatus, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="NoPrsText" Text="No open pull requests"
+                                   FontSize="12" Opacity="0.4"
+                                   Margin="4 4 0 0"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
+                </TabItem>
+
+                <!-- CI Runs Tab -->
+                <TabItem Style="{StaticResource DevHubTabItemStyle}">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="CI"/>
+                            <TextBlock x:Name="CiCountBadge" FontSize="10" Opacity="0.5" Margin="4 0 0 0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </TabItem.Header>
+                    <StackPanel Margin="0 8 0 0">
+                        <ItemsControl x:Name="CiRunsList" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
+                                            Focusable="True" FocusVisualStyle="{x:Null}"
+                                            MouseUp="CiItem_MouseUp"
+                                            PreviewKeyDown="DevHubItem_KeyDown"
+                                            Style="{StaticResource HoverItemBorderStyle}">
+                                        <DockPanel>
+                                            <imaging:CrispImage DockPanel.Dock="Left"
+                                                       Moniker="{Binding Status, Converter={StaticResource CiStatusToMonikerConverter}}"
+                                                       Width="14" Height="14"
+                                                       VerticalAlignment="Top"
+                                                       Margin="0 2 6 0"/>
+                                            <TextBlock DockPanel.Dock="Right"
+                                                       Text="{Binding TimestampAgoText}"
+                                                       FontSize="11"
+                                                       Opacity="0.5"
+                                                       VerticalAlignment="Center"
+                                                       Margin="8 0 0 0"/>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding RepoFullName}"
+                                                           FontSize="11"
+                                                           Opacity="0.5"
+                                                           Margin="0 2 0 0"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="NoCiText" Text="No recent CI runs"
+                                   FontSize="12" Opacity="0.4"
+                                   Margin="4 4 0 0"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
+                </TabItem>
+            </TabControl>
+        </DockPanel>
+
+        <!-- Error State -->
+        <StackPanel x:Name="ErrorPanel" Visibility="Collapsed">
+            <TextBlock Text="Something went wrong"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       Margin="0 0 0 8"/>
+            <TextBlock x:Name="ErrorMessageText"
+                       FontSize="12"
+                       Opacity="0.7"
+                       TextWrapping="Wrap"
+                       Margin="0 0 0 12"/>
+            <Button Click="Refresh_Click"
+                    Style="{DynamicResource ActionButtonStyle}"
+                    Padding="8 4"
+                    BorderThickness="0"
+                    Content="Try again"/>
+        </StackPanel>
+        </Grid>
+    </StackPanel>
+</UserControl>

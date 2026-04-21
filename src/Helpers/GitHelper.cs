@@ -81,6 +81,13 @@ namespace StartScreen.Helpers
                     // Current operation (merge, rebase, cherry-pick, etc.)
                     status.CurrentOperation = GetCurrentOperationDisplayString(repo.Info.CurrentOperation);
 
+                    // Remote URL (origin)
+                    var origin = repo.Network.Remotes["origin"];
+                    if (origin != null)
+                    {
+                        status.RemoteUrl = origin.Url;
+                    }
+
                     return status;
                 }
             }

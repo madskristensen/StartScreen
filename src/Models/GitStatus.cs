@@ -49,6 +49,12 @@ namespace StartScreen.Models
         public string CurrentOperation { get; set; }
 
         /// <summary>
+        /// The URL of the "origin" remote, or null if no remote is configured.
+        /// Used to identify the hosting provider (GitHub, ADO, etc.).
+        /// </summary>
+        public string RemoteUrl { get; set; }
+
+        /// <summary>
         /// Whether this represents a valid Git repository.
         /// </summary>
         public bool IsGitRepository => !string.IsNullOrEmpty(BranchName);

@@ -21,7 +21,6 @@
     </UserControl.Resources>
     <Border x:Name="RootBorder"
             BorderThickness="0"
-            Background="Transparent"
             Padding="8 6"
             CornerRadius="4"
             Cursor="Hand"
@@ -30,9 +29,21 @@
             MouseEnter="RootBorder_MouseEnter"
             MouseLeave="RootBorder_MouseLeave"
             MouseUp="RootBorder_MouseUp"
-            KeyDown="RootBorder_KeyDown"
+            PreviewMouseLeftButtonDown="RootBorder_PreviewMouseLeftButtonDown"
+            PreviewKeyDown="RootBorder_KeyDown"
             GotKeyboardFocus="RootBorder_GotKeyboardFocus"
             LostKeyboardFocus="RootBorder_LostKeyboardFocus">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="Background" Value="Transparent"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                        <Setter Property="Background"
+                                Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
         <Border.ToolTip>
             <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"

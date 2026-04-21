@@ -30,6 +30,9 @@ namespace StartScreen.ToolWindows
         private ObservableCollection<MruItem> _allMruItems;
         private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
         private Timer _autoRefreshTimer;
+        private MruItem _selectedMruItem;
+        private string _lastNewsRefreshText;
+        private string _lastYouTubeRefreshText;
 
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
@@ -64,6 +67,68 @@ namespace StartScreen.ToolWindows
                 }
             }
         }
+
+        public string LastNewsRefreshText
+        {
+            get => _lastNewsRefreshText;
+            set
+            {
+                if (_lastNewsRefreshText != value)
+                {
+                    _lastNewsRefreshText = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string LastYouTubeRefreshText
+        {
+            get => _lastYouTubeRefreshText;
+            set
+            {
+                if (_lastYouTubeRefreshText != value)
+                {
+                    _lastYouTubeRefreshText = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The currently selected MRU item (single-click). Used to filter Dev Hub to this repo.
+        /// Null means no selection (shows global dashboard).
+        /// </summary>
+        public MruItem SelectedMruItem
+        {
+            get => _selectedMruItem;
+            set
+            {
+                if (_selectedMruItem != value)
+                {
+                    // Deselect previous
+                    if (_selectedMruItem != null)
+                    {
+                        _selectedMruItem.IsSelected = false;
+                    }
+
+                    _selectedMruItem = value;
+
+                    // Select new
+                    if (_selectedMruItem != null)
+                    {
+                        _selectedMruItem.IsSelected = true;
+                    }
+
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasSelectedMruItem));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether an MRU item is currently selected.
+        /// </summary>
+        public bool HasSelectedMruItem => _selectedMruItem != null;
 
         /// <summary>
         /// True when a Visual Studio update is available.
@@ -358,6 +423,7 @@ namespace StartScreen.ToolWindows
                 if (hasCachedItems)
                 {
                     await UpdateNewsPostsOnUIThreadAsync(posts);
+                    LastNewsRefreshText = "Updated from cache";
                 }
 
                 // Trigger background sync if no cache, empty cache, or stale cache
@@ -409,6 +475,7 @@ namespace StartScreen.ToolWindows
                 finally
                 {
                     IsRefreshingNews = false;
+                    LastNewsRefreshText = "Updated just now";
                 }
             }).FileAndForget(nameof(StartScreenViewModel));
         }
@@ -436,6 +503,7 @@ namespace StartScreen.ToolWindows
                 if (hasCached)
                 {
                     await UpdateYouTubeOnUIThreadAsync(videos);
+                    LastYouTubeRefreshText = "Updated from cache";
                 }
 
                 if (!hasCached || YouTubeService.IsCacheStale())
@@ -490,6 +558,7 @@ namespace StartScreen.ToolWindows
                 finally
                 {
                     IsRefreshingYouTube = false;
+                    LastYouTubeRefreshText = "Updated just now";
                 }
             }).FileAndForget(nameof(StartScreenViewModel));
         }

@@ -32,6 +32,8 @@ namespace StartScreen.Models
         private int _stashCount;
         private string _currentOperation;
         private bool? _exists;
+        private string _remoteUrl;
+        private bool _isSelected;
 
         /// <summary>
         /// The raw MRU entry strings from IVsMRUItemsStore, used for deletion.
@@ -422,6 +424,45 @@ namespace StartScreen.Models
             catch
             {
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// The git remote origin URL for this repository, or null if not a git repo.
+        /// Used to identify the hosting provider (GitHub, ADO, etc.).
+        /// </summary>
+        public string RemoteUrl
+        {
+            get => _remoteUrl;
+            set
+            {
+                if (_remoteUrl != value)
+                {
+                    _remoteUrl = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasRemoteUrl));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether a remote URL is available for this item.
+        /// </summary>
+        public bool HasRemoteUrl => !string.IsNullOrEmpty(_remoteUrl);
+
+        /// <summary>
+        /// Whether this MRU item is currently selected in the list.
+        /// </summary>
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected != value)
+                {
+                    _isSelected = value;
+                    OnPropertyChanged();
+                }
             }
         }
 

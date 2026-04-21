@@ -24,8 +24,9 @@ namespace StartScreen.ToolWindows.Controls
 
         public event EventHandler<MruItem> PinToggleRequested;
         public event EventHandler<MruItem> RemoveRequested;
+        public event EventHandler<MruItem> SelectionRequested;
         public event EventHandler FocusSearchBoxRequested;
-        public event EventHandler FocusNewsRequested;
+        public event EventHandler FocusDevHubRequested;
         public event EventHandler FocusActionBarRequested;
 
         public MruItemControl()
@@ -77,7 +78,8 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (!RootBorder.IsKeyboardFocused)
             {
-                RootBorder.Background = Brushes.Transparent;
+                // Clear local value so the DataTrigger for IsSelected can take effect
+                RootBorder.ClearValue(Border.BackgroundProperty);
             }
             ToolTipService.SetIsEnabled(RootBorder, false);
         }
@@ -92,7 +94,20 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (!RootBorder.IsMouseOver)
             {
-                RootBorder.Background = Brushes.Transparent;
+                // Clear local value so the DataTrigger for IsSelected can take effect
+                RootBorder.ClearValue(Border.BackgroundProperty);
+            }
+        }
+
+        /// <summary>
+        /// Updates the visual selection state of this control.
+        /// Call this when the item's IsSelected property changes.
+        /// </summary>
+        internal void UpdateSelectionVisual()
+        {
+            if (MruItem?.IsSelected != true && !RootBorder.IsMouseOver && !RootBorder.IsKeyboardFocused)
+            {
+                RootBorder.ClearValue(Border.BackgroundProperty);
             }
         }
 
@@ -100,11 +115,22 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (e.ChangedButton == MouseButton.Left && MruItem != null)
             {
-                // For pinned items, only open if we haven't started a drag operation
+                // For pinned items, ignore if drag was in progress
                 if (MruItem.IsPinned && !_dragStartPoint.HasValue)
                     return;
 
                 _dragStartPoint = null;
+
+                // Single-click selects the item (Dev Hub filters to this repo)
+                SelectionRequested?.Invoke(this, MruItem);
+            }
+        }
+
+        private void RootBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount == 2 && MruItem != null)
+            {
+                e.Handled = true;
                 ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
             }
         }
@@ -190,7 +216,7 @@ namespace StartScreen.ToolWindows.Controls
             }
             else if (e.Key == Key.Right)
             {
-                FocusNewsRequested?.Invoke(this, EventArgs.Empty);
+                FocusDevHubRequested?.Invoke(this, EventArgs.Empty);
                 e.Handled = true;
             }
         }
