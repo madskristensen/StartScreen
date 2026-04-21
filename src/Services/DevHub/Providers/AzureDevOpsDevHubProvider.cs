@@ -22,9 +22,9 @@ namespace StartScreen.Services.DevHub.Providers
             if (string.IsNullOrWhiteSpace(remoteUrl))
                 return false;
 
-            return remoteUrl.Contains("dev.azure.com", StringComparison.OrdinalIgnoreCase)
-                || remoteUrl.Contains(".visualstudio.com", StringComparison.OrdinalIgnoreCase)
-                || remoteUrl.Contains("ssh.dev.azure.com", StringComparison.OrdinalIgnoreCase);
+            return remoteUrl.IndexOf("dev.azure.com", StringComparison.OrdinalIgnoreCase) >= 0
+                || remoteUrl.IndexOf(".visualstudio.com", StringComparison.OrdinalIgnoreCase) >= 0
+                || remoteUrl.IndexOf("ssh.dev.azure.com", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public RemoteRepoIdentifier ParseRemoteUrl(string remoteUrl)

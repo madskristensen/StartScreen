@@ -13,6 +13,7 @@
              Focusable="True"
              IsTabStop="True"
              GotFocus="DevHubPanel_GotFocus"
+             PreviewKeyDown="DevHubPanel_PreviewKeyDown"
              mc:Ignorable="d"
              d:DesignHeight="400" d:DesignWidth="520"
              Width="520">
@@ -37,9 +38,14 @@
                                 Padding="{TemplateBinding Padding}"
                                 BorderThickness="0 0 0 2"
                                 BorderBrush="Transparent">
-                            <ContentPresenter ContentSource="Header"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"/>
+                            <Border x:Name="FocusBorder"
+                                    BorderThickness="1"
+                                    BorderBrush="Transparent"
+                                    Padding="0">
+                                <ContentPresenter ContentSource="Header"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
@@ -49,6 +55,10 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="TabBorder" Property="Background"
                                         Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusBorder" Property="BorderBrush"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -178,8 +188,7 @@
             <TabControl x:Name="DevHubSubTabs"
                         Background="Transparent"
                         BorderThickness="0"
-                        Padding="0"
-                        PreviewKeyDown="DevHubSubTabs_PreviewKeyDown">
+                        Padding="0">
                 <!-- Issues Tab (first) -->
                 <TabItem Style="{StaticResource DevHubTabItemStyle}">
                     <TabItem.Header>
@@ -195,7 +204,6 @@
                                     <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
                                             Focusable="True" FocusVisualStyle="{x:Null}"
                                             MouseUp="IssueItem_MouseUp"
-                                            PreviewKeyDown="DevHubItem_KeyDown"
                                             Style="{StaticResource HoverItemBorderStyle}">
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right"
@@ -263,7 +271,6 @@
                                     <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
                                             Focusable="True" FocusVisualStyle="{x:Null}"
                                             MouseUp="PrItem_MouseUp"
-                                            PreviewKeyDown="DevHubItem_KeyDown"
                                             Style="{StaticResource HoverItemBorderStyle}">
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right"
@@ -314,7 +321,6 @@
                                     <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
                                             Focusable="True" FocusVisualStyle="{x:Null}"
                                             MouseUp="CiItem_MouseUp"
-                                            PreviewKeyDown="DevHubItem_KeyDown"
                                             Style="{StaticResource HoverItemBorderStyle}">
                                         <DockPanel>
                                             <imaging:CrispImage DockPanel.Dock="Left"

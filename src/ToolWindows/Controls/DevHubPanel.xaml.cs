@@ -276,6 +276,14 @@ namespace StartScreen.ToolWindows.Controls
         /// Focuses the first item in the currently visible tab.
         /// Returns true if focus was set successfully.
         /// </summary>
+        private void FocusSelectedTab()
+        {
+            if (DevHubSubTabs.SelectedItem is TabItem tab)
+            {
+                tab.Focus();
+            }
+        }
+
         internal bool FocusFirstItem()
         {
             if (DashboardPanel.Visibility != Visibility.Visible)
@@ -284,7 +292,7 @@ namespace StartScreen.ToolWindows.Controls
             var list = GetActiveItemsList();
             if (list == null)
             {
-                Keyboard.Focus(DevHubSubTabs);
+                FocusSelectedTab();
                 return true;
             }
 
@@ -293,11 +301,11 @@ namespace StartScreen.ToolWindows.Controls
             var borders = CollectFocusableBorders(list);
             if (borders.Count > 0)
             {
-                Keyboard.Focus(borders[0]);
+                borders[0].Focus();
                 return true;
             }
 
-            Keyboard.Focus(DevHubSubTabs);
+            FocusSelectedTab();
             return true;
         }
 
@@ -312,28 +320,89 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
-        private void DevHubSubTabs_PreviewKeyDown(object sender, KeyEventArgs e)
+        private void DevHubPanel_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            // Only handle navigation when a tab header is focused, not when
-            // content inside the tab has focus (otherwise we intercept item keys).
-            var focused = Keyboard.FocusedElement as DependencyObject;
-            if (!IsInsideTabHeader(focused))
+            if (DashboardPanel.Visibility != Visibility.Visible)
                 return;
 
-            if (e.Key == Key.Down)
+            var focused = Keyboard.FocusedElement as DependencyObject;
+            if (focused == null)
+                return;
+
+            // Check if the focused element is an item border in the active list
+            var list = GetActiveItemsList();
+            if (list != null)
             {
-                FocusFirstItem();
-                e.Handled = true;
+                var borders = CollectFocusableBorders(list);
+                var focusedBorder = focused as Border;
+                int index = focusedBorder != null ? borders.IndexOf(focusedBorder) : -1;
+
+                if (index >= 0)
+                {
+                    if (e.Key == Key.Down)
+                    {
+                        if (index < borders.Count - 1)
+                        {
+                            borders[index + 1].Focus();
+                        }
+                        e.Handled = true;
+                    }
+                    else if (e.Key == Key.Up)
+                    {
+                        if (index > 0)
+                        {
+                            borders[index - 1].Focus();
+                        }
+                        else
+                        {
+                            // Focus the selected tab header
+                            if (DevHubSubTabs.SelectedItem is TabItem tab)
+                            {
+                                tab.Focus();
+                            }
+                        }
+                        e.Handled = true;
+                    }
+                    else if (e.Key == Key.Left)
+                    {
+                        FocusMruRequested?.Invoke(this, EventArgs.Empty);
+                        e.Handled = true;
+                    }
+                    else if (e.Key == Key.Right)
+                    {
+                        FocusNewsRequested?.Invoke(this, EventArgs.Empty);
+                        e.Handled = true;
+                    }
+                    else if (e.Key == Key.Enter)
+                    {
+                        focusedBorder.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+                        {
+                            RoutedEvent = Border.MouseUpEvent,
+                        });
+                        e.Handled = true;
+                    }
+                    return;
+                }
             }
-            else if (e.Key == Key.Left && DevHubSubTabs.SelectedIndex == 0)
+
+            // Check if focused on a tab header
+            if (IsInsideTabHeader(focused))
             {
-                FocusMruRequested?.Invoke(this, EventArgs.Empty);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Right && DevHubSubTabs.SelectedIndex == DevHubSubTabs.Items.Count - 1)
-            {
-                FocusNewsRequested?.Invoke(this, EventArgs.Empty);
-                e.Handled = true;
+                if (e.Key == Key.Down)
+                {
+                    FocusFirstItem();
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Left && DevHubSubTabs.SelectedIndex == 0)
+                {
+                    FocusMruRequested?.Invoke(this, EventArgs.Empty);
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Right && DevHubSubTabs.SelectedIndex == DevHubSubTabs.Items.Count - 1)
+                {
+                    FocusNewsRequested?.Invoke(this, EventArgs.Empty);
+                    e.Handled = true;
+                }
             }
         }
 
@@ -346,59 +415,7 @@ namespace StartScreen.ToolWindows.Controls
                 element = VisualTreeHelper.GetParent(element);
             }
 
-            // Also true if the TabControl itself has focus
             return element == DevHubSubTabs;
-        }
-
-        private void DevHubItem_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (!(sender is Border currentBorder))
-                return;
-
-            if (e.Key == Key.Up)
-            {
-                var borders = CollectFocusableBorders(GetActiveItemsList());
-                int index = borders.IndexOf(currentBorder);
-                if (index > 0)
-                {
-                    Keyboard.Focus(borders[index - 1]);
-                }
-                else
-                {
-                    // At top of list - go to tabs
-                    DevHubSubTabs.Focus();
-                }
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Down)
-            {
-                var borders = CollectFocusableBorders(GetActiveItemsList());
-                int index = borders.IndexOf(currentBorder);
-                if (index >= 0 && index < borders.Count - 1)
-                {
-                    Keyboard.Focus(borders[index + 1]);
-                }
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Left)
-            {
-                FocusMruRequested?.Invoke(this, EventArgs.Empty);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Right)
-            {
-                FocusNewsRequested?.Invoke(this, EventArgs.Empty);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Enter)
-            {
-                // Simulate click
-                currentBorder.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
-                {
-                    RoutedEvent = Border.MouseUpEvent,
-                });
-                e.Handled = true;
-            }
         }
 
         private static List<Border> CollectFocusableBorders(ItemsControl list)

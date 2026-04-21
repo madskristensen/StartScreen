@@ -21,7 +21,7 @@ namespace StartScreen.Services.DevHub.Providers
             if (string.IsNullOrWhiteSpace(remoteUrl))
                 return false;
 
-            return remoteUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase);
+            return remoteUrl.IndexOf("github.com", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public RemoteRepoIdentifier ParseRemoteUrl(string remoteUrl)
@@ -143,8 +143,8 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 using (var client = CreateHttpClient(credential))
                 {
-                    var query = Uri.EscapeDataString($"is:issue is:open involves:{login}");
-                    var url = $"https://api.github.com/search/issues?q={query}&sort=created&order=desc&per_page=30";
+                    var query = Uri.EscapeDataString($"is:issue is:open assignee:{login}");
+                    var url = $"https://api.github.com/search/issues?q={query}&sort=created&order=desc&per_page=20";
 
                     var response = await client.GetAsync(url, cancellationToken);
                     if (!response.IsSuccessStatusCode)
