@@ -55,5 +55,15 @@ namespace StartScreen
         [Browsable(false)]
         [DefaultValue(true)]
         public bool DevHubEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Custom GitHub search query for the Dev Hub.
+        /// When set, this replaces the default "involves:{login}" query.
+        /// The extension prepends "is:issue" or "is:pr" automatically.
+        /// Use {login} as a placeholder for the authenticated username.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue("")]
+        public string DevHubSearchQuery { get; set; } = "";
     }
 }

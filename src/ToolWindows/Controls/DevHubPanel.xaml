@@ -101,6 +101,24 @@
                         <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}"
                                             Width="16" Height="16"/>
                     </Button>
+                    <Button x:Name="SettingsButton" Click="Settings_Click"
+                            Style="{DynamicResource ActionButtonStyle}"
+                            Margin="4 0 0 0"
+                            Padding="4"
+                            BorderThickness="0"
+                            VerticalAlignment="Center">
+                        <Button.ToolTip>
+                            <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                                     BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                                     BorderThickness="1"
+                                     Padding="4">
+                                <TextBlock Text="Configure search query"/>
+                            </ToolTip>
+                        </Button.ToolTip>
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
+                                            Width="16" Height="16"/>
+                    </Button>
                 </StackPanel>
                 <TextBlock x:Name="LastRefreshText"
                            FontSize="10"
@@ -131,6 +149,40 @@
                         ToolTip="Clear selection"/>
             </StackPanel>
         </StackPanel>
+
+        <!-- Settings panel (toggled by gear button) -->
+        <Border x:Name="SettingsPanel" Visibility="Collapsed"
+                Margin="0 0 0 8"
+                Padding="8"
+                CornerRadius="4"
+                Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
+                BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
+                BorderThickness="1">
+            <StackPanel>
+                <TextBlock Text="Custom search query (GitHub)"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Margin="0 0 0 4"/>
+                <TextBlock Text="Overrides the default query. Use {login} for your username."
+                           FontSize="10"
+                           Opacity="0.6"
+                           TextWrapping="Wrap"
+                           Margin="0 0 0 6"/>
+                <TextBox x:Name="SearchQueryTextBox"
+                         FontSize="11"
+                         Padding="4 3"
+                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                         Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                         BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}"
+                         LostFocus="SearchQueryTextBox_LostFocus"
+                         KeyDown="SearchQueryTextBox_KeyDown"/>
+                <TextBlock Text="Leave empty to use the default (issues/PRs involving you). &quot;is:issue&quot; or &quot;is:pr&quot; is added automatically."
+                           FontSize="10"
+                           Opacity="0.5"
+                           TextWrapping="Wrap"
+                           Margin="0 4 0 0"/>
+            </StackPanel>
+        </Border>
 
         <Grid>
         <!-- Not Connected State -->

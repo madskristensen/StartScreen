@@ -244,6 +244,51 @@ namespace StartScreen.ToolWindows.Controls
             ClearFilterRequested?.Invoke(this, EventArgs.Empty);
         }
 
+        private void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            if (SettingsPanel.Visibility == Visibility.Visible)
+            {
+                SettingsPanel.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                SearchQueryTextBox.Text = Options.Instance.DevHubSearchQuery ?? "";
+                SettingsPanel.Visibility = Visibility.Visible;
+                SearchQueryTextBox.Focus();
+            }
+        }
+
+        private void SearchQueryTextBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            SaveSearchQuery();
+        }
+
+        private void SearchQueryTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                SaveSearchQuery();
+                SettingsPanel.Visibility = Visibility.Collapsed;
+                RefreshRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                SettingsPanel.Visibility = Visibility.Collapsed;
+                e.Handled = true;
+            }
+        }
+
+        private void SaveSearchQuery()
+        {
+            var newQuery = SearchQueryTextBox.Text?.Trim() ?? "";
+            if (newQuery != (Options.Instance.DevHubSearchQuery ?? ""))
+            {
+                Options.Instance.DevHubSearchQuery = newQuery;
+                Options.Instance.SaveAsync().FireAndForget();
+            }
+        }
+
         private void ConnectGitHub_Click(object sender, RoutedEventArgs e)
         {
             ConnectAccountRequested?.Invoke(this, "github.com");

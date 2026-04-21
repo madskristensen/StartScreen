@@ -114,8 +114,7 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 using (var client = CreateHttpClient(credential))
                 {
-                    // Use "involves" to match author, assignee, commenter, and review-requested
-                    var query = Uri.EscapeDataString($"is:pr is:open involves:{login}");
+                    var query = Uri.EscapeDataString(BuildSearchQuery("is:pr", login, Options.Instance.DevHubSearchQuery));
                     var url = $"https://api.github.com/search/issues?q={query}&sort=updated&order=desc&per_page=30";
 
                     var response = await client.GetAsync(url, cancellationToken);
@@ -143,7 +142,7 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 using (var client = CreateHttpClient(credential))
                 {
-                    var query = Uri.EscapeDataString($"is:issue is:open involves:{login}");
+                    var query = Uri.EscapeDataString(BuildSearchQuery("is:issue", login, Options.Instance.DevHubSearchQuery));
                     var url = $"https://api.github.com/search/issues?q={query}&sort=updated&order=desc&per_page=20";
 
                     var response = await client.GetAsync(url, cancellationToken);
@@ -533,6 +532,23 @@ namespace StartScreen.Services.DevHub.Providers
                 "action_required" => "pending",
                 _ => conclusion != null ? "pending" : "pending",
             };
+        }
+
+        /// <summary>
+        /// Builds the search query for the GitHub Search API.
+        /// When a custom query is provided, it is used with the type prefix prepended.
+        /// Otherwise, falls back to the default "involves:{login}" query.
+        /// The {login} placeholder in custom queries is replaced with the actual username.
+        /// </summary>
+        internal static string BuildSearchQuery(string typePrefix, string login, string customQuery = null)
+        {
+            if (string.IsNullOrWhiteSpace(customQuery))
+            {
+                return $"{typePrefix} is:open involves:{login}";
+            }
+
+            var resolved = customQuery.Replace("{login}", login);
+            return $"{typePrefix} {resolved}";
         }
 
         internal static RemoteRepoIdentifier ParseRepoIdentifierFromApiUrl(string apiUrl)
