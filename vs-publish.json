@@ -18,6 +18,14 @@
     {
       "pathOnDisk": "art/tip.png",
       "targetPath": "art/tip.png"
+    },
+    {
+      "pathOnDisk": "dev-hub.png",
+      "targetPath": "dev-hub.png"
+    },
+    {
+      "pathOnDisk": "art/suggested-extensions.png",
+      "targetPath": "art/suggested-extensions.png"
     }
   ],
   "overview": "README.md",

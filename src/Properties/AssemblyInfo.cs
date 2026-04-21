@@ -1,8 +1,7 @@
-using StartScreen;
-
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using StartScreen;
 
 [assembly: InternalsVisibleTo("StartScreen.Test")]
 
@@ -22,5 +21,5 @@ using System.Runtime.InteropServices;
 
 namespace System.Runtime.CompilerServices
 {
-    public class IsExternalInit { }
+    internal static class IsExternalInit { }
 }
