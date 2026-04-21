@@ -24,6 +24,7 @@ namespace StartScreen.ToolWindows
         private DropIndicatorAdorner _dropAdorner;
         private readonly DevHubService _devHubService = new DevHubService();
         private readonly System.Threading.Tasks.Task<DevHubDashboard> _devHubCacheTask;
+        private bool _isInitialized;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -42,11 +43,13 @@ namespace StartScreen.ToolWindows
             try
             {
                 // If already initialized, just refresh in background
-                if (ViewModel != null)
+                if (_isInitialized)
                 {
-                    await ViewModel.RefreshInBackgroundAsync();
+                    await ViewModel?.RefreshInBackgroundAsync();
                     return;
                 }
+
+                _isInitialized = true;
 
                 // Yield to let the window paint first
                 await Task.Yield();

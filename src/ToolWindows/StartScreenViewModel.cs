@@ -39,6 +39,7 @@ namespace StartScreen.ToolWindows
         private MruItem _selectedMruItem;
         private string _lastNewsRefreshText;
         private string _lastYouTubeRefreshText;
+        private bool _isRefreshingInBackground;
 
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
@@ -366,12 +367,13 @@ namespace StartScreen.ToolWindows
 
         private void OnAutoRefreshTimerTick(object state)
         {
-            if (FeedService.IsCacheStale())
+            // Timer fires on a ThreadPool thread. Check guards before dispatching work.
+            if (FeedService.IsCacheStale() && !IsRefreshingNews)
             {
                 ForceRefreshNews();
             }
 
-            if (YouTubeService.IsCacheStale())
+            if (YouTubeService.IsCacheStale() && !IsRefreshingYouTube)
             {
                 StartBackgroundYouTubeRefresh();
             }
@@ -433,16 +435,29 @@ namespace StartScreen.ToolWindows
 
         /// <summary>
         /// Refreshes news and version info in the background after the UI is shown.
+        /// Guarded against concurrent execution to prevent duplicate work.
         /// </summary>
         public async Task RefreshInBackgroundAsync()
         {
-            Task newsTask = RefreshNewsAsync();
-            Task youtubeTask = RefreshYouTubeAsync();
-            Task versionTask = RefreshVersionTitleAsync();
-            Task mruTask = RefreshMruAsync();
-            Task updateTask = CheckForUpdateAsync();
+            if (_isRefreshingInBackground)
+                return;
 
-            await Task.WhenAll(newsTask, youtubeTask, versionTask, mruTask, updateTask);
+            _isRefreshingInBackground = true;
+
+            try
+            {
+                Task newsTask = RefreshNewsAsync();
+                Task youtubeTask = RefreshYouTubeAsync();
+                Task versionTask = RefreshVersionTitleAsync();
+                Task mruTask = RefreshMruAsync();
+                Task updateTask = CheckForUpdateAsync();
+
+                await Task.WhenAll(newsTask, youtubeTask, versionTask, mruTask, updateTask);
+            }
+            finally
+            {
+                _isRefreshingInBackground = false;
+            }
         }
 
         private async Task RefreshMruAsync()
