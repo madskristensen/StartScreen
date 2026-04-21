@@ -23,6 +23,7 @@ namespace StartScreen.ToolWindows
         private readonly Task _loadTask;
         private DropIndicatorAdorner _dropAdorner;
         private readonly DevHubService _devHubService = new DevHubService();
+        private readonly System.Threading.Tasks.Task<DevHubDashboard> _devHubCacheTask;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -30,6 +31,8 @@ namespace StartScreen.ToolWindows
         {
             _viewModel = viewModel;
             _loadTask = loadTask;
+            // Start DevHub cache read immediately (same head start as MRU/News)
+            _devHubCacheTask = _devHubService.LoadFromCacheAsync();
             InitializeComponent();
             RestoreSplitterPosition();
         }
@@ -274,36 +277,49 @@ namespace StartScreen.ToolWindows
                 if (!Options.Instance.DevHubEnabled)
                     return;
 
-                // Try cache first for instant display
-                var cached = await _devHubService.LoadFromCacheAsync();
+                // Use the cache task that was started in the constructor
+                var cached = await _devHubCacheTask;
                 if (cached != null && cached.HasAuthentication)
                 {
+                    // Show cached data immediately (same pattern as News/MRU)
                     UpdateDevHubPanel();
+
+                    // Refresh in background if stale - don't block the UI
+                    if (_devHubService.IsCacheStale())
+                    {
+                        ThreadHelper.JoinableTaskFactory.RunAsync(() => RefreshDevHubInBackgroundAsync()).FileAndForget(nameof(StartScreenControl));
+                    }
                 }
                 else
                 {
-                    // Show not-connected state while we check
-                    DevHubPanelControl.UpdateView(null);
-                }
-
-                // Refresh in background if stale or no cache
-                if (_devHubService.IsCacheStale() || cached == null)
-                {
-                    if (cached == null || !cached.HasAuthentication)
-                    {
-                        DevHubPanelControl.ShowLoading("Signing in to GitHub and Azure DevOps...");
-                    }
-
-                    // Use progress callback to render data incrementally
-                    var progress = new Progress<DevHubDashboard>(_ => UpdateDevHubPanel());
-                    await _devHubService.RefreshAsync(CancellationToken.None, progress);
-                    UpdateDevHubPanel();
+                    // No usable cache - must do a full load
+                    DevHubPanelControl.ShowLoading("Signing in to GitHub and Azure DevOps...");
+                    await RefreshDevHubInBackgroundAsync();
                 }
             }
             catch (Exception ex)
             {
                 await ex.LogAsync();
                 DevHubPanelControl.ShowError("Could not load Dev Hub data.");
+            }
+        }
+
+        private async Task RefreshDevHubInBackgroundAsync()
+        {
+            try
+            {
+                var progress = new Progress<DevHubDashboard>(_ => UpdateDevHubPanel());
+                await _devHubService.RefreshAsync(CancellationToken.None, progress);
+                UpdateDevHubPanel();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                // Only show error if we have no cached data to fall back to
+                if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
+                {
+                    DevHubPanelControl.ShowError("Could not load Dev Hub data.");
+                }
             }
         }
 
