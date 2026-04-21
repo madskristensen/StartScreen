@@ -65,14 +65,12 @@
 
   <!-- VSIX manifest -->
   <ItemGroup>
-    <None Remove="source.extension.vsixmanifest" />
-    <Content Include="source.extension.vsixmanifest">
+    <None Update="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
       <Generator>VsixManifestGenerator</Generator>
       <LastGenOutput>source.extension.cs</LastGenOutput>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <IncludeInVSIX>false</IncludeInVSIX>
-    </Content>
+      <IncludeInVSIX>True</IncludeInVSIX>
+    </None>
   </ItemGroup>
 
   <!-- XAML pages: UseWPF auto-globs *.xaml as Page, just add metadata -->
