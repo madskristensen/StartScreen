@@ -29,6 +29,15 @@
           GotKeyboardFocus="RootBorder_GotKeyboardFocus"
           LostKeyboardFocus="RootBorder_LostKeyboardFocus"
           Cursor="Hand">
+
+    <!-- Context Menu -->
+    <Border.ContextMenu>
+      <ContextMenu>
+        <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
+        <Separator/>
+        <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
+      </ContextMenu>
+    </Border.ContextMenu>
     <StackPanel>
       <!-- Thumbnail (16:9 aspect ratio) -->
       <Border CornerRadius="4" ClipToBounds="True">

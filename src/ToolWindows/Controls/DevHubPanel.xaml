@@ -200,6 +200,13 @@
                                             Focusable="True" FocusVisualStyle="{x:Null}"
                                             MouseUp="IssueItem_MouseUp"
                                             Style="{StaticResource HoverItemBorderStyle}">
+                                        <Border.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
+                                                <Separator/>
+                                                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right"
                                                        Text="{Binding CreatedAgoText}"
@@ -273,6 +280,13 @@
                                             Focusable="True" FocusVisualStyle="{x:Null}"
                                             MouseUp="PrItem_MouseUp"
                                             Style="{StaticResource HoverItemBorderStyle}">
+                                        <Border.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
+                                                <Separator/>
+                                                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right"
                                                        Text="{Binding UpdatedAgoText}"
@@ -344,6 +358,13 @@
                                             Focusable="True" FocusVisualStyle="{x:Null}"
                                             MouseUp="CiItem_MouseUp"
                                             Style="{StaticResource HoverItemBorderStyle}">
+                                        <Border.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
+                                                <Separator/>
+                                                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
                                         <DockPanel>
                                             <imaging:CrispImage DockPanel.Dock="Left"
                                                        Moniker="{Binding Status, Converter={StaticResource CiStatusToMonikerConverter}}"

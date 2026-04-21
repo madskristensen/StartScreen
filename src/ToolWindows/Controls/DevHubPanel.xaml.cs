@@ -277,6 +277,42 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
+        private static string GetWebUrlFromDataContext(object dataContext)
+        {
+            switch (dataContext)
+            {
+                case DevHubPullRequest pr: return pr.WebUrl;
+                case DevHubIssue issue: return issue.WebUrl;
+                case DevHubCiRun ci: return ci.WebUrl;
+                default: return null;
+            }
+        }
+
+        private void OpenInBrowserMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var url = GetWebUrlFromDataContext(GetContextMenuItemDataContext(sender));
+            if (!string.IsNullOrEmpty(url))
+            {
+                OpenUrl(url);
+            }
+        }
+
+        private void CopyUrlMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var url = GetWebUrlFromDataContext(GetContextMenuItemDataContext(sender));
+            if (!string.IsNullOrEmpty(url))
+            {
+                Clipboard.SetText(url);
+            }
+        }
+
+        private static object GetContextMenuItemDataContext(object sender)
+        {
+            if (sender is MenuItem mi && mi.Parent is ContextMenu cm && cm.PlacementTarget is FrameworkElement fe)
+                return fe.DataContext;
+            return null;
+        }
+
         /// <summary>
         /// Focuses the first item in the currently visible tab.
         /// Returns true if focus was set successfully.
@@ -384,6 +420,15 @@ namespace StartScreen.ToolWindows.Controls
                         });
                         e.Handled = true;
                     }
+                    else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+                    {
+                        var url = GetWebUrlFromDataContext(focusedBorder.DataContext);
+                        if (!string.IsNullOrEmpty(url))
+                        {
+                            Clipboard.SetText(url);
+                        }
+                        e.Handled = true;
+                    }
                     return;
                 }
             }
@@ -455,6 +500,7 @@ namespace StartScreen.ToolWindows.Controls
                 DependencyObject child = VisualTreeHelper.GetChild(parent, i);
                 if (child is Border b && b.Focusable)
                 {
+                    ApplyContextMenuTheme(b);
                     results.Add(b);
                 }
                 else
@@ -462,6 +508,21 @@ namespace StartScreen.ToolWindows.Controls
                     CollectFocusableBordersRecursive(child, results);
                 }
             }
+        }
+
+        private static void ApplyContextMenuTheme(Border border)
+        {
+            ContextMenu menu = border.ContextMenu;
+            if (menu == null || menu.Tag as string == "themed")
+                return;
+
+            ThemedContextMenuHelper.ApplyVsTheme(menu);
+            if (menu.Items.Count >= 3)
+            {
+                ((MenuItem)menu.Items[0]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.BrowserLink);
+                ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.Copy);
+            }
+            menu.Tag = "themed";
         }
     }
 

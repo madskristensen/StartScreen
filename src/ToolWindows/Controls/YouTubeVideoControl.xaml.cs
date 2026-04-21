@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.PlatformUI;
 using StartScreen.Models;
 
@@ -17,6 +18,16 @@ namespace StartScreen.ToolWindows.Controls
         public YouTubeVideoControl()
         {
             InitializeComponent();
+
+            ContextMenu menu = RootBorder.ContextMenu;
+            ThemedContextMenuHelper.ApplyVsTheme(menu);
+
+            if (menu != null)
+            {
+                ((MenuItem)menu.Items[0]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.BrowserLink);
+                // Items[1] is Separator
+                ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
+            }
         }
 
         private void RootBorder_MouseEnter(object sender, MouseEventArgs e)
@@ -57,6 +68,11 @@ namespace StartScreen.ToolWindows.Controls
             else if (e.Key == Key.Left)
             {
                 FocusNewsRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                CopyUrlMenuItem_Click(sender, null);
                 e.Handled = true;
             }
         }
@@ -130,6 +146,22 @@ namespace StartScreen.ToolWindows.Controls
             if (!string.IsNullOrEmpty(video.Url))
             {
                 Process.Start(video.Url);
+            }
+        }
+
+        private void OpenInBrowserMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is YouTubeVideo video)
+            {
+                OpenVideo(video);
+            }
+        }
+
+        private void CopyUrlMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is YouTubeVideo video && !string.IsNullOrEmpty(video.Url))
+            {
+                Clipboard.SetText(video.Url);
             }
         }
     }
