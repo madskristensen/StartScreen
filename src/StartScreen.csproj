@@ -46,6 +46,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Helpers\GitHelper.cs" />
+    <Compile Include="Helpers\InlineTextHelper.cs" />
     <Compile Include="Models\DevHub\DevHubCiRun.cs" />
     <Compile Include="Models\DevHub\DevHubDashboard.cs" />
     <Compile Include="Models\DevHub\DevHubIssue.cs" />

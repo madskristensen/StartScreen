@@ -60,4 +60,10 @@ Press Ctrl+Shift+F9 to delete all breakpoints in your solution at once.
 Use Window > Split Tab to split the editor and view two parts of the same file simultaneously.
 Enable 'Preview Selected Items' in Solution Explorer to preview files with a single click.
 Hold Ctrl and scroll the mouse wheel to increase or decrease the editor font size.
+Hold Shift and scroll the mouse wheel to scroll the editor horizontally.
 Use an .editorconfig file to define portable, consistent code style rules across your team.
+
+# Visual Studio Subscription Benefits
+Access all your Visual Studio subscription benefits on [my.visualstudio.com](https://my.visualstudio.com/) - including software downloads, Azure DevOps, training resources, and much more.
+Subscribe to the [Visual Studio newsletter](https://aka.ms/VSSOptin) to get tips, updates, and special offers delivered to your inbox
+Join us in person! Get up to $900 discount on conference tickets for VS Live! conferences and other events on [my.visualstudio.com](https://my.visualstudio.com/)
