@@ -336,13 +336,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ConnectAdo_Click(object sender, RoutedEventArgs e)
         {
-            // Open settings panel to show the ADO PAT entry
-            if (SettingsPanel.Visibility != Visibility.Visible)
-            {
-                Settings_Click(sender, e);
-            }
-
-            AdoPatBox.Focus();
+            ConnectAccountRequested?.Invoke(this, "dev.azure.com");
         }
 
         private void AdoPatBox_KeyDown(object sender, KeyEventArgs e)

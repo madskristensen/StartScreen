@@ -126,6 +126,77 @@ namespace StartScreen.Services.DevHub
             return false;
         }
 
+        /// <summary>
+        /// Calls GCM interactively, allowing it to open a browser for OAuth.
+        /// Used when the user explicitly clicks "Connect account".
+        /// </summary>
+        public static async Task<bool> ConnectInteractiveAsync(string host, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "credential fill",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+
+                // Allow GCM to open browser / show interactive prompts for OAuth.
+                using (var process = Process.Start(psi))
+                {
+                    if (process == null)
+                        return false;
+
+                    await process.StandardInput.WriteLineAsync("protocol=https");
+                    await process.StandardInput.WriteLineAsync($"host={host}");
+                    await process.StandardInput.WriteLineAsync();
+                    process.StandardInput.Close();
+
+                    // Wait up to 2 minutes for the user to complete the browser OAuth flow.
+                    var outputTask = process.StandardOutput.ReadToEndAsync();
+                    var completed = await Task.WhenAny(
+                        outputTask,
+                        Task.Delay(TimeSpan.FromMinutes(2), cancellationToken));
+
+                    if (completed != outputTask)
+                    {
+                        TryKillProcess(process);
+                        return false;
+                    }
+
+                    if (!process.WaitForExit(5000))
+                    {
+                        TryKillProcess(process);
+                        return false;
+                    }
+
+                    if (process.ExitCode != 0)
+                        return false;
+
+                    var credential = ParseGitCredentialOutput(await outputTask);
+                    if (credential == null)
+                        return false;
+
+                    // Cache the freshly acquired credential.
+                    lock (_cacheLock)
+                    {
+                        _credentialCache[host] = credential;
+                    }
+
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                return false;
+            }
+        }
+
         private static async Task<DevHubCredential> TryGitCredentialManagerAsync(string host, CancellationToken cancellationToken)
         {
             try

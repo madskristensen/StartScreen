@@ -3,6 +3,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.VisualStudio.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -342,13 +344,27 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_ConnectAccountRequested(object sender, string host)
         {
-            // GCM handles GitHub auth - open the login page to trigger credential flow.
-            if (string.Equals(host, "github.com", System.StringComparison.OrdinalIgnoreCase))
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                    "https://github.com/login")
-                { UseShellExecute = true });
-            }
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                DevHubPanelControl.ShowLoading($"Connecting to {host}...");
+
+                await TaskScheduler.Default;
+                var connected = await Services.DevHub.DevHubCredentialHelper.ConnectInteractiveAsync(
+                    host, System.Threading.CancellationToken.None);
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (connected)
+                {
+                    Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
+                    await RefreshDevHubInBackgroundAsync();
+                }
+                else
+                {
+                    // GCM not available or user cancelled - fall back to showing panel state
+                    UpdateDevHubPanel();
+                }
+            }).FileAndForget(nameof(StartScreenControl));
         }
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
