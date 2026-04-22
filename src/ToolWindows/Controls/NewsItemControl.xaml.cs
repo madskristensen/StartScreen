@@ -15,6 +15,8 @@ namespace StartScreen.ToolWindows.Controls
     {
         private NewsPost NewsPost => DataContext as NewsPost;
 
+        private bool _mouseDownHere;
+
         public event EventHandler<NewsPost> PinToggleRequested;
         public event EventHandler FocusDevHubRequested;
         public event EventHandler FocusYouTubeRequested;
@@ -53,6 +55,8 @@ namespace StartScreen.ToolWindows.Controls
 
         private void RootBorder_MouseLeave(object sender, MouseEventArgs e)
         {
+            _mouseDownHere = false;
+
             if (!RootBorder.IsKeyboardFocused)
             {
                 RootBorder.Background = Brushes.Transparent;
@@ -78,10 +82,16 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
+        private void RootBorder_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _mouseDownHere = true;
+        }
+
         private void RootBorder_MouseUp(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton == MouseButton.Left)
+            if (e.ChangedButton == MouseButton.Left && _mouseDownHere)
             {
+                _mouseDownHere = false;
                 OpenInBrowser();
             }
         }
@@ -91,7 +101,7 @@ namespace StartScreen.ToolWindows.Controls
             if (NewsPost == null)
                 return;
 
-            if (e.Key == Key.Enter)
+            if (e.Key == Key.Enter && RootBorder.IsKeyboardFocused)
             {
                 OpenInBrowser();
                 e.Handled = true;

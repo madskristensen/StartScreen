@@ -27,6 +27,7 @@
             FocusVisualStyle="{x:Null}"
             MouseEnter="RootBorder_MouseEnter"
             MouseLeave="RootBorder_MouseLeave"
+            MouseLeftButtonDown="RootBorder_MouseLeftButtonDown"
             MouseUp="RootBorder_MouseUp"
             PreviewKeyDown="RootBorder_KeyDown"
             GotKeyboardFocus="RootBorder_GotKeyboardFocus"
