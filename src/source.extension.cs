@@ -12,7 +12,7 @@ namespace StartScreen
         public const string Name = "Start Screen";
         public const string Description = @"A modern start screen for Visual Studio with recent projects, developer news, daily tips, and quick actions.";
         public const string Language = "en-US";
-        public const string Version = "1.0";
+        public const string Version = "1.0.900";
         public const string Author = "Mads Kristensen";
         public const string Tags = "news, start";
         public const bool IsPreview = false;

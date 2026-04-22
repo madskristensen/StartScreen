@@ -431,14 +431,7 @@ namespace StartScreen.ToolWindows
         private void UpdateDevHubPanel()
         {
             var dashboard = _devHubService.CurrentDashboard;
-            RemoteRepoIdentifier filterRepo = null;
-
-            if (ViewModel?.SelectedMruItem != null && !string.IsNullOrEmpty(ViewModel.SelectedMruItem.RemoteUrl))
-            {
-                filterRepo = RemoteRepoIdentifier.TryParse(ViewModel.SelectedMruItem.RemoteUrl);
-            }
-
-            DevHubPanelControl.UpdateView(dashboard, filterRepo);
+            DevHubPanelControl.UpdateView(dashboard, null);
         }
 
         private void NewsItemControl_FocusDevHubRequested(object sender, EventArgs e)

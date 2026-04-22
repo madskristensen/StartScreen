@@ -121,18 +121,12 @@ namespace StartScreen.ToolWindows.Controls
 
                 _dragStartPoint = null;
 
-                // Single-click selects the item (Dev Hub filters to this repo)
-                SelectionRequested?.Invoke(this, MruItem);
+                ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
             }
         }
 
         private void RootBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.ClickCount == 2 && MruItem != null)
-            {
-                e.Handled = true;
-                ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
-            }
         }
 
         internal void HandlePreviewMouseLeftButtonDown(MouseButtonEventArgs e)
