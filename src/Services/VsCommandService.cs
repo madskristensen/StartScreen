@@ -97,7 +97,7 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task CloneRepositoryAsync()
         {
-            await VS.Commands.ExecuteAsync("Git.Clone");
+            await VS.Commands.ExecuteAsync("File.CloneRepository");
         }
 
         /// <summary>
