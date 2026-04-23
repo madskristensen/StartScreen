@@ -1,7 +1,7 @@
 global using System;
+global using Community.VisualStudio.Toolkit;
 global using Microsoft.VisualStudio.Shell;
 global using Task = System.Threading.Tasks.Task;
-global using Community.VisualStudio.Toolkit;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.VisualStudio;
@@ -24,28 +24,18 @@ namespace StartScreen
             // Register tool window
             this.RegisterToolWindows();
 
-            // Don't await ShowAsync here — it deadlocks because the shell isn't ready yet.
-            // ProvideToolWindowVisibility handles showing automatically in the NoSolution context.
-            // Schedule a deferred show as backup in case the visibility attribute didn't trigger.
+            // Do NOT call ShowAsync from InitializeAsync — it forces the WPF tree to be built
+            // on the UI thread during package load, which is what triggers the
+            // "this extension delayed VS startup" InfoBar. ProvideToolWindowVisibility
+            // (NoSolution) tells the shell to show the window when it is ready.
 
-            JoinableTaskFactory.RunAsync(async () =>
-            {
-                // Yield to let the shell finish initializing
-                await Task.Yield();
-                await ShowStartScreenAsync();
-            }).FileAndForget(nameof(StartScreen));
-
-            // Switch to main thread to subscribe to solution events
-            await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-
-            // Subscribe to solution events for auto-show/hide behavior
-            //VS.Events.SolutionEvents.OnBeforeOpenSolution += OnSolutionOpened;
-            VS.Events.SolutionEvents.OnBeforeOpenSolution += OnBeforeOpenSolution;
-            VS.Events.SolutionEvents.OnAfterOpenFolder += OnBeforeOpenSolution;
-            VS.Events.SolutionEvents.OnAfterCloseSolution += OnSolutionClosed;
+            // Subscribing to managed C# events does not require the UI thread, so stay off it.
+            Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnBeforeOpenSolution += OnBeforeOpenSolution;
+            Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder += OnBeforeOpenSolution;
+            Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterCloseSolution += OnSolutionClosed;
         }
 
-        private void OnBeforeOpenSolution(string obj)
+        private void OnBeforeOpenSolution(object sender, EventArgs e)
         {
             ToolWindows.StartScreenWindow.HideAsync().FireAndForget();
         }
@@ -55,7 +45,7 @@ namespace StartScreen
             await ToolWindows.StartScreenWindow.ShowAsync();
         }
 
-        private void OnSolutionClosed()
+        private void OnSolutionClosed(object sender, EventArgs e)
         {
             if (VsShellUtilities.ShellIsShuttingDown)
             {
@@ -78,9 +68,9 @@ namespace StartScreen
         {
             if (disposing)
             {
-                VS.Events.SolutionEvents.OnBeforeOpenSolution -= OnBeforeOpenSolution;
-                VS.Events.SolutionEvents.OnAfterOpenFolder -= OnBeforeOpenSolution;
-                VS.Events.SolutionEvents.OnAfterCloseSolution -= OnSolutionClosed;
+                Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnBeforeOpenSolution -= OnBeforeOpenSolution;
+                Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder -= OnBeforeOpenSolution;
+                Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterCloseSolution -= OnSolutionClosed;
             }
 
             base.Dispose(disposing);

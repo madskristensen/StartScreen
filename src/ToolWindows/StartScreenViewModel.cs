@@ -5,7 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -344,17 +346,13 @@ namespace StartScreen.ToolWindows
             _allMruItems = new ObservableCollection<MruItem>();
             _discoverySectionTitle = "Discover what's new";
             _discoverySectionVersion = string.Empty;
-            _currentTipIndex = DateTime.Now.DayOfYear % TipProvider.TipCount;
-            _currentTip = TipProvider.GetTipOfTheDay();
 
-            // Initialize suggested extension
-            _currentExtensionIndex = DateTime.Now.DayOfYear % SuggestedExtensionProvider.SuggestionCount;
-            var suggestedExtension = SuggestedExtensionProvider.GetSuggestionOfTheDay();
-            if (suggestedExtension != null)
-            {
-                suggestedExtension.IsInstalled = InstalledExtensionChecker.IsInstalled(suggestedExtension.Id);
-                _currentSuggestedExtension = suggestedExtension;
-            }
+            // Tip / suggested-extension initialization is deferred to LoadMruAsync.
+            // The first call into TipProvider/SuggestedExtensionProvider triggers static
+            // initializers that read embedded resources synchronously, and
+            // InstalledExtensionChecker.IsInstalled hits the VS private registry hive.
+            // Doing all of that on the UI thread inside the ctor is what trips the
+            // "this extension delayed VS startup" InfoBar.
 
             FeedStore.FeedsChanged += OnFeedsChanged;
         }
@@ -363,6 +361,32 @@ namespace StartScreen.ToolWindows
         {
             // Force refresh news when feeds file changes
             ForceRefreshNews();
+        }
+
+        /// <summary>
+        /// Initializes the current tip and suggested extension. Must be called from a
+        /// background thread because the underlying providers do synchronous resource
+        /// and registry I/O on first use.
+        /// </summary>
+        private void InitializeTipAndExtension()
+        {
+            try
+            {
+                _currentTipIndex = DateTime.Now.DayOfYear % TipProvider.TipCount;
+                CurrentTip = TipProvider.GetTipOfTheDay();
+
+                _currentExtensionIndex = DateTime.Now.DayOfYear % SuggestedExtensionProvider.SuggestionCount;
+                var suggestedExtension = SuggestedExtensionProvider.GetSuggestionOfTheDay();
+                if (suggestedExtension != null)
+                {
+                    suggestedExtension.IsInstalled = InstalledExtensionChecker.IsInstalled(suggestedExtension.Id);
+                    CurrentSuggestedExtension = suggestedExtension;
+                }
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+            }
         }
 
         private void OnAutoRefreshTimerTick(object state)
@@ -384,6 +408,16 @@ namespace StartScreen.ToolWindows
         /// </summary>
         public async Task LoadMruAsync()
         {
+            // Get off the UI thread immediately. CreateAsync invokes us from the UI
+            // thread; synchronous work below (FileSystemWatcher creation, embedded
+            // resource reads, registry I/O) must not run there.
+            await TaskScheduler.Default;
+
+            // Initialize tip / suggested extension on a background thread so that the
+            // first-touch static initializers (embedded resource reads + JsonSerializer)
+            // and InstalledExtensionChecker's registry I/O do not happen on the UI thread.
+            InitializeTipAndExtension();
+
             // Deferred from constructor to avoid blocking tool window creation
             FeedStore.StartWatching();
             _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, AutoRefreshInterval, AutoRefreshInterval);

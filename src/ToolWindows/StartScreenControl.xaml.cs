@@ -37,7 +37,9 @@ namespace StartScreen.ToolWindows
             // Start DevHub cache read immediately (same head start as MRU/News)
             _devHubCacheTask = _devHubService.LoadFromCacheAsync();
             InitializeComponent();
-            RestoreSplitterPosition();
+            // Splitter position is restored asynchronously in UserControl_Loaded so that
+            // the synchronous Options.Instance read does not block the UI thread during
+            // first paint.
         }
 
         private async void UserControl_Loaded(object sender, RoutedEventArgs e)
@@ -55,6 +57,9 @@ namespace StartScreen.ToolWindows
 
                 // Yield to let the window paint first
                 await Task.Yield();
+
+                // Restore splitter position from settings (async to avoid sync settings I/O)
+                await RestoreSplitterPositionAsync();
 
                 // Start Dev Hub cache load immediately (don't wait for MRU)
                 var devHubTask = LoadDevHubAsync();
@@ -82,12 +87,19 @@ namespace StartScreen.ToolWindows
             await VS.Commands.ExecuteAsync("Help.ReleaseNotes");
         }
 
-        private void RestoreSplitterPosition()
+        private async Task RestoreSplitterPositionAsync()
         {
-            var saved = Options.Instance.SplitterPosition;
-            if (saved >= 500)
+            try
             {
-                LeftColumn.Width = new GridLength(saved);
+                Options options = await Options.GetLiveInstanceAsync();
+                if (options.SplitterPosition >= 500)
+                {
+                    LeftColumn.Width = new GridLength(options.SplitterPosition);
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
             }
         }
 
