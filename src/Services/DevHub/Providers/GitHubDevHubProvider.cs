@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using StartScreen.Models.DevHub;
@@ -12,6 +13,31 @@ namespace StartScreen.Services.DevHub.Providers
     /// </summary>
     internal sealed class GitHubDevHubProvider : IDevHubProvider
     {
+        // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
+        // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
+        // The Authorization header is per-request because the credential token can change at runtime
+        // and DefaultRequestHeaders is not safe to mutate while parallel requests are in flight.
+        private static readonly HttpClient s_httpClient = CreateSharedHttpClient();
+
+        private static HttpClient CreateSharedHttpClient()
+        {
+            var client = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(15),
+            };
+            client.DefaultRequestHeaders.Add("User-Agent", "StartScreen-VS-Extension");
+            client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+            client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+            return client;
+        }
+
+        private static Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {credential.Token}");
+            return s_httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        }
+
         private string _cachedLogin;
 
         public string DisplayName => "GitHub";
@@ -41,32 +67,29 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                using (var client = CreateHttpClient(credential))
+                var response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                var json = await response.Content.ReadAsStringAsync();
+                using (var doc = System.Text.Json.JsonDocument.Parse(json))
                 {
-                    var response = await client.GetAsync("https://api.github.com/user", cancellationToken);
-                    if (!response.IsSuccessStatusCode)
-                        return null;
+                    var root = doc.RootElement;
+                    var login = root.GetProperty("login").GetString();
+                    _cachedLogin = login;
 
-                    var json = await response.Content.ReadAsStringAsync();
-                    using (var doc = System.Text.Json.JsonDocument.Parse(json))
+                    return new DevHubUser
                     {
-                        var root = doc.RootElement;
-                        var login = root.GetProperty("login").GetString();
-                        _cachedLogin = login;
-
-                        return new DevHubUser
-                        {
-                            Username = login,
-                            DisplayName = root.TryGetProperty("name", out var name) && name.ValueKind != System.Text.Json.JsonValueKind.Null
-                                ? name.GetString()
-                                : login,
-                            AvatarUrl = root.TryGetProperty("avatar_url", out var avatar)
-                                ? avatar.GetString()
-                                : null,
-                            ProviderName = DisplayName,
-                            Host = "github.com",
-                        };
-                    }
+                        Username = login,
+                        DisplayName = root.TryGetProperty("name", out var name) && name.ValueKind != System.Text.Json.JsonValueKind.Null
+                            ? name.GetString()
+                            : login,
+                        AvatarUrl = root.TryGetProperty("avatar_url", out var avatar)
+                            ? avatar.GetString()
+                            : null,
+                        ProviderName = DisplayName,
+                        Host = "github.com",
+                    };
                 }
             }
             catch (Exception ex)
@@ -89,18 +112,15 @@ namespace StartScreen.Services.DevHub.Providers
                 return (credential, _cachedLogin);
 
             // Fetch login from API if not yet cached
-            using (var client = CreateHttpClient(credential))
-            {
-                var response = await client.GetAsync("https://api.github.com/user", cancellationToken);
-                if (!response.IsSuccessStatusCode)
-                    return (credential, null);
+            var response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return (credential, null);
 
-                var json = await response.Content.ReadAsStringAsync();
-                using (var doc = System.Text.Json.JsonDocument.Parse(json))
-                {
-                    _cachedLogin = doc.RootElement.GetProperty("login").GetString();
-                    return (credential, _cachedLogin);
-                }
+            var json = await response.Content.ReadAsStringAsync();
+            using (var doc = System.Text.Json.JsonDocument.Parse(json))
+            {
+                _cachedLogin = doc.RootElement.GetProperty("login").GetString();
+                return (credential, _cachedLogin);
             }
         }
 
@@ -112,18 +132,15 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                using (var client = CreateHttpClient(credential))
-                {
-                    var query = Uri.EscapeDataString(BuildSearchQuery("is:pr", login, Options.Instance.DevHubSearchQuery));
-                    var url = $"https://api.github.com/search/issues?q={query}&sort=updated&order=desc&per_page=30";
+                var query = Uri.EscapeDataString(BuildSearchQuery("is:pr", login, Options.Instance.DevHubSearchQuery));
+                var url = $"https://api.github.com/search/issues?q={query}&sort=updated&order=desc&per_page=30";
 
-                    var response = await client.GetAsync(url, cancellationToken);
-                    if (!response.IsSuccessStatusCode)
-                        return Array.Empty<DevHubPullRequest>();
+                var response = await SendGetAsync(credential, url, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                    return Array.Empty<DevHubPullRequest>();
 
-                    var json = await response.Content.ReadAsStringAsync();
-                    return ParsePullRequests(json, login);
-                }
+                var json = await response.Content.ReadAsStringAsync();
+                return ParsePullRequests(json, login);
             }
             catch (Exception ex)
             {
@@ -140,18 +157,15 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                using (var client = CreateHttpClient(credential))
-                {
-                    var query = Uri.EscapeDataString(BuildSearchQuery("is:issue", login, Options.Instance.DevHubSearchQuery));
-                    var url = $"https://api.github.com/search/issues?q={query}&sort=updated&order=desc&per_page=20";
+                var query = Uri.EscapeDataString(BuildSearchQuery("is:issue", login, Options.Instance.DevHubSearchQuery));
+                var url = $"https://api.github.com/search/issues?q={query}&sort=updated&order=desc&per_page=20";
 
-                    var response = await client.GetAsync(url, cancellationToken);
-                    if (!response.IsSuccessStatusCode)
-                        return Array.Empty<DevHubIssue>();
+                var response = await SendGetAsync(credential, url, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                    return Array.Empty<DevHubIssue>();
 
-                    var json = await response.Content.ReadAsStringAsync();
-                    return ParseIssues(json);
-                }
+                var json = await response.Content.ReadAsStringAsync();
+                return ParseIssues(json);
             }
             catch (Exception ex)
             {
@@ -168,32 +182,29 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                using (var client = CreateHttpClient(credential))
+                // Fetch user's recently pushed repos (personal + org) to find CI runs
+                var reposUrl = "https://api.github.com/user/repos?sort=pushed&per_page=5&affiliation=owner,collaborator,organization_member";
+                var reposResponse = await SendGetAsync(credential, reposUrl, cancellationToken);
+                if (!reposResponse.IsSuccessStatusCode)
+                    return Array.Empty<DevHubCiRun>();
+
+                var reposJson = await reposResponse.Content.ReadAsStringAsync();
+                var repos = ParseRepoList(reposJson);
+
+                var allRuns = new List<DevHubCiRun>();
+                foreach (var repo in repos)
                 {
-                    // Fetch user's recently pushed repos (personal + org) to find CI runs
-                    var reposUrl = "https://api.github.com/user/repos?sort=pushed&per_page=5&affiliation=owner,collaborator,organization_member";
-                    var reposResponse = await client.GetAsync(reposUrl, cancellationToken);
-                    if (!reposResponse.IsSuccessStatusCode)
-                        return Array.Empty<DevHubCiRun>();
-
-                    var reposJson = await reposResponse.Content.ReadAsStringAsync();
-                    var repos = ParseRepoList(reposJson);
-
-                    var allRuns = new List<DevHubCiRun>();
-                    foreach (var repo in repos)
+                    var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page=3";
+                    var runsResponse = await SendGetAsync(credential, runsUrl, cancellationToken);
+                    if (runsResponse.IsSuccessStatusCode)
                     {
-                        var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page=3";
-                        var runsResponse = await client.GetAsync(runsUrl, cancellationToken);
-                        if (runsResponse.IsSuccessStatusCode)
-                        {
-                            var runsJson = await runsResponse.Content.ReadAsStringAsync();
-                            allRuns.AddRange(ParseCiRuns(runsJson, repo));
-                        }
+                        var runsJson = await runsResponse.Content.ReadAsStringAsync();
+                        allRuns.AddRange(ParseCiRuns(runsJson, repo));
                     }
-
-                    allRuns.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
-                    return allRuns;
                 }
+
+                allRuns.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
+                return allRuns;
             }
             catch (Exception ex)
             {
@@ -231,43 +242,40 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                using (var client = CreateHttpClient(credential))
+                var detail = new DevHubRepoDetail
                 {
-                    var detail = new DevHubRepoDetail
-                    {
-                        RepoIdentifier = repo,
-                        FetchedAt = DateTime.UtcNow,
-                    };
+                    RepoIdentifier = repo,
+                    FetchedAt = DateTime.UtcNow,
+                };
 
-                    // Fetch PRs for this repo
-                    var prUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/pulls?state=open&sort=updated&direction=desc&per_page=10";
-                    var prResponse = await client.GetAsync(prUrl, cancellationToken);
-                    if (prResponse.IsSuccessStatusCode)
-                    {
-                        var prJson = await prResponse.Content.ReadAsStringAsync();
-                        detail.PullRequests = ParseRepoPullRequests(prJson, repo, credential.Username);
-                    }
-
-                    // Fetch issues for this repo
-                    var issueUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/issues?state=open&sort=updated&direction=desc&per_page=10";
-                    var issueResponse = await client.GetAsync(issueUrl, cancellationToken);
-                    if (issueResponse.IsSuccessStatusCode)
-                    {
-                        var issueJson = await issueResponse.Content.ReadAsStringAsync();
-                        detail.Issues = ParseRepoIssues(issueJson, repo);
-                    }
-
-                    // Fetch latest CI runs
-                    var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page=5";
-                    var runsResponse = await client.GetAsync(runsUrl, cancellationToken);
-                    if (runsResponse.IsSuccessStatusCode)
-                    {
-                        var runsJson = await runsResponse.Content.ReadAsStringAsync();
-                        detail.CiRuns = ParseCiRuns(runsJson, repo);
-                    }
-
-                    return detail;
+                // Fetch PRs for this repo
+                var prUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/pulls?state=open&sort=updated&direction=desc&per_page=10";
+                var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
+                if (prResponse.IsSuccessStatusCode)
+                {
+                    var prJson = await prResponse.Content.ReadAsStringAsync();
+                    detail.PullRequests = ParseRepoPullRequests(prJson, repo, credential.Username);
                 }
+
+                // Fetch issues for this repo
+                var issueUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/issues?state=open&sort=updated&direction=desc&per_page=10";
+                var issueResponse = await SendGetAsync(credential, issueUrl, cancellationToken);
+                if (issueResponse.IsSuccessStatusCode)
+                {
+                    var issueJson = await issueResponse.Content.ReadAsStringAsync();
+                    detail.Issues = ParseRepoIssues(issueJson, repo);
+                }
+
+                // Fetch latest CI runs
+                var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page=5";
+                var runsResponse = await SendGetAsync(credential, runsUrl, cancellationToken);
+                if (runsResponse.IsSuccessStatusCode)
+                {
+                    var runsJson = await runsResponse.Content.ReadAsStringAsync();
+                    detail.CiRuns = ParseCiRuns(runsJson, repo);
+                }
+
+                return detail;
             }
             catch (Exception ex)
             {
@@ -284,17 +292,6 @@ namespace StartScreen.Services.DevHub.Providers
 
         public string GetIssuesWebUrl(RemoteRepoIdentifier repo) =>
             $"https://github.com/{repo.Owner}/{repo.Repo}/issues";
-
-        private static System.Net.Http.HttpClient CreateHttpClient(DevHubCredential credential)
-        {
-            var client = new System.Net.Http.HttpClient();
-            client.DefaultRequestHeaders.Add("User-Agent", "StartScreen-VS-Extension");
-            client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
-            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {credential.Token}");
-            client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-            client.Timeout = TimeSpan.FromSeconds(15);
-            return client;
-        }
 
         private static List<DevHubPullRequest> ParsePullRequests(string json, string currentUser)
         {

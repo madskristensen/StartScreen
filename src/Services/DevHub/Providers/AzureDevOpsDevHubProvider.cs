@@ -15,6 +15,22 @@ namespace StartScreen.Services.DevHub.Providers
     /// </summary>
     internal sealed class AzureDevOpsDevHubProvider : IDevHubProvider
     {
+        // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
+        // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
+        // The Authorization header is per-request because the credential token can change at runtime
+        // and DefaultRequestHeaders is not safe to mutate while parallel requests are in flight.
+        private static readonly HttpClient s_httpClient = CreateSharedHttpClient();
+
+        private static HttpClient CreateSharedHttpClient()
+        {
+            var client = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(15),
+            };
+            client.DefaultRequestHeaders.Add("User-Agent", "StartScreen-VS-Extension");
+            return client;
+        }
+
         public string DisplayName => "Azure DevOps";
 
         public bool CanHandle(string remoteUrl)
@@ -44,29 +60,27 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                using (var client = CreateHttpClient(credential))
+                // Use the VS SPS endpoint to get user profile
+                var response = await SendGetAsync(
+                    credential,
+                    "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1",
+                    cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                var json = await response.Content.ReadAsStringAsync();
+                using (var doc = JsonDocument.Parse(json))
                 {
-                    // Use the VS SPS endpoint to get user profile
-                    var response = await client.GetAsync(
-                        "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1",
-                        cancellationToken);
-
-                    if (!response.IsSuccessStatusCode)
-                        return null;
-
-                    var json = await response.Content.ReadAsStringAsync();
-                    using (var doc = JsonDocument.Parse(json))
+                    var root = doc.RootElement;
+                    return new DevHubUser
                     {
-                        var root = doc.RootElement;
-                        return new DevHubUser
-                        {
-                            Username = root.TryGetProperty("emailAddress", out var email) ? email.GetString() : credential.Username,
-                            DisplayName = root.TryGetProperty("displayName", out var name) ? name.GetString() : credential.Username,
-                            AvatarUrl = null,
-                            ProviderName = DisplayName,
-                            Host = "dev.azure.com",
-                        };
-                    }
+                        Username = root.TryGetProperty("emailAddress", out var email) ? email.GetString() : credential.Username,
+                        DisplayName = root.TryGetProperty("displayName", out var name) ? name.GetString() : credential.Username,
+                        AvatarUrl = null,
+                        ProviderName = DisplayName,
+                        Host = "dev.azure.com",
+                    };
                 }
             }
             catch (Exception ex)
@@ -84,13 +98,11 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                using (var client = CreateHttpClient(credential))
-                {
-                    // ADO doesn't have a cross-org PR search, so we use the "my pull requests" endpoint
-                    // This requires knowing the org. For now, we return empty and rely on repo-specific detail.
-                    // TODO: When the user has configured org(s), query each one.
-                    return Array.Empty<DevHubPullRequest>();
-                }
+                // ADO doesn't have a cross-org PR search, so we use the "my pull requests" endpoint
+                // This requires knowing the org. For now, we return empty and rely on repo-specific detail.
+                // TODO: When the user has configured org(s), query each one.
+                _ = credential;
+                return Array.Empty<DevHubPullRequest>();
             }
             catch (Exception ex)
             {
@@ -107,11 +119,9 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                using (var client = CreateHttpClient(credential))
-                {
-                    // Same limitation as PRs - need org context for WIQL queries
-                    return Array.Empty<DevHubIssue>();
-                }
+                // Same limitation as PRs - need org context for WIQL queries
+                _ = credential;
+                return Array.Empty<DevHubIssue>();
             }
             catch (Exception ex)
             {
@@ -137,36 +147,33 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                using (var client = CreateHttpClient(credential))
+                var detail = new DevHubRepoDetail
                 {
-                    var detail = new DevHubRepoDetail
-                    {
-                        RepoIdentifier = repo,
-                        FetchedAt = DateTime.UtcNow,
-                    };
+                    RepoIdentifier = repo,
+                    FetchedAt = DateTime.UtcNow,
+                };
 
-                    var baseUrl = $"https://dev.azure.com/{repo.Owner}/{repo.Project}";
+                var baseUrl = $"https://dev.azure.com/{repo.Owner}/{repo.Project}";
 
-                    // Fetch PRs
-                    var prUrl = $"{baseUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top=10&api-version=7.1";
-                    var prResponse = await client.GetAsync(prUrl, cancellationToken);
-                    if (prResponse.IsSuccessStatusCode)
-                    {
-                        var prJson = await prResponse.Content.ReadAsStringAsync();
-                        detail.PullRequests = ParseAdoPullRequests(prJson, repo);
-                    }
-
-                    // Fetch recent builds
-                    var buildUrl = $"{baseUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top=5&api-version=7.1";
-                    var buildResponse = await client.GetAsync(buildUrl, cancellationToken);
-                    if (buildResponse.IsSuccessStatusCode)
-                    {
-                        var buildJson = await buildResponse.Content.ReadAsStringAsync();
-                        detail.CiRuns = ParseAdoBuilds(buildJson, repo);
-                    }
-
-                    return detail;
+                // Fetch PRs
+                var prUrl = $"{baseUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top=10&api-version=7.1";
+                var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
+                if (prResponse.IsSuccessStatusCode)
+                {
+                    var prJson = await prResponse.Content.ReadAsStringAsync();
+                    detail.PullRequests = ParseAdoPullRequests(prJson, repo);
                 }
+
+                // Fetch recent builds
+                var buildUrl = $"{baseUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top=5&api-version=7.1";
+                var buildResponse = await SendGetAsync(credential, buildUrl, cancellationToken);
+                if (buildResponse.IsSuccessStatusCode)
+                {
+                    var buildJson = await buildResponse.Content.ReadAsStringAsync();
+                    detail.CiRuns = ParseAdoBuilds(buildJson, repo);
+                }
+
+                return detail;
             }
             catch (Exception ex)
             {
@@ -184,16 +191,15 @@ namespace StartScreen.Services.DevHub.Providers
         public string GetIssuesWebUrl(RemoteRepoIdentifier repo) =>
             $"https://dev.azure.com/{repo.Owner}/{repo.Project}/_workitems";
 
-        private static HttpClient CreateHttpClient(DevHubCredential credential)
+        private static Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken)
         {
-            var client = new HttpClient();
-            client.DefaultRequestHeaders.Add("User-Agent", "StartScreen-VS-Extension");
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
 
             // ADO uses Basic auth with PAT: base64("":{token}) or base64({user}:{token})
             var authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($":{credential.Token}"));
-            client.DefaultRequestHeaders.Add("Authorization", $"Basic {authValue}");
-            client.Timeout = TimeSpan.FromSeconds(15);
-            return client;
+            request.Headers.TryAddWithoutValidation("Authorization", $"Basic {authValue}");
+
+            return s_httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
 
         private static List<DevHubPullRequest> ParseAdoPullRequests(string json, RemoteRepoIdentifier repo)
