@@ -366,11 +366,8 @@ namespace StartScreen.ToolWindows
                 if (connected)
                 {
                     // Note: do NOT call ClearCachedCredentials here. ConnectInteractiveAsync
-                    // already stored the freshly acquired credential in the in-memory cache,
-                    // and GCM may not have persisted the OAuth token to the OS credential
-                    // store yet. Clearing would force a non-interactive GCM lookup that can
-                    // return nothing, leaving the dashboard appearing not-connected until
-                    // the user manually clicks Reload.
+                    // already stored the freshly acquired credential in both the in-memory
+                    // cache and Windows Credential Manager.
                     await RefreshDevHubInBackgroundAsync();
                 }
                 else

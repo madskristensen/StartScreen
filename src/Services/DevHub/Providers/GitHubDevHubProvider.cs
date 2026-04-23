@@ -68,6 +68,18 @@ namespace StartScreen.Services.DevHub.Providers
             try
             {
                 var response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken);
+
+                // Token expired - invalidate cache and retry once with a fresh credential.
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    DevHubCredentialHelper.InvalidateCachedCredential("github.com");
+                    credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", cancellationToken);
+                    if (credential == null)
+                        return null;
+
+                    response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken);
+                }
+
                 if (!response.IsSuccessStatusCode)
                     return null;
 
@@ -113,6 +125,18 @@ namespace StartScreen.Services.DevHub.Providers
 
             // Fetch login from API if not yet cached
             var response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken);
+
+            // Token expired - invalidate cache and retry once.
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                DevHubCredentialHelper.InvalidateCachedCredential("github.com");
+                credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", cancellationToken);
+                if (credential == null)
+                    return (null, null);
+
+                response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken);
+            }
+
             if (!response.IsSuccessStatusCode)
                 return (credential, null);
 

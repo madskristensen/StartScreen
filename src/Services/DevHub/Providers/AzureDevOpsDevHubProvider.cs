@@ -66,6 +66,20 @@ namespace StartScreen.Services.DevHub.Providers
                     "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1",
                     cancellationToken);
 
+                // Token expired - invalidate cache and retry once with a fresh credential.
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    DevHubCredentialHelper.InvalidateCachedCredential("dev.azure.com");
+                    credential = await DevHubCredentialHelper.GetCredentialAsync("dev.azure.com", cancellationToken);
+                    if (credential == null)
+                        return null;
+
+                    response = await SendGetAsync(
+                        credential,
+                        "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1",
+                        cancellationToken);
+                }
+
                 if (!response.IsSuccessStatusCode)
                     return null;
 

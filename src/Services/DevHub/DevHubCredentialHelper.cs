@@ -71,6 +71,22 @@ namespace StartScreen.Services.DevHub
         }
 
         /// <summary>
+        /// Invalidates the cached credential for a specific host.
+        /// Call this when an API returns 401 Unauthorized so the next
+        /// request re-acquires a fresh token from GCM.
+        /// </summary>
+        public static void InvalidateCachedCredential(string host)
+        {
+            if (string.IsNullOrWhiteSpace(host))
+                return;
+
+            lock (_cacheLock)
+            {
+                _credentialCache.Remove(host);
+            }
+        }
+
+        /// <summary>
         /// Stores a user-provided credential in Windows Credential Manager.
         /// Used when the user manually enters a PAT.
         /// </summary>
@@ -186,6 +202,10 @@ namespace StartScreen.Services.DevHub
                     {
                         _credentialCache[host] = credential;
                     }
+
+                    // Also persist to Windows Credential Manager so the credential
+                    // survives VS restarts even if GCM can't refresh non-interactively.
+                    StoreCredential(host, credential.Username, credential.Token);
 
                     return true;
                 }

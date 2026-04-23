@@ -68,6 +68,18 @@ namespace StartScreen.Services.DevHub.Providers
             try
             {
                 var response = await SendGetAsync(credential, "https://api.bitbucket.org/2.0/user", cancellationToken);
+
+                // Token expired - invalidate cache and retry once with a fresh credential.
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    DevHubCredentialHelper.InvalidateCachedCredential("bitbucket.org");
+                    credential = await DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", cancellationToken);
+                    if (credential == null)
+                        return null;
+
+                    response = await SendGetAsync(credential, "https://api.bitbucket.org/2.0/user", cancellationToken);
+                }
+
                 if (!response.IsSuccessStatusCode)
                     return null;
 

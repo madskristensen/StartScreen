@@ -103,5 +103,31 @@ namespace StartScreen.Test.DevHub
             Assert.IsNotNull(result);
             Assert.AreEqual("abc=def=ghi", result.Token);
         }
+
+        [TestMethod]
+        public void InvalidateCachedCredential_NullHost_DoesNotThrow()
+        {
+            DevHubCredentialHelper.InvalidateCachedCredential(null);
+        }
+
+        [TestMethod]
+        public void InvalidateCachedCredential_EmptyHost_DoesNotThrow()
+        {
+            DevHubCredentialHelper.InvalidateCachedCredential("");
+        }
+
+        [TestMethod]
+        public void InvalidateCachedCredential_WhitespaceHost_DoesNotThrow()
+        {
+            DevHubCredentialHelper.InvalidateCachedCredential("   ");
+        }
+
+        [TestMethod]
+        public void InvalidateCachedCredential_UnknownHost_DoesNotThrow()
+        {
+            // Invalidating a host that was never cached should be a safe no-op.
+            DevHubCredentialHelper.ClearCachedCredentials();
+            DevHubCredentialHelper.InvalidateCachedCredential("unknown.example.com");
+        }
     }
 }
