@@ -17,6 +17,7 @@ namespace StartScreen.Services.DevHub
         [
             new GitHubDevHubProvider(),
             new AzureDevOpsDevHubProvider(),
+            new BitbucketDevHubProvider(),
         ];
 
         /// <summary>

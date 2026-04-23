@@ -76,7 +76,7 @@ namespace StartScreen.Test.DevHub
         {
             var providers = DevHubProviderRegistry.GetAllProviders();
 
-            Assert.IsGreaterThanOrEqualTo(2, providers.Count);
+            Assert.IsGreaterThanOrEqualTo(3, providers.Count);
         }
 
         [TestMethod]
@@ -85,6 +85,33 @@ namespace StartScreen.Test.DevHub
             var providers = DevHubProviderRegistry.GetAllProviders();
 
             Assert.IsTrue(providers.Any(p => p.DisplayName == "GitHub"));
+        }
+
+
+        [TestMethod]
+        public void GetProvider_BitbucketHttps_ReturnsBitbucketProvider()
+        {
+            var provider = DevHubProviderRegistry.GetProvider("https://bitbucket.org/workspace/repo.git");
+
+            Assert.IsNotNull(provider);
+            Assert.AreEqual("Bitbucket", provider.DisplayName);
+        }
+
+        [TestMethod]
+        public void GetProvider_BitbucketSsh_ReturnsBitbucketProvider()
+        {
+            var provider = DevHubProviderRegistry.GetProvider("git@bitbucket.org:workspace/repo.git");
+
+            Assert.IsNotNull(provider);
+            Assert.AreEqual("Bitbucket", provider.DisplayName);
+        }
+
+        [TestMethod]
+        public void GetAllProviders_ContainsBitbucket()
+        {
+            var providers = DevHubProviderRegistry.GetAllProviders();
+
+            Assert.IsTrue(providers.Any(p => p.DisplayName == "Bitbucket"));
         }
 
         [TestMethod]
