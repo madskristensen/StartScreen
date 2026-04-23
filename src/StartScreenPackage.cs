@@ -58,12 +58,12 @@ namespace StartScreen
                 WritableSettingsStore userSettings = settingsManager.GetWritableSettingsStore(SettingsScope.UserSettings);
 
                 const string collection = @"ApplicationPrivateSettings\Microsoft\VisualStudio\IDE";
-                const string property = "OnEnvironmentStartup";
+                const string property = "OnEnvironmentStartup_Dev16";
 
-                // Value format is "scope*type*value". Value 0 = empty environment,
+                // Value format is "scope*type*value". Value 10 = show empty environment,
                 // which disables the built-in Start Window so only this
                 // extension's Start Screen is shown.
-                userSettings.SetString(collection, property, "0*System.Int64*0");
+                userSettings.SetString(collection, property, "0*System.Int64*10");
 
                 options.HasDisabledBuiltInStartWindow = true;
                 await options.SaveAsync();
