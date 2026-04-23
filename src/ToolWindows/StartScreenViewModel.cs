@@ -405,36 +405,23 @@ namespace StartScreen.ToolWindows
 
         /// <summary>
         /// Loads MRU data from VS's MRU store and news from cache for initial display.
+        /// MRU is loaded first so it appears in the UI as quickly as possible; everything
+        /// else (tip/extension init, FeedStore watcher, refresh timer, news cache,
+        /// YouTube cache) is deferred until MRU is on screen.
         /// </summary>
         public async Task LoadMruAsync()
         {
             // Get off the UI thread immediately. CreateAsync invokes us from the UI
-            // thread; synchronous work below (FileSystemWatcher creation, embedded
-            // resource reads, registry I/O) must not run there.
+            // thread; all work below must not run there.
             await TaskScheduler.Default;
 
-            // Initialize tip / suggested extension on a background thread so that the
-            // first-touch static initializers (embedded resource reads + JsonSerializer)
-            // and InstalledExtensionChecker's registry I/O do not happen on the UI thread.
-            InitializeTipAndExtension();
-
-            // Deferred from constructor to avoid blocking tool window creation
-            FeedStore.StartWatching();
-            _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, AutoRefreshInterval, AutoRefreshInterval);
-
-            // Load options once for both MRU pinned state and news pinned state
+            // 1) MRU FIRST. Only the bare minimum needed to fetch MRU runs before the
+            //    UI is updated. Options is just a settings-store read and is needed
+            //    for pinned-item state.
             Options options = await Options.GetLiveInstanceAsync();
-
-            // Start feed task first (pure file I/O, no main thread needed)
-            System.Threading.Tasks.Task<List<NewsPost>> feedTask = FeedService.GetCachedPostsAsync();
-            System.Threading.Tasks.Task<List<YouTubeVideo>> youtubeTask = YouTubeService.GetCachedVideosAsync();
-
-            // MRU needs the main thread for IVsMRUItemsStore
             List<MruItem> mruItems = await MruService.GetMruItemsAsync(options);
 
-            // Show MRU immediately without waiting for the feed task
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
             _allMruItems = new ObservableCollection<MruItem>(mruItems);
             UpdateMruCollections();
 
@@ -442,7 +429,21 @@ namespace StartScreen.ToolWindows
             MruService.PopulateGitStatusAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
             MruService.PopulateExistenceAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
 
-            // Now await the feed task and update news when ready
+            // 2) Everything else runs after MRU is visible. Stay off the UI thread.
+            await TaskScheduler.Default;
+
+            // First-touch static initializers (embedded resource reads + JsonSerializer)
+            // and InstalledExtensionChecker's registry I/O happen here on a thread-pool thread.
+            InitializeTipAndExtension();
+
+            // Defer until after MRU paints to avoid blocking the first frame.
+            FeedStore.StartWatching();
+            _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, AutoRefreshInterval, AutoRefreshInterval);
+
+            // Start feed and YouTube cache reads (pure file I/O, no main thread needed)
+            System.Threading.Tasks.Task<List<NewsPost>> feedTask = FeedService.GetCachedPostsAsync();
+            System.Threading.Tasks.Task<List<YouTubeVideo>> youtubeTask = YouTubeService.GetCachedVideosAsync();
+
             List<NewsPost> cachedPosts = await feedTask;
 
             if (cachedPosts != null && cachedPosts.Count > 0)
@@ -455,7 +456,6 @@ namespace StartScreen.ToolWindows
                 UpdateNewsCollections();
             }
 
-            // Await YouTube cache and update
             List<YouTubeVideo> cachedVideos = await youtubeTask;
 
             if (cachedVideos != null && cachedVideos.Count > 0)

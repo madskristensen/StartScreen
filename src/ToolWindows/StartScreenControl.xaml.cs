@@ -34,12 +34,11 @@ namespace StartScreen.ToolWindows
         {
             _viewModel = viewModel;
             _loadTask = loadTask;
-            // Start DevHub cache read immediately (same head start as MRU/News)
-            _devHubCacheTask = _devHubService.LoadFromCacheAsync();
+            // Kick off the DevHub cache read on a background thread so the file I/O
+            // overlaps with MRU loading. This does NOT touch the UI - the panel is
+            // only updated later, after MRU has painted.
+            _devHubCacheTask = Task.Run(() => _devHubService.LoadFromCacheAsync());
             InitializeComponent();
-            // Splitter position is restored asynchronously in UserControl_Loaded so that
-            // the synchronous Options.Instance read does not block the UI thread during
-            // first paint.
         }
 
         private async void UserControl_Loaded(object sender, RoutedEventArgs e)
@@ -55,26 +54,24 @@ namespace StartScreen.ToolWindows
 
                 _isInitialized = true;
 
-                // Yield to let the window paint first
-                await Task.Yield();
-
-                // Restore splitter position from settings (async to avoid sync settings I/O)
-                await RestoreSplitterPositionAsync();
-
-                // Start Dev Hub cache load immediately (don't wait for MRU)
-                var devHubTask = LoadDevHubAsync();
-
-                // Wait for MRU load to complete (likely already done)
+                // Wait for MRU first - nothing else may visibly precede it.
                 await _loadTask;
 
-                // Bind ViewModel to trigger UI update
+                // Bind ViewModel to trigger MRU rendering in the UI.
                 DataContext = _viewModel;
                 UpdateResponsiveColumns();
-
-                // Refresh news/version in background, Dev Hub already started
                 _viewModel.PropertyChanged += ViewModel_PropertyChanged;
-                var newsTask = _viewModel.RefreshInBackgroundAsync();
-                await Task.WhenAll(newsTask, devHubTask);
+
+                // Yield so MRU paints before we start any other work.
+                await Task.Yield();
+
+                // DevHub cache is already loading (started in the constructor); now
+                // hook it up to the UI. News/splitter run in parallel.
+                Task restoreSplitterTask = RestoreSplitterPositionAsync();
+                Task devHubTask = LoadDevHubAsync();
+                Task newsTask = _viewModel.RefreshInBackgroundAsync();
+
+                await Task.WhenAll(restoreSplitterTask, newsTask, devHubTask);
             }
             catch (Exception ex)
             {
@@ -430,14 +427,29 @@ namespace StartScreen.ToolWindows
         {
             try
             {
+                // Construct Progress<T> while still on the UI thread so it captures
+                // the UI SynchronizationContext and marshals UpdateDevHubPanel back
+                // to the UI thread.
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 var progress = new Progress<DevHubDashboard>(_ => UpdateDevHubPanel());
+
+                // Now hop to the thread pool BEFORE doing any DevHub work. The
+                // provider auth path eventually calls Process.Start("git", "credential
+                // fill") and process.WaitForExit(...), both of which are synchronous
+                // and would block the UI thread for several seconds per provider if
+                // we stayed on the captured UI SynchronizationContext.
+                await TaskScheduler.Default;
+
                 await _devHubService.RefreshAsync(CancellationToken.None, progress);
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 UpdateDevHubPanel();
             }
             catch (Exception ex)
             {
                 await ex.LogAsync();
                 // Only show error if we have no cached data to fall back to
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
                 {
                     DevHubPanelControl.ShowError("Could not load Dev Hub data.");

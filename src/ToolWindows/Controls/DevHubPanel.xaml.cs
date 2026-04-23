@@ -15,7 +15,10 @@ namespace StartScreen.ToolWindows.Controls
     public partial class DevHubPanel : UserControl
     {
         private DevHubDashboard _currentDashboard;
-        private bool _isLoading;
+        private RemoteRepoIdentifier _currentFilterRepo;
+        private IReadOnlyList<DevHubPullRequest> _lastBoundPullRequests;
+        private IReadOnlyList<DevHubIssue> _lastBoundIssues;
+        private IReadOnlyList<DevHubCiRun> _lastBoundCiRuns;
         private List<Border> _cachedBorders;
         private ItemsControl _cachedBordersList;
         private bool _suppressSaveOnLostFocus;
@@ -54,11 +57,22 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public void UpdateView(DevHubDashboard dashboard, RemoteRepoIdentifier filterRepo = null)
         {
+            // Skip the entire update when nothing has changed. RefreshAsync reports
+            // progress several times (after auth, then after each of issues / PRs / CI),
+            // and re-binding three ItemsControls each time causes a visible UI hitch
+            // even though most of the data is unchanged between calls.
+            bool dashboardChanged = !ReferenceEquals(_currentDashboard, dashboard);
+            bool filterChanged = !ReferenceEquals(_currentFilterRepo, filterRepo);
+
             _currentDashboard = dashboard;
+            _currentFilterRepo = filterRepo;
 
             if (dashboard == null)
             {
-                ShowNotConnected(hasGitHub: false, hasAdo: false);
+                if (dashboardChanged || filterChanged)
+                {
+                    ShowNotConnected(hasGitHub: false, hasAdo: false);
+                }
                 return;
             }
 
@@ -71,21 +85,44 @@ namespace StartScreen.ToolWindows.Controls
                 return;
             }
 
+            IReadOnlyList<DevHubPullRequest> prs;
+            IReadOnlyList<DevHubIssue> issues;
+            IReadOnlyList<DevHubCiRun> ciRuns;
+
             if (filterRepo != null)
             {
                 var detail = dashboard.FilterByRepo(filterRepo);
                 RepoContextName.Text = filterRepo.DisplayName;
                 RepoContextHeader.Visibility = Visibility.Visible;
-                UpdatePullRequests(detail.PullRequests);
-                UpdateIssues(detail.Issues);
-                UpdateCiRuns(detail.CiRuns);
+                prs = detail.PullRequests;
+                issues = detail.Issues;
+                ciRuns = detail.CiRuns;
             }
             else
             {
                 RepoContextHeader.Visibility = Visibility.Collapsed;
-                UpdatePullRequests(dashboard.PullRequests);
-                UpdateIssues(dashboard.Issues);
-                UpdateCiRuns(dashboard.CiRuns);
+                prs = dashboard.PullRequests;
+                issues = dashboard.Issues;
+                ciRuns = dashboard.CiRuns;
+            }
+
+            // Only re-bind sections whose data reference changed. Each Update* method
+            // resets ItemsSource and forces WPF to rebuild the visual tree, which is
+            // the primary cause of the UI thread hitch when DevHub data arrives.
+            if (filterChanged || !ReferenceEquals(_lastBoundPullRequests, prs))
+            {
+                _lastBoundPullRequests = prs;
+                UpdatePullRequests(prs);
+            }
+            if (filterChanged || !ReferenceEquals(_lastBoundIssues, issues))
+            {
+                _lastBoundIssues = issues;
+                UpdateIssues(issues);
+            }
+            if (filterChanged || !ReferenceEquals(_lastBoundCiRuns, ciRuns))
+            {
+                _lastBoundCiRuns = ciRuns;
+                UpdateCiRuns(ciRuns);
             }
 
             UpdateSettingsAccountStatus(hasGitHub, hasAdo);
@@ -98,7 +135,6 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public void ShowLoading(string message = null)
         {
-            _isLoading = true;
             LoadingText.Text = message ?? "Loading your activity...";
             NotConnectedPanel.Visibility = Visibility.Collapsed;
             DashboardPanel.Visibility = Visibility.Collapsed;
@@ -111,7 +147,6 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public void ShowError(string message)
         {
-            _isLoading = false;
             NotConnectedPanel.Visibility = Visibility.Collapsed;
             DashboardPanel.Visibility = Visibility.Collapsed;
             LoadingPanel.Visibility = Visibility.Collapsed;
@@ -121,7 +156,6 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ShowNotConnected(bool hasGitHub, bool hasAdo)
         {
-            _isLoading = false;
             DashboardPanel.Visibility = Visibility.Collapsed;
             LoadingPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Collapsed;
@@ -141,7 +175,6 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ShowDashboard()
         {
-            _isLoading = false;
             NotConnectedPanel.Visibility = Visibility.Collapsed;
             LoadingPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Collapsed;
