@@ -65,5 +65,12 @@ namespace StartScreen
         [Browsable(false)]
         [DefaultValue("")]
         public string DevHubSearchQuery { get; set; } = "";
+
+        /// <summary>
+        /// Whether the extension has already disabled the built-in VS Start Window on first run.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue(false)]
+        public bool HasDisabledBuiltInStartWindow { get; set; }
     }
 }

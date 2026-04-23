@@ -5,6 +5,8 @@ global using Task = System.Threading.Tasks.Task;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.VisualStudio;
+using Microsoft.VisualStudio.Settings;
+using Microsoft.VisualStudio.Shell.Settings;
 
 namespace StartScreen
 {
@@ -29,10 +31,47 @@ namespace StartScreen
             // "this extension delayed VS startup" InfoBar. ProvideToolWindowVisibility
             // (NoSolution) tells the shell to show the window when it is ready.
 
+            // Disable the built-in VS Start Window on first run so only this
+            // extension's Start Screen is shown (see GitHub issue #9).
+            await DisableBuiltInStartWindowOnFirstRunAsync();
+
             // Subscribing to managed C# events does not require the UI thread, so stay off it.
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnBeforeOpenSolution += OnBeforeOpenSolution;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder += OnBeforeOpenSolution;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterCloseSolution += OnSolutionClosed;
+        }
+
+        private static async Task DisableBuiltInStartWindowOnFirstRunAsync()
+        {
+            try
+            {
+                Options options = await Options.GetLiveInstanceAsync();
+
+                if (options.HasDisabledBuiltInStartWindow)
+                {
+                    return;
+                }
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                var settingsManager = new ShellSettingsManager(ServiceProvider.GlobalProvider);
+                WritableSettingsStore userSettings = settingsManager.GetWritableSettingsStore(SettingsScope.UserSettings);
+
+                const string collection = @"ApplicationPrivateSettings\Microsoft\VisualStudio\IDE";
+                const string property = "OnEnvironmentStartup";
+
+                // Value format is "scope*type*value". Value 0 = empty environment,
+                // which disables the built-in Start Window so only this
+                // extension's Start Screen is shown.
+                userSettings.SetString(collection, property, "0*System.Int64*0");
+
+                options.HasDisabledBuiltInStartWindow = true;
+                await options.SaveAsync();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
         }
 
         private void OnBeforeOpenSolution(object sender, EventArgs e)
