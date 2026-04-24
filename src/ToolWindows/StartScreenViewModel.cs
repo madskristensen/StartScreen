@@ -819,9 +819,10 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
                 IVsSetupCompositionService setupService = await VS.GetServiceAsync<SVsSetupCompositionService, IVsSetupCompositionService>();
-                if (setupService != null)
+                if (setupService != null && setupService.IsManifestRefreshedAndUpdateAvailable)
                 {
-                    IsUpdateAvailable = setupService.IsManifestRefreshedAndUpdateAvailable;
+                    await Task.Delay(2000);
+                    IsUpdateAvailable = true;
                 }
             }
             catch (Exception ex)
