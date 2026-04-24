@@ -62,7 +62,7 @@ namespace StartScreen.ToolWindows.Controls
             // and re-binding three ItemsControls each time causes a visible UI hitch
             // even though most of the data is unchanged between calls.
             bool dashboardChanged = !ReferenceEquals(_currentDashboard, dashboard);
-            bool filterChanged = !ReferenceEquals(_currentFilterRepo, filterRepo);
+            bool filterChanged = !Equals(_currentFilterRepo, filterRepo);
 
             _currentDashboard = dashboard;
             _currentFilterRepo = filterRepo;
@@ -106,20 +106,20 @@ namespace StartScreen.ToolWindows.Controls
                 ciRuns = dashboard.CiRuns;
             }
 
-            // Only re-bind sections whose data reference changed. Each Update* method
+            // Only re-bind sections whose data changed. Each Update* method
             // resets ItemsSource and forces WPF to rebuild the visual tree, which is
             // the primary cause of the UI thread hitch when DevHub data arrives.
-            if (filterChanged || !ReferenceEquals(_lastBoundPullRequests, prs))
+            if (filterChanged || !DevHubItemComparer.SamePullRequests(_lastBoundPullRequests, prs))
             {
                 _lastBoundPullRequests = prs;
                 UpdatePullRequests(prs);
             }
-            if (filterChanged || !ReferenceEquals(_lastBoundIssues, issues))
+            if (filterChanged || !DevHubItemComparer.SameIssues(_lastBoundIssues, issues))
             {
                 _lastBoundIssues = issues;
                 UpdateIssues(issues);
             }
-            if (filterChanged || !ReferenceEquals(_lastBoundCiRuns, ciRuns))
+            if (filterChanged || !DevHubItemComparer.SameCiRuns(_lastBoundCiRuns, ciRuns))
             {
                 _lastBoundCiRuns = ciRuns;
                 UpdateCiRuns(ciRuns);
