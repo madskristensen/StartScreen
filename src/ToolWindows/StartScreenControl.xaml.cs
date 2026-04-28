@@ -1,16 +1,15 @@
-using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.VisualStudio.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
 using StartScreen.Services;
@@ -190,6 +189,40 @@ namespace StartScreen.ToolWindows
         private async void CloneRepoButton_Click(object sender, RoutedEventArgs e)
         {
             await VsCommandService.CloneRepositoryAsync();
+        }
+
+        private void AttachToProcessButton_Click(object sender, RoutedEventArgs e)
+        {
+            VsCommandService.AttachToProcessAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private void AttachToProcessButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (!(sender is Button button))
+                return;
+
+            Point position = e.GetPosition(button);
+            const double dropDownWidth = 25;
+
+            if (position.X >= button.ActualWidth - dropDownWidth)
+            {
+                e.Handled = true;
+                ShowAttachToProcessMenu(button);
+            }
+        }
+
+        private void ReattachToProcessMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            VsCommandService.ReattachToProcessAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private static void ShowAttachToProcessMenu(Button button)
+        {
+            var menu = button.ContextMenu;
+            ThemedContextMenuHelper.ApplyVsTheme(menu);
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
         }
 
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)

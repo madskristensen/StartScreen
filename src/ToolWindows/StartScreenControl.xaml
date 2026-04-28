@@ -33,6 +33,8 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"/>
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
+            <Setter Property="Width" Value="84"/>
+            <Setter Property="Height" Value="70"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -108,7 +110,7 @@
                   PreviewMouseWheel="PageScroll_PreviewMouseWheel">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition x:Name="LeftColumn" Width="462" MinWidth="462"/>
+            <ColumnDefinition x:Name="LeftColumn" Width="500" MinWidth="500"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition x:Name="RightColumn" Width="*" MinWidth="300"/>
         </Grid.ColumnDefinitions>
@@ -121,28 +123,68 @@
                 <StackPanel x:Name="ActionBar" DockPanel.Dock="Top" Orientation="Horizontal" Margin="0 0 0 24"
                             PreviewKeyDown="ActionBar_PreviewKeyDown">
                     <Button Click="NewProjectButton_Click" Style="{StaticResource ActionButtonStyle}">
-                        <StackPanel Orientation="Vertical" Margin="12 8">
+                        <StackPanel Orientation="Vertical" Margin="4 8">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.NewDocumentCollection}" Width="32" Height="32"/>
                             <TextBlock Text="New Project" Margin="0 4 0 0" HorizontalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                    <Button Click="OpenProjectButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="8 0 0 0">
-                        <StackPanel Orientation="Vertical" Margin="12 8">
+                    <Button Click="OpenProjectButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="4 0 0 0">
+                        <StackPanel Orientation="Vertical" Margin="4 8">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.OpenFolder}" Width="32" Height="32"/>
                             <TextBlock Text="Open Project" Margin="0 4 0 0" HorizontalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                    <Button Click="OpenFolderButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="8 0 0 0">
-                        <StackPanel Orientation="Vertical" Margin="12 8">
+                    <Button Click="OpenFolderButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="4 0 0 0">
+                        <StackPanel Orientation="Vertical" Margin="4 8">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.FolderOpened}" Width="32" Height="32"/>
                             <TextBlock Text="Open Folder" Margin="0 4 0 0" HorizontalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                    <Button Click="CloneRepoButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="8 0 0 0">
-                        <StackPanel Orientation="Vertical" Margin="12 8">
+                    <Button Click="CloneRepoButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="4 0 0 0">
+                        <StackPanel Orientation="Vertical" Margin="4 8">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.GoToSourceCode}" Width="32" Height="32"/>
                             <TextBlock Text="Clone Repo" Margin="0 4 0 0" HorizontalAlignment="Center"/>
                         </StackPanel>
+                    </Button>
+                    <Button x:Name="AttachToProcessButton"
+                            Click="AttachToProcessButton_Click"
+                            PreviewMouseLeftButtonDown="AttachToProcessButton_PreviewMouseLeftButtonDown"
+                            Style="{StaticResource ActionButtonStyle}"
+                            Margin="4 0 0 0"
+                            ToolTip="Attach to Process">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="AttachToProcessMenu">
+                                <MenuItem Header="Reattach to Process"
+                                          InputGestureText="Shift+Alt+P"
+                                          Click="ReattachToProcessMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Process}" Width="16" Height="16"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Vertical" Margin="4 8">
+                                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Process}" Width="32" Height="32"/>
+                                <TextBlock Text="Attach" Margin="0 4 0 0" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                            <Border Grid.Column="1"
+                                    BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
+                                    BorderThickness="1 0 0 0" Margin="8 0 -10 0">
+                                <Path Data="M0,0 L6,0 L3,4 z"
+                                      Margin="5 0 0 0"
+                                      Width="6"
+                                      Height="4"
+                                      Stretch="Fill"
+                                      Fill="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
                     </Button>
                 </StackPanel>
 

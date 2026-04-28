@@ -101,6 +101,22 @@ namespace StartScreen.Services
         }
 
         /// <summary>
+        /// Opens the Attach to Process dialog.
+        /// </summary>
+        public static async Task AttachToProcessAsync()
+        {
+            await VS.Commands.ExecuteAsync("Debug.AttachToProcess");
+        }
+
+        /// <summary>
+        /// Reattaches the debugger to the previous process.
+        /// </summary>
+        public static async Task ReattachToProcessAsync()
+        {
+            await VS.Commands.ExecuteAsync("Debug.ReattachToProcess");
+        }
+
+        /// <summary>
         /// Opens a solution, project, or folder in a new Visual Studio instance.
         /// </summary>
         public static void OpenInNewInstance(string path)

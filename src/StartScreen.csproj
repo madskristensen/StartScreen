@@ -11,7 +11,7 @@
     <VsixDeployOnDebug>true</VsixDeployOnDebug>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <UseCodebase>true</UseCodebase>
-    <RunUpdateConfigOnVsixDeploy>true</RunUpdateConfigOnVsixDeploy>
+    <RunUpdateConfigOnVsixDeploy>false</RunUpdateConfigOnVsixDeploy>
   </PropertyGroup>
 
   <ItemGroup>
