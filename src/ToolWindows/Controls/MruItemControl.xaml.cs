@@ -379,16 +379,23 @@ namespace StartScreen.ToolWindows.Controls
 
             try
             {
+                await VS.StatusBar.ShowMessageAsync($"Pulling Git changes for {item.Name}...");
                 GitCommandResult result = await MruService.PullGitAsync(item);
 
                 if (!result.Succeeded)
                 {
+                    await VS.StatusBar.ShowMessageAsync($"Git pull failed for {item.Name}.");
                     await VS.MessageBox.ShowErrorAsync("Start Screen", $"Git pull failed: {result.ErrorMessage}");
+                }
+                else
+                {
+                    await VS.StatusBar.ShowMessageAsync($"Git pull completed for {item.Name}.");
                 }
             }
             catch (Exception ex)
             {
                 await ex.LogAsync();
+                await VS.StatusBar.ShowMessageAsync($"Git pull failed for {item.Name}.");
                 await VS.MessageBox.ShowErrorAsync("Start Screen", $"Git pull failed: {ex.Message}");
             }
             finally
