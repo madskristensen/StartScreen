@@ -84,10 +84,8 @@
                                FontWeight="SemiBold"
                                VerticalAlignment="Center"/>
                     <Button x:Name="RefreshButton" Click="Refresh_Click"
-                            Style="{DynamicResource ActionButtonStyle}"
+                            Style="{DynamicResource IconButtonStyle}"
                             Margin="8 0 0 0"
-                            Padding="4"
-                            BorderThickness="0"
                             VerticalAlignment="Center">
                         <Button.ToolTip>
                             <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
@@ -102,10 +100,8 @@
                                             Width="16" Height="16"/>
                     </Button>
                     <Button x:Name="SettingsButton" Click="Settings_Click"
-                            Style="{DynamicResource ActionButtonStyle}"
+                            Style="{DynamicResource IconButtonStyle}"
                             Margin="4 0 0 0"
-                            Padding="4"
-                            BorderThickness="0"
                             VerticalAlignment="Center">
                         <Button.ToolTip>
                             <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"

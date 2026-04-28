@@ -62,6 +62,13 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
         <!-- Search TextBox Style -->
         <Style x:Key="SearchBoxStyle" TargetType="TextBox">
             <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"/>
@@ -359,17 +366,13 @@
                                 <!-- Nav buttons -->
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8 0 0 0">
                                     <Button Click="PrevTipButton_Click"
-                                            Style="{StaticResource ActionButtonStyle}"
-                                            Padding="4"
-                                            BorderThickness="0"
+                                            Style="{StaticResource IconButtonStyle}"
                                             VerticalAlignment="Center">
                                         <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Previous}"
                                                             Width="14" Height="14"/>
                                     </Button>
                                     <Button Click="NextTipButton_Click"
-                                            Style="{StaticResource ActionButtonStyle}"
-                                            Padding="4"
-                                            BorderThickness="0"
+                                            Style="{StaticResource IconButtonStyle}"
                                             Margin="2 0 0 0"
                                             VerticalAlignment="Center">
                                         <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Next}"
@@ -401,17 +404,13 @@
                                 <!-- Nav buttons -->
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8 0 0 0">
                                     <Button Click="PrevExtensionButton_Click"
-                                            Style="{StaticResource ActionButtonStyle}"
-                                            Padding="4"
-                                            BorderThickness="0"
+                                            Style="{StaticResource IconButtonStyle}"
                                             VerticalAlignment="Center">
                                         <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Previous}"
                                                             Width="14" Height="14"/>
                                     </Button>
                                     <Button Click="NextExtensionButton_Click"
-                                            Style="{StaticResource ActionButtonStyle}"
-                                            Padding="4"
-                                            BorderThickness="0"
+                                            Style="{StaticResource IconButtonStyle}"
                                             Margin="2 0 0 0"
                                             VerticalAlignment="Center">
                                         <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Next}"
@@ -490,10 +489,8 @@
                                       VerticalAlignment="Center"/>
                             <Button x:Name="RefreshNewsButton"
                                     Click="RefreshNewsButton_Click"
-                                    Style="{StaticResource ActionButtonStyle}"
+                                    Style="{StaticResource IconButtonStyle}"
                                     Margin="8 0 0 0"
-                                    Padding="4"
-                                    BorderThickness="0"
                                     VerticalAlignment="Center">
                                 <Button.ToolTip>
                                     <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
@@ -510,10 +507,8 @@
                             </Button>
                             <Button x:Name="NewsFeedsSettingsButton"
                                     Click="NewsFeedsSettings_Click"
-                                    Style="{StaticResource ActionButtonStyle}"
+                                    Style="{StaticResource IconButtonStyle}"
                                     Margin="4 0 0 0"
-                                    Padding="4"
-                                    BorderThickness="0"
                                     VerticalAlignment="Center">
                                 <Button.ToolTip>
                                     <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
@@ -597,10 +592,8 @@
                                               VerticalAlignment="Center"/>
                                     <Button x:Name="RefreshYouTubeButton"
                                             Click="RefreshYouTubeButton_Click"
-                                            Style="{StaticResource ActionButtonStyle}"
+                                            Style="{StaticResource IconButtonStyle}"
                                             Margin="8 0 0 0"
-                                            Padding="4"
-                                            BorderThickness="0"
                                             VerticalAlignment="Center">
                                         <Button.ToolTip>
                                             <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
