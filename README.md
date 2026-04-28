@@ -20,9 +20,10 @@ gets you into code immediately - no clicking through menus, no waiting.
 
 ## Get to work in one click
 
-Open a recent solution, create a new project, open a folder, or clone a
-repo - all from a single, focused screen. The action bar puts every common
-workflow front and center so you never have to dig through File menus again.
+Open a recent solution, create a new project, open a project or folder,
+clone a repo, or attach and reattach to a process - all from a single,
+focused screen. The action bar puts every common workflow front and center
+so you never have to dig through File or Debug menus again.
 
 ## Your recent projects, supercharged
 
