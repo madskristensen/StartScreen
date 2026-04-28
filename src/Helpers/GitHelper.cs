@@ -1,11 +1,27 @@
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using LibGit2Sharp;
 using StartScreen.Models;
 
 namespace StartScreen.Helpers
 {
+    internal sealed class GitCommandResult
+    {
+        public static GitCommandResult Success { get; } = new GitCommandResult(true, null);
+
+        public GitCommandResult(bool succeeded, string errorMessage)
+        {
+            Succeeded = succeeded;
+            ErrorMessage = errorMessage;
+        }
+
+        public bool Succeeded { get; }
+
+        public string ErrorMessage { get; }
+    }
+
     /// <summary>
     /// Git repository status detection using LibGit2Sharp.
     /// </summary>
@@ -193,6 +209,54 @@ namespace StartScreen.Helpers
             catch
             {
                 // Best-effort: silent failure for offline, no git, no remote, etc.
+            }
+        }
+
+        /// <summary>
+        /// Runs git pull --quiet for the specified repository.
+        /// </summary>
+        internal static async Task<GitCommandResult> PullAsync(string repoPath)
+        {
+            if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
+                return new GitCommandResult(false, "The Git repository could not be found.");
+
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "pull --quiet",
+                    WorkingDirectory = repoPath,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                using (var process = Process.Start(psi))
+                {
+                    if (process == null)
+                        return new GitCommandResult(false, "Git could not be started.");
+
+                    var outputTask = process.StandardOutput.ReadToEndAsync();
+                    var errorTask = process.StandardError.ReadToEndAsync();
+                    process.WaitForExit();
+
+                    var output = await outputTask;
+                    var error = await errorTask;
+
+                    if (process.ExitCode == 0)
+                        return GitCommandResult.Success;
+
+                    var message = string.IsNullOrWhiteSpace(error) ? output : error;
+
+                    return new GitCommandResult(false, string.IsNullOrWhiteSpace(message) ? "Git pull failed." : message.Trim());
+                }
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+                return new GitCommandResult(false, ex.Message);
             }
         }
 

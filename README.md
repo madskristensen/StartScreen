@@ -44,8 +44,8 @@ picture, or spot a detached HEAD before you accidentally commit to nowhere.
 this morning's deadline.
 
 **Right-click for power moves.** Open the containing folder, launch a
-terminal, copy the path, pin, unpin, or remove - all from a context menu
-with keyboard shortcuts.
+terminal, pull the latest Git changes, copy the path, pin, unpin, or
+remove - all from a context menu with keyboard shortcuts.
 
 ![Context menu](art/context-menu.png)
 
@@ -188,6 +188,7 @@ Open the Start Screen any time from **File > Start Screen** or press
 | Ctrl+Enter | Open in new instance   |
 | O          | Open containing folder |
 | T          | Open in terminal       |
+| G          | Git pull               |
 | Ctrl+C     | Copy path              |
 | P          | Pin / Unpin            |
 | Del        | Remove from list       |

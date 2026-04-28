@@ -451,6 +451,24 @@ namespace StartScreen.Models
         public bool HasRemoteUrl => !string.IsNullOrEmpty(_remoteUrl);
 
         /// <summary>
+        /// Updates all Git-related properties from a status snapshot.
+        /// </summary>
+        internal void ApplyGitStatus(GitStatus status)
+        {
+            if (status == null)
+                return;
+
+            GitBranch = status.BranchName;
+            CommitsAhead = status.CommitsAhead;
+            CommitsBehind = status.CommitsBehind;
+            HasUncommittedChanges = status.HasUncommittedChanges;
+            LastCommitTime = status.LastCommitTime;
+            StashCount = status.StashCount;
+            CurrentOperation = status.CurrentOperation;
+            RemoteUrl = status.RemoteUrl;
+        }
+
+        /// <summary>
         /// Whether this MRU item is currently selected in the list.
         /// </summary>
         public bool IsSelected

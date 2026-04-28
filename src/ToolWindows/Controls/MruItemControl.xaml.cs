@@ -20,7 +20,9 @@ namespace StartScreen.ToolWindows.Controls
     {
         private MruItem MruItem => DataContext as MruItem;
         private readonly MenuItem _pinMenuItem;
+        private readonly MenuItem _gitPullMenuItem;
         private Point? _dragStartPoint;
+        private bool _isGitPullRunning;
 
         public event EventHandler<MruItem> PinToggleRequested;
         public event EventHandler<MruItem> RemoveRequested;
@@ -46,12 +48,15 @@ namespace StartScreen.ToolWindows.Controls
                 ((MenuItem)menu.Items[1]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.NewWindow);
                 ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.FolderOpened);
                 ((MenuItem)menu.Items[3]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Console);
-                // Items[4] is Separator
-                ((MenuItem)menu.Items[5]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
-                // Items[6] is Separator
-                _pinMenuItem = (MenuItem)menu.Items[7];
+                _gitPullMenuItem = (MenuItem)menu.Items[4];
+                _gitPullMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.GitRepository);
+                // Items[5] is Separator
+                ((MenuItem)menu.Items[6]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
+                // Items[7] is Separator
+                _pinMenuItem = (MenuItem)menu.Items[8];
                 _pinMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Pin);
-                ((MenuItem)menu.Items[8]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Cancel);
+                ((MenuItem)menu.Items[9]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Cancel);
+                menu.Opened += ContextMenu_Opened;
             }
         }
 
@@ -189,6 +194,11 @@ namespace StartScreen.ToolWindows.Controls
                 OpenTerminalMenuItem_Click(sender, null);
                 e.Handled = true;
             }
+            else if (e.Key == Key.G && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                GitPullMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
             else if (e.Key == Key.Delete)
             {
                 RemoveMenuItem_Click(sender, null);
@@ -216,6 +226,11 @@ namespace StartScreen.ToolWindows.Controls
                 FocusDevHubRequested?.Invoke(this, EventArgs.Empty);
                 e.Handled = true;
             }
+        }
+
+        private void ContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            UpdateGitPullState();
         }
 
         private bool MoveToAdjacentMruItem(bool forward)
@@ -348,6 +363,48 @@ namespace StartScreen.ToolWindows.Controls
             {
                 ex.Log();
             }
+        }
+
+#pragma warning disable VSTHRD100 // WPF event handlers must be void; exceptions are handled and logged.
+        private async void GitPullMenuItem_Click(object sender, RoutedEventArgs e)
+#pragma warning restore VSTHRD100
+        {
+            MruItem item = MruItem;
+
+            if (_isGitPullRunning || item?.HasGitBranch != true)
+                return;
+
+            _isGitPullRunning = true;
+            UpdateGitPullState();
+
+            try
+            {
+                GitCommandResult result = await MruService.PullGitAsync(item);
+
+                if (!result.Succeeded)
+                {
+                    await VS.MessageBox.ShowErrorAsync("Start Screen", $"Git pull failed: {result.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen", $"Git pull failed: {ex.Message}");
+            }
+            finally
+            {
+                _isGitPullRunning = false;
+                UpdateGitPullState();
+            }
+        }
+
+        private void UpdateGitPullState()
+        {
+            if (_gitPullMenuItem == null)
+                return;
+
+            _gitPullMenuItem.Header = _isGitPullRunning ? "Pulling..." : "Git Pull";
+            _gitPullMenuItem.IsEnabled = !_isGitPullRunning && MruItem?.HasGitBranch == true && MruItem?.HasCurrentOperation != true;
         }
 
         private void CopyPathMenuItem_Click(object sender, RoutedEventArgs e)

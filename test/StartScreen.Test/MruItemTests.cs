@@ -14,6 +14,35 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void ApplyGitStatus_UpdatesGitProperties()
+        {
+            var commitTime = DateTime.Now.AddMinutes(-5);
+            var item = new MruItem();
+            var status = new GitStatus
+            {
+                BranchName = "main",
+                CommitsAhead = 1,
+                CommitsBehind = 2,
+                HasUncommittedChanges = true,
+                LastCommitTime = commitTime,
+                StashCount = 3,
+                CurrentOperation = "Merge",
+                RemoteUrl = "https://github.com/owner/repo.git"
+            };
+
+            item.ApplyGitStatus(status);
+
+            Assert.AreEqual("main", item.GitBranch);
+            Assert.AreEqual(1, item.CommitsAhead);
+            Assert.AreEqual(2, item.CommitsBehind);
+            Assert.IsTrue(item.HasUncommittedChanges);
+            Assert.AreEqual(commitTime, item.LastCommitTime);
+            Assert.AreEqual(3, item.StashCount);
+            Assert.AreEqual("Merge", item.CurrentOperation);
+            Assert.AreEqual("https://github.com/owner/repo.git", item.RemoteUrl);
+        }
+
+        [TestMethod]
         public void AheadBehindText_WhenOnlyAhead_ReturnsUpArrowCount()
         {
             var item = new MruItem { CommitsAhead = 3 };

@@ -168,14 +168,7 @@ namespace StartScreen.Services
                         GitStatus status = GitHelper.GetGitStatus(item.Path);
 
                         // Update properties (INotifyPropertyChanged handles UI marshaling)
-                        item.GitBranch = status.BranchName;
-                        item.CommitsAhead = status.CommitsAhead;
-                        item.CommitsBehind = status.CommitsBehind;
-                        item.HasUncommittedChanges = status.HasUncommittedChanges;
-                        item.LastCommitTime = status.LastCommitTime;
-                        item.StashCount = status.StashCount;
-                        item.CurrentOperation = status.CurrentOperation;
-                        item.RemoteUrl = status.RemoteUrl;
+                        item.ApplyGitStatus(status);
 
                         // Track repo path for phase 2 (if item is in a git repo)
                         if (status.IsGitRepository)
@@ -236,6 +229,27 @@ namespace StartScreen.Services
                     });
                 }
             });
+        }
+
+        /// <summary>
+        /// Pulls the repository for an MRU item and refreshes its Git status afterward.
+        /// </summary>
+        public static async Task<GitCommandResult> PullGitAsync(MruItem item)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.Path))
+                return new GitCommandResult(false, "The MRU item does not have a valid path.");
+
+            await TaskScheduler.Default;
+
+            var startDir = Directory.Exists(item.Path) ? item.Path : Path.GetDirectoryName(item.Path);
+            var repoPath = GitHelper.FindRepositoryPath(startDir);
+            if (string.IsNullOrEmpty(repoPath))
+                return new GitCommandResult(false, "The MRU item is not in a Git repository.");
+
+            GitCommandResult result = await GitHelper.PullAsync(repoPath);
+            item.ApplyGitStatus(GitHelper.GetGitStatus(item.Path));
+
+            return result;
         }
 
         /// <summary>

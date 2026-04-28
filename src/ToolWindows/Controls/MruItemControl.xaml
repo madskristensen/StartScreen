@@ -208,6 +208,7 @@
                 <MenuItem Header="Open in New Instance" Click="OpenInNewInstanceMenuItem_Click" InputGestureText="Ctrl+Enter"/>
                 <MenuItem Header="Open Containing Folder" Click="OpenFolderMenuItem_Click" InputGestureText="O"/>
                 <MenuItem Header="Open in Terminal" Click="OpenTerminalMenuItem_Click" InputGestureText="T"/>
+                <MenuItem Header="Git Pull" Click="GitPullMenuItem_Click" InputGestureText="G"/>
                 <Separator/>
                 <MenuItem Header="Copy Path" Click="CopyPathMenuItem_Click" InputGestureText="Ctrl+C"/>
                 <Separator/>
