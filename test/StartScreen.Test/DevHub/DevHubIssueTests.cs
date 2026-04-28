@@ -33,6 +33,18 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public void UpdatedAgoText_UsesUpdatedAt_ReturnsUpdatedAge()
+        {
+            var issue = new DevHubIssue
+            {
+                CreatedAt = DateTime.UtcNow.AddDays(-10),
+                UpdatedAt = DateTime.UtcNow.AddHours(-3)
+            };
+
+            Assert.AreEqual("3h ago", issue.UpdatedAgoText);
+        }
+
+        [TestMethod]
         public void LabelText_NoLabels_ReturnsEmpty()
         {
             var issue = new DevHubIssue();

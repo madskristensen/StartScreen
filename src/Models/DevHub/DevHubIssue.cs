@@ -104,6 +104,30 @@ namespace StartScreen.Models.DevHub
         }
 
         /// <summary>
+        /// Returns a human-readable relative time since last update.
+        /// </summary>
+        public string UpdatedAgoText
+        {
+            get
+            {
+                TimeSpan span = DateTime.UtcNow - UpdatedAt;
+
+                if (span.TotalMinutes < 1)
+                    return "just now";
+                if (span.TotalMinutes < 60)
+                    return $"{(int)span.TotalMinutes}m ago";
+                if (span.TotalHours < 24)
+                    return $"{(int)span.TotalHours}h ago";
+                if (span.TotalDays < 7)
+                    return $"{(int)span.TotalDays}d ago";
+                if (span.TotalDays < 30)
+                    return $"{(int)(span.TotalDays / 7)}w ago";
+
+                return UpdatedAt.ToString("MMM d");
+            }
+        }
+
+        /// <summary>
         /// Returns a comma-separated label text for display.
         /// </summary>
         public string LabelText => Labels.Count > 0 ? string.Join(", ", Labels.Select(l => l.Name)) : string.Empty;

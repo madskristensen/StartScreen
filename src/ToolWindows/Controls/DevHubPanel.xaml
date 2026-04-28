@@ -345,7 +345,7 @@
                                         </Border.ContextMenu>
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right"
-                                                       Text="{Binding CreatedAgoText}"
+                                                       Text="{Binding UpdatedAgoText}"
                                                        FontSize="11"
                                                        Opacity="0.5"
                                                        VerticalAlignment="Top"
