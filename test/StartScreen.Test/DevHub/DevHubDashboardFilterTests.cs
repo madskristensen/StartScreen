@@ -174,7 +174,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public void FilterByRepo_IssuesOrderedByCreatedAtDescending()
+        public void FilterByRepo_IssuesOrderedByUpdatedAtDescending()
         {
             var githubRepo = new RemoteRepoIdentifier("github.com", "madskristensen", "StartScreen");
 
@@ -209,8 +209,8 @@ namespace StartScreen.Test.DevHub
 
             var detail = dashboard.FilterByRepo(githubRepo);
 
-            Assert.AreEqual("Newer issue", detail.Issues[0].Title);
-            Assert.AreEqual("Older issue", detail.Issues[1].Title);
+            Assert.AreEqual("Older issue", detail.Issues[0].Title);
+            Assert.AreEqual("Newer issue", detail.Issues[1].Title);
         }
 
         [TestMethod]

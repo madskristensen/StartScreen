@@ -359,7 +359,7 @@ namespace StartScreen.ToolWindows
                         DevHubPanelControl.ShowLoading();
                     }
 
-                    var progress = new Progress<DevHubDashboard>(_ => UpdateDevHubPanel());
+                    var progress = new Progress<DevHubDashboard>(UpdateDevHubPanel);
                     await _devHubService.RefreshAsync(CancellationToken.None, progress);
                     UpdateDevHubPanel();
                 }
@@ -461,7 +461,7 @@ namespace StartScreen.ToolWindows
                 // the UI SynchronizationContext and marshals UpdateDevHubPanel back
                 // to the UI thread.
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                var progress = new Progress<DevHubDashboard>(_ => UpdateDevHubPanel());
+                var progress = new Progress<DevHubDashboard>(UpdateDevHubPanel);
 
                 // Now hop to the thread pool BEFORE doing any DevHub work. The
                 // provider auth path eventually calls Process.Start("git", "credential
@@ -490,6 +490,11 @@ namespace StartScreen.ToolWindows
         private void UpdateDevHubPanel()
         {
             var dashboard = _devHubService.CurrentDashboard;
+            UpdateDevHubPanel(dashboard);
+        }
+
+        private void UpdateDevHubPanel(DevHubDashboard dashboard)
+        {
             DevHubPanelControl.UpdateView(dashboard, null);
         }
 

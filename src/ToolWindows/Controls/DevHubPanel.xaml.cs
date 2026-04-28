@@ -111,23 +111,28 @@ namespace StartScreen.ToolWindows.Controls
             // the primary cause of the UI thread hitch when DevHub data arrives.
             if (filterChanged || !DevHubItemComparer.SamePullRequests(_lastBoundPullRequests, prs))
             {
-                _lastBoundPullRequests = prs;
+                _lastBoundPullRequests = Snapshot(prs);
                 UpdatePullRequests(prs);
             }
             if (filterChanged || !DevHubItemComparer.SameIssues(_lastBoundIssues, issues))
             {
-                _lastBoundIssues = issues;
+                _lastBoundIssues = Snapshot(issues);
                 UpdateIssues(issues);
             }
             if (filterChanged || !DevHubItemComparer.SameCiRuns(_lastBoundCiRuns, ciRuns))
             {
-                _lastBoundCiRuns = ciRuns;
+                _lastBoundCiRuns = Snapshot(ciRuns);
                 UpdateCiRuns(ciRuns);
             }
 
             UpdateSettingsAccountStatus(hasGitHub, hasAdo);
             UpdateLastRefresh(dashboard.FetchedAt);
             ShowDashboard();
+        }
+
+        private static IReadOnlyList<T> Snapshot<T>(IReadOnlyList<T> items)
+        {
+            return items?.ToList();
         }
 
         /// <summary>

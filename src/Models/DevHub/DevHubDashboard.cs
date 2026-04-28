@@ -92,7 +92,7 @@ namespace StartScreen.Models.DevHub
                     .ToList(),
                 Issues = Issues
                     .Where(i => repo.Equals(i.RepoIdentifier))
-                    .OrderByDescending(i => i.CreatedAt)
+                    .OrderByDescending(i => i.UpdatedAt)
                     .ToList(),
                 CiRuns = CiRuns
                     .Where(r => repo.Equals(r.RepoIdentifier))

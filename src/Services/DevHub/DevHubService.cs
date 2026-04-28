@@ -65,6 +65,7 @@ namespace StartScreen.Services.DevHub
 
             try
             {
+                var previousDashboard = _currentDashboard;
                 var dashboard = new DevHubDashboard { FetchedAt = DateTime.UtcNow };
                 var allProviders = DevHubProviderRegistry.GetAllProviders();
 
@@ -87,22 +88,31 @@ namespace StartScreen.Services.DevHub
                     }
                 }
 
-                // Show the dashboard shell immediately once we know auth state
-                progress?.Report(dashboard);
-
                 if (authenticated.Count == 0)
                 {
                     _cache.WriteDashboard(dashboard);
                     _currentDashboard = dashboard;
+                    progress?.Report(dashboard);
                     return dashboard;
                 }
+
+                if (previousDashboard != null)
+                {
+                    dashboard.Issues = previousDashboard.Issues?.ToList() ?? new List<DevHubIssue>();
+                    dashboard.PullRequests = previousDashboard.PullRequests?.ToList() ?? new List<DevHubPullRequest>();
+                    dashboard.CiRuns = previousDashboard.CiRuns?.ToList() ?? new List<DevHubCiRun>();
+                }
+
+                // Show the dashboard shell immediately once we know auth state
+                _currentDashboard = dashboard;
+                progress?.Report(dashboard);
 
                 // Fetch issues, PRs, and CI runs in parallel; report each as it arrives
                 var issueTask = Task.Run(async () =>
                 {
                     var tasks = authenticated.Select(p => p.GetUserIssuesAsync(cancellationToken)).ToList();
                     var results = await Task.WhenAll(tasks);
-                    return results.SelectMany(r => r).OrderByDescending(i => i.CreatedAt).ToList();
+                    return results.SelectMany(r => r).OrderByDescending(i => i.UpdatedAt).ToList();
                 });
 
                 var prTask = Task.Run(async () =>
