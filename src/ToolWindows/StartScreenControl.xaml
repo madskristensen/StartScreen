@@ -33,8 +33,10 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"/>
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
-            <Setter Property="Width" Value="84"/>
-            <Setter Property="Height" Value="70"/>
+            <Setter Property="MinWidth" Value="90"/>
+            <Setter Property="MinHeight" Value="80"/>
+            <Setter Property="Width" Value="Auto"/>
+            <Setter Property="Height" Value="Auto"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -65,7 +67,9 @@
         <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
             <Setter Property="Width" Value="24"/>
             <Setter Property="Height" Value="24"/>
-            <Setter Property="Padding" Value="4"/>
+            <Setter Property="MinWidth" Value="24"/>
+            <Setter Property="MinHeight" Value="24"/>
+            <Setter Property="Padding" Value="0"/>
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
 
@@ -117,7 +121,7 @@
                   PreviewMouseWheel="PageScroll_PreviewMouseWheel">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition x:Name="LeftColumn" Width="500" MinWidth="500"/>
+            <ColumnDefinition x:Name="LeftColumn" Width="Auto" MinWidth="350"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition x:Name="RightColumn" Width="*" MinWidth="300"/>
         </Grid.ColumnDefinitions>
@@ -132,25 +136,25 @@
                     <Button Click="NewProjectButton_Click" Style="{StaticResource ActionButtonStyle}">
                         <StackPanel Orientation="Vertical" Margin="4 8">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.NewDocumentCollection}" Width="32" Height="32"/>
-                            <TextBlock Text="New Project" Margin="0 4 0 0" HorizontalAlignment="Center"/>
+                            <TextBlock Text="New Project" Margin="0 4 0 0" HorizontalAlignment="Center" MaxWidth="80" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Button>
                     <Button Click="OpenProjectButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="4 0 0 0">
                         <StackPanel Orientation="Vertical" Margin="4 8">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.OpenFolder}" Width="32" Height="32"/>
-                            <TextBlock Text="Open Project" Margin="0 4 0 0" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Open Project" Margin="0 4 0 0" HorizontalAlignment="Center" MaxWidth="80" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Button>
                     <Button Click="OpenFolderButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="4 0 0 0">
                         <StackPanel Orientation="Vertical" Margin="4 8">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.FolderOpened}" Width="32" Height="32"/>
-                            <TextBlock Text="Open Folder" Margin="0 4 0 0" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Open Folder" Margin="0 4 0 0" HorizontalAlignment="Center" MaxWidth="80" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Button>
                     <Button Click="CloneRepoButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="4 0 0 0">
                         <StackPanel Orientation="Vertical" Margin="4 8">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.GoToSourceCode}" Width="32" Height="32"/>
-                            <TextBlock Text="Clone Repo" Margin="0 4 0 0" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Clone Repo" Margin="0 4 0 0" HorizontalAlignment="Center" MaxWidth="80" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Button>
                     <Button x:Name="AttachToProcessButton"
@@ -177,7 +181,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" Orientation="Vertical" Margin="4 8">
                                 <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Process}" Width="32" Height="32"/>
-                                <TextBlock Text="Attach" Margin="0 4 0 0" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Attach" Margin="0 4 0 0" HorizontalAlignment="Center" MaxWidth="80" TextWrapping="Wrap"/>
                             </StackPanel>
                             <Border Grid.Column="1"
                                     BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
