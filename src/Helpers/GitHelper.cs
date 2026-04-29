@@ -168,6 +168,8 @@ namespace StartScreen.Helpers
         /// <summary>
         /// Runs git fetch --all --quiet for the specified repository.
         /// Best-effort: returns silently on any failure (offline, timeout, no remote, etc.).
+        /// Credential prompts are suppressed so the background fetch never pops up
+        /// login windows; if stored credentials don't work, the fetch fails silently.
         /// </summary>
         internal static void FetchAll(string repoPath)
         {
@@ -179,13 +181,18 @@ namespace StartScreen.Helpers
                 var psi = new ProcessStartInfo
                 {
                     FileName = "git",
-                    Arguments = "fetch --all --quiet",
+                    // -c core.askPass= disables any GUI/console askpass helper for this invocation.
+                    Arguments = "-c core.askPass= fetch --all --quiet",
                     WorkingDirectory = repoPath,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true
                 };
+
+                // Suppress all interactive credential prompts from git and the
+                // Git Credential Manager so a background fetch can't spam login dialogs.
+                SuppressCredentialPrompts(psi);
 
                 using (var process = Process.Start(psi))
                 {
@@ -210,6 +217,32 @@ namespace StartScreen.Helpers
             {
                 // Best-effort: silent failure for offline, no git, no remote, etc.
             }
+        }
+
+        /// <summary>
+        /// Configures the given <see cref="ProcessStartInfo"/> so that git, the
+        /// Git Credential Manager, OpenSSH and any askpass helper will never
+        /// display an interactive prompt. Used for background operations that
+        /// must not pop up login windows when stored credentials fail.
+        /// </summary>
+        internal static void SuppressCredentialPrompts(ProcessStartInfo psi)
+        {
+            // Prevents git itself from prompting on the terminal.
+            psi.EnvironmentVariables["GIT_TERMINAL_PROMPT"] = "0";
+
+            // Prevents Git Credential Manager (and the older Git Credential
+            // Manager for Windows) from showing its UI. Both names are set to
+            // cover GCM Core and the legacy GCM4W.
+            psi.EnvironmentVariables["GCM_INTERACTIVE"] = "Never";
+            psi.EnvironmentVariables["GIT_ASKPASS"] = "echo";
+
+            // Prevents OpenSSH from launching its GUI askpass dialog when
+            // pulling from an SSH remote with a passphrase-protected key.
+            psi.EnvironmentVariables["SSH_ASKPASS"] = "echo";
+            psi.EnvironmentVariables["SSH_ASKPASS_REQUIRE"] = "never";
+
+            // Prevents the generic display askpass that some installers wire up.
+            psi.EnvironmentVariables["DISPLAY"] = string.Empty;
         }
 
         /// <summary>
