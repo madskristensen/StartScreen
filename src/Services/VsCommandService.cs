@@ -154,7 +154,15 @@ namespace StartScreen.Services
             }
             else if (extension == ".sln" || extension == ".slnx")
             {
-                dte.Solution.Open(path);
+                // Use StartOnIdle to defer opening until the UI thread is idle.
+                // This prevents race conditions during document restoration by ensuring
+                // VS has fully initialized its text view infrastructure before we
+                // trigger solution opening with its document restoration process.
+                await ThreadHelper.JoinableTaskFactory.StartOnIdle(() =>
+                {
+                    ThreadHelper.ThrowIfNotOnUIThread();
+                    dte.Solution.Open(path);
+                }).Task;
             }
             else
             {
