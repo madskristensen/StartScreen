@@ -405,8 +405,15 @@ namespace StartScreen.ToolWindows
                 }
                 else
                 {
-                    // GCM not available or user cancelled - fall back to showing panel state
-                    UpdateDevHubPanel();
+                    if (host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+                    {
+                        DevHubPanelControl.ShowGitHubCredentialManagerUnavailable();
+                    }
+                    else
+                    {
+                        // GCM not available or user cancelled - fall back to showing panel state
+                        UpdateDevHubPanel();
+                    }
                 }
             }).FileAndForget(nameof(StartScreenControl));
         }

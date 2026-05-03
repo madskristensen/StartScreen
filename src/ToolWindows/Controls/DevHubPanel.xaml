@@ -174,7 +174,50 @@
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                         Connect GitHub account...
                     </Hyperlink>
+                    <Run Text=" "/>
+                    <Hyperlink Click="ShowGitHubPatEntry_Click"
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                        Enter token...
+                    </Hyperlink>
                 </TextBlock>
+                <TextBlock x:Name="GitHubCredentialSettingsHelpTextBlock"
+                           Visibility="Collapsed"
+                           FontSize="10"
+                           Opacity="0.6"
+                           TextWrapping="Wrap"
+                           Margin="0 0 0 4"
+                           Text="Git Credential Manager did not provide a GitHub credential. Sign in with Git Credential Manager or enter a token."/>
+                <StackPanel x:Name="GitHubPatEntryPanel" Visibility="Collapsed" Margin="0 0 0 4">
+                    <TextBlock Text="GitHub personal access token"
+                               FontSize="10"
+                               Opacity="0.6"
+                               Margin="0 0 0 3"/>
+                    <Grid>
+                        <PasswordBox x:Name="GitHubPatBox"
+                                     FontSize="11"
+                                     Padding="4 3"
+                                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                                     Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                                     BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}"
+                                     KeyDown="GitHubPatBox_KeyDown"
+                                     PasswordChanged="GitHubPatBox_PasswordChanged"/>
+                        <TextBlock x:Name="GitHubPatPlaceholder"
+                                   Text="Paste your PAT and press Enter"
+                                   FontSize="11"
+                                   Padding="6 4"
+                                   Opacity="0.4"
+                                   IsHitTestVisible="False"
+                                   VerticalAlignment="Center"/>
+                    </Grid>
+                    <TextBlock FontSize="10" Opacity="0.5" Margin="0 3 0 0" TextWrapping="Wrap">
+                        <Run Text="Use this if Git Credential Manager is not installed or not signed in. "/>
+                        <Hyperlink Click="OpenGitHubPatPage_Click"
+                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                            Create a personal access token
+                        </Hyperlink>
+                        <Run Text=" with repository read access."/>
+                    </TextBlock>
+                </StackPanel>
                 <StackPanel x:Name="ConnectedAdoStatus" Orientation="Horizontal" Margin="0 0 0 4">
                     <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.StatusOK}"
                                         Width="12" Height="12"
@@ -289,6 +332,19 @@
                            Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                     Connect GitHub account...
                 </Hyperlink>
+            </TextBlock>
+            <TextBlock x:Name="GitHubCredentialHelpTextBlock"
+                       Visibility="Collapsed"
+                       FontSize="12"
+                       Opacity="0.7"
+                       TextWrapping="Wrap"
+                       Margin="0 0 0 12">
+                <Run Text="GitHub sign-in uses Git Credential Manager, but it did not provide a credential. Sign in with Git Credential Manager or "/>
+                <Hyperlink Click="ShowGitHubPatEntry_Click"
+                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                    enter a GitHub token
+                </Hyperlink>
+                <Run Text="."/>
             </TextBlock>
             <TextBlock x:Name="ConnectAdoTextBlock" FontSize="13">
                 <Hyperlink x:Name="ConnectAdoLink" Click="ConnectAdo_Click"

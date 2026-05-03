@@ -22,6 +22,7 @@ namespace StartScreen.ToolWindows.Controls
         private List<Border> _cachedBorders;
         private ItemsControl _cachedBordersList;
         private bool _suppressSaveOnLostFocus;
+        private bool _showGitHubCredentialHelp;
 
         public DevHubPanel()
         {
@@ -167,6 +168,7 @@ namespace StartScreen.ToolWindows.Controls
             NotConnectedPanel.Visibility = Visibility.Visible;
 
             ConnectGitHubTextBlock.Visibility = hasGitHub ? Visibility.Collapsed : Visibility.Visible;
+            GitHubCredentialHelpTextBlock.Visibility = _showGitHubCredentialHelp && !hasGitHub ? Visibility.Visible : Visibility.Collapsed;
             ConnectAdoTextBlock.Visibility = hasAdo ? Visibility.Collapsed : Visibility.Visible;
         }
 
@@ -174,8 +176,35 @@ namespace StartScreen.ToolWindows.Controls
         {
             ConnectedGitHubStatus.Visibility = hasGitHub ? Visibility.Visible : Visibility.Collapsed;
             SettingsConnectGitHubTextBlock.Visibility = hasGitHub ? Visibility.Collapsed : Visibility.Visible;
+            if (hasGitHub)
+            {
+                GitHubCredentialSettingsHelpTextBlock.Visibility = Visibility.Collapsed;
+                GitHubPatEntryPanel.Visibility = Visibility.Collapsed;
+            }
+
             ConnectedAdoStatus.Visibility = hasAdo ? Visibility.Visible : Visibility.Collapsed;
             AdoPatEntryPanel.Visibility = hasAdo ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        public void ShowGitHubCredentialManagerUnavailable()
+        {
+            _showGitHubCredentialHelp = true;
+
+            var hasGitHub = _currentDashboard?.HasProvider("github.com") == true;
+            var hasAdo = _currentDashboard?.HasProvider("dev.azure.com") == true
+                || Services.DevHub.DevHubCredentialHelper.HasCredential("dev.azure.com");
+
+            GitHubCredentialSettingsHelpTextBlock.Visibility = Visibility.Visible;
+
+            if (_currentDashboard?.HasAuthentication == true)
+            {
+                UpdateView(_currentDashboard, _currentFilterRepo);
+                SettingsPanel.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ShowNotConnected(hasGitHub, hasAdo);
+            }
         }
 
         private void ShowDashboard()
@@ -372,6 +401,49 @@ namespace StartScreen.ToolWindows.Controls
             ConnectAccountRequested?.Invoke(this, "github.com");
         }
 
+        private void ShowGitHubPatEntry_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsPanel.Visibility = Visibility.Visible;
+            GitHubPatEntryPanel.Visibility = Visibility.Visible;
+            GitHubCredentialSettingsHelpTextBlock.Visibility = Visibility.Collapsed;
+            GitHubPatBox.Clear();
+            GitHubPatBox.Focus();
+        }
+
+        private void GitHubPatBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                var pat = GitHubPatBox.Password?.Trim();
+                if (!string.IsNullOrEmpty(pat))
+                {
+                    Services.DevHub.DevHubCredentialHelper.StoreCredential("github.com", string.Empty, pat);
+                    Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
+                    _showGitHubCredentialHelp = false;
+                    GitHubCredentialSettingsHelpTextBlock.Visibility = Visibility.Collapsed;
+                    GitHubPatBox.Clear();
+                    GitHubPatEntryPanel.Visibility = Visibility.Collapsed;
+                    SettingsPanel.Visibility = Visibility.Collapsed;
+                    RefreshRequested?.Invoke(this, EventArgs.Empty);
+                }
+
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                GitHubPatBox.Clear();
+                GitHubPatEntryPanel.Visibility = Visibility.Collapsed;
+                e.Handled = true;
+            }
+        }
+
+        private void GitHubPatBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            GitHubPatPlaceholder.Visibility = string.IsNullOrEmpty(GitHubPatBox.Password)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
         private void ConnectAdo_Click(object sender, RoutedEventArgs e)
         {
             ConnectAccountRequested?.Invoke(this, "dev.azure.com");
@@ -411,6 +483,11 @@ namespace StartScreen.ToolWindows.Controls
         private void OpenAdoPatPage_Click(object sender, RoutedEventArgs e)
         {
             OpenUrl("https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate");
+        }
+
+        private void OpenGitHubPatPage_Click(object sender, RoutedEventArgs e)
+        {
+            OpenUrl("https://github.com/settings/tokens");
         }
 
         private void ChangeAdoPat_Click(object sender, RoutedEventArgs e)
