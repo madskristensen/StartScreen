@@ -3,12 +3,16 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.Imaging.Interop;
 using Microsoft.VisualStudio.Shell;
 using StartScreen.Models.DevHub;
+using StartScreen.Services.DevHub;
 
 namespace StartScreen.ToolWindows.Controls
 {
@@ -23,6 +27,10 @@ namespace StartScreen.ToolWindows.Controls
         private ItemsControl _cachedBordersList;
         private bool _suppressSaveOnLostFocus;
         private bool _showGitHubCredentialHelp;
+
+        // Host that the inline PAT entry box is currently targeting (cloud or on-prem).
+        // Set when the user clicks "Sign in" / "Change" on a server row; consumed by AdoPatBox_KeyDown.
+        private string _pendingAdoHost;
 
         public DevHubPanel()
         {
@@ -78,7 +86,7 @@ namespace StartScreen.ToolWindows.Controls
             }
 
             bool hasGitHub = dashboard.HasProvider("github.com");
-            bool hasAdo = dashboard.HasProvider("dev.azure.com");
+            bool hasAdo = HasAnyAdoConnection(dashboard);
 
             if (!dashboard.HasAuthentication)
             {
@@ -182,8 +190,10 @@ namespace StartScreen.ToolWindows.Controls
                 GitHubPatEntryPanel.Visibility = Visibility.Collapsed;
             }
 
-            ConnectedAdoStatus.Visibility = hasAdo ? Visibility.Visible : Visibility.Collapsed;
-            AdoPatEntryPanel.Visibility = hasAdo ? Visibility.Collapsed : Visibility.Visible;
+            // Azure DevOps state is reflected by the AdoServersList; nothing else to do here.
+            // hasAdo is preserved as a parameter so callers can decide initial visibility of the
+            // top-level not-connected prompts via ShowNotConnected.
+            _ = hasAdo;
         }
 
         public void ShowGitHubCredentialManagerUnavailable()
@@ -191,8 +201,7 @@ namespace StartScreen.ToolWindows.Controls
             _showGitHubCredentialHelp = true;
 
             var hasGitHub = _currentDashboard?.HasProvider("github.com") == true;
-            var hasAdo = _currentDashboard?.HasProvider("dev.azure.com") == true
-                || Services.DevHub.DevHubCredentialHelper.HasCredential("dev.azure.com");
+            var hasAdo = HasAnyAdoConnection(_currentDashboard) || HasAnyAdoCredential();
 
             GitHubCredentialSettingsHelpTextBlock.Visibility = Visibility.Visible;
 
@@ -341,10 +350,14 @@ namespace StartScreen.ToolWindows.Controls
                     : Visibility.Collapsed;
 
                 bool hasGitHub = _currentDashboard?.HasProvider("github.com") == true;
-                bool hasAdo = _currentDashboard?.HasProvider("dev.azure.com") == true
-                    || Services.DevHub.DevHubCredentialHelper.HasCredential("dev.azure.com");
+                bool hasAdo = HasAnyAdoConnection(_currentDashboard) || HasAnyAdoCredential();
                 UpdateSettingsAccountStatus(hasGitHub, hasAdo);
                 AdoPatBox.Clear();
+                AdoPatEntryPanel.Visibility = Visibility.Collapsed;
+                AddAdoServerPanel.Visibility = Visibility.Collapsed;
+                AddAdoServerLink.Visibility = Visibility.Visible;
+                _pendingAdoHost = null;
+                RefreshAdoServersList();
 
                 SettingsPanel.Visibility = Visibility.Visible;
             }
@@ -454,12 +467,15 @@ namespace StartScreen.ToolWindows.Controls
             if (e.Key == Key.Enter)
             {
                 var pat = AdoPatBox.Password?.Trim();
+                var host = string.IsNullOrEmpty(_pendingAdoHost) ? AzureDevOpsServerHelper.CloudHost : _pendingAdoHost;
                 if (!string.IsNullOrEmpty(pat))
                 {
-                    Services.DevHub.DevHubCredentialHelper.StoreCredential("dev.azure.com", string.Empty, pat);
+                    Services.DevHub.DevHubCredentialHelper.StoreCredential(host, string.Empty, pat);
                     Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
                     AdoPatBox.Clear();
-                    SettingsPanel.Visibility = Visibility.Collapsed;
+                    AdoPatEntryPanel.Visibility = Visibility.Collapsed;
+                    _pendingAdoHost = null;
+                    RefreshAdoServersList();
                     RefreshRequested?.Invoke(this, EventArgs.Empty);
                 }
 
@@ -468,7 +484,8 @@ namespace StartScreen.ToolWindows.Controls
             else if (e.Key == Key.Escape)
             {
                 AdoPatBox.Clear();
-                SettingsPanel.Visibility = Visibility.Collapsed;
+                AdoPatEntryPanel.Visibility = Visibility.Collapsed;
+                _pendingAdoHost = null;
                 e.Handled = true;
             }
         }
@@ -490,23 +507,257 @@ namespace StartScreen.ToolWindows.Controls
             OpenUrl("https://github.com/settings/tokens");
         }
 
-        private void ChangeAdoPat_Click(object sender, RoutedEventArgs e)
+        // ---- Azure DevOps server list (cloud + on-prem) ----
+
+        private static bool HasAnyAdoConnection(DevHubDashboard dashboard)
         {
-            // Show the PAT entry panel so the user can enter a new token
-            ConnectedAdoStatus.Visibility = Visibility.Collapsed;
-            AdoPatEntryPanel.Visibility = Visibility.Visible;
-            AdoPatBox.Clear();
-            AdoPatBox.Focus();
+            if (dashboard == null)
+                return false;
+
+            for (int i = 0; i < dashboard.Users.Count; i++)
+            {
+                if (string.Equals(dashboard.Users[i].ProviderName, "Azure DevOps", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
 
-        private void DisconnectAdo_Click(object sender, RoutedEventArgs e)
+        private static bool HasAnyAdoCredential()
         {
-            Services.DevHub.DevHubCredentialHelper.RemoveCredential("dev.azure.com");
+            foreach (var host in AzureDevOpsServerHelper.GetAllKnownHosts())
+            {
+                if (Services.DevHub.DevHubCredentialHelper.HasCredential(host))
+                    return true;
+            }
+            return false;
+        }
+
+        private void RefreshAdoServersList()
+        {
+            var rows = new List<AdoServerRow>();
+
+            // Cloud is always shown first.
+            AddAdoServerRow(rows, AzureDevOpsServerHelper.CloudHost, isCloud: true, isConfigured: false);
+
+            foreach (var host in AzureDevOpsServerHelper.GetConfiguredServerHosts())
+            {
+                AddAdoServerRow(rows, host, isCloud: false, isConfigured: true);
+            }
+
+            AdoServersList.ItemsSource = rows;
+
+            // Auto-discover additional on-prem servers from MRU in the background and merge them in.
+            DiscoverAndMergeServersAsync().FireAndForget();
+        }
+
+        private static void AddAdoServerRow(List<AdoServerRow> rows, string host, bool isCloud, bool isConfigured)
+        {
+            bool connected = Services.DevHub.DevHubCredentialHelper.HasCredential(host);
+            rows.Add(new AdoServerRow
+            {
+                Host = host,
+                DisplayText = isCloud ? "Azure DevOps (cloud)" : host,
+                StatusMoniker = connected ? KnownMonikers.StatusOK : KnownMonikers.StatusOffline,
+                SignInVisibility = connected ? Visibility.Collapsed : Visibility.Visible,
+                ChangeVisibility = connected ? Visibility.Visible : Visibility.Collapsed,
+                DisconnectVisibility = connected ? Visibility.Visible : Visibility.Collapsed,
+                // Allow removing user-configured (or auto-detected) on-prem hosts when no credential is stored.
+                RemoveVisibility = (!isCloud && !connected) ? Visibility.Visible : Visibility.Collapsed,
+            });
+        }
+
+        private async Task DiscoverAndMergeServersAsync()
+        {
+            try
+            {
+                var discovered = await AzureDevOpsServerHelper.DiscoverFromMruAsync();
+                if (discovered.Count == 0)
+                    return;
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                if (SettingsPanel.Visibility != Visibility.Visible)
+                    return;
+
+                var current = (AdoServersList.ItemsSource as IEnumerable<AdoServerRow>)?.ToList() ?? new List<AdoServerRow>();
+                var existing = new HashSet<string>(current.Select(r => r.Host), StringComparer.OrdinalIgnoreCase);
+
+                bool changed = false;
+                foreach (var srv in discovered)
+                {
+                    if (existing.Contains(srv.Host))
+                        continue;
+
+                    AddAdoServerRow(current, srv.Host, isCloud: false, isConfigured: false);
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    AdoServersList.ItemsSource = current;
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        private void AdoServer_SignIn_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Documents.Hyperlink hl && hl.Tag is string host && !string.IsNullOrWhiteSpace(host))
+            {
+                _pendingAdoHost = host;
+                AdoPatHostLabel.Text = host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase)
+                    ? "Azure DevOps (cloud) personal access token"
+                    : $"Personal access token for {host}";
+                AdoPatBox.Clear();
+                AdoPatEntryPanel.Visibility = Visibility.Visible;
+                AddAdoServerPanel.Visibility = Visibility.Collapsed;
+                AddAdoServerLink.Visibility = Visibility.Visible;
+                AdoPatBox.Focus();
+            }
+        }
+
+        private void AdoServer_Disconnect_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Documents.Hyperlink hl && hl.Tag is string host && !string.IsNullOrWhiteSpace(host))
+            {
+                Services.DevHub.DevHubCredentialHelper.RemoveCredential(host);
+                Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
+
+                if (string.Equals(_pendingAdoHost, host, StringComparison.OrdinalIgnoreCase))
+                    _pendingAdoHost = null;
+
+                AdoPatEntryPanel.Visibility = Visibility.Collapsed;
+                RefreshAdoServersList();
+                RefreshRequested?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        private void AdoServer_Remove_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Documents.Hyperlink hl && hl.Tag is string host && !string.IsNullOrWhiteSpace(host))
+            {
+                AzureDevOpsServerHelper.RemoveConfiguredServerHost(host);
+                Services.DevHub.DevHubCredentialHelper.RemoveCredential(host);
+                Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
+
+                if (string.Equals(_pendingAdoHost, host, StringComparison.OrdinalIgnoreCase))
+                    _pendingAdoHost = null;
+
+                RefreshAdoServersList();
+                RefreshRequested?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        private void ShowAddAdoServer_Click(object sender, RoutedEventArgs e)
+        {
+            AddAdoServerLink.Visibility = Visibility.Collapsed;
+            AddAdoServerPanel.Visibility = Visibility.Visible;
+            AdoPatEntryPanel.Visibility = Visibility.Collapsed;
+            AddAdoServerUrlBox.Clear();
+            AddAdoServerPatBox.Clear();
+            AddAdoServerUrlBox.Focus();
+        }
+
+        private void CancelAddAdoServer_Click(object sender, RoutedEventArgs e)
+        {
+            AddAdoServerPanel.Visibility = Visibility.Collapsed;
+            AddAdoServerLink.Visibility = Visibility.Visible;
+            AddAdoServerUrlBox.Clear();
+            AddAdoServerPatBox.Clear();
+        }
+
+        private void AddAdoServer_Click(object sender, RoutedEventArgs e)
+        {
+            var host = NormalizeAdoServerHost(AddAdoServerUrlBox.Text);
+            var pat = AddAdoServerPatBox.Password?.Trim();
+            if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(pat))
+                return;
+
+            // Cloud is implicit; redirect to the cloud sign-in flow if the user typed dev.azure.com.
+            AzureDevOpsServerHelper.AddConfiguredServerHost(host);
+            Services.DevHub.DevHubCredentialHelper.StoreCredential(host, string.Empty, pat);
             Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
-            ConnectedAdoStatus.Visibility = Visibility.Collapsed;
-            AdoPatEntryPanel.Visibility = Visibility.Visible;
-            AdoPatBox.Clear();
+
+            AddAdoServerPanel.Visibility = Visibility.Collapsed;
+            AddAdoServerLink.Visibility = Visibility.Visible;
+            AddAdoServerUrlBox.Clear();
+            AddAdoServerPatBox.Clear();
+
+            RefreshAdoServersList();
             RefreshRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        private static string NormalizeAdoServerHost(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return null;
+
+            raw = raw.Trim();
+            if (Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+                return uri.Host;
+
+            // Bare host (possibly with a path the user pasted accidentally).
+            return raw.TrimStart('/').Split('/')[0].Trim();
+        }
+
+        private void AddAdoServerUrlBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            AddAdoServerUrlPlaceholder.Visibility = string.IsNullOrEmpty(AddAdoServerUrlBox.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        private void AddAdoServerUrlBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                AddAdoServerPatBox.Focus();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                CancelAddAdoServer_Click(sender, e);
+                e.Handled = true;
+            }
+        }
+
+        private void AddAdoServerPatBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                AddAdoServer_Click(sender, e);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                CancelAddAdoServer_Click(sender, e);
+                e.Handled = true;
+            }
+        }
+
+        private void AddAdoServerPatBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            AddAdoServerPatPlaceholder.Visibility = string.IsNullOrEmpty(AddAdoServerPatBox.Password)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Backing data for an Azure DevOps server row in the settings list.
+        /// </summary>
+        private sealed class AdoServerRow
+        {
+            public string Host { get; set; }
+            public string DisplayText { get; set; }
+            public ImageMoniker StatusMoniker { get; set; }
+            public Visibility SignInVisibility { get; set; }
+            public Visibility ChangeVisibility { get; set; }
+            public Visibility DisconnectVisibility { get; set; }
+            public Visibility RemoveVisibility { get; set; }
         }
 
         /// <summary>

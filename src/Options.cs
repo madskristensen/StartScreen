@@ -67,6 +67,16 @@ namespace StartScreen
         public string DevHubSearchQuery { get; set; } = "";
 
         /// <summary>
+        /// Semicolon-delimited list of Azure DevOps Server (on-premises) hosts that the
+        /// user has manually added through the Dev Hub settings panel. Each entry is the
+        /// host portion only (e.g., "tfs.contoso.com"); credentials are stored separately
+        /// in Windows Credential Manager keyed by host.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue("")]
+        public string DevHubAdoServers { get; set; } = "";
+
+        /// <summary>
         /// Whether the extension has already disabled the built-in VS Start Window on first run.
         /// </summary>
         [Browsable(false)]

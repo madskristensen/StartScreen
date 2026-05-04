@@ -69,21 +69,23 @@ namespace StartScreen.Services.DevHub
                 var dashboard = new DevHubDashboard { FetchedAt = DateTime.UtcNow };
                 var allProviders = DevHubProviderRegistry.GetAllProviders();
 
-                // Phase 1: Authenticate all providers in parallel
+                // Phase 1: Authenticate all providers in parallel. A single provider may
+                // surface multiple authenticated users when it spans multiple hosts (e.g.
+                // Azure DevOps cloud + on-premises Server).
                 var authTasks = allProviders.Select(async provider =>
                 {
-                    var user = await provider.GetAuthenticatedUserAsync(cancellationToken);
-                    return (provider, user);
+                    var users = await provider.GetAuthenticatedUsersAsync(cancellationToken);
+                    return (provider, users);
                 }).ToList();
 
                 var authResults = await Task.WhenAll(authTasks);
                 var authenticated = new List<IDevHubProvider>();
 
-                foreach (var (provider, user) in authResults)
+                foreach (var (provider, users) in authResults)
                 {
-                    if (user != null)
+                    if (users != null && users.Count > 0)
                     {
-                        dashboard.Users.Add(user);
+                        dashboard.Users.AddRange(users);
                         authenticated.Add(provider);
                     }
                 }
@@ -174,8 +176,15 @@ namespace StartScreen.Services.DevHub
                     return filtered;
             }
 
-            // If no cached data, try fetching from the appropriate provider
-            var provider = DevHubProviderRegistry.GetProvider($"https://{repo.Host}/{repo.Owner}/{repo.Repo}");
+            // If no cached data, try fetching from the appropriate provider. Build a
+            // representative URL the registry's host-based matching can recognize, including
+            // the "/_git/" segment when we have ADO project info so on-prem servers route
+            // to the Azure DevOps provider.
+            var lookupUrl = !string.IsNullOrEmpty(repo.Project) && !string.IsNullOrEmpty(repo.BaseUrl)
+                ? $"{repo.BaseUrl}/{repo.Project}/_git/{repo.Repo}"
+                : $"https://{repo.Host}/{repo.Owner}/{repo.Repo}";
+
+            var provider = DevHubProviderRegistry.GetProvider(lookupUrl);
             if (provider == null)
                 return null;
 

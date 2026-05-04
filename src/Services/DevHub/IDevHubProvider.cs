@@ -31,8 +31,19 @@ namespace StartScreen.Services.DevHub
         /// <summary>
         /// Gets the authenticated user for this provider.
         /// Returns null if no credentials are available.
+        /// For providers that support multiple hosts (e.g. Azure DevOps cloud + Server),
+        /// returns the first authenticated user; use <see cref="GetAuthenticatedUsersAsync"/>
+        /// to enumerate all authenticated hosts.
         /// </summary>
         Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Gets all authenticated users for this provider, one per host that responds with
+        /// valid credentials. Single-host providers (GitHub, Bitbucket) return a list with
+        /// 0 or 1 entries. Azure DevOps returns one entry per cloud / on-premises server
+        /// the user has signed in to.
+        /// </summary>
+        Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken);
 
         /// <summary>
         /// Fetches all open pull requests authored by or assigned to the authenticated user.

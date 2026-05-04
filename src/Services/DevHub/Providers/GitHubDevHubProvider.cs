@@ -111,6 +111,12 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
+        public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)
+        {
+            var user = await GetAuthenticatedUserAsync(cancellationToken);
+            return user != null ? new[] { user } : Array.Empty<DevHubUser>();
+        }
+
         /// <summary>
         /// Gets the cached GitHub login, or fetches it from the API if not yet cached.
         /// </summary>

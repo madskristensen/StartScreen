@@ -38,46 +38,110 @@ namespace StartScreen.Services.DevHub.Providers
             if (string.IsNullOrWhiteSpace(remoteUrl))
                 return false;
 
-            return remoteUrl.IndexOf("dev.azure.com", StringComparison.OrdinalIgnoreCase) >= 0
+            // Cloud / legacy / SSH heuristics
+            if (remoteUrl.IndexOf("dev.azure.com", StringComparison.OrdinalIgnoreCase) >= 0
                 || remoteUrl.IndexOf(".visualstudio.com", StringComparison.OrdinalIgnoreCase) >= 0
-                || remoteUrl.IndexOf("ssh.dev.azure.com", StringComparison.OrdinalIgnoreCase) >= 0;
+                || remoteUrl.IndexOf("ssh.dev.azure.com", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            // On-premises Azure DevOps Server: any URL whose path contains a "/_git/" segment.
+            // The "/_git/" path is unique to ADO; using it lets us claim arbitrary on-prem hosts
+            // without requiring the user to register them up front.
+            if (remoteUrl.IndexOf("/_git/", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            return false;
         }
 
         public RemoteRepoIdentifier ParseRemoteUrl(string remoteUrl)
         {
             var parsed = RemoteRepoIdentifier.TryParse(remoteUrl);
-            if (parsed != null && parsed.Host.Equals("dev.azure.com", StringComparison.OrdinalIgnoreCase))
+            if (parsed == null)
+                return null;
+
+            // Accept cloud (Host=dev.azure.com) and on-prem servers (IsAzureDevOpsServer).
+            if (parsed.Host.Equals("dev.azure.com", StringComparison.OrdinalIgnoreCase) || parsed.IsAzureDevOpsServer)
                 return parsed;
 
             return null;
         }
 
+        /// <summary>
+        /// Returns the credential-storage host for the given identifier. For cloud and legacy
+        /// visualstudio.com URLs this is "dev.azure.com"; for on-premises servers it is the
+        /// actual server host.
+        /// </summary>
+        internal static string GetCredentialHost(RemoteRepoIdentifier repo)
+        {
+            return repo != null && repo.IsAzureDevOpsServer
+                ? repo.Host
+                : "dev.azure.com";
+        }
+
+        /// <summary>
+        /// Returns the collection-level base URL for the identifier, falling back to the
+        /// cloud format when <see cref="RemoteRepoIdentifier.BaseUrl"/> is not set (e.g. the
+        /// identifier was constructed manually in tests).
+        /// </summary>
+        private static string GetBaseUrl(RemoteRepoIdentifier repo)
+        {
+            return !string.IsNullOrEmpty(repo.BaseUrl)
+                ? repo.BaseUrl
+                : $"https://dev.azure.com/{repo.Owner}";
+        }
+
         public async Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("dev.azure.com", cancellationToken);
+            // Returns the first authenticated host (cloud preferred) so legacy callers that
+            // only need "is the user signed in to anything ADO" continue to work.
+            var users = await GetAuthenticatedUsersAsync(cancellationToken);
+            return users.Count > 0 ? users[0] : null;
+        }
+
+        public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)
+        {
+            var hosts = AzureDevOpsServerHelper.GetAllKnownHosts();
+            var results = new List<DevHubUser>();
+
+            foreach (var host in hosts)
+            {
+                var user = await GetUserForHostAsync(host, cancellationToken);
+                if (user != null)
+                    results.Add(user);
+            }
+
+            return results;
+        }
+
+        private async Task<DevHubUser> GetUserForHostAsync(string host, CancellationToken cancellationToken)
+        {
+            var credential = await DevHubCredentialHelper.GetCredentialAsync(host, cancellationToken);
             if (credential == null)
                 return null;
 
             try
             {
-                // Use the VS SPS endpoint to get user profile
-                var response = await SendGetAsync(
-                    credential,
-                    "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1",
-                    cancellationToken);
+                bool isCloud = host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase);
+
+                // Cloud: SPS profile endpoint. On-prem: connectionData on the server itself,
+                // which works against any collection URL we can probe.
+                string profileUrl = isCloud
+                    ? "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"
+                    : $"https://{host}/_apis/connectionData?api-version=6.0";
+
+                var response = await SendGetAsync(credential, profileUrl, cancellationToken);
 
                 // Token expired - invalidate cache and retry once with a fresh credential.
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
-                    DevHubCredentialHelper.InvalidateCachedCredential("dev.azure.com");
-                    credential = await DevHubCredentialHelper.GetCredentialAsync("dev.azure.com", cancellationToken);
+                    DevHubCredentialHelper.InvalidateCachedCredential(host);
+                    credential = await DevHubCredentialHelper.GetCredentialAsync(host, cancellationToken);
                     if (credential == null)
                         return null;
 
-                    response = await SendGetAsync(
-                        credential,
-                        "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1",
-                        cancellationToken);
+                    response = await SendGetAsync(credential, profileUrl, cancellationToken);
                 }
 
                 if (!response.IsSuccessStatusCode)
@@ -87,13 +151,44 @@ namespace StartScreen.Services.DevHub.Providers
                 using (var doc = JsonDocument.Parse(json))
                 {
                     var root = doc.RootElement;
+
+                    if (isCloud)
+                    {
+                        return new DevHubUser
+                        {
+                            Username = root.TryGetProperty("emailAddress", out var email) ? email.GetString() : credential.Username,
+                            DisplayName = root.TryGetProperty("displayName", out var name) ? name.GetString() : credential.Username,
+                            AvatarUrl = null,
+                            ProviderName = DisplayName,
+                            Host = AzureDevOpsServerHelper.CloudHost,
+                        };
+                    }
+
+                    // On-prem connectionData payload: { authenticatedUser: { providerDisplayName, customDisplayName, properties: { Account: { $value } } } }
+                    string username = credential.Username;
+                    string displayName = credential.Username;
+                    if (root.TryGetProperty("authenticatedUser", out var authUser))
+                    {
+                        if (authUser.TryGetProperty("providerDisplayName", out var pd) && pd.ValueKind == JsonValueKind.String)
+                            displayName = pd.GetString();
+                        if (authUser.TryGetProperty("customDisplayName", out var cd) && cd.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(cd.GetString()))
+                            displayName = cd.GetString();
+                        if (authUser.TryGetProperty("properties", out var props)
+                            && props.TryGetProperty("Account", out var acct)
+                            && acct.TryGetProperty("$value", out var acctVal)
+                            && acctVal.ValueKind == JsonValueKind.String)
+                        {
+                            username = acctVal.GetString();
+                        }
+                    }
+
                     return new DevHubUser
                     {
-                        Username = root.TryGetProperty("emailAddress", out var email) ? email.GetString() : credential.Username,
-                        DisplayName = root.TryGetProperty("displayName", out var name) ? name.GetString() : credential.Username,
+                        Username = username,
+                        DisplayName = displayName,
                         AvatarUrl = null,
                         ProviderName = DisplayName,
-                        Host = "dev.azure.com",
+                        Host = host,
                     };
                 }
             }
@@ -106,42 +201,17 @@ namespace StartScreen.Services.DevHub.Providers
 
         public async Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("dev.azure.com", cancellationToken);
-            if (credential == null)
-                return Array.Empty<DevHubPullRequest>();
-
-            try
-            {
-                // ADO doesn't have a cross-org PR search, so we use the "my pull requests" endpoint
-                // This requires knowing the org. For now, we return empty and rely on repo-specific detail.
-                // TODO: When the user has configured org(s), query each one.
-                _ = credential;
-                return Array.Empty<DevHubPullRequest>();
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-                return Array.Empty<DevHubPullRequest>();
-            }
+            // Cross-org/cross-collection PR search isn't supported by ADO; the per-repo
+            // detail view (driven by GetRepoDetailAsync) covers the common case.
+            await Task.CompletedTask;
+            return Array.Empty<DevHubPullRequest>();
         }
 
         public async Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("dev.azure.com", cancellationToken);
-            if (credential == null)
-                return Array.Empty<DevHubIssue>();
-
-            try
-            {
-                // Same limitation as PRs - need org context for WIQL queries
-                _ = credential;
-                return Array.Empty<DevHubIssue>();
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-                return Array.Empty<DevHubIssue>();
-            }
+            // Same limitation as PRs - WIQL queries are scoped to a project.
+            await Task.CompletedTask;
+            return Array.Empty<DevHubIssue>();
         }
 
         public async Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken)
@@ -155,7 +225,8 @@ namespace StartScreen.Services.DevHub.Providers
             if (repo == null || string.IsNullOrEmpty(repo.Project))
                 return null;
 
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("dev.azure.com", cancellationToken);
+            var credentialHost = GetCredentialHost(repo);
+            var credential = await DevHubCredentialHelper.GetCredentialAsync(credentialHost, cancellationToken);
             if (credential == null)
                 return null;
 
@@ -167,10 +238,10 @@ namespace StartScreen.Services.DevHub.Providers
                     FetchedAt = DateTime.UtcNow,
                 };
 
-                var baseUrl = $"https://dev.azure.com/{repo.Owner}/{repo.Project}";
+                var projectUrl = $"{GetBaseUrl(repo)}/{repo.Project}";
 
                 // Fetch PRs
-                var prUrl = $"{baseUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top=10&api-version=7.1";
+                var prUrl = $"{projectUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top=10&api-version=7.1";
                 var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
                 if (prResponse.IsSuccessStatusCode)
                 {
@@ -179,7 +250,7 @@ namespace StartScreen.Services.DevHub.Providers
                 }
 
                 // Fetch recent builds
-                var buildUrl = $"{baseUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top=5&api-version=7.1";
+                var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top=5&api-version=7.1";
                 var buildResponse = await SendGetAsync(credential, buildUrl, cancellationToken);
                 if (buildResponse.IsSuccessStatusCode)
                 {
@@ -197,13 +268,13 @@ namespace StartScreen.Services.DevHub.Providers
         }
 
         public string GetRepoWebUrl(RemoteRepoIdentifier repo) =>
-            $"https://dev.azure.com/{repo.Owner}/{repo.Project}/_git/{repo.Repo}";
+            $"{GetBaseUrl(repo)}/{repo.Project}/_git/{repo.Repo}";
 
         public string GetPullRequestsWebUrl(RemoteRepoIdentifier repo) =>
-            $"https://dev.azure.com/{repo.Owner}/{repo.Project}/_git/{repo.Repo}/pullrequests";
+            $"{GetBaseUrl(repo)}/{repo.Project}/_git/{repo.Repo}/pullrequests";
 
         public string GetIssuesWebUrl(RemoteRepoIdentifier repo) =>
-            $"https://dev.azure.com/{repo.Owner}/{repo.Project}/_workitems";
+            $"{GetBaseUrl(repo)}/{repo.Project}/_workitems";
 
         private static Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken)
         {
@@ -252,7 +323,7 @@ namespace StartScreen.Services.DevHub.Providers
                             ? closed.GetDateTime().ToUniversalTime()
                             : pr.GetProperty("creationDate").GetDateTime().ToUniversalTime(),
                         CreatedAt = pr.GetProperty("creationDate").GetDateTime().ToUniversalTime(),
-                        WebUrl = $"https://dev.azure.com/{repo.Owner}/{repo.Project}/_git/{repo.Repo}/pullrequest/{id}",
+                        WebUrl = $"{GetBaseUrl(repo)}/{repo.Project}/_git/{repo.Repo}/pullrequest/{id}",
                         ApprovalCount = reviewerCount,
                     });
                 }
@@ -296,7 +367,7 @@ namespace StartScreen.Services.DevHub.Providers
                             : build.GetProperty("startTime").GetDateTime().ToUniversalTime(),
                         WebUrl = build.TryGetProperty("_links", out var links) && links.TryGetProperty("web", out var web)
                             ? web.GetProperty("href").GetString()
-                            : $"https://dev.azure.com/{repo.Owner}/{repo.Project}/_build",
+                            : $"{GetBaseUrl(repo)}/{repo.Project}/_build",
                     });
                 }
             }

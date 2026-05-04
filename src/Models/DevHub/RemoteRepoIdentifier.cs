@@ -10,12 +10,15 @@ namespace StartScreen.Models.DevHub
     public sealed class RemoteRepoIdentifier : IEquatable<RemoteRepoIdentifier>
     {
         /// <summary>
-        /// The hostname (e.g., "github.com", "dev.azure.com").
+        /// The hostname (e.g., "github.com", "dev.azure.com", or an Azure DevOps Server host).
+        /// For both cloud Azure DevOps and legacy *.visualstudio.com URLs, this is normalized
+        /// to "dev.azure.com". For on-premises Azure DevOps Server, this is the actual server host.
         /// </summary>
         public string Host { get; }
 
         /// <summary>
-        /// The repository owner or organization.
+        /// The repository owner or organization. For Azure DevOps Server (on-premises),
+        /// this is the collection name.
         /// </summary>
         public string Owner { get; }
 
@@ -29,12 +32,31 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public string Project { get; }
 
-        public RemoteRepoIdentifier(string host, string owner, string repo, string project = null)
+        /// <summary>
+        /// The base API URL for Azure DevOps repositories (cloud, legacy or on-premises).
+        /// Includes the scheme, host, optional port, and the path up to and including the
+        /// collection or organization. Examples:
+        ///   https://dev.azure.com/myorg
+        ///   https://myorg.visualstudio.com
+        ///   https://tfs.contoso.com/tfs/DefaultCollection
+        /// Null for non-Azure-DevOps hosts.
+        /// </summary>
+        public string BaseUrl { get; }
+
+        /// <summary>
+        /// True when this identifier points at an on-premises Azure DevOps Server
+        /// (i.e., not dev.azure.com / visualstudio.com).
+        /// </summary>
+        public bool IsAzureDevOpsServer { get; }
+
+        public RemoteRepoIdentifier(string host, string owner, string repo, string project = null, string baseUrl = null, bool isAzureDevOpsServer = false)
         {
             Host = host ?? throw new ArgumentNullException(nameof(host));
             Owner = owner ?? throw new ArgumentNullException(nameof(owner));
             Repo = repo ?? throw new ArgumentNullException(nameof(repo));
             Project = project;
+            BaseUrl = baseUrl;
+            IsAzureDevOpsServer = isAzureDevOpsServer;
         }
 
         /// <summary>
@@ -62,30 +84,32 @@ namespace StartScreen.Models.DevHub
             var adoSshMatch = Regex.Match(remoteUrl, @"^git@ssh\.dev\.azure\.com:v3/([^/]+)/([^/]+)/(.+?)/?$");
             if (adoSshMatch.Success)
             {
+                var org = adoSshMatch.Groups[1].Value;
                 return new RemoteRepoIdentifier(
                     "dev.azure.com",
-                    adoSshMatch.Groups[1].Value,
+                    org,
                     adoSshMatch.Groups[3].Value,
-                    adoSshMatch.Groups[2].Value);
+                    adoSshMatch.Groups[2].Value,
+                    baseUrl: $"https://dev.azure.com/{org}");
             }
 
             // SSH format: git@host:owner/repo.git
             var sshMatch = Regex.Match(remoteUrl, @"^git@([^:]+):(.+?)(?:\.git)?/?$");
             if (sshMatch.Success)
             {
-                return ParseFromHostAndPath(sshMatch.Groups[1].Value, sshMatch.Groups[2].Value);
+                return ParseFromHostAndPath(null, sshMatch.Groups[1].Value, sshMatch.Groups[2].Value);
             }
 
             // HTTPS format: https://host/path.git
             if (Uri.TryCreate(remoteUrl, UriKind.Absolute, out var uri))
             {
-                return ParseFromHostAndPath(uri.Host, uri.AbsolutePath.TrimStart('/'));
+                return ParseFromHostAndPath(uri, uri.Host, uri.AbsolutePath.TrimStart('/'));
             }
 
             return null;
         }
 
-        private static RemoteRepoIdentifier ParseFromHostAndPath(string host, string path)
+        private static RemoteRepoIdentifier ParseFromHostAndPath(Uri uri, string host, string path)
         {
             // Remove trailing .git
             if (path.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
@@ -94,18 +118,33 @@ namespace StartScreen.Models.DevHub
             // Remove trailing slash
             path = path.TrimEnd('/');
 
-            // Azure DevOps HTTPS: dev.azure.com/org/project/_git/repo
+            // Authority (scheme://host[:port]) for building BaseUrl. Defaults to https for SSH-derived inputs.
+            var authority = uri != null
+                ? uri.GetLeftPart(UriPartial.Authority)
+                : $"https://{host}";
+
+            // Azure DevOps cloud HTTPS: dev.azure.com/org/project/_git/repo
             if (host.Equals("dev.azure.com", StringComparison.OrdinalIgnoreCase))
             {
                 var parts = path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length >= 4 && parts[2].Equals("_git", StringComparison.OrdinalIgnoreCase))
                 {
-                    return new RemoteRepoIdentifier("dev.azure.com", parts[0], parts[3], parts[1]);
+                    return new RemoteRepoIdentifier(
+                        "dev.azure.com",
+                        parts[0],
+                        parts[3],
+                        parts[1],
+                        baseUrl: $"https://dev.azure.com/{parts[0]}");
                 }
                 // Fallback: dev.azure.com/org/repo (without project)
                 if (parts.Length >= 2)
                 {
-                    return new RemoteRepoIdentifier("dev.azure.com", parts[0], parts[parts.Length - 1], parts.Length > 2 ? parts[1] : null);
+                    return new RemoteRepoIdentifier(
+                        "dev.azure.com",
+                        parts[0],
+                        parts[parts.Length - 1],
+                        parts.Length > 2 ? parts[1] : null,
+                        baseUrl: $"https://dev.azure.com/{parts[0]}");
                 }
                 return null;
             }
@@ -117,13 +156,44 @@ namespace StartScreen.Models.DevHub
                 var parts = path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length >= 3 && parts[1].Equals("_git", StringComparison.OrdinalIgnoreCase))
                 {
-                    return new RemoteRepoIdentifier("dev.azure.com", org, parts[2], parts[0]);
+                    return new RemoteRepoIdentifier(
+                        "dev.azure.com",
+                        org,
+                        parts[2],
+                        parts[0],
+                        baseUrl: authority);
                 }
                 if (parts.Length >= 1)
                 {
-                    return new RemoteRepoIdentifier("dev.azure.com", org, parts[parts.Length - 1], parts.Length > 1 ? parts[0] : null);
+                    return new RemoteRepoIdentifier(
+                        "dev.azure.com",
+                        org,
+                        parts[parts.Length - 1],
+                        parts.Length > 1 ? parts[0] : null,
+                        baseUrl: authority);
                 }
                 return null;
+            }
+
+            // On-premises Azure DevOps Server: any host with a "/_git/" segment.
+            // Path layout: [optional/path/segments/]Collection/Project/_git/Repo
+            {
+                var parts = path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+                int gitIdx = Array.FindIndex(parts, p => p.Equals("_git", StringComparison.OrdinalIgnoreCase));
+                if (gitIdx >= 2 && gitIdx < parts.Length - 1)
+                {
+                    var project = parts[gitIdx - 1];
+                    var repo = parts[gitIdx + 1];
+                    var collection = parts[gitIdx - 2];
+                    var prefixSegments = string.Join("/", parts, 0, gitIdx - 1);
+                    return new RemoteRepoIdentifier(
+                        host,
+                        collection,
+                        repo,
+                        project,
+                        baseUrl: $"{authority}/{prefixSegments}",
+                        isAzureDevOpsServer: true);
+                }
             }
 
             // GitHub, Bitbucket, GitLab: host/owner/repo
