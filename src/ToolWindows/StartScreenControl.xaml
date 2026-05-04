@@ -121,7 +121,7 @@
                   PreviewMouseWheel="PageScroll_PreviewMouseWheel">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition x:Name="LeftColumn" Width="Auto" MinWidth="350"/>
+            <ColumnDefinition x:Name="LeftColumn" Width="Auto" MinWidth="540"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition x:Name="RightColumn" Width="*" MinWidth="300"/>
         </Grid.ColumnDefinitions>
