@@ -320,7 +320,7 @@
                             Padding="12 10"
                             CornerRadius="4"
                             Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
-                            Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
+                            Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Collapsed, TargetNullValue=Collapsed}">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.StatusInformation}"
                                                 Width="16" Height="16"
