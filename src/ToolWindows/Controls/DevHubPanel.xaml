@@ -506,21 +506,18 @@
                                                        VerticalAlignment="Top"
                                                        Margin="8 0 0 0"/>
                                             <StackPanel>
-                                                <DockPanel>
-                                                    <TextBlock DockPanel.Dock="Left"
-                                                               Text="{Binding Number}"
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <StackPanel Orientation="Horizontal" Margin="0 2 0 0">
+                                                    <TextBlock Text="{Binding RepoFullName}"
+                                                               FontSize="11"
+                                                               Opacity="0.5"/>
+                                                    <TextBlock Text="{Binding Number}"
                                                                FontSize="11"
                                                                Opacity="0.5"
-                                                               VerticalAlignment="Center"
-                                                               Margin="0 0 4 0"/>
-                                                    <TextBlock Text="{Binding Title}"
-                                                               FontSize="12"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </DockPanel>
-                                                <TextBlock Text="{Binding RepoFullName}"
-                                                           FontSize="11"
-                                                           Opacity="0.5"
-                                                           Margin="0 2 0 0"/>
+                                                               Margin="4 0 0 0"/>
+                                                </StackPanel>
                                                 <ItemsControl ItemsSource="{Binding Labels}"
                                                               Margin="0 3 0 0"
                                                               Focusable="False">
