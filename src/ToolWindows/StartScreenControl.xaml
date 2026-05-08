@@ -117,7 +117,8 @@
         </Style>
     </UserControl.Resources>
 
-    <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Focusable="False"
+    <Grid>
+        <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Focusable="False"
                   PreviewMouseWheel="PageScroll_PreviewMouseWheel">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -648,4 +649,51 @@
         </Border>
     </Grid>
     </ScrollViewer>
+
+        <!-- Settings gear (top-right overlay) -->
+        <Button x:Name="StartScreenSettingsButton"
+                Click="StartScreenSettingsButton_Click"
+                Style="{StaticResource IconButtonStyle}"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0 8 24 0"
+                Panel.ZIndex="10">
+            <Button.ToolTip>
+                <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                         BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                         BorderThickness="1"
+                         Padding="4">
+                    <TextBlock Text="Start Screen settings"/>
+                </ToolTip>
+            </Button.ToolTip>
+            <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
+                                Width="16" Height="16"
+                                VerticalAlignment="Center"/>
+        </Button>
+
+        <Popup x:Name="StartScreenSettingsPopup"
+               PlacementTarget="{Binding ElementName=StartScreenSettingsButton}"
+               Placement="Bottom"
+               HorizontalOffset="-220"
+               VerticalOffset="2"
+               StaysOpen="False"
+               AllowsTransparency="True"
+               PopupAnimation="Fade">
+            <Border Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+                    BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
+                    BorderThickness="1"
+                    Padding="12">
+                <StackPanel MinWidth="260">
+                    <TextBlock Text="Start Screen settings"
+                               FontWeight="SemiBold"
+                               Margin="0 0 0 8"/>
+                    <CheckBox x:Name="KeepVisibleCheckBox"
+                              Content="Keep visible when a solution loads"
+                              Checked="KeepVisibleCheckBox_Changed"
+                              Unchecked="KeepVisibleCheckBox_Changed"/>
+                </StackPanel>
+            </Border>
+        </Popup>
+    </Grid>
 </UserControl>

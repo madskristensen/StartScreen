@@ -76,7 +76,23 @@ namespace StartScreen
 
         private void OnBeforeOpenSolution(object sender, EventArgs e)
         {
-            ToolWindows.StartScreenWindow.HideAsync().FireAndForget();
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    Options options = await Options.GetLiveInstanceAsync();
+                    if (options.KeepVisibleOnSolutionLoad)
+                    {
+                        return;
+                    }
+
+                    await ToolWindows.StartScreenWindow.HideAsync();
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
+                }
+            }).FireAndForget();
         }
 
         private async Task ShowStartScreenAsync()

@@ -82,5 +82,13 @@ namespace StartScreen
         [Browsable(false)]
         [DefaultValue(false)]
         public bool HasDisabledBuiltInStartWindow { get; set; }
+
+        /// <summary>
+        /// When true, the Start Screen tool window remains visible after a solution
+        /// or folder is opened instead of being hidden automatically.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue(false)]
+        public bool KeepVisibleOnSolutionLoad { get; set; }
     }
 }
