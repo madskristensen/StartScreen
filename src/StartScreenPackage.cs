@@ -95,34 +95,27 @@ namespace StartScreen
             }).FireAndForget();
         }
 
-        private async Task ShowStartScreenAsync()
-        {
-            await ToolWindows.StartScreenWindow.ShowAsync();
-        }
-
         private void OnSolutionClosed(object sender, EventArgs e)
         {
-            if (VsShellUtilities.ShellIsShuttingDown)
+            ShowStartScreenAsync().FireAndForget();
+        }
+
+        private async Task ShowStartScreenAsync()
+        {
+            await Task.Delay(500);
+
+            if (!await VS.Solutions.IsOpeningAsync() && !await VS.Solutions.IsOpenAsync())
             {
-                return;
+                // Show Start Screen when solution is closed
+                await ToolWindows.StartScreenWindow.ShowAsync();
             }
-
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
-            {
-                await Task.Delay(500);
-
-                if (!await VS.Solutions.IsOpeningAsync() && !await VS.Solutions.IsOpenAsync())
-                {
-                    // Show Start Screen when solution is closed
-                    await ShowStartScreenAsync();
-                }
-            }).FileAndForget(nameof(StartScreen));
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                JoinableTaskFactory.Run(async () => { await ToolWindows.StartScreenWindow.HideAsync(); });
                 Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnBeforeOpenSolution -= OnBeforeOpenSolution;
                 Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder -= OnBeforeOpenSolution;
                 Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterCloseSolution -= OnSolutionClosed;
