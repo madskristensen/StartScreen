@@ -7,14 +7,15 @@ using System.Threading;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Settings;
 using Microsoft.VisualStudio.Shell.Settings;
+using StartScreen.ToolWindows;
 
 namespace StartScreen
 {
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [InstalledProductRegistration(Vsix.Name, Vsix.Description, Vsix.Version)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
-    [ProvideToolWindow(typeof(ToolWindows.StartScreenWindow.Pane), Window = WindowGuids.DocumentWell, DocumentLikeTool = true, Style = VsDockStyle.MDI)]
-    [ProvideToolWindowVisibility(typeof(ToolWindows.StartScreenWindow.Pane), VSConstants.UICONTEXT.NoSolution_string)]
+    [ProvideToolWindow(typeof(StartScreenWindow.Pane), Window = WindowGuids.DocumentWell, DocumentLikeTool = true)]
+    [ProvideToolWindowVisibility(typeof(StartScreenWindow.Pane), VSConstants.UICONTEXT.NoSolution_string, Name = StartScreenWindow.Name)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string, PackageAutoLoadFlags.BackgroundLoad)]
     [Guid(PackageGuids.StartScreenString)]
     public sealed class StartScreenPackage : ToolkitPackage
@@ -91,7 +92,7 @@ namespace StartScreen
                 return;
             }
 
-            await ToolWindows.StartScreenWindow.HideAsync();
+            await StartScreenWindow.HideAsync();
         }
 
         private async Task ShowStartScreenAsync()
@@ -101,7 +102,7 @@ namespace StartScreen
             if (!await VS.Solutions.IsOpeningAsync() && !await VS.Solutions.IsOpenAsync())
             {
                 // Show Start Screen when solution is closed
-                await ToolWindows.StartScreenWindow.ShowAsync();
+                await StartScreenWindow.ShowAsync();
             }
         }
 
@@ -109,7 +110,7 @@ namespace StartScreen
         {
             if (disposing)
             {
-                JoinableTaskFactory.Run(async () => { await ToolWindows.StartScreenWindow.HideAsync(); });
+                JoinableTaskFactory.Run(async () => { await StartScreenWindow.HideAsync(); });
                 Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnBeforeOpenSolution -= OnBeforeOpenSolution;
                 Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder -= OnBeforeOpenSolution;
                 Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterCloseSolution -= OnSolutionClosed;

@@ -1,4 +1,3 @@
-using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,7 +14,9 @@ namespace StartScreen.ToolWindows
         private StartScreenViewModel _viewModel;
         private StartScreenControl _control;
 
-        public override string GetTitle(int toolWindowId) => "⌂ Start";
+        public const string Name = "⌂ Start";
+
+        public override string GetTitle(int toolWindowId) => Name;
 
         public override Type PaneType => typeof(Pane);
 
@@ -43,12 +44,13 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        [Guid("d0ffc7e5-4860-42ef-afbe-0dd5532e9906")]
+        [Guid("66da8633-f469-4bb6-acc2-56aab30b750a")]
         internal class Pane : ToolWindowPane
         {
             public Pane()
             {
                 BitmapImageMoniker = KnownMonikers.Home;
+                Caption = StartScreenWindow.Name;
             }
         }
     }
