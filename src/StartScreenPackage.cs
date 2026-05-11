@@ -52,8 +52,7 @@ namespace StartScreen
                     return;
                 }
 
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
+                // ShellSettingsManager is free threaded, so we can use it here without switching to the UI thread.
                 var settingsManager = new ShellSettingsManager(ServiceProvider.GlobalProvider);
                 WritableSettingsStore userSettings = settingsManager.GetWritableSettingsStore(SettingsScope.UserSettings);
 
@@ -76,28 +75,23 @@ namespace StartScreen
 
         private void OnBeforeOpenSolution(object sender, EventArgs e)
         {
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
-            {
-                try
-                {
-                    Options options = await Options.GetLiveInstanceAsync();
-                    if (options.KeepVisibleOnSolutionLoad)
-                    {
-                        return;
-                    }
-
-                    await ToolWindows.StartScreenWindow.HideAsync();
-                }
-                catch (Exception ex)
-                {
-                    await ex.LogAsync();
-                }
-            }).FireAndForget();
+            HideStartScreenAsync().FireAndForget();
         }
 
         private void OnSolutionClosed(object sender, EventArgs e)
         {
             ShowStartScreenAsync().FireAndForget();
+        }
+
+        private async Task HideStartScreenAsync()
+        {
+            Options options = await Options.GetLiveInstanceAsync();
+            if (options.KeepVisibleOnSolutionLoad)
+            {
+                return;
+            }
+
+            await ToolWindows.StartScreenWindow.HideAsync();
         }
 
         private async Task ShowStartScreenAsync()
