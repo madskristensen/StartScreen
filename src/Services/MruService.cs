@@ -23,12 +23,21 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task<List<MruItem>> GetMruItemsAsync(Options options = null)
         {
-            // IVsMRUItemsStore must be accessed on the main thread
+            // Acquire the service first - this is free-threaded and does not require
+            // the UI thread. Doing it before the SwitchToMainThreadAsync below means
+            // the UI-thread region is as small as possible.
+            IVsMRUItemsStore store = await VS.GetServiceAsync<SVsMRUItemsStore, IVsMRUItemsStore>();
+
+            // Use caller-provided options or load from settings (also free-threaded).
+            if (options == null)
+            {
+                options = await Options.GetLiveInstanceAsync();
+            }
+
+            // Only the COM call itself requires the UI thread.
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             var rawEntries = new List<string>();
-            IVsMRUItemsStore store = await VS.GetServiceAsync<SVsMRUItemsStore, IVsMRUItemsStore>();
-
             if (store != null)
             {
                 var buffer = new string[MaxVsItems];
@@ -44,56 +53,52 @@ namespace StartScreen.Services
                 }
             }
 
-            // Use caller-provided options or load from settings
-            if (options == null)
-            {
-                options = await Options.GetLiveInstanceAsync();
-            }
+            // Hop off the UI thread for all post-processing (parsing, dedup, pin/sort).
+            // The caller is responsible for switching back to the UI thread before
+            // touching the bound ObservableCollections.
+            await TaskScheduler.Default;
 
             var pinnedPaths = new HashSet<string>(
                 (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries),
                 StringComparer.OrdinalIgnoreCase);
 
-            // Parse MRU entries on background thread. The expensive part is the
-            // per-item file I/O in GetLastAccessTime (it enumerates .vs/{name}/v*/
-            // subdirectories to locate .suo files), so run the parse in parallel.
-            // Deduplicate so .sln and .slnx in the same directory collapse to one entry,
-            // keeping the most recently accessed.
-            List<MruItem> vsItems = await Task.Run(() =>
+            // Parse MRU entries in parallel. The expensive part is the per-item file
+            // I/O in GetLastAccessTime (it enumerates .vs/{name}/v*/ subdirectories
+            // to locate .suo files). Deduplicate so .sln and .slnx in the same
+            // directory collapse to one entry, keeping the most recently accessed.
+            var parsed = new MruItem[rawEntries.Count];
+            Parallel.For(0, rawEntries.Count, new ParallelOptions { MaxDegreeOfParallelism = 8 }, i =>
             {
-                var parsed = new MruItem[rawEntries.Count];
-                Parallel.For(0, rawEntries.Count, new ParallelOptions { MaxDegreeOfParallelism = 8 }, i =>
-                {
-                    parsed[i] = ParseMruEntry(rawEntries[i]);
-                });
+                parsed[i] = ParseMruEntry(rawEntries[i]);
+            });
 
-                var itemsByKey = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
-                foreach (MruItem item in parsed)
-                {
-                    if (item == null)
-                        continue;
+            var itemsByKey = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
+            foreach (MruItem item in parsed)
+            {
+                if (item == null)
+                    continue;
 
-                    var key = GetDeduplicationKey(item);
-                    if (itemsByKey.TryGetValue(key, out MruItem existing))
+                var key = GetDeduplicationKey(item);
+                if (itemsByKey.TryGetValue(key, out MruItem existing))
+                {
+                    if (item.LastAccessed > existing.LastAccessed)
                     {
-                        if (item.LastAccessed > existing.LastAccessed)
-                        {
-                            // Keep the newer item but collect all raw entries
-                            item.RawMruEntries.AddRange(existing.RawMruEntries);
-                            itemsByKey[key] = item;
-                        }
-                        else
-                        {
-                            existing.RawMruEntries.AddRange(item.RawMruEntries);
-                        }
+                        // Keep the newer item but collect all raw entries
+                        item.RawMruEntries.AddRange(existing.RawMruEntries);
+                        itemsByKey[key] = item;
                     }
                     else
                     {
-                        itemsByKey[key] = item;
+                        existing.RawMruEntries.AddRange(item.RawMruEntries);
                     }
                 }
-                return itemsByKey.Values.ToList();
-            });
+                else
+                {
+                    itemsByKey[key] = item;
+                }
+            }
+
+            List<MruItem> vsItems = itemsByKey.Values.ToList();
 
             // Apply pinned state from Options and build an ordered list for stable pin ordering
             var pinnedOrderList = (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries);
