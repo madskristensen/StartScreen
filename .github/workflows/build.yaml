@@ -90,10 +90,10 @@ jobs:
         run: |
           Add-Type -AssemblyName System.Web
 
-          $repoUrl       = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY/"
-          $repo          = [System.Web.HttpUtility]::UrlEncode($repoUrl)
-          $issueTracker  = [System.Web.HttpUtility]::UrlEncode($repoUrl + "issues/")
-          $readmeUrl     = [System.Web.HttpUtility]::UrlEncode("$Env:GITHUB_REF_NAME/README.md")
+          $repoUrl      = "$Env:GITHUB_SERVER_URL/$Env:GITHUB_REPOSITORY/"
+          $repo         = [System.Web.HttpUtility]::UrlEncode($repoUrl)
+          $issueTracker = [System.Web.HttpUtility]::UrlEncode($repoUrl + "issues/")
+          $readmeUrl    = [System.Web.HttpUtility]::UrlEncode("$Env:GITHUB_REF_NAME/README.md")
 
           $endpoint = "https://www.vsixgallery.com/api/upload"
           $url      = "$endpoint`?repo=$repo&issuetracker=$issueTracker&readmeUrl=$readmeUrl"
@@ -106,9 +106,12 @@ jobs:
           Write-Host "Uploading $Env:VSIX_FILE to $endpoint"
 
           try {
-            $webclient = New-Object System.Net.WebClient
-            $webclient.UploadFile($url, $Env:VSIX_FILE) | Out-Null
-            Write-Host -ForegroundColor Green "OK"
+            $response = Invoke-WebRequest `
+              -Uri $url `
+              -Method Post `
+              -Form @{ file = Get-Item $Env:VSIX_FILE } `
+              -UseBasicParsing
+            Write-Host -ForegroundColor Green ("OK ({0})" -f [int]$response.StatusCode)
           }
           catch {
             Write-Host -ForegroundColor Red "FAIL"
@@ -117,16 +120,15 @@ jobs:
               Write-Host ("Status: {0} {1}" -f [int]$resp.StatusCode, $resp.StatusCode)
               $xerror = $resp.Headers["x-error"]
               if ($xerror) { Write-Host ("x-error: {0}" -f $xerror) }
-              try {
-                $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
-                $body = $reader.ReadToEnd()
-                if ($body) { Write-Host "Body:`n$body" }
-              } catch { }
+              if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+                Write-Host "Body:`n$($_.ErrorDetails.Message)"
+              }
             }
             else {
-              Write-Host $_.Exception.Message
-              if ($_.Exception.InnerException) {
-                Write-Host $_.Exception.InnerException.Message
+              $ex = $_.Exception
+              while ($ex) {
+                Write-Host ("{0}: {1}" -f $ex.GetType().FullName, $ex.Message)
+                $ex = $ex.InnerException
               }
             }
             exit 1
