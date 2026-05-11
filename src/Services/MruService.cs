@@ -54,15 +54,22 @@ namespace StartScreen.Services
                 (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries),
                 StringComparer.OrdinalIgnoreCase);
 
-            // Parse MRU entries on background thread (includes file I/O for timestamps)
+            // Parse MRU entries on background thread. The expensive part is the
+            // per-item file I/O in GetLastAccessTime (it enumerates .vs/{name}/v*/
+            // subdirectories to locate .suo files), so run the parse in parallel.
             // Deduplicate so .sln and .slnx in the same directory collapse to one entry,
             // keeping the most recently accessed.
             List<MruItem> vsItems = await Task.Run(() =>
             {
-                var itemsByKey = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
-                foreach (var raw in rawEntries)
+                var parsed = new MruItem[rawEntries.Count];
+                Parallel.For(0, rawEntries.Count, new ParallelOptions { MaxDegreeOfParallelism = 8 }, i =>
                 {
-                    MruItem item = ParseMruEntry(raw);
+                    parsed[i] = ParseMruEntry(rawEntries[i]);
+                });
+
+                var itemsByKey = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
+                foreach (MruItem item in parsed)
+                {
                     if (item == null)
                         continue;
 

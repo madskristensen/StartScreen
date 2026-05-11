@@ -38,6 +38,12 @@ namespace StartScreen.ToolWindows
             // only updated later, after MRU has painted.
             _devHubCacheTask = Task.Run(() => _devHubService.LoadFromCacheAsync());
             InitializeComponent();
+
+            // Bind the ViewModel up front so the MRU list pops in as soon as
+            // LoadMruAsync raises PropertyChanged on GroupedMruItems, instead of
+            // waiting until the Loaded handler awaits _loadTask before binding.
+            DataContext = _viewModel;
+            _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         }
 
         private async void UserControl_Loaded(object sender, RoutedEventArgs e)
@@ -53,13 +59,12 @@ namespace StartScreen.ToolWindows
 
                 _isInitialized = true;
 
-                // Wait for MRU first - nothing else may visibly precede it.
-                await _loadTask;
-
-                // Bind ViewModel to trigger MRU rendering in the UI.
-                DataContext = _viewModel;
                 UpdateResponsiveColumns();
-                _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+
+                // Wait for MRU to finish so secondary loads (DevHub, news) don't
+                // contend with the MRU paint. The DataContext is already bound,
+                // so MRU items render the moment LoadMruAsync completes.
+                await _loadTask;
 
                 // Yield so MRU paints before we start any other work.
                 await Task.Yield();
