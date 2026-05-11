@@ -80,6 +80,58 @@ namespace StartScreen.Services.DevHub
         }
 
         /// <summary>
+        /// Normalizes a user-entered Azure DevOps Server URL into the identifier we persist.
+        /// Preserves the optional path (e.g. "/tfs" virtual directory or collection segment)
+        /// because older on-premises servers expose their REST endpoints under that path.
+        /// Examples:
+        ///   "https://tfs.contoso.com/tfs/DefaultCollection" -> "tfs.contoso.com/tfs/DefaultCollection"
+        ///   "tfs.contoso.com/tfs"                          -> "tfs.contoso.com/tfs"
+        ///   "tfs.contoso.com"                              -> "tfs.contoso.com"
+        /// Returns null when the input is empty or cannot be parsed.
+        /// </summary>
+        public static string NormalizeServerInput(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return null;
+
+            raw = raw.Trim();
+
+            string host;
+            string path;
+
+            if (Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+            {
+                host = uri.Host;
+                path = uri.AbsolutePath ?? string.Empty;
+            }
+            else
+            {
+                var bare = raw.TrimStart('/');
+                var slash = bare.IndexOf('/');
+                if (slash < 0)
+                {
+                    host = bare;
+                    path = string.Empty;
+                }
+                else
+                {
+                    host = bare.Substring(0, slash);
+                    path = bare.Substring(slash);
+                }
+            }
+
+            host = (host ?? string.Empty).Trim();
+            path = (path ?? string.Empty).Trim().TrimEnd('/');
+
+            if (host.Length == 0)
+                return null;
+
+            return path.Length == 0 || path == "/"
+                ? host
+                : host + (path.StartsWith("/", StringComparison.Ordinal) ? path : "/" + path);
+        }
+
+        /// <summary>
         /// Returns the union of cloud + configured on-premises hosts. Cloud always first.
         /// </summary>
         public static IReadOnlyList<string> GetAllKnownHosts()

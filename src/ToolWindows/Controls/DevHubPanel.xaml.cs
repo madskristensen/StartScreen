@@ -672,7 +672,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private void AddAdoServer_Click(object sender, RoutedEventArgs e)
         {
-            var host = NormalizeAdoServerHost(AddAdoServerUrlBox.Text);
+            var host = AzureDevOpsServerHelper.NormalizeServerInput(AddAdoServerUrlBox.Text);
             var pat = AddAdoServerPatBox.Password?.Trim();
             if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(pat))
                 return;
@@ -689,19 +689,6 @@ namespace StartScreen.ToolWindows.Controls
 
             RefreshAdoServersList();
             RefreshRequested?.Invoke(this, EventArgs.Empty);
-        }
-
-        private static string NormalizeAdoServerHost(string raw)
-        {
-            if (string.IsNullOrWhiteSpace(raw))
-                return null;
-
-            raw = raw.Trim();
-            if (Uri.TryCreate(raw, UriKind.Absolute, out var uri))
-                return uri.Host;
-
-            // Bare host (possibly with a path the user pasted accidentally).
-            return raw.TrimStart('/').Split('/')[0].Trim();
         }
 
         private void AddAdoServerUrlBox_TextChanged(object sender, TextChangedEventArgs e)

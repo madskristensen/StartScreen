@@ -125,11 +125,15 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 bool isCloud = host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase);
 
-                // Cloud: SPS profile endpoint. On-prem: connectionData on the server itself,
-                // which works against any collection URL we can probe.
+                // Cloud: SPS profile endpoint. On-prem: connectionData on the server itself.
+                // `host` may include a path (e.g. "tfs.contoso.com/tfs/DefaultCollection") which
+                // older Azure DevOps Server installations require for REST routing.
+                // api-version=3.0 is GA on every shipping Azure DevOps Server / TFS release
+                // (TFS 2015+) and on Azure DevOps Services, so it avoids the
+                // VssInvalidPreviewVersionException that newer numbers trigger on older servers.
                 string profileUrl = isCloud
                     ? "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"
-                    : $"https://{host}/_apis/connectionData?api-version=6.0";
+                    : $"https://{host.TrimEnd('/')}/_apis/connectionData?api-version=3.0";
 
                 var response = await SendGetAsync(credential, profileUrl, cancellationToken);
 
@@ -240,8 +244,13 @@ namespace StartScreen.Services.DevHub.Providers
 
                 var projectUrl = $"{GetBaseUrl(repo)}/{repo.Project}";
 
+                // api-version=5.0 is GA on Azure DevOps Server 2018+ (where modern Git PRs and
+                // YAML builds actually exist) and is still accepted by Azure DevOps Services.
+                // Newer numbers like 7.1 are preview on older on-prem releases and fail outright.
+                var apiVersion = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
+
                 // Fetch PRs
-                var prUrl = $"{projectUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top=10&api-version=7.1";
+                var prUrl = $"{projectUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top=10&api-version={apiVersion}";
                 var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
                 if (prResponse.IsSuccessStatusCode)
                 {
@@ -250,7 +259,7 @@ namespace StartScreen.Services.DevHub.Providers
                 }
 
                 // Fetch recent builds
-                var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top=5&api-version=7.1";
+                var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top=5&api-version={apiVersion}";
                 var buildResponse = await SendGetAsync(credential, buildUrl, cancellationToken);
                 if (buildResponse.IsSuccessStatusCode)
                 {
