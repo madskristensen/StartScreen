@@ -90,5 +90,14 @@ namespace StartScreen
         [Browsable(false)]
         [DefaultValue(false)]
         public bool KeepVisibleOnSolutionLoad { get; set; }
+
+        /// <summary>
+        /// JSON-serialized array of extended MRU entries (path, name, type, lastAccessed).
+        /// Unlike VS's own MRU store this list has no upper bound and persists every
+        /// solution or folder ever opened while the extension is active.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue("")]
+        public string ExtendedMruItems { get; set; } = "";
     }
 }

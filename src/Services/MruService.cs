@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
@@ -478,22 +479,197 @@ namespace StartScreen.Services
         /// </summary>
         private static string GetDeduplicationKey(MruItem item)
         {
-            if (item.Type == MruItemType.Folder)
+            return GetDeduplicationKeyFromPath(item.Path, item.Type);
+        }
+
+        /// <summary>
+        /// Computes the deduplication key from a path and type without requiring an MruItem.
+        /// </summary>
+        internal static string GetDeduplicationKeyFromPath(string path, MruItemType type)
+        {
+            if (type == MruItemType.Folder)
             {
-                return NormalizePath(item.Path);
+                return NormalizePath(path);
             }
 
             try
             {
-                var dir = Path.GetDirectoryName(item.Path);
+                var dir = Path.GetDirectoryName(path);
 
                 return string.IsNullOrEmpty(dir)
-                    ? NormalizePath(item.Path)
+                    ? NormalizePath(path)
                     : NormalizePath(dir);
             }
             catch
             {
-                return NormalizePath(item.Path);
+                return NormalizePath(path);
+            }
+        }
+
+        // ------------------------------------------------------------------ //
+        //  Extended (unlimited) MRU list                                      //
+        // ------------------------------------------------------------------ //
+
+        /// <summary>
+        /// Lightweight DTO used for JSON serialization of the extended MRU list.
+        /// </summary>
+        private sealed class ExtendedMruEntry
+        {
+            public string Path { get; set; }
+            public string Name { get; set; }
+            public int Type { get; set; }
+            public DateTime LastAccessed { get; set; }
+        }
+
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = false
+        };
+
+        /// <summary>
+        /// Deserializes the extended MRU list from the Options JSON string.
+        /// Returns an empty list on parse failure.
+        /// </summary>
+        private static List<ExtendedMruEntry> LoadExtendedEntries(Options options)
+        {
+            var json = options?.ExtendedMruItems;
+            if (string.IsNullOrWhiteSpace(json))
+                return [];
+
+            try
+            {
+                return JsonSerializer.Deserialize<List<ExtendedMruEntry>>(json, _jsonOptions) ?? [];
+            }
+            catch (Exception ex)
+            {
+                ex.Log();
+                return [];
+            }
+        }
+
+        /// <summary>
+        /// Returns items that exist in the extended list but are not already represented in
+        /// <paramref name="vsItems"/>. Also merges <paramref name="vsItems"/> into the
+        /// extended list and saves it so the history grows automatically.
+        /// Must be called from a background thread.
+        /// </summary>
+        internal static async Task<List<MruItem>> GetExtendedOnlyItemsAsync(
+            IEnumerable<MruItem> vsItems, Options options)
+        {
+            var vsItemList = vsItems.ToList();
+
+            // Build a set of dedup keys already covered by the VS MRU store.
+            var vsKeys = new HashSet<string>(
+                vsItemList.Select(i => GetDeduplicationKeyFromPath(i.Path, i.Type)),
+                StringComparer.OrdinalIgnoreCase);
+
+            // Reload from options to get the latest persisted state.
+            if (options == null)
+                options = await Options.GetLiveInstanceAsync();
+
+            var entries = LoadExtendedEntries(options);
+
+            // Index by dedup key; last-writer-wins on collision (shouldn't normally happen).
+            var byKey = new Dictionary<string, ExtendedMruEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in entries)
+            {
+                if (string.IsNullOrWhiteSpace(entry.Path))
+                    continue;
+
+                var key = GetDeduplicationKeyFromPath(entry.Path, (MruItemType)entry.Type);
+                byKey[key] = entry;
+            }
+
+            // Merge in VS items: add new entries or update LastAccessed when VS has a newer time.
+            var changed = false;
+            foreach (var vsItem in vsItemList)
+            {
+                var key = GetDeduplicationKeyFromPath(vsItem.Path, vsItem.Type);
+                if (!byKey.TryGetValue(key, out var existing) ||
+                    vsItem.LastAccessed > existing.LastAccessed)
+                {
+                    byKey[key] = new ExtendedMruEntry
+                    {
+                        Path = vsItem.Path,
+                        Name = vsItem.Name,
+                        Type = (int)vsItem.Type,
+                        LastAccessed = vsItem.LastAccessed
+                    };
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                options.ExtendedMruItems = JsonSerializer.Serialize(byKey.Values.ToList(), _jsonOptions);
+                await options.SaveAsync();
+            }
+
+            // Build the pinned set so extended items can inherit their pinned state.
+            var pinnedPaths = new HashSet<string>(
+                (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries),
+                StringComparer.OrdinalIgnoreCase);
+
+            // Return entries that are NOT already covered by the VS MRU list.
+            var result = new List<MruItem>();
+            foreach (var kvp in byKey)
+            {
+                if (vsKeys.Contains(kvp.Key))
+                    continue;
+
+                var entry = kvp.Value;
+                if (string.IsNullOrWhiteSpace(entry.Path))
+                    continue;
+
+                var item = new MruItem
+                {
+                    Path = entry.Path,
+                    Name = entry.Name,
+                    Type = (MruItemType)entry.Type,
+                    LastAccessed = entry.LastAccessed,
+                    IsPinned = pinnedPaths.Contains(entry.Path),
+                    IsFromExtendedList = true
+                };
+
+                result.Add(item);
+            }
+
+            return [.. result.OrderByDescending(i => i.LastAccessed)];
+        }
+
+        /// <summary>
+        /// Removes an item from the persisted extended MRU list.
+        /// Safe to call for items that are not in the extended list (no-op).
+        /// </summary>
+        internal static async Task RemoveFromExtendedAsync(MruItem item, Options options = null)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.Path))
+                return;
+
+            try
+            {
+                if (options == null)
+                    options = await Options.GetLiveInstanceAsync();
+
+                var entries = LoadExtendedEntries(options);
+                if (entries.Count == 0)
+                    return;
+
+                var key = GetDeduplicationKeyFromPath(item.Path, item.Type);
+                var before = entries.Count;
+                entries.RemoveAll(e =>
+                    GetDeduplicationKeyFromPath(e.Path, (MruItemType)e.Type)
+                        .Equals(key, StringComparison.OrdinalIgnoreCase));
+
+                if (entries.Count != before)
+                {
+                    options.ExtendedMruItems = JsonSerializer.Serialize(entries, _jsonOptions);
+                    await options.SaveAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
             }
         }
     }

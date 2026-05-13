@@ -420,14 +420,16 @@ namespace StartScreen.ToolWindows
             //    for pinned-item state.
             Options options = await Options.GetLiveInstanceAsync();
             List<MruItem> mruItems = await MruService.GetMruItemsAsync(options);
+            List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(mruItems, options);
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            _allMruItems = new ObservableCollection<MruItem>(mruItems);
+            _allMruItems = new ObservableCollection<MruItem>(mruItems.Concat(extendedItems));
             UpdateMruCollections();
 
             // Populate git status and file existence in background after UI is updated
-            MruService.PopulateGitStatusAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
-            MruService.PopulateExistenceAsync(mruItems).FileAndForget(nameof(StartScreenViewModel));
+            var allItems = mruItems.Concat(extendedItems).ToList();
+            MruService.PopulateGitStatusAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
+            MruService.PopulateExistenceAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
 
             // 2) Everything else runs after MRU is visible. Stay off the UI thread.
             await TaskScheduler.Default;
@@ -498,21 +500,24 @@ namespace StartScreen.ToolWindows
         {
             try
             {
-                List<MruItem> updatedMru = await MruService.GetMruItemsAsync();
+                Options options = await Options.GetLiveInstanceAsync();
+                List<MruItem> updatedMru = await MruService.GetMruItemsAsync(options);
+                List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(updatedMru, options);
 
                 // Update on UI thread
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                _allMruItems = new ObservableCollection<MruItem>(updatedMru);
+                _allMruItems = new ObservableCollection<MruItem>(updatedMru.Concat(extendedItems));
                 UpdateMruCollections();
 
                 // Populate git status and file existence in background after UI is updated
-                MruService.PopulateGitStatusAsync(updatedMru).FileAndForget(nameof(StartScreenViewModel));
-                MruService.PopulateExistenceAsync(updatedMru).FileAndForget(nameof(StartScreenViewModel));
+                var allItems = updatedMru.Concat(extendedItems).ToList();
+                MruService.PopulateGitStatusAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
+                MruService.PopulateExistenceAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
             }
         }
 
@@ -914,7 +919,8 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
-        /// Removes an MRU item from VS's MRU store and the in-memory list.
+        /// Removes an MRU item from VS's MRU store, the extended history list, and the
+        /// in-memory collection.
         /// </summary>
         public async Task RemoveMruItemAsync(MruItem item)
         {
@@ -922,7 +928,10 @@ namespace StartScreen.ToolWindows
                 return;
 
             _allMruItems.Remove(item);
+
+            Options options = await Options.GetLiveInstanceAsync();
             await MruService.RemoveItemAsync(item);
+            await MruService.RemoveFromExtendedAsync(item, options);
 
             UpdateMruCollections();
         }
@@ -946,6 +955,8 @@ namespace StartScreen.ToolWindows
 
         /// <summary>
         /// Filters the MRU list by search query.
+        /// VS MRU matches appear in their normal time groups; extended-only matches
+        /// appear below in the "Earlier" group.
         /// </summary>
         public void FilterMru(string query)
         {
@@ -967,28 +978,59 @@ namespace StartScreen.ToolWindows
             MruItems = new ObservableCollection<MruItem>();
             OnPropertyChanged(nameof(MruItems));
 
-            GroupedMruItems = BuildTimeGroups(filtered.Where(i => !i.IsPinned));
+            var unpinnedVs = filtered.Where(i => !i.IsPinned && !i.IsFromExtendedList);
+            var unpinnedExtended = filtered
+                .Where(i => !i.IsPinned && i.IsFromExtendedList)
+                .OrderByDescending(i => i.LastAccessed)
+                .ToList();
+
+            var groups = BuildTimeGroups(unpinnedVs);
+            if (unpinnedExtended.Count > 0)
+            {
+                var earlierGroup = new MruTimeGroup { GroupName = "Earlier" };
+                foreach (var item in unpinnedExtended)
+                    earlierGroup.Items.Add(item);
+                groups.Add(earlierGroup);
+            }
+
+            GroupedMruItems = groups;
             OnPropertyChanged(nameof(GroupedMruItems));
         }
 
         /// <summary>
         /// Updates the pinned and regular MRU collections with time grouping.
+        /// VS MRU items appear in their normal time groups; extended-only items appear
+        /// below them in a dedicated "Earlier" group.
         /// </summary>
         private void UpdateMruCollections()
         {
             var pinned = _allMruItems.Where(i => i.IsPinned).ToList();
-            var unpinned = _allMruItems.Where(i => !i.IsPinned)
-                                       .OrderByDescending(i => i.LastAccessed)
-                                       .ToList();
+            var unpinnedVs = _allMruItems
+                .Where(i => !i.IsPinned && !i.IsFromExtendedList)
+                .OrderByDescending(i => i.LastAccessed)
+                .ToList();
+            var unpinnedExtended = _allMruItems
+                .Where(i => !i.IsPinned && i.IsFromExtendedList)
+                .OrderByDescending(i => i.LastAccessed)
+                .ToList();
 
             // Bulk-replace to fire a single CollectionChanged.Reset per collection
             PinnedItems = new ObservableCollection<MruItem>(pinned);
             OnPropertyChanged(nameof(PinnedItems));
 
-            MruItems = new ObservableCollection<MruItem>(unpinned);
+            MruItems = new ObservableCollection<MruItem>(unpinnedVs);
             OnPropertyChanged(nameof(MruItems));
 
-            GroupedMruItems = BuildTimeGroups(unpinned);
+            var groups = BuildTimeGroups(unpinnedVs);
+            if (unpinnedExtended.Count > 0)
+            {
+                var earlierGroup = new MruTimeGroup { GroupName = "Earlier" };
+                foreach (var item in unpinnedExtended)
+                    earlierGroup.Items.Add(item);
+                groups.Add(earlierGroup);
+            }
+
+            GroupedMruItems = groups;
             OnPropertyChanged(nameof(GroupedMruItems));
         }
 

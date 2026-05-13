@@ -34,6 +34,7 @@ namespace StartScreen.Models
         private bool? _exists;
         private string _remoteUrl;
         private bool _isSelected;
+        private bool _isFromExtendedList;
 
         /// <summary>
         /// The raw MRU entry strings from IVsMRUItemsStore, used for deletion.
@@ -466,6 +467,23 @@ namespace StartScreen.Models
             StashCount = status.StashCount;
             CurrentOperation = status.CurrentOperation;
             RemoteUrl = status.RemoteUrl;
+        }
+
+        /// <summary>
+        /// True when this item comes from the extended (unlimited) history list rather than
+        /// VS's own registry-based MRU store. Extended items are shown in the "Earlier" group.
+        /// </summary>
+        public bool IsFromExtendedList
+        {
+            get => _isFromExtendedList;
+            set
+            {
+                if (_isFromExtendedList != value)
+                {
+                    _isFromExtendedList = value;
+                    OnPropertyChanged();
+                }
+            }
         }
 
         /// <summary>

@@ -560,5 +560,44 @@ namespace StartScreen.Test
             Assert.DoesNotContain("Stash", item.ToolTipText);
             Assert.DoesNotContain("Operation", item.ToolTipText);
         }
+            [TestMethod]
+            public void IsFromExtendedList_DefaultIsFalse()
+            {
+                var item = new MruItem();
+
+                Assert.IsFalse(item.IsFromExtendedList);
+            }
+
+            [TestMethod]
+            public void IsFromExtendedList_WhenSet_ReturnsTrue()
+            {
+                var item = new MruItem { IsFromExtendedList = true };
+
+                Assert.IsTrue(item.IsFromExtendedList);
+            }
+
+            [TestMethod]
+            public void PropertyChanged_WhenIsFromExtendedListChanges_RaisesEvent()
+            {
+                var item = new MruItem();
+                string changedProperty = null;
+                item.PropertyChanged += (s, e) => changedProperty = e.PropertyName;
+
+                item.IsFromExtendedList = true;
+
+                Assert.AreEqual(nameof(MruItem.IsFromExtendedList), changedProperty);
+            }
+
+            [TestMethod]
+            public void PropertyChanged_WhenIsFromExtendedListSameValue_DoesNotRaise()
+            {
+                var item = new MruItem { IsFromExtendedList = true };
+                var raised = false;
+                item.PropertyChanged += (s, e) => raised = true;
+
+                item.IsFromExtendedList = true;
+
+                Assert.IsFalse(raised);
+            }
+        }
     }
-}
