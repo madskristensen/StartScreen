@@ -1,5 +1,3 @@
-using StartScreen.Models;
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -8,7 +6,9 @@ using System.Net.Http;
 using System.ServiceModel.Syndication;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Windows.Media.Imaging;
 using System.Xml;
+using StartScreen.Models;
 
 namespace StartScreen.Services
 {
@@ -26,6 +26,7 @@ namespace StartScreen.Services
             "StartScreen", "FeedCache");
 
         private static readonly string CacheFile = Path.Combine(CacheFolder, "_youtube.json");
+        private static readonly string ThumbsFolder = Path.Combine(CacheFolder, "thumbs");
 
         private static readonly HttpClient HttpClient = new HttpClient();
         private static readonly TimeSpan StaleThreshold = TimeSpan.FromHours(4);
@@ -143,6 +144,71 @@ namespace StartScreen.Services
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Downloads thumbnails for each video (if not already cached on disk) and sets
+        /// <see cref="YouTubeVideo.Thumbnail"/> so the UI can bind to it directly.
+        /// Safe to call on a background thread.
+        /// </summary>
+        public static async Task LoadThumbnailsAsync(List<YouTubeVideo> videos)
+        {
+            if (videos == null || videos.Count == 0)
+                return;
+
+            PackageUtilities.EnsureOutputPath(ThumbsFolder);
+
+            await Task.WhenAll(videos
+                .Where(v => !string.IsNullOrEmpty(v.ThumbnailUrl))
+                .Select(v => LoadThumbnailForVideoAsync(v)));
+        }
+
+        private static async Task LoadThumbnailForVideoAsync(YouTubeVideo video)
+        {
+            try
+            {
+                var videoId = YouTubeVideo.ExtractVideoIdFromUrl(video.Url);
+                if (string.IsNullOrEmpty(videoId))
+                    return;
+
+                var localPath = Path.Combine(ThumbsFolder, videoId + ".jpg");
+
+                byte[] imageBytes;
+                if (File.Exists(localPath))
+                {
+                    using (var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
+                    {
+                        imageBytes = new byte[fs.Length];
+                        await fs.ReadAsync(imageBytes, 0, imageBytes.Length);
+                    }
+                }
+                else
+                {
+                    imageBytes = await HttpClient.GetByteArrayAsync(video.ThumbnailUrl);
+                    var tmp = localPath + ".tmp";
+                    using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
+                    {
+                        await fs.WriteAsync(imageBytes, 0, imageBytes.Length);
+                    }
+                    File.Move(tmp, localPath);
+                }
+
+                var bitmap = new BitmapImage();
+                using (var ms = new System.IO.MemoryStream(imageBytes))
+                {
+                    bitmap.BeginInit();
+                    bitmap.StreamSource = ms;
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.EndInit();
+                }
+                bitmap.Freeze();
+
+                video.Thumbnail = bitmap;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
         }
 
         /// <summary>

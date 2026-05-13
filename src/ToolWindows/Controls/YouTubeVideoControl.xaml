@@ -41,7 +41,7 @@
     <StackPanel>
       <!-- Thumbnail (16:9 aspect ratio) -->
       <Border CornerRadius="4" ClipToBounds="True">
-        <Image Source="{Binding ThumbnailUrl, IsAsync=True}"
+        <Image Source="{Binding Thumbnail}"
                Stretch="Uniform"
                RenderOptions.BitmapScalingMode="HighQuality"/>
       </Border>

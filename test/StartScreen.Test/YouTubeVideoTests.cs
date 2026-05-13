@@ -102,39 +102,49 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void BuildThumbnailUrl_WhenValidYouTubeUrl_ReturnsMqDefault()
+        public void ExtractVideoIdFromUrl_WhenValidWatchUrl_ReturnsVideoId()
         {
             var url = "https://www.youtube.com/watch?v=NrMKyJVeUVA";
 
-            var result = YouTubeVideo.BuildThumbnailUrl(url);
+            var result = YouTubeVideo.ExtractVideoIdFromUrl(url);
 
-            Assert.AreEqual("https://i.ytimg.com/vi/NrMKyJVeUVA/mqdefault.jpg", result);
+            Assert.AreEqual("NrMKyJVeUVA", result);
         }
 
         [TestMethod]
-        public void BuildThumbnailUrl_WhenEmpty_ReturnsEmpty()
+        public void ExtractVideoIdFromUrl_WhenShortsUrl_ReturnsVideoId()
         {
-            var result = YouTubeVideo.BuildThumbnailUrl(string.Empty);
+            var url = "https://www.youtube.com/shorts/NrMKyJVeUVA";
 
-            Assert.AreEqual(string.Empty, result);
+            var result = YouTubeVideo.ExtractVideoIdFromUrl(url);
+
+            Assert.AreEqual("NrMKyJVeUVA", result);
         }
 
         [TestMethod]
-        public void BuildThumbnailUrl_WhenNull_ReturnsEmpty()
+        public void ExtractVideoIdFromUrl_WhenEmpty_ReturnsNull()
         {
-            var result = YouTubeVideo.BuildThumbnailUrl(null);
+            var result = YouTubeVideo.ExtractVideoIdFromUrl(string.Empty);
 
-            Assert.AreEqual(string.Empty, result);
+            Assert.IsNull(result);
         }
 
         [TestMethod]
-        public void BuildThumbnailUrl_WhenNoVideoId_ReturnsEmpty()
+        public void ExtractVideoIdFromUrl_WhenNull_ReturnsNull()
+        {
+            var result = YouTubeVideo.ExtractVideoIdFromUrl(null);
+
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public void ExtractVideoIdFromUrl_WhenNoVideoId_ReturnsNull()
         {
             var url = "https://www.youtube.com/channel/UChqrDOwARrxdJF-ykAptc7w";
 
-            var result = YouTubeVideo.BuildThumbnailUrl(url);
+            var result = YouTubeVideo.ExtractVideoIdFromUrl(url);
 
-            Assert.AreEqual(string.Empty, result);
+            Assert.IsNull(result);
         }
 
         [TestMethod]

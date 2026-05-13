@@ -594,6 +594,7 @@ namespace StartScreen.ToolWindows
 
                 if (hasCached)
                 {
+                    await YouTubeService.LoadThumbnailsAsync(videos);
                     await UpdateYouTubeOnUIThreadAsync(videos);
                     LastYouTubeRefreshText = "Updated from cache";
                 }
@@ -635,6 +636,7 @@ namespace StartScreen.ToolWindows
 
                     if (videos != null)
                     {
+                        await YouTubeService.LoadThumbnailsAsync(videos);
                         await UpdateYouTubeOnUIThreadAsync(videos);
                         IsYouTubeUnavailable = false;
                         LastYouTubeRefreshText = "Updated just now";

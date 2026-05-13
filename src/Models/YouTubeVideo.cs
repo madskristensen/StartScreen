@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.ServiceModel.Syndication;
+using System.Windows.Media.Imaging;
 
 namespace StartScreen.Models
 {
@@ -14,8 +15,8 @@ namespace StartScreen.Models
     {
         private string _title;
         private string _url;
-        private string _thumbnailUrl;
         private DateTime _publishDate;
+        private BitmapSource _thumbnail;
 
         public string Title
         {
@@ -43,14 +44,16 @@ namespace StartScreen.Models
             }
         }
 
-        public string ThumbnailUrl
+        internal string ThumbnailUrl { get; set; }
+
+        public BitmapSource Thumbnail
         {
-            get => _thumbnailUrl;
+            get => _thumbnail;
             set
             {
-                if (_thumbnailUrl != value)
+                if (_thumbnail != value)
                 {
-                    _thumbnailUrl = value;
+                    _thumbnail = value;
                     OnPropertyChanged();
                 }
             }
@@ -86,42 +89,61 @@ namespace StartScreen.Models
             video.Title = WebUtility.HtmlDecode(item.Title?.Text ?? string.Empty).Trim();
             video.Url = item.Links?.FirstOrDefault()?.Uri?.OriginalString ?? string.Empty;
             video.PublishDate = item.PublishDate.DateTime;
-            video.ThumbnailUrl = BuildThumbnailUrl(video.Url);
+
+            // item.Id in YouTube feeds is "yt:video:{videoId}" - most reliable source
+            var videoId = ExtractVideoId(item.Id) ?? ExtractVideoIdFromUrl(video.Url);
+            video.ThumbnailUrl = string.IsNullOrEmpty(videoId)
+                ? string.Empty
+                : $"https://i.ytimg.com/vi/{videoId}/mqdefault.jpg";
 
             return video;
         }
 
         /// <summary>
-        /// Builds a YouTube thumbnail URL from the video watch URL.
+        /// Extracts the video ID from a YouTube Atom feed item ID ("yt:video:{videoId}").
         /// </summary>
-        internal static string BuildThumbnailUrl(string videoUrl)
+        private static string ExtractVideoId(string itemId)
+        {
+            const string prefix = "yt:video:";
+            if (!string.IsNullOrEmpty(itemId) && itemId.StartsWith(prefix))
+                return itemId.Substring(prefix.Length);
+            return null;
+        }
+
+        /// <summary>
+        /// Extracts the video ID from a YouTube watch or Shorts URL as a fallback.
+        /// Handles https://www.youtube.com/watch?v={id} and https://www.youtube.com/shorts/{id}.
+        /// </summary>
+        internal static string ExtractVideoIdFromUrl(string videoUrl)
         {
             if (string.IsNullOrEmpty(videoUrl))
-                return string.Empty;
+                return null;
 
             try
             {
                 var uri = new Uri(videoUrl);
-                var query = uri.Query;
 
-                if (query.StartsWith("?"))
-                    query = query.Substring(1);
+                // Shorts: /shorts/{videoId}
+                var segments = uri.AbsolutePath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+                var shortsIndex = Array.IndexOf(segments, "shorts");
+                if (shortsIndex >= 0 && shortsIndex + 1 < segments.Length)
+                    return segments[shortsIndex + 1];
 
+                // Standard watch URL: ?v={videoId}
+                var query = uri.Query.TrimStart('?');
                 foreach (var param in query.Split('&'))
                 {
                     var parts = param.Split(new[] { '=' }, 2);
                     if (parts.Length == 2 && parts[0] == "v")
-                    {
-                        return $"https://i.ytimg.com/vi/{parts[1]}/mqdefault.jpg";
-                    }
+                        return parts[1];
                 }
             }
             catch
             {
-                // Malformed URL; fall through to return empty
+                // Malformed URL
             }
 
-            return string.Empty;
+            return null;
         }
 
         /// <summary>
@@ -146,11 +168,14 @@ namespace StartScreen.Models
             if (entry == null)
                 return null;
 
+            var url = entry.Url ?? string.Empty;
+            var videoId = ExtractVideoIdFromUrl(entry.ThumbnailUrl) ?? ExtractVideoIdFromUrl(url);
+
             return new YouTubeVideo
             {
                 Title = entry.Title ?? string.Empty,
-                Url = entry.Url ?? string.Empty,
-                ThumbnailUrl = entry.ThumbnailUrl ?? string.Empty,
+                Url = url,
+                ThumbnailUrl = string.IsNullOrEmpty(videoId) ? string.Empty : $"https://i.ytimg.com/vi/{videoId}/mqdefault.jpg",
                 PublishDate = entry.PublishDate,
             };
         }
