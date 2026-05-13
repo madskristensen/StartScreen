@@ -364,9 +364,9 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
-        /// Initializes the current tip and suggested extension. Must be called from a
-        /// background thread because the underlying providers do synchronous resource
-        /// and registry I/O on first use.
+        /// Initializes the current tip and suggested extension in parallel.
+        /// Must be called from a background thread because the underlying providers do
+        /// synchronous resource and registry I/O on first use.
         /// </summary>
         private void InitializeTipAndExtension()
         {
@@ -404,10 +404,11 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
-        /// Loads MRU data from VS's MRU store and news from cache for initial display.
-        /// MRU is loaded first so it appears in the UI as quickly as possible; everything
-        /// else (tip/extension init, FeedStore watcher, refresh timer, news cache,
-        /// YouTube cache) is deferred until MRU is on screen.
+        /// Loads MRU data from VS's MRU store for initial display.
+        /// MRU is loaded first so it appears in the UI as quickly as possible.
+        /// News, YouTube, tips, and the extension suggestion are handled by
+        /// RefreshInBackgroundAsync (called immediately after _loadTask completes),
+        /// so there is no need to read those caches here.
         /// </summary>
         public async Task LoadMruAsync()
         {
@@ -421,13 +422,13 @@ namespace StartScreen.ToolWindows
             Options options = await Options.GetLiveInstanceAsync();
             List<MruItem> mruItems = await MruService.GetMruItemsAsync(options);
             List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(mruItems, options);
+            var allItems = mruItems.Concat(extendedItems).ToList();
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            _allMruItems = new ObservableCollection<MruItem>(mruItems.Concat(extendedItems));
+            _allMruItems = new ObservableCollection<MruItem>(allItems);
             UpdateMruCollections();
 
             // Populate git status and file existence in background after UI is updated
-            var allItems = mruItems.Concat(extendedItems).ToList();
             MruService.PopulateGitStatusAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
             MruService.PopulateExistenceAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
 
@@ -441,32 +442,6 @@ namespace StartScreen.ToolWindows
             // Defer until after MRU paints to avoid blocking the first frame.
             FeedStore.StartWatching();
             _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, AutoRefreshInterval, AutoRefreshInterval);
-
-            // Start feed and YouTube cache reads (pure file I/O, no main thread needed)
-            System.Threading.Tasks.Task<List<NewsPost>> feedTask = FeedService.GetCachedPostsAsync();
-            System.Threading.Tasks.Task<List<YouTubeVideo>> youtubeTask = YouTubeService.GetCachedVideosAsync();
-
-            List<NewsPost> cachedPosts = await feedTask;
-
-            if (cachedPosts != null && cachedPosts.Count > 0)
-            {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-                _allNewsPosts.Clear();
-                _allNewsPosts.AddRange(cachedPosts);
-                ApplyPinnedStateToNews(options);
-                UpdateNewsCollections();
-            }
-
-            List<YouTubeVideo> cachedVideos = await youtubeTask;
-
-            if (cachedVideos != null && cachedVideos.Count > 0)
-            {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                _allYouTubeVideos.Clear();
-                _allYouTubeVideos.AddRange(cachedVideos);
-                UpdateYouTubeCollections();
-            }
         }
 
         /// <summary>
@@ -503,15 +478,15 @@ namespace StartScreen.ToolWindows
                 Options options = await Options.GetLiveInstanceAsync();
                 List<MruItem> updatedMru = await MruService.GetMruItemsAsync(options);
                 List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(updatedMru, options);
+                var allItems = updatedMru.Concat(extendedItems).ToList();
 
                 // Update on UI thread
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                _allMruItems = new ObservableCollection<MruItem>(updatedMru.Concat(extendedItems));
+                _allMruItems = new ObservableCollection<MruItem>(allItems);
                 UpdateMruCollections();
 
                 // Populate git status and file existence in background after UI is updated
-                var allItems = updatedMru.Concat(extendedItems).ToList();
                 MruService.PopulateGitStatusAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
                 MruService.PopulateExistenceAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
             }
