@@ -1,10 +1,3 @@
-using Microsoft.VisualStudio.Imaging;
-using Microsoft.VisualStudio.PlatformUI;
-using Microsoft.VisualStudio.Shell;
-using StartScreen.Helpers;
-using StartScreen.Models;
-using StartScreen.Services;
-using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -13,6 +6,11 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.PlatformUI;
+using StartScreen.Helpers;
+using StartScreen.Models;
+using StartScreen.Services;
 
 namespace StartScreen.ToolWindows.Controls
 {
@@ -297,7 +295,7 @@ namespace StartScreen.ToolWindows.Controls
             catch (Exception ex)
             {
                 await ex.LogAsync();
-                await VS.MessageBox.ShowErrorAsync("Start Screen", 
+                await VS.MessageBox.ShowErrorAsync("Start Screen",
                     $"Failed to open: {ex.Message}");
             }
         }
@@ -335,8 +333,8 @@ namespace StartScreen.ToolWindows.Controls
 
             try
             {
-                var folder = MruItem.Type == MruItemType.Folder 
-                    ? MruItem.Path 
+                var folder = MruItem.Type == MruItemType.Folder
+                    ? MruItem.Path
                     : Path.GetDirectoryName(MruItem.Path);
 
                 if (Directory.Exists(folder))

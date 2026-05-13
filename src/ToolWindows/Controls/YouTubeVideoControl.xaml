@@ -39,10 +39,10 @@
       </ContextMenu>
     </Border.ContextMenu>
     <StackPanel>
-      <!-- Thumbnail (16:9 aspect ratio) -->
-      <Border CornerRadius="4" ClipToBounds="True">
+      <!-- Thumbnail (16:9 aspect ratio, fixed 280×158 to prevent layout shift) -->
+      <Border CornerRadius="4" ClipToBounds="True" Height="158">
         <Image Source="{Binding Thumbnail}"
-               Stretch="Uniform"
+               Stretch="UniformToFill"
                RenderOptions.BitmapScalingMode="HighQuality"/>
       </Border>
 

@@ -542,6 +542,7 @@ namespace StartScreen.ToolWindows
 
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
+                var minDisplay = Task.Delay(1000);
                 try
                 {
                     List<FeedInfo> feeds = FeedStore.GetFeeds();
@@ -567,6 +568,7 @@ namespace StartScreen.ToolWindows
                 }
                 finally
                 {
+                    await minDisplay;
                     IsRefreshingNews = false;
                 }
             }).FileAndForget(nameof(StartScreenViewModel));
@@ -630,6 +632,7 @@ namespace StartScreen.ToolWindows
 
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
+                var minDisplay = Task.Delay(1000);
                 try
                 {
                     var videos = await YouTubeService.DownloadVideosAsync();
@@ -655,6 +658,7 @@ namespace StartScreen.ToolWindows
                 }
                 finally
                 {
+                    await minDisplay;
                     IsRefreshingYouTube = false;
                 }
             }).FileAndForget(nameof(StartScreenViewModel));
@@ -718,13 +722,24 @@ namespace StartScreen.ToolWindows
 
         /// <summary>
         /// Rebuilds the visible YouTube collection from the master list.
-        /// Limits visible items to 5 per column.
+        /// Updates items in-place to avoid a brief empty-collection state that causes layout shifts.
         /// </summary>
         private void UpdateYouTubeCollections()
         {
-            YouTubeVideos = new ObservableCollection<YouTubeVideo>(
-                _allYouTubeVideos.Take(YouTubeColumnCount * 5));
-            OnPropertyChanged(nameof(YouTubeVideos));
+            var newVideos = _allYouTubeVideos.Take(YouTubeColumnCount * 5).ToList();
+
+            // Remove trailing items if the new list is shorter
+            for (var i = YouTubeVideos.Count - 1; i >= newVideos.Count; i--)
+                YouTubeVideos.RemoveAt(i);
+
+            // Update existing slots and append new ones
+            for (var i = 0; i < newVideos.Count; i++)
+            {
+                if (i < YouTubeVideos.Count)
+                    YouTubeVideos[i] = newVideos[i];
+                else
+                    YouTubeVideos.Add(newVideos[i]);
+            }
         }
 
         /// <summary>

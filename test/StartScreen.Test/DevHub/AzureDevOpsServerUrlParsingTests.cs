@@ -1,5 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
 using StartScreen.Services.DevHub.Providers;
 
@@ -130,7 +128,7 @@ namespace StartScreen.Test.DevHub
 
             var discovered = AzureDevOpsServerHelper.DiscoverServers(remotes);
 
-            Assert.AreEqual(2, discovered.Count);
+            Assert.HasCount(2, discovered);
             CollectionAssert.AreEquivalent(
                 new[] { "tfs.contoso.com", "devops.example.com" },
                 discovered.Select(d => d.Host).ToArray());
@@ -147,7 +145,7 @@ namespace StartScreen.Test.DevHub
 
             var discovered = AzureDevOpsServerHelper.DiscoverServers(remotes, excludeHosts: new[] { "tfs.contoso.com" });
 
-            Assert.AreEqual(1, discovered.Count);
+            Assert.HasCount(1, discovered);
             Assert.AreEqual("devops.example.com", discovered[0].Host);
         }
     }

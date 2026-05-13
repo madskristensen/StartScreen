@@ -26,6 +26,8 @@
         <!-- Converters -->
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
+        <local:BoolToHiddenVisibilityConverter x:Key="BoolToHiddenVisibilityConverter"/>
+        <local:RefreshingToOpacityConverter x:Key="RefreshingToOpacityConverter"/>
         <local:CountToVisibilityConverter x:Key="CountToVisibilityConverter"/>
 
         <!-- Action Button Style -->
@@ -536,9 +538,9 @@
                                     IsIndeterminate="True"
                                     Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
                                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                                    BorderThickness="0"
-                                    Visibility="{Binding IsRefreshingNews, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                    </Grid>
+                                                     BorderThickness="0"
+                                                     Visibility="{Binding IsRefreshingNews, Converter={StaticResource BoolToHiddenVisibilityConverter}}"/>
+                                    </Grid>
 
                     <TextBlock Text="News feeds are currently unavailable. Click refresh to try again."
                                TextWrapping="Wrap"
@@ -554,7 +556,8 @@
                               Margin="0 0 0 4"
                               Focusable="False"
                               Visibility="{Binding PinnedNewsPosts.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
-                    <ItemsControl ItemsSource="{Binding PinnedNewsPosts}" Focusable="False">
+                    <ItemsControl ItemsSource="{Binding PinnedNewsPosts}" Focusable="False"
+                                  Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel Orientation="Horizontal"/>
@@ -571,7 +574,8 @@
                     </ItemsControl>
 
                     <!-- News Cards -->
-                    <ItemsControl ItemsSource="{Binding NewsPosts}" Focusable="False">
+                    <ItemsControl ItemsSource="{Binding NewsPosts}" Focusable="False"
+                                  Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <UniformGrid Columns="{Binding NewsColumnCount}"/>
@@ -621,15 +625,16 @@
                                             IsIndeterminate="True"
                                             Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
                                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                                            BorderThickness="0"
-                                            Visibility="{Binding IsRefreshingYouTube, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                            </Grid>
+                                                             BorderThickness="0"
+                                                             Visibility="{Binding IsRefreshingYouTube, Converter={StaticResource BoolToHiddenVisibilityConverter}}"/>
+                                            </Grid>
                             <TextBlock Text="YouTube feed is currently unavailable. Click refresh to try again."
                                        TextWrapping="Wrap"
                                        Opacity="0.6"
                                        Margin="0 8 0 0"
                                        Visibility="{Binding IsYouTubeUnavailable, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                            <ItemsControl ItemsSource="{Binding YouTubeVideos}" Focusable="False">
+                            <ItemsControl ItemsSource="{Binding YouTubeVideos}" Focusable="False"
+                                          Opacity="{Binding IsRefreshingYouTube, Converter={StaticResource RefreshingToOpacityConverter}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <UniformGrid Columns="{Binding YouTubeColumnCount}"/>

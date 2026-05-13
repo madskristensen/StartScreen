@@ -1007,6 +1007,39 @@ namespace StartScreen.ToolWindows
     }
 
     /// <summary>
+    /// Converter that returns Visible if true, Hidden (not Collapsed) if false.
+    /// Use this for elements that should stay in layout when inactive, preventing layout shifts.
+    /// </summary>
+    public class BoolToHiddenVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return value is bool b && b ? Visibility.Visible : Visibility.Hidden;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converter that returns a reduced opacity when true (refreshing), full opacity when false.
+    /// </summary>
+    public class RefreshingToOpacityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return value is bool b && b ? 0.4 : 1.0;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
     /// Converter that returns Visible if count > 0, Collapsed otherwise.
     /// </summary>
     public class CountToVisibilityConverter : IValueConverter
