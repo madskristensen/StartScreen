@@ -55,6 +55,20 @@ namespace StartScreen.Models
         public string RemoteUrl { get; set; }
 
         /// <summary>
+        /// Name of the remote that the current branch tracks (e.g. "origin").
+        /// Null if the current branch has no upstream configured.
+        /// Used to scope background fetches to just the upstream of the current
+        /// branch instead of fetching every remote and every ref.
+        /// </summary>
+        public string UpstreamRemoteName { get; set; }
+
+        /// <summary>
+        /// Canonical ref name of the upstream branch (e.g. "refs/heads/main").
+        /// Null if the current branch has no upstream configured.
+        /// </summary>
+        public string UpstreamBranchRef { get; set; }
+
+        /// <summary>
         /// Whether this represents a valid Git repository.
         /// </summary>
         public bool IsGitRepository => !string.IsNullOrEmpty(BranchName);

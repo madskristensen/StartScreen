@@ -53,17 +53,27 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void FetchAll_WithMissingDirectory_ReturnsSilently()
+        public void FetchUpstream_WithMissingDirectory_ReturnsSilently()
         {
             // Best-effort: must never throw, even when the path is invalid.
-            GitHelper.FetchAll(@"C:\this\path\does\not\exist\for\sure");
+            GitHelper.FetchUpstream(@"C:\this\path\does\not\exist\for\sure", "origin", "refs/heads/main");
         }
 
         [TestMethod]
-        public void FetchAll_WithEmptyPath_ReturnsSilently()
+        public void FetchUpstream_WithEmptyPath_ReturnsSilently()
         {
-            GitHelper.FetchAll(string.Empty);
-            GitHelper.FetchAll(null);
+            GitHelper.FetchUpstream(string.Empty, "origin", "refs/heads/main");
+            GitHelper.FetchUpstream(null, "origin", "refs/heads/main");
+        }
+
+        [TestMethod]
+        public void FetchUpstream_WithMissingUpstream_ReturnsSilently()
+        {
+            // No upstream configured (no remote or no branch ref) means ahead/behind
+            // is undefined - the helper must skip the fetch instead of running it.
+            GitHelper.FetchUpstream(System.IO.Path.GetTempPath(), null, "refs/heads/main");
+            GitHelper.FetchUpstream(System.IO.Path.GetTempPath(), "origin", null);
+            GitHelper.FetchUpstream(System.IO.Path.GetTempPath(), string.Empty, string.Empty);
         }
     }
 }

@@ -75,6 +75,11 @@ namespace StartScreen.Helpers
                         BranchTrackingDetails tracking = repo.Head.TrackingDetails;
                         status.CommitsAhead = tracking.AheadBy;
                         status.CommitsBehind = tracking.BehindBy;
+
+                        // Capture upstream coordinates so background fetches can target
+                        // only the single upstream ref instead of running fetch --all.
+                        status.UpstreamRemoteName = repo.Head.TrackedBranch.RemoteName;
+                        status.UpstreamBranchRef = repo.Head.TrackedBranch.UpstreamBranchCanonicalName;
                     }
 
                     // Uncommitted changes (staged or unstaged)
@@ -166,14 +171,22 @@ namespace StartScreen.Helpers
         }
 
         /// <summary>
-        /// Runs git fetch --all --quiet for the specified repository.
+        /// Runs a targeted, minimal fetch for a single upstream ref on a single remote.
+        /// This is dramatically faster than "fetch --all" because it skips every other
+        /// remote, every other branch, and tag negotiation - we only need the tip of
+        /// the current branch's upstream to compute ahead/behind.
         /// Best-effort: returns silently on any failure (offline, timeout, no remote, etc.).
         /// Credential prompts are suppressed so the background fetch never pops up
         /// login windows; if stored credentials don't work, the fetch fails silently.
         /// </summary>
-        internal static void FetchAll(string repoPath)
+        internal static void FetchUpstream(string repoPath, string remoteName, string upstreamBranchRef)
         {
             if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
+                return;
+
+            // No upstream configured means ahead/behind is undefined - skip the fetch
+            // entirely instead of wastefully running fetch --all for nothing.
+            if (string.IsNullOrEmpty(remoteName) || string.IsNullOrEmpty(upstreamBranchRef))
                 return;
 
             try
@@ -181,8 +194,12 @@ namespace StartScreen.Helpers
                 var psi = new ProcessStartInfo
                 {
                     FileName = "git",
-                    // -c core.askPass= disables any GUI/console askpass helper for this invocation.
-                    Arguments = "-c core.askPass= fetch --all --quiet",
+                    // -c core.askPass=  : disable any GUI/console askpass helper
+                    // -c gc.auto=0      : skip the auto-GC that fetch may otherwise trigger
+                    // --no-tags         : skip tag advertisement/negotiation
+                    // --no-write-fetch-head : skip writing FETCH_HEAD (git 2.29+)
+                    // <remote> <ref>    : fetch only the upstream branch's ref
+                    Arguments = $"-c core.askPass= -c gc.auto=0 fetch --quiet --no-tags --no-write-fetch-head {remoteName} {upstreamBranchRef}",
                     WorkingDirectory = repoPath,
                     UseShellExecute = false,
                     CreateNoWindow = true,

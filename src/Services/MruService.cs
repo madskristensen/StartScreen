@@ -170,8 +170,9 @@ namespace StartScreen.Services
 
                 var itemList = items.ToList();
 
-                // Track item-to-repo mapping for phase 2
-                var itemRepoMap = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Generic.List<MruItem>>(StringComparer.OrdinalIgnoreCase);
+                // Track item-to-repo mapping for phase 2, including upstream
+                // coordinates so we can run a targeted fetch instead of fetch --all.
+                var itemRepoMap = new System.Collections.Concurrent.ConcurrentDictionary<string, RepoFetchInfo>(StringComparer.OrdinalIgnoreCase);
 
                 // Phase 1: Read local status (fast, no network)
                 Parallel.ForEach(itemList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
@@ -183,8 +184,11 @@ namespace StartScreen.Services
                         // Update properties (INotifyPropertyChanged handles UI marshaling)
                         item.ApplyGitStatus(status);
 
-                        // Track repo path for phase 2 (if item is in a git repo)
-                        if (status.IsGitRepository)
+                        // Track repo path for phase 2 (if item is in a git repo
+                        // and the current branch has an upstream we can fetch).
+                        if (status.IsGitRepository
+                            && !string.IsNullOrEmpty(status.UpstreamRemoteName)
+                            && !string.IsNullOrEmpty(status.UpstreamBranchRef))
                         {
                             var startDir = Directory.Exists(item.Path) ? item.Path : Path.GetDirectoryName(item.Path);
                             var repoPath = GitHelper.FindRepositoryPath(startDir);
@@ -192,8 +196,8 @@ namespace StartScreen.Services
                             {
                                 itemRepoMap.AddOrUpdate(
                                     repoPath,
-                                    _ => [item],
-                                    (_, list) => { lock (list) { list.Add(item); } return list; });
+                                    _ => new RepoFetchInfo(status.UpstreamRemoteName, status.UpstreamBranchRef, item),
+                                    (_, info) => { lock (info.Items) { info.Items.Add(item); } return info; });
                             }
                         }
                     }
@@ -211,26 +215,27 @@ namespace StartScreen.Services
                 {
                     _ = Task.Run(() =>
                     {
-                        Parallel.ForEach(itemRepoMap.Keys, new ParallelOptions { MaxDegreeOfParallelism = 2 }, repoPath =>
+                        Parallel.ForEach(itemRepoMap, new ParallelOptions { MaxDegreeOfParallelism = 2 }, kvp =>
                         {
+                            var repoPath = kvp.Key;
+                            RepoFetchInfo info = kvp.Value;
+
                             try
                             {
-                                // Fetch from all remotes (best-effort, silent on failure)
-                                GitHelper.FetchAll(repoPath);
+                                // Targeted fetch of just the upstream ref of the current
+                                // branch (best-effort, silent on failure).
+                                GitHelper.FetchUpstream(repoPath, info.Remote, info.UpstreamRef);
 
                                 // Re-read ahead/behind for all items in this repo
                                 (var ahead, var behind) = GitHelper.GetUpdatedAheadBehind(repoPath);
 
-                                if (itemRepoMap.TryGetValue(repoPath, out List<MruItem> itemsInRepo))
+                                foreach (MruItem item in info.Items)
                                 {
-                                    foreach (MruItem item in itemsInRepo)
+                                    // Only update if fetch succeeded and tracking branch exists
+                                    if (ahead.HasValue || behind.HasValue)
                                     {
-                                        // Only update if fetch succeeded and tracking branch exists
-                                        if (ahead.HasValue || behind.HasValue)
-                                        {
-                                            item.CommitsAhead = ahead;
-                                            item.CommitsBehind = behind;
-                                        }
+                                        item.CommitsAhead = ahead;
+                                        item.CommitsBehind = behind;
                                     }
                                 }
                             }
@@ -242,6 +247,25 @@ namespace StartScreen.Services
                     });
                 }
             });
+        }
+
+        /// <summary>
+        /// Per-repository fetch coordinates used by <see cref="PopulateGitStatusAsync"/>
+        /// to run a single targeted fetch covering all MRU items that resolve to the
+        /// same git repository.
+        /// </summary>
+        private sealed class RepoFetchInfo
+        {
+            public RepoFetchInfo(string remote, string upstreamRef, MruItem firstItem)
+            {
+                Remote = remote;
+                UpstreamRef = upstreamRef;
+                Items = [firstItem];
+            }
+
+            public string Remote { get; }
+            public string UpstreamRef { get; }
+            public List<MruItem> Items { get; }
         }
 
         /// <summary>
