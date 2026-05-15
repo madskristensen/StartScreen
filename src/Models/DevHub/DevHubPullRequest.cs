@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace StartScreen.Models.DevHub
 {
@@ -86,6 +87,13 @@ namespace StartScreen.Models.DevHub
         /// Direct URL to open this PR in a browser.
         /// </summary>
         public string WebUrl { get; set; }
+
+        /// <summary>
+        /// Whether this item has been updated since the user last viewed the PRs tab.
+        /// Runtime-only flag set by the UI; not persisted to the cache.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsNew { get; set; }
 
         /// <summary>
         /// Whether this PR was authored by the current user (vs. assigned/reviewer).

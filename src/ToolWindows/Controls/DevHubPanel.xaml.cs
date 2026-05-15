@@ -1,16 +1,13 @@
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Imaging.Interop;
-using Microsoft.VisualStudio.Shell;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
 
@@ -229,6 +226,7 @@ namespace StartScreen.ToolWindows.Controls
             InvalidateBorderCache();
             if (pullRequests != null && pullRequests.Count > 0)
             {
+                ApplyNewFlags(pullRequests, Options.Instance.LastDevHubPrsSeen, item => item.UpdatedAt, (item, isNew) => item.IsNew = isNew);
                 PullRequestsList.ItemsSource = pullRequests;
                 PrCountBadge.Text = $"({pullRequests.Count})";
                 NoPrsText.Visibility = Visibility.Collapsed;
@@ -239,6 +237,7 @@ namespace StartScreen.ToolWindows.Controls
                 PrCountBadge.Text = "";
                 NoPrsText.Visibility = Visibility.Visible;
             }
+            UpdatePrNewIndicator();
         }
 
         private void UpdateIssues(IReadOnlyList<DevHubIssue> issues)
@@ -246,6 +245,7 @@ namespace StartScreen.ToolWindows.Controls
             InvalidateBorderCache();
             if (issues != null && issues.Count > 0)
             {
+                ApplyNewFlags(issues, Options.Instance.LastDevHubIssuesSeen, item => item.UpdatedAt, (item, isNew) => item.IsNew = isNew);
                 IssuesList.ItemsSource = issues;
                 IssueCountBadge.Text = $"({issues.Count})";
                 NoIssuesText.Visibility = Visibility.Collapsed;
@@ -256,6 +256,7 @@ namespace StartScreen.ToolWindows.Controls
                 IssueCountBadge.Text = "";
                 NoIssuesText.Visibility = Visibility.Visible;
             }
+            UpdateIssuesNewIndicator();
         }
 
         private void UpdateCiRuns(IReadOnlyList<DevHubCiRun> ciRuns)
@@ -263,6 +264,7 @@ namespace StartScreen.ToolWindows.Controls
             InvalidateBorderCache();
             if (ciRuns != null && ciRuns.Count > 0)
             {
+                ApplyNewFlags(ciRuns, Options.Instance.LastDevHubCiSeen, item => item.Timestamp, (item, isNew) => item.IsNew = isNew);
                 CiRunsList.ItemsSource = ciRuns;
                 CiCountBadge.Text = $"({ciRuns.Count})";
                 NoCiText.Visibility = Visibility.Collapsed;
@@ -272,6 +274,149 @@ namespace StartScreen.ToolWindows.Controls
                 CiRunsList.ItemsSource = null;
                 CiCountBadge.Text = "";
                 NoCiText.Visibility = Visibility.Visible;
+            }
+            UpdateCiNewIndicator();
+        }
+
+        private static void ApplyNewFlags<T>(IReadOnlyList<T> items, DateTime lastSeen, Func<T, DateTime> getTimestamp, Action<T, bool> setIsNew)
+        {
+            // Skip the badge entirely on first ever load (lastSeen == MinValue) so the
+            // user is not greeted with every existing item flagged as new.
+            bool firstLoad = lastSeen == DateTime.MinValue;
+            foreach (T item in items)
+            {
+                setIsNew(item, !firstLoad && getTimestamp(item) > lastSeen);
+            }
+        }
+
+        private void UpdateIssuesNewIndicator()
+        {
+            bool hasNew = IssuesTab != null
+                && !IssuesTab.IsSelected
+                && _lastBoundIssues != null
+                && _lastBoundIssues.Any(i => i.IsNew);
+            IssueNewDot.Visibility = hasNew ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void UpdatePrNewIndicator()
+        {
+            bool hasNew = PrsTab != null
+                && !PrsTab.IsSelected
+                && _lastBoundPullRequests != null
+                && _lastBoundPullRequests.Any(p => p.IsNew);
+            PrNewDot.Visibility = hasNew ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void UpdateCiNewIndicator()
+        {
+            bool hasNew = CiTab != null
+                && !CiTab.IsSelected
+                && _lastBoundCiRuns != null
+                && _lastBoundCiRuns.Any(c => c.IsNew);
+            CiNewDot.Visibility = hasNew ? Visibility.Visible : Visibility.Collapsed;
+
+            if (hasNew)
+            {
+                bool hasNewFailure = _lastBoundCiRuns.Any(c => c.IsNew && string.Equals(c.Status, "failure", StringComparison.OrdinalIgnoreCase));
+                CiNewDot.Fill = hasNewFailure ? _ciDotFailureBrush : _ciDotDefaultBrush;
+                CiNewDot.ToolTip = hasNewFailure
+                    ? "A build has failed since you last viewed this tab"
+                    : "New activity since you last viewed this tab";
+            }
+        }
+
+        private static readonly System.Windows.Media.SolidColorBrush _ciDotDefaultBrush = CreateFrozenBrush(0xFF, 0x4C, 0xAF, 0x50);
+        private static readonly System.Windows.Media.SolidColorBrush _ciDotFailureBrush = CreateFrozenBrush(0xFF, 0xE5, 0x39, 0x35);
+
+        private static System.Windows.Media.SolidColorBrush CreateFrozenBrush(byte a, byte r, byte g, byte b)
+        {
+            System.Windows.Media.SolidColorBrush brush = new(System.Windows.Media.Color.FromArgb(a, r, g, b));
+            brush.Freeze();
+            return brush;
+        }
+
+        private void DevHubSubTabs_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            // Only react to selection changes that originated from the TabControl itself,
+            // not from inner ListBox / ItemsControl bubbling up.
+            if (!ReferenceEquals(e.OriginalSource, DevHubSubTabs))
+            {
+                return;
+            }
+
+            MarkSelectedTabAsSeen();
+        }
+
+        private void MarkSelectedTabAsSeen()
+        {
+            object selected = DevHubSubTabs?.SelectedItem;
+            DateTime now = DateTime.UtcNow;
+
+            if (ReferenceEquals(selected, IssuesTab))
+            {
+                Options.Instance.LastDevHubIssuesSeen = now;
+                ClearIsNewFlags(_lastBoundIssues, item => item.IsNew = false);
+                RefreshItemsControl(IssuesList);
+                UpdateIssuesNewIndicator();
+            }
+            else if (ReferenceEquals(selected, PrsTab))
+            {
+                Options.Instance.LastDevHubPrsSeen = now;
+                ClearIsNewFlags(_lastBoundPullRequests, item => item.IsNew = false);
+                RefreshItemsControl(PullRequestsList);
+                UpdatePrNewIndicator();
+            }
+            else if (ReferenceEquals(selected, CiTab))
+            {
+                Options.Instance.LastDevHubCiSeen = now;
+                ClearIsNewFlags(_lastBoundCiRuns, item => item.IsNew = false);
+                RefreshItemsControl(CiRunsList);
+                UpdateCiNewIndicator();
+            }
+            else
+            {
+                return;
+            }
+
+            _ = SaveOptionsAsync();
+        }
+
+        private static void ClearIsNewFlags<T>(IReadOnlyList<T> items, Action<T> clear)
+        {
+            if (items == null)
+            {
+                return;
+            }
+
+            foreach (T item in items)
+            {
+                clear(item);
+            }
+        }
+
+        private static void RefreshItemsControl(ItemsControl list)
+        {
+            // Models do not raise INotifyPropertyChanged for IsNew, so re-bind to
+            // force the data templates to re-evaluate the visibility of the NEW badge.
+            System.Collections.IEnumerable current = list?.ItemsSource;
+            if (current == null)
+            {
+                return;
+            }
+
+            list.ItemsSource = null;
+            list.ItemsSource = current;
+        }
+
+        private static async Task SaveOptionsAsync()
+        {
+            try
+            {
+                await Options.Instance.SaveAsync();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
             }
         }
 

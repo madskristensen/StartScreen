@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Serialization;
 
 namespace StartScreen.Models.DevHub
 {
@@ -51,6 +52,13 @@ namespace StartScreen.Models.DevHub
         /// Direct URL to view this run in a browser.
         /// </summary>
         public string WebUrl { get; set; }
+
+        /// <summary>
+        /// Whether this item has been updated since the user last viewed the CI tab.
+        /// Runtime-only flag set by the UI; not persisted to the cache.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsNew { get; set; }
 
         /// <summary>
         /// Returns a status display icon.

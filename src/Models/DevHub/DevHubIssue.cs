@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 namespace StartScreen.Models.DevHub
 {
@@ -78,6 +79,13 @@ namespace StartScreen.Models.DevHub
         /// Direct URL to open this issue in a browser.
         /// </summary>
         public string WebUrl { get; set; }
+
+        /// <summary>
+        /// Whether this item has been updated since the user last viewed the Issues tab.
+        /// Runtime-only flag set by the UI; not persisted to the cache.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsNew { get; set; }
 
         /// <summary>
         /// Returns a human-readable relative time since creation.

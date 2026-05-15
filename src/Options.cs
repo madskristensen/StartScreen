@@ -43,6 +43,25 @@ namespace StartScreen
         public DateTime LastFeedRead { get; set; } = DateTime.MinValue;
 
         /// <summary>
+        /// Timestamp of the last time the user viewed the Dev Hub Issues tab.
+        /// Items with UpdatedAt newer than this are flagged as "new".
+        /// </summary>
+        [Browsable(false)]
+        public DateTime LastDevHubIssuesSeen { get; set; } = DateTime.MinValue;
+
+        /// <summary>
+        /// Timestamp of the last time the user viewed the Dev Hub Pull Requests tab.
+        /// </summary>
+        [Browsable(false)]
+        public DateTime LastDevHubPrsSeen { get; set; } = DateTime.MinValue;
+
+        /// <summary>
+        /// Timestamp of the last time the user viewed the Dev Hub CI tab.
+        /// </summary>
+        [Browsable(false)]
+        public DateTime LastDevHubCiSeen { get; set; } = DateTime.MinValue;
+
+        /// <summary>
         /// Width of the left (MRU) pane, persisted when the user drags the splitter.
         /// </summary>
         [Browsable(false)]
