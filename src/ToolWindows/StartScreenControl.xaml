@@ -29,6 +29,7 @@
         <local:BoolToHiddenVisibilityConverter x:Key="BoolToHiddenVisibilityConverter"/>
         <local:RefreshingToOpacityConverter x:Key="RefreshingToOpacityConverter"/>
         <local:CountToVisibilityConverter x:Key="CountToVisibilityConverter"/>
+        <local:ColumnCountToWidthConverter x:Key="ColumnCountToWidthConverter"/>
 
         <!-- Action Button Style -->
         <Style x:Key="ActionButtonStyle" TargetType="Button">
@@ -634,10 +635,12 @@
                                        Margin="0 8 0 0"
                                        Visibility="{Binding IsYouTubeUnavailable, Converter={StaticResource BoolToVisibilityConverter}}"/>
                             <ItemsControl ItemsSource="{Binding YouTubeVideos}" Focusable="False"
+                                          HorizontalAlignment="Left"
+                                          MaxWidth="{Binding YouTubeColumnCount, Converter={StaticResource ColumnCountToWidthConverter}}"
                                           Opacity="{Binding IsRefreshingYouTube, Converter={StaticResource RefreshingToOpacityConverter}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <UniformGrid Columns="{Binding YouTubeColumnCount}"/>
+                                        <WrapPanel Orientation="Horizontal"/>
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>

@@ -1060,6 +1060,36 @@ namespace StartScreen.ToolWindows
     }
 
     /// <summary>
+    /// Converts a column count into a pixel width by multiplying by the per-column
+    /// width passed in via ConverterParameter (item width plus its right margin).
+    /// Used to bound a WrapPanel so it wraps after the desired number of columns
+    /// instead of stretching across the whole available width.
+    /// </summary>
+    public class ColumnCountToWidthConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is int count && count > 0)
+            {
+                double perColumn = 292;
+                if (parameter != null && double.TryParse(parameter.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+                {
+                    perColumn = parsed;
+                }
+
+                return count * perColumn;
+            }
+
+            return double.PositiveInfinity;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
     /// Adorner that draws a horizontal line to indicate where a dragged pinned item will be dropped.
     /// </summary>
     internal sealed class DropIndicatorAdorner : Adorner
