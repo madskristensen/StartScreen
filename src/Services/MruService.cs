@@ -155,6 +155,13 @@ namespace StartScreen.Services
         }
 
         /// <summary>
+        /// Skip a per-repo background fetch if we already fetched it this recently.
+        /// Collapses repeated tool-window shows, solution-close events, and refresh
+        /// ticks into a single network call per repo per window.
+        /// </summary>
+        private static readonly TimeSpan FetchThrottleWindow = TimeSpan.FromMinutes(15);
+
+        /// <summary>
         /// Populates Git status information for items in the background.
         /// Phase 1: Reads local status (branch, stash, dirty, operation) immediately.
         /// Phase 2: Fetches from remotes and updates ahead/behind counts as they complete.
@@ -174,11 +181,25 @@ namespace StartScreen.Services
                 // coordinates so we can run a targeted fetch instead of fetch --all.
                 var itemRepoMap = new System.Collections.Concurrent.ConcurrentDictionary<string, RepoFetchInfo>(StringComparer.OrdinalIgnoreCase);
 
+                // Memoize FindRepositoryPath results within this refresh so multiple
+                // MRU items in the same repo (solution + projects + folders) don't each
+                // walk the parent chain independently.
+                var repoPathCache = new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
                 // Phase 1: Read local status (fast, no network)
                 Parallel.ForEach(itemList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
                 {
                     try
                     {
+                        // Skip items whose target no longer exists on disk; otherwise we'd
+                        // pay for a parent-chain walk and a libgit2 Repository open per
+                        // dead path for nothing.
+                        if (string.IsNullOrWhiteSpace(item.Path)
+                            || (!Directory.Exists(item.Path) && !File.Exists(item.Path)))
+                        {
+                            return;
+                        }
+
                         GitStatus status = GitHelper.GetGitStatus(item.Path);
 
                         // Update properties (INotifyPropertyChanged handles UI marshaling)
@@ -191,7 +212,7 @@ namespace StartScreen.Services
                             && !string.IsNullOrEmpty(status.UpstreamBranchRef))
                         {
                             var startDir = Directory.Exists(item.Path) ? item.Path : Path.GetDirectoryName(item.Path);
-                            var repoPath = GitHelper.FindRepositoryPath(startDir);
+                            var repoPath = repoPathCache.GetOrAdd(startDir ?? string.Empty, GitHelper.FindRepositoryPath);
                             if (!string.IsNullOrEmpty(repoPath))
                             {
                                 itemRepoMap.AddOrUpdate(
@@ -211,41 +232,53 @@ namespace StartScreen.Services
                 // Run on a pure thread-pool task outside JoinableTaskFactory so that VS's
                 // hang-detection does not attribute these blocking git-fetch calls (up to
                 // 5 s each) to the extension and show the "stopped responding" bar.
-                if (itemRepoMap.Count > 0)
+                if (itemRepoMap.Count == 0)
+                    return;
+
+                // Skip the entire phase 2 burst when the machine has no usable network
+                // interface. Otherwise each fetch sits at the 5 s timeout before being
+                // killed, turning an offline laptop into a 25+ second git.exe storm.
+                if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
+                    return;
+
+                _ = Task.Run(() =>
                 {
-                    _ = Task.Run(() =>
+                    Parallel.ForEach(itemRepoMap, new ParallelOptions { MaxDegreeOfParallelism = 2 }, kvp =>
                     {
-                        Parallel.ForEach(itemRepoMap, new ParallelOptions { MaxDegreeOfParallelism = 2 }, kvp =>
+                        var repoPath = kvp.Key;
+                        RepoFetchInfo info = kvp.Value;
+
+                        try
                         {
-                            var repoPath = kvp.Key;
-                            RepoFetchInfo info = kvp.Value;
+                            // Throttle: if FETCH_HEAD was written within the throttle window,
+                            // the ahead/behind we already read in phase 1 is fresh enough.
+                            // Skip both the fetch and the post-fetch re-read entirely.
+                            if (GitHelper.WasRecentlyFetched(repoPath, FetchThrottleWindow))
+                                return;
 
-                            try
+                            // Targeted fetch of just the upstream ref of the current
+                            // branch (best-effort, silent on failure).
+                            GitHelper.FetchUpstream(repoPath, info.Remote, info.UpstreamRef);
+
+                            // Re-read ahead/behind for all items in this repo
+                            (var ahead, var behind) = GitHelper.GetUpdatedAheadBehind(repoPath);
+
+                            foreach (MruItem item in info.Items)
                             {
-                                // Targeted fetch of just the upstream ref of the current
-                                // branch (best-effort, silent on failure).
-                                GitHelper.FetchUpstream(repoPath, info.Remote, info.UpstreamRef);
-
-                                // Re-read ahead/behind for all items in this repo
-                                (var ahead, var behind) = GitHelper.GetUpdatedAheadBehind(repoPath);
-
-                                foreach (MruItem item in info.Items)
+                                // Only update if fetch succeeded and tracking branch exists
+                                if (ahead.HasValue || behind.HasValue)
                                 {
-                                    // Only update if fetch succeeded and tracking branch exists
-                                    if (ahead.HasValue || behind.HasValue)
-                                    {
-                                        item.CommitsAhead = ahead;
-                                        item.CommitsBehind = behind;
-                                    }
+                                    item.CommitsAhead = ahead;
+                                    item.CommitsBehind = behind;
                                 }
                             }
-                            catch (Exception ex)
-                            {
-                                ex.Log();
-                            }
-                        });
+                        }
+                        catch (Exception ex)
+                        {
+                            ex.Log();
+                        }
                     });
-                }
+                });
             });
         }
 

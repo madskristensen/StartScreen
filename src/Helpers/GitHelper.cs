@@ -171,6 +171,41 @@ namespace StartScreen.Helpers
         }
 
         /// <summary>
+        /// Returns true if the repository was fetched within the given <paramref name="threshold"/>,
+        /// based on the last-write time of <c>.git/FETCH_HEAD</c>. Used to throttle background
+        /// fetches so that repeated tool-window shows or refresh ticks don't re-fetch the same
+        /// repos within minutes of each other.
+        /// Conservatively returns false when the timestamp can't be read - we'd rather over-fetch
+        /// than miss an update.
+        /// </summary>
+        internal static bool WasRecentlyFetched(string repoPath, TimeSpan threshold)
+        {
+            if (string.IsNullOrEmpty(repoPath))
+                return false;
+
+            try
+            {
+                var gitDir = Path.Combine(repoPath, ".git");
+
+                // Worktrees and submodules use a .git file pointing elsewhere; skip throttling
+                // in that less common case rather than parse the gitdir indirection.
+                if (!Directory.Exists(gitDir))
+                    return false;
+
+                var fetchHead = Path.Combine(gitDir, "FETCH_HEAD");
+                if (!File.Exists(fetchHead))
+                    return false;
+
+                DateTime lastWriteUtc = File.GetLastWriteTimeUtc(fetchHead);
+                return DateTime.UtcNow - lastWriteUtc < threshold;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Runs a targeted, minimal fetch for a single upstream ref on a single remote.
         /// This is dramatically faster than "fetch --all" because it skips every other
         /// remote, every other branch, and tag negotiation - we only need the tip of
