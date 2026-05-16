@@ -117,18 +117,21 @@ namespace StartScreen.ToolWindows.Controls
             // the primary cause of the UI thread hitch when DevHub data arrives.
             if (filterChanged || !DevHubItemComparer.SamePullRequests(_lastBoundPullRequests, prs))
             {
+                IReadOnlyList<DevHubPullRequest> previousPrs = _lastBoundPullRequests;
                 _lastBoundPullRequests = Snapshot(prs);
-                UpdatePullRequests(prs);
+                UpdatePullRequests(prs, previousPrs);
             }
             if (filterChanged || !DevHubItemComparer.SameIssues(_lastBoundIssues, issues))
             {
+                IReadOnlyList<DevHubIssue> previousIssues = _lastBoundIssues;
                 _lastBoundIssues = Snapshot(issues);
-                UpdateIssues(issues);
+                UpdateIssues(issues, previousIssues);
             }
             if (filterChanged || !DevHubItemComparer.SameCiRuns(_lastBoundCiRuns, ciRuns))
             {
+                IReadOnlyList<DevHubCiRun> previousCi = _lastBoundCiRuns;
                 _lastBoundCiRuns = Snapshot(ciRuns);
-                UpdateCiRuns(ciRuns);
+                UpdateCiRuns(ciRuns, previousCi);
             }
 
             UpdateSettingsAccountStatus(hasGitHub, hasAdo);
@@ -221,12 +224,19 @@ namespace StartScreen.ToolWindows.Controls
             DashboardPanel.Visibility = Visibility.Visible;
         }
 
-        private void UpdatePullRequests(IReadOnlyList<DevHubPullRequest> pullRequests)
+        private void UpdatePullRequests(IReadOnlyList<DevHubPullRequest> pullRequests, IReadOnlyList<DevHubPullRequest> previousPullRequests)
         {
             InvalidateBorderCache();
             if (pullRequests != null && pullRequests.Count > 0)
             {
-                ApplyNewFlags(pullRequests, Options.Instance.LastDevHubPrsSeen, item => item.UpdatedAt, (item, isNew) => item.IsNew = isNew);
+                DevHubNewFlagCalculator.Apply(
+                    pullRequests,
+                    previousPullRequests,
+                    Options.Instance.LastDevHubPrsSeen,
+                    item => item.UpdatedAt,
+                    item => item.WebUrl,
+                    item => item.IsNew,
+                    (item, isNew) => item.IsNew = isNew);
                 PullRequestsList.ItemsSource = pullRequests;
                 PrCountBadge.Text = $"({pullRequests.Count})";
                 NoPrsText.Visibility = Visibility.Collapsed;
@@ -240,12 +250,19 @@ namespace StartScreen.ToolWindows.Controls
             UpdatePrNewIndicator();
         }
 
-        private void UpdateIssues(IReadOnlyList<DevHubIssue> issues)
+        private void UpdateIssues(IReadOnlyList<DevHubIssue> issues, IReadOnlyList<DevHubIssue> previousIssues)
         {
             InvalidateBorderCache();
             if (issues != null && issues.Count > 0)
             {
-                ApplyNewFlags(issues, Options.Instance.LastDevHubIssuesSeen, item => item.UpdatedAt, (item, isNew) => item.IsNew = isNew);
+                DevHubNewFlagCalculator.Apply(
+                    issues,
+                    previousIssues,
+                    Options.Instance.LastDevHubIssuesSeen,
+                    item => item.UpdatedAt,
+                    item => item.WebUrl,
+                    item => item.IsNew,
+                    (item, isNew) => item.IsNew = isNew);
                 IssuesList.ItemsSource = issues;
                 IssueCountBadge.Text = $"({issues.Count})";
                 NoIssuesText.Visibility = Visibility.Collapsed;
@@ -259,12 +276,19 @@ namespace StartScreen.ToolWindows.Controls
             UpdateIssuesNewIndicator();
         }
 
-        private void UpdateCiRuns(IReadOnlyList<DevHubCiRun> ciRuns)
+        private void UpdateCiRuns(IReadOnlyList<DevHubCiRun> ciRuns, IReadOnlyList<DevHubCiRun> previousCiRuns)
         {
             InvalidateBorderCache();
             if (ciRuns != null && ciRuns.Count > 0)
             {
-                ApplyNewFlags(ciRuns, Options.Instance.LastDevHubCiSeen, item => item.Timestamp, (item, isNew) => item.IsNew = isNew);
+                DevHubNewFlagCalculator.Apply(
+                    ciRuns,
+                    previousCiRuns,
+                    Options.Instance.LastDevHubCiSeen,
+                    item => item.Timestamp,
+                    item => item.WebUrl,
+                    item => item.IsNew,
+                    (item, isNew) => item.IsNew = isNew);
                 CiRunsList.ItemsSource = ciRuns;
                 CiCountBadge.Text = $"({ciRuns.Count})";
                 NoCiText.Visibility = Visibility.Collapsed;
@@ -276,17 +300,6 @@ namespace StartScreen.ToolWindows.Controls
                 NoCiText.Visibility = Visibility.Visible;
             }
             UpdateCiNewIndicator();
-        }
-
-        private static void ApplyNewFlags<T>(IReadOnlyList<T> items, DateTime lastSeen, Func<T, DateTime> getTimestamp, Action<T, bool> setIsNew)
-        {
-            // Skip the badge entirely on first ever load (lastSeen == MinValue) so the
-            // user is not greeted with every existing item flagged as new.
-            bool firstLoad = lastSeen == DateTime.MinValue;
-            foreach (T item in items)
-            {
-                setIsNew(item, !firstLoad && getTimestamp(item) > lastSeen);
-            }
         }
 
         private void UpdateIssuesNewIndicator()
