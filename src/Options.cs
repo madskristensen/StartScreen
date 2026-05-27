@@ -62,6 +62,20 @@ namespace StartScreen
         public DateTime LastDevHubCiSeen { get; set; } = DateTime.MinValue;
 
         /// <summary>
+        /// Timestamp of the last time the user viewed the News Blogs tab.
+        /// Used to decide whether to show the "new content" indicator dot on the tab.
+        /// </summary>
+        [Browsable(false)]
+        public DateTime LastNewsBlogsSeen { get; set; } = DateTime.MinValue;
+
+        /// <summary>
+        /// Timestamp of the last time the user viewed the News Videos tab.
+        /// Used to decide whether to show the "new content" indicator dot on the tab.
+        /// </summary>
+        [Browsable(false)]
+        public DateTime LastNewsVideosSeen { get; set; } = DateTime.MinValue;
+
+        /// <summary>
         /// Width of the left (MRU) pane, persisted when the user drags the splitter.
         /// </summary>
         [Browsable(false)]

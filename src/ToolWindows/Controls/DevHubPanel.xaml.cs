@@ -238,13 +238,11 @@ namespace StartScreen.ToolWindows.Controls
                     item => item.IsNew,
                     (item, isNew) => item.IsNew = isNew);
                 PullRequestsList.ItemsSource = pullRequests;
-                PrCountBadge.Text = $"({pullRequests.Count})";
                 NoPrsText.Visibility = Visibility.Collapsed;
             }
             else
             {
                 PullRequestsList.ItemsSource = null;
-                PrCountBadge.Text = "";
                 NoPrsText.Visibility = Visibility.Visible;
             }
             UpdatePrNewIndicator();
@@ -264,13 +262,11 @@ namespace StartScreen.ToolWindows.Controls
                     item => item.IsNew,
                     (item, isNew) => item.IsNew = isNew);
                 IssuesList.ItemsSource = issues;
-                IssueCountBadge.Text = $"({issues.Count})";
                 NoIssuesText.Visibility = Visibility.Collapsed;
             }
             else
             {
                 IssuesList.ItemsSource = null;
-                IssueCountBadge.Text = "";
                 NoIssuesText.Visibility = Visibility.Visible;
             }
             UpdateIssuesNewIndicator();
@@ -290,13 +286,11 @@ namespace StartScreen.ToolWindows.Controls
                     item => item.IsNew,
                     (item, isNew) => item.IsNew = isNew);
                 CiRunsList.ItemsSource = ciRuns;
-                CiCountBadge.Text = $"({ciRuns.Count})";
                 NoCiText.Visibility = Visibility.Collapsed;
             }
             else
             {
                 CiRunsList.ItemsSource = null;
-                CiCountBadge.Text = "";
                 NoCiText.Visibility = Visibility.Visible;
             }
             UpdateCiNewIndicator();

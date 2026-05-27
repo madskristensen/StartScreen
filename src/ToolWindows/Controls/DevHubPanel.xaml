@@ -26,7 +26,8 @@
         <!-- Tab item style for sub-tabs -->
         <Style x:Key="DevHubTabItemStyle" TargetType="TabItem">
             <Setter Property="Padding" Value="8 4"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -74,76 +75,29 @@
         </Style>
     </UserControl.Resources>
 
-    <StackPanel>
-        <!-- Header: Dev Hub title + context + refresh (always visible) -->
-        <StackPanel Margin="0 0 0 8">
-            <Grid Margin="0 0 0 4">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-                    <TextBlock Text="Dev Hub"
-                               FontSize="16"
-                               FontWeight="SemiBold"
-                               VerticalAlignment="Center"/>
-                    <Button x:Name="RefreshButton" Click="Refresh_Click"
-                            Style="{DynamicResource IconButtonStyle}"
-                            Margin="8 0 0 0"
-                            VerticalAlignment="Center">
-                        <Button.ToolTip>
-                            <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                                     BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                                     BorderThickness="1"
-                                     Padding="4">
-                                <TextBlock Text="Refresh Dev Hub"/>
-                            </ToolTip>
-                        </Button.ToolTip>
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}"
-                                            Width="16" Height="16"/>
-                    </Button>
-                    <Button x:Name="SettingsButton" Click="Settings_Click"
-                            Style="{DynamicResource IconButtonStyle}"
-                            Margin="4 0 0 0"
-                            VerticalAlignment="Center">
-                        <Button.ToolTip>
-                            <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                                     BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                                     BorderThickness="1"
-                                     Padding="4">
-                                <TextBlock Text="Settings"/>
-                            </ToolTip>
-                        </Button.ToolTip>
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
-                                            Width="16" Height="16"/>
-                    </Button>
-                </StackPanel>
-                <TextBlock x:Name="LastRefreshText"
-                           FontSize="10"
-                           Opacity="0.3"
-                           HorizontalAlignment="Right"
-                           VerticalAlignment="Center"/>
-            </Grid>
-            <!-- Context header (shown when MRU item is selected) -->
-            <StackPanel x:Name="RepoContextHeader" Orientation="Horizontal" Visibility="Collapsed">
-                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.GitRepository}"
-                                    Width="12" Height="12"
-                                    Margin="0 0 4 0"
-                                    VerticalAlignment="Center"
-                                    Opacity="0.6"/>
-                <TextBlock x:Name="RepoContextName"
-                           FontSize="12"
-                           Opacity="0.6"
-                           VerticalAlignment="Center"/>
-                <Button x:Name="ClearFilterButton" Click="ClearFilter_Click"
-                        Style="{DynamicResource ActionButtonStyle}"
-                        Padding="2 0"
-                        Margin="6 0 0 0"
-                        BorderThickness="0"
-                        VerticalAlignment="Center"
-                        Content="x"
-                        FontSize="10"
-                        Opacity="0.5"
-                        ToolTip="Clear selection"/>
-            </StackPanel>
+    <Grid>
+        <StackPanel>
+        <!-- Context header (shown when MRU item is selected) -->
+        <StackPanel x:Name="RepoContextHeader" Orientation="Horizontal" Margin="0 0 0 8" Visibility="Collapsed">
+            <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.GitRepository}"
+                                Width="12" Height="12"
+                                Margin="0 0 4 0"
+                                VerticalAlignment="Center"
+                                Opacity="0.6"/>
+            <TextBlock x:Name="RepoContextName"
+                       FontSize="12"
+                       Opacity="0.6"
+                       VerticalAlignment="Center"/>
+            <Button x:Name="ClearFilterButton" Click="ClearFilter_Click"
+                    Style="{DynamicResource ActionButtonStyle}"
+                    Padding="2 0"
+                    Margin="6 0 0 0"
+                    BorderThickness="0"
+                    VerticalAlignment="Center"
+                    Content="x"
+                    FontSize="10"
+                    Opacity="0.5"
+                    ToolTip="Clear selection"/>
         </StackPanel>
 
         <!-- Settings panel (toggled by gear button) -->
@@ -481,13 +435,12 @@
                     <TabItem.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Issues"/>
-                            <TextBlock x:Name="IssueCountBadge" FontSize="10" Opacity="0.5" Margin="4 0 0 0" VerticalAlignment="Center"/>
                             <Ellipse x:Name="IssueNewDot" Width="6" Height="6" Margin="4 0 0 0"
                                      Fill="#FF4CAF50" VerticalAlignment="Center" Visibility="Collapsed"
                                      ToolTip="New activity since you last viewed this tab"/>
                         </StackPanel>
                     </TabItem.Header>
-                    <StackPanel Margin="0 8 0 0">
+                    <StackPanel Margin="0 24 0 0">
                         <ItemsControl x:Name="IssuesList" Focusable="False">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -569,14 +522,13 @@
                 <TabItem x:Name="PrsTab" Style="{StaticResource DevHubTabItemStyle}">
                     <TabItem.Header>
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="PRs"/>
-                            <TextBlock x:Name="PrCountBadge" FontSize="10" Opacity="0.5" Margin="4 0 0 0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Pull requests"/>
                             <Ellipse x:Name="PrNewDot" Width="6" Height="6" Margin="4 0 0 0"
                                      Fill="#FF4CAF50" VerticalAlignment="Center" Visibility="Collapsed"
                                      ToolTip="New activity since you last viewed this tab"/>
                         </StackPanel>
                     </TabItem.Header>
-                    <StackPanel Margin="0 8 0 0">
+                    <StackPanel Margin="0 24 0 0">
                         <ItemsControl x:Name="PullRequestsList" Focusable="False">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -658,14 +610,13 @@
                 <TabItem x:Name="CiTab" Style="{StaticResource DevHubTabItemStyle}">
                     <TabItem.Header>
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="CI"/>
-                            <TextBlock x:Name="CiCountBadge" FontSize="10" Opacity="0.5" Margin="4 0 0 0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Builds"/>
                             <Ellipse x:Name="CiNewDot" Width="6" Height="6" Margin="4 0 0 0"
                                      Fill="#FF4CAF50" VerticalAlignment="Center" Visibility="Collapsed"
                                      ToolTip="New activity since you last viewed this tab"/>
                         </StackPanel>
                     </TabItem.Header>
-                    <StackPanel Margin="0 8 0 0">
+                    <StackPanel Margin="0 24 0 0">
                         <ItemsControl x:Name="CiRunsList" Focusable="False">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -742,5 +693,50 @@
                     Content="Try again"/>
         </StackPanel>
         </Grid>
-    </StackPanel>
+        </StackPanel>
+
+        <!-- Floating action buttons (refresh + settings), always visible top-right -->
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="0 2 0 0"
+                    Panel.ZIndex="10">
+            <TextBlock x:Name="LastRefreshText"
+                       FontSize="10"
+                       Opacity="0.3"
+                       VerticalAlignment="Center"
+                       Margin="0 0 8 0"/>
+            <Button x:Name="RefreshButton" Click="Refresh_Click"
+                    Style="{DynamicResource IconButtonStyle}"
+                    VerticalAlignment="Center">
+                <Button.ToolTip>
+                    <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                             BorderThickness="1"
+                             Padding="4">
+                        <TextBlock Text="Refresh Dev Hub"/>
+                    </ToolTip>
+                </Button.ToolTip>
+                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}"
+                                    Width="16" Height="16"/>
+            </Button>
+            <Button x:Name="SettingsButton" Click="Settings_Click"
+                    Style="{DynamicResource IconButtonStyle}"
+                    Margin="4 0 0 0"
+                    VerticalAlignment="Center">
+                <Button.ToolTip>
+                    <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                             BorderThickness="1"
+                             Padding="4">
+                        <TextBlock Text="Settings"/>
+                    </ToolTip>
+                </Button.ToolTip>
+                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
+                                    Width="16" Height="16"/>
+            </Button>
+        </StackPanel>
+    </Grid>
 </UserControl>

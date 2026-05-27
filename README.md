@@ -77,14 +77,16 @@ editing.
 
 ## YouTube video feed
 
-The latest videos from the Visual Studio YouTube channel are shown
-alongside the news feed. Each video displays a thumbnail, title, and
-publish date - videos published in the last three days get a "NEW"
-badge so you never miss fresh content.
+The latest videos from the Visual Studio YouTube channel are shown in
+the Videos tab of the News panel, right next to the Blogs tab. Each
+video displays a thumbnail, title, and publish date - videos published
+in the last three days get a "NEW" badge so you never miss fresh
+content. A green dot appears on the Videos tab whenever new videos
+arrive in a refresh, and clears once you view the tab.
 
 The feed is cached locally and refreshes automatically every four hours.
-Click the refresh button next to the header to force an update at any
-time.
+Click the refresh button next to the News header to force an update at
+any time.
 
 ## Drag and drop
 
@@ -95,7 +97,7 @@ a visual indicator shows exactly where the item will land.
 ## Dev Hub
 
 The Dev Hub panel shows your open pull requests, assigned issues, and
-recent CI runs from GitHub and Azure DevOps - right next to your project
+recent builds from GitHub and Azure DevOps - right next to your project
 list. Data loads in the background and is cached locally so the UI stays
 responsive.
 
@@ -103,7 +105,7 @@ responsive.
 
 ### Custom search query (GitHub)
 
-By default the Dev Hub shows issues and PRs that "involve" your GitHub
+By default the Dev Hub shows issues and pull requests that "involve" your GitHub
 account. Click the gear icon next to the Dev Hub header to enter a custom
 GitHub search query. The extension prepends `is:issue` or `is:pr`
 automatically, so you only need to provide the filtering part.
@@ -130,9 +132,9 @@ state:open org:dotnet
 
 Leave the field empty to restore the default behavior (`involves:{login}`).
 
-The custom query applies to the Issues and Pull Requests tabs. The CI
-Runs tab always fetches from your recently pushed repositories and is not
-affected by the query.
+The custom query applies to the Issues and Pull requests tabs. The
+Builds tab always fetches from your recently pushed repositories and is
+not affected by the query.
 
 > The custom search query setting only applies to GitHub. Azure DevOps
 > uses dedicated REST APIs for each repository and is not affected.

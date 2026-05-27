@@ -122,58 +122,26 @@ namespace StartScreen.ToolWindows
 
             double available = RightPaneBorder.ActualWidth - 64; // subtract left+right margins (32+32)
 
-            // DevHub(520) + gap(24) = 544, news col = 372 (360+12), YouTube col = 292 (280+12), section gap = 24
-            const double baseWidth = 544 + 24; // DevHub + gap after it
-            const double newsCol = 372;
-            const double youTubeCol = 292;
-            const double sectionGap = 24;
+            // DevHub fixed-width column + gap, the rest is the News-with-tabs column.
+            const double devHubWidth = 520;
+            const double devHubGap = 24;
+            const double newsCardWidth = 372;   // NewsItemControl 360 + 12 right margin
+            const double videoCardWidth = 292;  // YouTubeVideoControl 280 + 12 right margin
             const int maxNewsCols = 4;
-            const int maxYouTubeCols = 2;
+            const int maxVideoCols = 4;
 
-            // Start with minimum: 2 news columns, 1 YouTube column
-            double used = baseWidth + 2 * newsCol + sectionGap + youTubeCol;
-            int newsColumns = 2;
-            int youTubeColumns = 1;
+            double newsArea = Math.Max(0, available - devHubWidth - devHubGap);
 
-            // Expansion order: +news, +youtube, +news, +youtube, ...
-            bool tryNews = true;
+            // Cards are fixed width, so we can only add another column when one fully
+            // fits without overflow - otherwise the UniformGrid clips and the parent
+            // ScrollViewer shows a horizontal scrollbar. Floor + Max(1, ...) prevents that.
+            int newsColumns = (int)Math.Floor(newsArea / newsCardWidth);
+            newsColumns = Math.Max(1, Math.Min(maxNewsCols, newsColumns));
 
-            while (true)
-            {
-                bool canAddNews = newsColumns < maxNewsCols && used + newsCol <= available;
-                bool canAddYouTube = youTubeColumns < maxYouTubeCols && used + youTubeCol <= available;
+            int videoColumns = (int)Math.Floor(newsArea / videoCardWidth);
+            videoColumns = Math.Max(1, Math.Min(maxVideoCols, videoColumns));
 
-                if (tryNews && canAddNews)
-                {
-                    newsColumns++;
-                    used += newsCol;
-                    tryNews = false;
-                }
-                else if (!tryNews && canAddYouTube)
-                {
-                    youTubeColumns++;
-                    used += youTubeCol;
-                    tryNews = true;
-                }
-                else if (canAddNews)
-                {
-                    newsColumns++;
-                    used += newsCol;
-                    tryNews = false;
-                }
-                else if (canAddYouTube)
-                {
-                    youTubeColumns++;
-                    used += youTubeCol;
-                    tryNews = true;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            ViewModel.UpdateColumnCounts(newsColumns, youTubeColumns);
+            ViewModel.UpdateColumnCounts(newsColumns, videoColumns);
         }
 
         private async void NewProjectButton_Click(object sender, RoutedEventArgs e)
@@ -868,14 +836,33 @@ namespace StartScreen.ToolWindows
             if (ViewModel != null)
             {
                 ViewModel.ForceRefreshNews();
+                ViewModel.ForceRefreshYouTube();
             }
         }
 
-        private void RefreshYouTubeButton_Click(object sender, RoutedEventArgs e)
+        private void NewsTabs_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
-            if (ViewModel != null)
+            // Ignore selection changes that bubble up from nested ItemsControls.
+            if (!ReferenceEquals(e.OriginalSource, NewsTabs))
             {
-                ViewModel.ForceRefreshYouTube();
+                return;
+            }
+
+            if (ViewModel == null)
+            {
+                return;
+            }
+
+            object selected = NewsTabs.SelectedItem;
+            if (ReferenceEquals(selected, BlogsTab))
+            {
+                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.MarkBlogsAsSeenAsync())
+                    .FileAndForget(nameof(StartScreenControl));
+            }
+            else if (ReferenceEquals(selected, VideosTab))
+            {
+                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.MarkVideosAsSeenAsync())
+                    .FileAndForget(nameof(StartScreenControl));
             }
         }
 

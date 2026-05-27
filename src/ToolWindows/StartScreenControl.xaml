@@ -76,6 +76,45 @@
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
 
+        <!-- Tab item style for News sub-tabs (Blogs / Videos) -->
+        <Style x:Key="NewsTabItemStyle" TargetType="TabItem">
+            <Setter Property="Padding" Value="8 4"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}"
+                                BorderThickness="0 0 0 2"
+                                BorderBrush="Transparent">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder" Property="BorderBrush"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Search TextBox Style -->
         <Style x:Key="SearchBoxStyle" TargetType="TextBox">
             <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"/>
@@ -121,7 +160,7 @@
     </UserControl.Resources>
 
     <Grid>
-        <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Focusable="False"
+        <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False"
                   PreviewMouseWheel="PageScroll_PreviewMouseWheel">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -352,21 +391,21 @@
                                   VerticalAlignment="Bottom"/>
                         <TextBlock Margin="12 0 0 4" FontSize="13" VerticalAlignment="Bottom">
                             <Run Text="{Binding DiscoverySectionVersion}"/>
-                            <Run Text="  "/>
-                            <Hyperlink x:Name="ReleaseNotesLink" Click="ReleaseNotesLink_Click"
-                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                                Release notes
-                            </Hyperlink>
                         </TextBlock>
                     </DockPanel>
 
                     <!-- Tip of the Day and Suggested Extension Cards -->
-                    <Grid DockPanel.Dock="Top" Margin="0 32 0 32" HorizontalAlignment="Left">
+                    <Grid DockPanel.Dock="Top" Margin="0 32 0 32" HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="600"/>
-                            <ColumnDefinition Width="16"/>
-                            <ColumnDefinition Width="600"/>
+                            <ColumnDefinition Width="*" MaxWidth="1200"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
 
                         <!-- Tip of the Day Card (Left) -->
                         <Border Grid.Column="0"
@@ -467,19 +506,19 @@
                                         </DockPanel>
                                     </Border>
                                 </Grid>
+                        </Grid>
 
-                    <!-- Content Row: Dev Hub | News | YouTube -->
+                    <!-- Content Row: Dev Hub | News (with Blogs / Videos tabs) -->
                     <Grid DockPanel.Dock="Top">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
                         <!-- Dev Hub (fixed width, left) -->
                         <controls:DevHubPanel x:Name="DevHubPanelControl"
                                               Grid.Column="0"
-                                              Margin="0 0 24 0"
+                                              Margin="0 0 48 0"
                                               VerticalAlignment="Top"
                                               RefreshRequested="DevHubPanel_RefreshRequested"
                                               ClearFilterRequested="DevHubPanel_ClearFilterRequested"
@@ -487,170 +526,188 @@
                                               FocusMruRequested="DevHubPanel_FocusMruRequested"
                                               FocusNewsRequested="DevHubPanel_FocusNewsRequested"/>
 
-                        <!-- News (flexible width, center) -->
-                        <StackPanel Grid.Column="1" Margin="0 0 24 0">
+                        <!-- News (flexible width, right) -->
+                        <Grid Grid.Column="1">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
 
-                    <!-- News Header -->
-                    <Grid Margin="0 0 0 12">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-                            <TextBlock Text="News"
-                                      FontSize="16"
-                                      FontWeight="SemiBold"
-                                      VerticalAlignment="Center"/>
-                            <Button x:Name="RefreshNewsButton"
-                                    Click="RefreshNewsButton_Click"
-                                    Style="{StaticResource IconButtonStyle}"
-                                    Margin="8 0 0 0"
-                                    VerticalAlignment="Center">
-                                <Button.ToolTip>
-                                    <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                                             BorderThickness="1"
-                                             Padding="4">
-                                        <TextBlock Text="Refresh news feeds"/>
-                                    </ToolTip>
-                                </Button.ToolTip>
-                                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}" 
-                                                    Width="16" Height="16"
-                                                    VerticalAlignment="Center"/>
-                            </Button>
-                            <Button x:Name="NewsFeedsSettingsButton"
-                                    Click="NewsFeedsSettings_Click"
-                                    Style="{StaticResource IconButtonStyle}"
-                                    Margin="4 0 0 0"
-                                    VerticalAlignment="Center">
-                                <Button.ToolTip>
-                                    <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                                             BorderThickness="1"
-                                             Padding="4">
-                                        <TextBlock Text="Customize news feeds"/>
-                                    </ToolTip>
-                                </Button.ToolTip>
-                                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
-                                                    Width="16" Height="16"
-                                                    VerticalAlignment="Center"/>
-                            </Button>
-                        </StackPanel>
-                        <ProgressBar Height="2"
-                                    VerticalAlignment="Bottom"
-                                    IsIndeterminate="True"
-                                    Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
-                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                                                     BorderThickness="0"
-                                                     Visibility="{Binding IsRefreshingNews, Converter={StaticResource BoolToHiddenVisibilityConverter}}"/>
-                                    </Grid>
+                            <!-- Refresh + customize float over the tab strip, right-aligned -->
+                            <StackPanel Grid.Row="0" Orientation="Horizontal"
+                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                        Margin="0 2 0 0" Panel.ZIndex="10">
+                                <Button x:Name="RefreshNewsButton"
+                                        Click="RefreshNewsButton_Click"
+                                        Style="{StaticResource IconButtonStyle}"
+                                        VerticalAlignment="Center">
+                                    <Button.ToolTip>
+                                        <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                                                 Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                                                 BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                                                 BorderThickness="1"
+                                                 Padding="4">
+                                            <TextBlock Text="Refresh news feeds"/>
+                                        </ToolTip>
+                                    </Button.ToolTip>
+                                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}"
+                                                        Width="16" Height="16"
+                                                        VerticalAlignment="Center"/>
+                                </Button>
+                                <Button x:Name="NewsFeedsSettingsButton"
+                                        Click="NewsFeedsSettings_Click"
+                                        Style="{StaticResource IconButtonStyle}"
+                                        Margin="4 0 0 0"
+                                        VerticalAlignment="Center">
+                                    <Button.ToolTip>
+                                        <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                                                 Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                                                 BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                                                 BorderThickness="1"
+                                                 Padding="4">
+                                            <TextBlock Text="Customize news feeds"/>
+                                        </ToolTip>
+                                    </Button.ToolTip>
+                                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
+                                                        Width="16" Height="16"
+                                                        VerticalAlignment="Center"/>
+                                </Button>
+                            </StackPanel>
 
-                    <TextBlock Text="News feeds are currently unavailable. Click refresh to try again."
-                               TextWrapping="Wrap"
-                               Opacity="0.6"
-                               Margin="0 0 0 8"
-                               Visibility="{Binding IsNewsUnavailable, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                            <!-- Thin progress strip directly under the tab headers while refreshing -->
+                            <ProgressBar Grid.Row="0" Height="2"
+                                         VerticalAlignment="Top"
+                                         Margin="0 28 0 0"
+                                         IsIndeterminate="True"
+                                         Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+                                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                                         BorderThickness="0"
+                                         Panel.ZIndex="5"
+                                         Visibility="{Binding IsRefreshingNews, Converter={StaticResource BoolToHiddenVisibilityConverter}}"/>
 
-                    <!-- Pinned News Articles -->
-                    <TextBlock Text="Pinned"
-                              FontSize="13"
-                              FontWeight="SemiBold"
-                              Opacity="0.7"
-                              Margin="0 0 0 4"
-                              Focusable="False"
-                              Visibility="{Binding PinnedNewsPosts.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
-                    <ItemsControl ItemsSource="{Binding PinnedNewsPosts}" Focusable="False"
-                                  Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel Orientation="Horizontal"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <controls:NewsItemControl Margin="0 0 0 12"
-                                                          PinToggleRequested="NewsItemControl_PinToggleRequested"
-                                                          FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
-                                                          FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                            <!-- Blogs / Videos tabs -->
+                            <TabControl Grid.Row="0" Grid.RowSpan="2"
+                                        x:Name="NewsTabs"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Padding="0"
+                                        SelectionChanged="NewsTabs_SelectionChanged">
+                                <!-- Blogs Tab -->
+                                <TabItem x:Name="BlogsTab" Style="{StaticResource NewsTabItemStyle}">
+                                    <TabItem.Header>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Blogs"/>
+                                            <Ellipse Width="6" Height="6" Margin="4 0 0 0"
+                                                     Fill="#FF4CAF50" VerticalAlignment="Center"
+                                                     ToolTip="New blog posts since you last viewed this tab"
+                                                     Visibility="{Binding HasNewBlogs, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </StackPanel>
+                                    </TabItem.Header>
+                                    <StackPanel Margin="0 24 0 0">
+                                        <TextBlock Text="News feeds are currently unavailable. Click refresh to try again."
+                                                   TextWrapping="Wrap"
+                                                   Opacity="0.6"
+                                                   Margin="0 0 0 8"
+                                                   Visibility="{Binding IsNewsUnavailable, Converter={StaticResource BoolToVisibilityConverter}}"/>
 
-                    <!-- News Cards -->
-                    <ItemsControl ItemsSource="{Binding NewsPosts}" Focusable="False"
-                                  Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="{Binding NewsColumnCount}"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <controls:NewsItemControl Margin="0 0 12 12" Width="360"
-                                                          PinToggleRequested="NewsItemControl_PinToggleRequested"
-                                                          FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
-                                                          FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                                        <!-- Pinned News Articles -->
+                                        <TextBlock Text="Pinned"
+                                                  FontSize="13"
+                                                  FontWeight="SemiBold"
+                                                  Opacity="0.7"
+                                                  Margin="0 0 0 4"
+                                                  Focusable="False"
+                                                  Visibility="{Binding PinnedNewsPosts.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
+                                        <ItemsControl ItemsSource="{Binding PinnedNewsPosts}" Focusable="False"
+                                                      Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel Orientation="Horizontal"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <controls:NewsItemControl Margin="0 0 12 12" Width="360"
+                                                                              PinToggleRequested="NewsItemControl_PinToggleRequested"
+                                                                              FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
+                                                                              FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
 
-                        </StackPanel>
+                                        <!-- News Cards -->
+                                        <ItemsControl ItemsSource="{Binding NewsPosts}" Focusable="False"
+                                                      HorizontalAlignment="Left"
+                                                      Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel Orientation="Horizontal"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <controls:NewsItemControl Margin="0 0 12 12" Width="360"
+                                                                              PinToggleRequested="NewsItemControl_PinToggleRequested"
+                                                                              FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
+                                                                              FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </TabItem>
 
-                        <!-- YouTube Feed (responsive columns, right) -->
-                        <StackPanel Grid.Column="2" VerticalAlignment="Top">
-                            <Grid Margin="0 0 0 12">
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                    <TextBlock Text="YouTube"
-                                              FontSize="16"
-                                              FontWeight="SemiBold"
-                                              VerticalAlignment="Center"/>
-                                    <Button x:Name="RefreshYouTubeButton"
-                                            Click="RefreshYouTubeButton_Click"
-                                            Style="{StaticResource IconButtonStyle}"
-                                            Margin="8 0 0 0"
-                                            VerticalAlignment="Center">
-                                        <Button.ToolTip>
-                                            <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                                                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                                                     BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                                                     BorderThickness="1"
-                                                     Padding="4">
-                                                <TextBlock Text="Refresh YouTube feed"/>
-                                            </ToolTip>
-                                        </Button.ToolTip>
-                                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}" 
-                                                            Width="16" Height="16"
-                                                            VerticalAlignment="Center"/>
-                                    </Button>
-                                </StackPanel>
-                                <ProgressBar Height="2" 
-                                            VerticalAlignment="Bottom"
-                                            IsIndeterminate="True"
-                                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
-                                            Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                                                             BorderThickness="0"
-                                                             Visibility="{Binding IsRefreshingYouTube, Converter={StaticResource BoolToHiddenVisibilityConverter}}"/>
-                                            </Grid>
-                            <TextBlock Text="YouTube feed is currently unavailable. Click refresh to try again."
-                                       TextWrapping="Wrap"
-                                       Opacity="0.6"
-                                       Margin="0 8 0 0"
-                                       Visibility="{Binding IsYouTubeUnavailable, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                            <ItemsControl ItemsSource="{Binding YouTubeVideos}" Focusable="False"
-                                          HorizontalAlignment="Left"
-                                          MaxWidth="{Binding YouTubeColumnCount, Converter={StaticResource ColumnCountToWidthConverter}}"
-                                          Opacity="{Binding IsRefreshingYouTube, Converter={StaticResource RefreshingToOpacityConverter}}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <controls:YouTubeVideoControl Margin="0 0 12 16" Width="280"
-                                                                       FocusNewsRequested="YouTubeVideoControl_FocusNewsRequested"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
+                                <!-- Videos Tab -->
+                                <TabItem x:Name="VideosTab" Style="{StaticResource NewsTabItemStyle}">
+                                    <TabItem.Header>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Videos"/>
+                                            <Ellipse Width="6" Height="6" Margin="4 0 0 0"
+                                                     Fill="#FF4CAF50" VerticalAlignment="Center"
+                                                     ToolTip="New videos since you last viewed this tab"
+                                                     Visibility="{Binding HasNewVideos, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </StackPanel>
+                                    </TabItem.Header>
+                                    <StackPanel Margin="0 24 0 0">
+                                        <TextBlock Text="YouTube feed is currently unavailable. Click refresh to try again."
+                                                   TextWrapping="Wrap"
+                                                   Opacity="0.6"
+                                                   Margin="0 0 0 8"
+                                                   Visibility="{Binding IsYouTubeUnavailable, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        <ItemsControl ItemsSource="{Binding YouTubeVideos}" Focusable="False"
+                                                      HorizontalAlignment="Left"
+                                                      Opacity="{Binding IsRefreshingYouTube, Converter={StaticResource RefreshingToOpacityConverter}}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel Orientation="Horizontal"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <controls:YouTubeVideoControl Margin="0 0 12 16" Width="360"
+                                                                                   FocusNewsRequested="YouTubeVideoControl_FocusNewsRequested"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </TabItem>
+
+                                <!-- Release Notes Tab -->
+                                <TabItem x:Name="ReleaseNotesTab" Style="{StaticResource NewsTabItemStyle}">
+                                    <TabItem.Header>
+                                        <TextBlock Text="Release notes"/>
+                                    </TabItem.Header>
+                                    <StackPanel Margin="0 24 0 0">
+                                        <TextBlock TextWrapping="Wrap">
+                                            <Hyperlink x:Name="ReleaseNotesLink" Click="ReleaseNotesLink_Click"
+                                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                                                View release notes for <Run Text="{Binding DiscoverySectionVersion}"/>
+                                            </Hyperlink>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </TabItem>
+                            </TabControl>
+
+                        </Grid>
 
                     </Grid>
             </DockPanel>

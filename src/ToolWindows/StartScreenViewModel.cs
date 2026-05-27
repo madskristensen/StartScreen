@@ -42,6 +42,8 @@ namespace StartScreen.ToolWindows
         private string _lastNewsRefreshText;
         private string _lastYouTubeRefreshText;
         private bool _isRefreshingInBackground;
+        private bool _hasNewBlogs;
+        private bool _hasNewVideos;
 
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
@@ -150,6 +152,40 @@ namespace StartScreen.ToolWindows
                 if (_lastYouTubeRefreshText != value)
                 {
                     _lastYouTubeRefreshText = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when at least one blog post arrived in the most recent refresh that is newer
+        /// than the last time the user viewed the Blogs tab. Drives the green dot on the tab.
+        /// </summary>
+        public bool HasNewBlogs
+        {
+            get => _hasNewBlogs;
+            private set
+            {
+                if (_hasNewBlogs != value)
+                {
+                    _hasNewBlogs = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when at least one YouTube video arrived in the most recent refresh that is newer
+        /// than the last time the user viewed the Videos tab. Drives the green dot on the tab.
+        /// </summary>
+        public bool HasNewVideos
+        {
+            get => _hasNewVideos;
+            private set
+            {
+                if (_hasNewVideos != value)
+                {
+                    _hasNewVideos = value;
                     OnPropertyChanged();
                 }
             }
@@ -585,6 +621,7 @@ namespace StartScreen.ToolWindows
             _allNewsPosts.AddRange(posts);
             ApplyPinnedStateToNews(options);
             UpdateNewsCollections();
+            UpdateHasNewBlogs(options);
         }
 
         private async Task RefreshYouTubeAsync()
@@ -670,6 +707,62 @@ namespace StartScreen.ToolWindows
             _allYouTubeVideos.Clear();
             _allYouTubeVideos.AddRange(videos);
             UpdateYouTubeCollections();
+            Options options = await Options.GetLiveInstanceAsync();
+            UpdateHasNewVideos(options);
+        }
+
+        /// <summary>
+        /// Recomputes HasNewBlogs based on the current posts and the persisted last-seen timestamp.
+        /// First-ever load (LastSeen == MinValue) is suppressed so the user is not greeted with
+        /// the indicator on first open.
+        /// </summary>
+        private void UpdateHasNewBlogs(Options options)
+        {
+            DateTime lastSeen = options.LastNewsBlogsSeen;
+            if (lastSeen == DateTime.MinValue || _allNewsPosts.Count == 0)
+            {
+                HasNewBlogs = false;
+                return;
+            }
+
+            HasNewBlogs = _allNewsPosts.Any(p => p.PublishDate > lastSeen);
+        }
+
+        /// <summary>
+        /// Recomputes HasNewVideos based on the current videos and the persisted last-seen timestamp.
+        /// </summary>
+        private void UpdateHasNewVideos(Options options)
+        {
+            DateTime lastSeen = options.LastNewsVideosSeen;
+            if (lastSeen == DateTime.MinValue || _allYouTubeVideos.Count == 0)
+            {
+                HasNewVideos = false;
+                return;
+            }
+
+            HasNewVideos = _allYouTubeVideos.Any(v => v.PublishDate > lastSeen);
+        }
+
+        /// <summary>
+        /// Marks the Blogs tab as seen, persisting the timestamp and clearing the indicator.
+        /// </summary>
+        public async Task MarkBlogsAsSeenAsync()
+        {
+            HasNewBlogs = false;
+            Options options = await Options.GetLiveInstanceAsync();
+            options.LastNewsBlogsSeen = DateTime.UtcNow;
+            await options.SaveAsync();
+        }
+
+        /// <summary>
+        /// Marks the Videos tab as seen, persisting the timestamp and clearing the indicator.
+        /// </summary>
+        public async Task MarkVideosAsSeenAsync()
+        {
+            HasNewVideos = false;
+            Options options = await Options.GetLiveInstanceAsync();
+            options.LastNewsVideosSeen = DateTime.UtcNow;
+            await options.SaveAsync();
         }
 
         /// <summary>
