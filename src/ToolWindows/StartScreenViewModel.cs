@@ -23,6 +23,7 @@ namespace StartScreen.ToolWindows
         private bool _isNewsUnavailable;
         private bool _isRefreshingYouTube;
         private bool _isYouTubeUnavailable;
+        private bool _isRefreshingDevHub;
         private bool _isUpdateAvailable;
         private string _searchFilter;
         private string _discoverySectionTitle;
@@ -88,6 +89,7 @@ namespace StartScreen.ToolWindows
                 {
                     _isRefreshingNews = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(IsRefreshingAny));
                 }
             }
         }
@@ -114,9 +116,26 @@ namespace StartScreen.ToolWindows
                 {
                     _isRefreshingYouTube = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(IsRefreshingAny));
                 }
             }
         }
+
+        public bool IsRefreshingDevHub
+        {
+            get => _isRefreshingDevHub;
+            set
+            {
+                if (_isRefreshingDevHub != value)
+                {
+                    _isRefreshingDevHub = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(IsRefreshingAny));
+                }
+            }
+        }
+
+        public bool IsRefreshingAny => _isRefreshingNews || _isRefreshingYouTube || _isRefreshingDevHub;
 
         public bool IsYouTubeUnavailable
         {

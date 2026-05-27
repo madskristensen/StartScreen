@@ -1,4 +1,5 @@
-<UserControl x:Class="StartScreen.ToolWindows.StartScreenControl"
+
+    <UserControl x:Class="StartScreen.ToolWindows.StartScreenControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
@@ -395,7 +396,7 @@
                     </DockPanel>
 
                     <!-- Tip of the Day and Suggested Extension Cards -->
-                    <Grid DockPanel.Dock="Top" Margin="0 32 0 32" HorizontalAlignment="Stretch">
+                    <Grid x:Name="TipsAndExtensionsSection" DockPanel.Dock="Top" Margin="0 32 0 32" HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MaxWidth="1200"/>
                             <ColumnDefinition Width="Auto"/>
@@ -510,80 +511,49 @@
 
                     <!-- Content Row: Dev Hub | News (with Blogs / Videos tabs) -->
                     <Grid DockPanel.Dock="Top">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
+                        <!-- Unified progress bar spanning Dev Hub + News while any section refreshes -->
+                        <ProgressBar Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                                     Height="2"
+                                     VerticalAlignment="Top"
+                                     Margin="0 0 0 4"
+                                     IsIndeterminate="True"
+                                     Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+                                     Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                                     BorderThickness="0"
+                                     Panel.ZIndex="5"
+                                     Visibility="{Binding IsRefreshingAny, Converter={StaticResource BoolToHiddenVisibilityConverter}}"/>
+
                         <!-- Dev Hub (fixed width, left) -->
                         <controls:DevHubPanel x:Name="DevHubPanelControl"
+                                              Grid.Row="1"
                                               Grid.Column="0"
                                               Margin="0 0 48 0"
                                               VerticalAlignment="Top"
                                               RefreshRequested="DevHubPanel_RefreshRequested"
+                                              LastRefreshChanged="DevHubPanel_LastRefreshChanged"
                                               ClearFilterRequested="DevHubPanel_ClearFilterRequested"
                                               ConnectAccountRequested="DevHubPanel_ConnectAccountRequested"
                                               FocusMruRequested="DevHubPanel_FocusMruRequested"
                                               FocusNewsRequested="DevHubPanel_FocusNewsRequested"/>
 
                         <!-- News (flexible width, right) -->
-                        <Grid Grid.Column="1">
+                        <Grid Grid.Row="1" Grid.Column="1">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <!-- Refresh + customize float over the tab strip, right-aligned -->
-                            <StackPanel Grid.Row="0" Orientation="Horizontal"
-                                        HorizontalAlignment="Right" VerticalAlignment="Top"
-                                        Margin="0 2 0 0" Panel.ZIndex="10">
-                                <Button x:Name="RefreshNewsButton"
-                                        Click="RefreshNewsButton_Click"
-                                        Style="{StaticResource IconButtonStyle}"
-                                        VerticalAlignment="Center">
-                                    <Button.ToolTip>
-                                        <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                                                 Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                                                 BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                                                 BorderThickness="1"
-                                                 Padding="4">
-                                            <TextBlock Text="Refresh news feeds"/>
-                                        </ToolTip>
-                                    </Button.ToolTip>
-                                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}"
-                                                        Width="16" Height="16"
-                                                        VerticalAlignment="Center"/>
-                                </Button>
-                                <Button x:Name="NewsFeedsSettingsButton"
-                                        Click="NewsFeedsSettings_Click"
-                                        Style="{StaticResource IconButtonStyle}"
-                                        Margin="4 0 0 0"
-                                        VerticalAlignment="Center">
-                                    <Button.ToolTip>
-                                        <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                                                 Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                                                 BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                                                 BorderThickness="1"
-                                                 Padding="4">
-                                            <TextBlock Text="Customize news feeds"/>
-                                        </ToolTip>
-                                    </Button.ToolTip>
-                                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
-                                                        Width="16" Height="16"
-                                                        VerticalAlignment="Center"/>
-                                </Button>
-                            </StackPanel>
-
-                            <!-- Thin progress strip directly under the tab headers while refreshing -->
-                            <ProgressBar Grid.Row="0" Height="2"
-                                         VerticalAlignment="Top"
-                                         Margin="0 28 0 0"
-                                         IsIndeterminate="True"
-                                         Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
-                                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                                         BorderThickness="0"
-                                         Panel.ZIndex="5"
-                                         Visibility="{Binding IsRefreshingNews, Converter={StaticResource BoolToHiddenVisibilityConverter}}"/>
+                            <!-- Refresh + customize buttons moved to global top-right gear -->
+                            <!-- Progress bar moved to span both Dev Hub and News above this grid -->
 
                             <!-- Blogs / Videos tabs -->
                             <TabControl Grid.Row="0" Grid.RowSpan="2"
@@ -715,27 +685,53 @@
     </Grid>
     </ScrollViewer>
 
-        <!-- Settings gear (top-right overlay) -->
-        <Button x:Name="StartScreenSettingsButton"
-                Click="StartScreenSettingsButton_Click"
-                Style="{StaticResource IconButtonStyle}"
-                HorizontalAlignment="Right"
-                VerticalAlignment="Top"
-                Margin="0 8 24 0"
-                Panel.ZIndex="10">
-            <Button.ToolTip>
-                <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                         BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                         BorderThickness="1"
-                         Padding="4">
-                    <TextBlock Text="Start Screen settings"/>
-                </ToolTip>
-            </Button.ToolTip>
-            <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
-                                Width="16" Height="16"
-                                VerticalAlignment="Center"/>
-        </Button>
+        <!-- Unified refresh + settings (top-right overlay) -->
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="0 8 24 0"
+                    Panel.ZIndex="10">
+            <TextBlock x:Name="LastRefreshText"
+                       FontSize="10"
+                       Opacity="0.3"
+                       VerticalAlignment="Center"
+                       Margin="0 0 8 0"/>
+            <Button x:Name="UnifiedRefreshButton"
+                    Click="UnifiedRefreshButton_Click"
+                    Style="{StaticResource IconButtonStyle}"
+                    VerticalAlignment="Center">
+                <Button.ToolTip>
+                    <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                             BorderThickness="1"
+                             Padding="4">
+                        <TextBlock Text="Refresh Dev Hub, news, and videos"/>
+                    </ToolTip>
+                </Button.ToolTip>
+                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}"
+                                    Width="16" Height="16"
+                                    VerticalAlignment="Center"/>
+            </Button>
+            <Button x:Name="StartScreenSettingsButton"
+                    Click="StartScreenSettingsButton_Click"
+                    Style="{StaticResource IconButtonStyle}"
+                    Margin="4 0 0 0"
+                    VerticalAlignment="Center">
+                <Button.ToolTip>
+                    <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                             BorderThickness="1"
+                             Padding="4">
+                        <TextBlock Text="Start Screen settings"/>
+                    </ToolTip>
+                </Button.ToolTip>
+                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
+                                    Width="16" Height="16"
+                                    VerticalAlignment="Center"/>
+            </Button>
+        </StackPanel>
 
         <Popup x:Name="StartScreenSettingsPopup"
                PlacementTarget="{Binding ElementName=StartScreenSettingsButton}"
@@ -757,6 +753,28 @@
                               Content="Keep visible when a solution loads"
                               Checked="KeepVisibleCheckBox_Changed"
                               Unchecked="KeepVisibleCheckBox_Changed"/>
+                    <CheckBox x:Name="ShowTipsAndExtensionsCheckBox"
+                              Content="Show tips and suggested extensions"
+                              Margin="0 6 0 0"
+                              Checked="ShowTipsAndExtensionsCheckBox_Changed"
+                              Unchecked="ShowTipsAndExtensionsCheckBox_Changed"/>
+
+                    <Border BorderThickness="0 0 0 1"
+                            BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
+                            Margin="0 10 0 8"/>
+
+                    <TextBlock Margin="0 0 0 4">
+                        <Hyperlink Click="DevHubSettingsLink_Click"
+                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                            Dev Hub accounts and search query...
+                        </Hyperlink>
+                    </TextBlock>
+                    <TextBlock>
+                        <Hyperlink Click="NewsFeedsSettingsLink_Click"
+                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                            Customize news feeds...
+                        </Hyperlink>
+                    </TextBlock>
                 </StackPanel>
             </Border>
         </Popup>

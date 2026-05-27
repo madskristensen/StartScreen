@@ -108,7 +108,29 @@
                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
                 BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
                 BorderThickness="1">
-            <StackPanel>
+            <Grid>
+                <Button x:Name="CloseSettingsButton"
+                        Click="CloseSettings_Click"
+                        Style="{DynamicResource IconButtonStyle}"
+                        Width="18" Height="18"
+                        MinWidth="18" MinHeight="18"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Margin="0 -2 -2 0"
+                        Panel.ZIndex="10">
+                    <Button.ToolTip>
+                        <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
+                                 Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
+                                 BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
+                                 BorderThickness="1"
+                                 Padding="4">
+                            <TextBlock Text="Close"/>
+                        </ToolTip>
+                    </Button.ToolTip>
+                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Close}"
+                                        Width="12" Height="12"/>
+                </Button>
+                <StackPanel>
                 <!-- Accounts section -->
                 <TextBlock Text="Accounts"
                            FontSize="11"
@@ -362,6 +384,7 @@
                            TextWrapping="Wrap"
                            Margin="0 4 0 0"/>
             </StackPanel>
+            </Grid>
         </Border>
 
         <Grid>
@@ -693,50 +716,6 @@
                     Content="Try again"/>
         </StackPanel>
         </Grid>
-        </StackPanel>
-
-        <!-- Floating action buttons (refresh + settings), always visible top-right -->
-        <StackPanel Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Top"
-                    Margin="0 2 0 0"
-                    Panel.ZIndex="10">
-            <TextBlock x:Name="LastRefreshText"
-                       FontSize="10"
-                       Opacity="0.3"
-                       VerticalAlignment="Center"
-                       Margin="0 0 8 0"/>
-            <Button x:Name="RefreshButton" Click="Refresh_Click"
-                    Style="{DynamicResource IconButtonStyle}"
-                    VerticalAlignment="Center">
-                <Button.ToolTip>
-                    <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                             BorderThickness="1"
-                             Padding="4">
-                        <TextBlock Text="Refresh Dev Hub"/>
-                    </ToolTip>
-                </Button.ToolTip>
-                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Refresh}"
-                                    Width="16" Height="16"/>
-            </Button>
-            <Button x:Name="SettingsButton" Click="Settings_Click"
-                    Style="{DynamicResource IconButtonStyle}"
-                    Margin="4 0 0 0"
-                    VerticalAlignment="Center">
-                <Button.ToolTip>
-                    <ToolTip Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBrushKey}}"
-                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipTextBrushKey}}"
-                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolTipBorderBrushKey}}"
-                             BorderThickness="1"
-                             Padding="4">
-                        <TextBlock Text="Settings"/>
-                    </ToolTip>
-                </Button.ToolTip>
-                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}"
-                                    Width="16" Height="16"/>
-            </Button>
         </StackPanel>
     </Grid>
 </UserControl>

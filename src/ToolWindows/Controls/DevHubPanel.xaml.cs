@@ -429,20 +429,23 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateLastRefresh(DateTime fetchedAt)
         {
+            string text;
             if (fetchedAt != default)
             {
                 var ago = DateTime.UtcNow - fetchedAt;
                 if (ago.TotalMinutes < 1)
-                    LastRefreshText.Text = "Updated just now";
+                    text = "Updated just now";
                 else if (ago.TotalMinutes < 60)
-                    LastRefreshText.Text = $"Updated {(int)ago.TotalMinutes}m ago";
+                    text = $"Updated {(int)ago.TotalMinutes}m ago";
                 else
-                    LastRefreshText.Text = $"Updated {(int)ago.TotalHours}h ago";
+                    text = $"Updated {(int)ago.TotalHours}h ago";
             }
             else
             {
-                LastRefreshText.Text = "";
+                text = "";
             }
+
+            LastRefreshChanged?.Invoke(this, text);
         }
 
         private void PrItem_MouseUp(object sender, MouseButtonEventArgs e)
@@ -486,6 +489,16 @@ namespace StartScreen.ToolWindows.Controls
         private void ClearFilter_Click(object sender, RoutedEventArgs e)
         {
             ClearFilterRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void ToggleSettings()
+        {
+            Settings_Click(this, null);
+        }
+
+        private void CloseSettings_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsPanel.Visibility = Visibility.Collapsed;
         }
 
         private void Settings_Click(object sender, RoutedEventArgs e)
@@ -903,6 +916,11 @@ namespace StartScreen.ToolWindows.Controls
         /// Raised when the user requests a refresh of the dashboard data.
         /// </summary>
         public event EventHandler RefreshRequested;
+
+        /// <summary>
+        /// Raised when the "last updated" display text changes.
+        /// </summary>
+        public event EventHandler<string> LastRefreshChanged;
 
         /// <summary>
         /// Raised when the user wants to connect a new account.

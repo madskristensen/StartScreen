@@ -125,6 +125,15 @@ namespace StartScreen
         public bool KeepVisibleOnSolutionLoad { get; set; }
 
         /// <summary>
+        /// When true (default), the Tip of the Day and Suggested Extension cards
+        /// are shown on the Start Screen. When false, they are hidden so the
+        /// Dev Hub and News sections get more vertical space.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue(true)]
+        public bool ShowTipsAndExtensions { get; set; } = true;
+
+        /// <summary>
         /// JSON-serialized array of extended MRU entries (path, name, type, lastAccessed).
         /// Unlike VS's own MRU store this list has no upper bound and persists every
         /// solution or folder ever opened while the extension is active.

@@ -59,6 +59,8 @@ namespace StartScreen.ToolWindows
 
                 _isInitialized = true;
 
+                await ApplyShowTipsAndExtensionsAsync();
+
                 UpdateResponsiveColumns();
 
                 // Wait for MRU to finish so secondary loads (DevHub, news) don't
@@ -324,6 +326,11 @@ namespace StartScreen.ToolWindows
         {
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
+                if (ViewModel != null)
+                {
+                    ViewModel.IsRefreshingDevHub = true;
+                }
+
                 try
                 {
                     // Only show loading spinner if we have no data to display
@@ -344,6 +351,13 @@ namespace StartScreen.ToolWindows
                     if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
                     {
                         DevHubPanelControl.ShowError("Failed to refresh. Check your connection and try again.");
+                    }
+                }
+                finally
+                {
+                    if (ViewModel != null)
+                    {
+                        ViewModel.IsRefreshingDevHub = false;
                     }
                 }
             }).FileAndForget(nameof(StartScreenControl));
@@ -803,6 +817,7 @@ namespace StartScreen.ToolWindows
                 Options options = await Options.GetLiveInstanceAsync();
                 _suppressKeepVisibleChanged = true;
                 KeepVisibleCheckBox.IsChecked = options.KeepVisibleOnSolutionLoad;
+                ShowTipsAndExtensionsCheckBox.IsChecked = options.ShowTipsAndExtensions;
                 _suppressKeepVisibleChanged = false;
                 StartScreenSettingsPopup.IsOpen = true;
             }
@@ -831,13 +846,71 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private void RefreshNewsButton_Click(object sender, RoutedEventArgs e)
+        private async void ShowTipsAndExtensionsCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_suppressKeepVisibleChanged)
+            {
+                return;
+            }
+
+            try
+            {
+                bool show = ShowTipsAndExtensionsCheckBox.IsChecked == true;
+                Options options = await Options.GetLiveInstanceAsync();
+                options.ShowTipsAndExtensions = show;
+                await options.SaveAsync();
+                TipsAndExtensionsSection.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        private async Task ApplyShowTipsAndExtensionsAsync()
+        {
+            try
+            {
+                Options options = await Options.GetLiveInstanceAsync();
+                TipsAndExtensionsSection.Visibility = options.ShowTipsAndExtensions
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        private void DevHubPanel_LastRefreshChanged(object sender, string text)
+        {
+            if (LastRefreshText != null)
+            {
+                LastRefreshText.Text = text ?? string.Empty;
+            }
+        }
+
+        private void UnifiedRefreshButton_Click(object sender, RoutedEventArgs e)
         {
             if (ViewModel != null)
             {
                 ViewModel.ForceRefreshNews();
                 ViewModel.ForceRefreshYouTube();
             }
+
+            DevHubPanel_RefreshRequested(this, System.EventArgs.Empty);
+        }
+
+        private void DevHubSettingsLink_Click(object sender, RoutedEventArgs e)
+        {
+            StartScreenSettingsPopup.IsOpen = false;
+            DevHubPanelControl?.ToggleSettings();
+        }
+
+        private void NewsFeedsSettingsLink_Click(object sender, RoutedEventArgs e)
+        {
+            StartScreenSettingsPopup.IsOpen = false;
+            NewsFeedsSettings_Click(sender, e);
         }
 
         private void NewsTabs_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
