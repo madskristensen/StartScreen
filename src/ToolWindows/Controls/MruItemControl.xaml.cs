@@ -19,6 +19,7 @@ namespace StartScreen.ToolWindows.Controls
         private MruItem MruItem => DataContext as MruItem;
         private readonly MenuItem _pinMenuItem;
         private readonly MenuItem _gitPullMenuItem;
+        private readonly MenuItem _deleteCopilotChatMenuItem;
         private Point? _dragStartPoint;
         private bool _isGitPullRunning;
 
@@ -48,12 +49,14 @@ namespace StartScreen.ToolWindows.Controls
                 ((MenuItem)menu.Items[3]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Console);
                 _gitPullMenuItem = (MenuItem)menu.Items[4];
                 _gitPullMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.GitRepository);
-                // Items[5] is Separator
-                ((MenuItem)menu.Items[6]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
-                // Items[7] is Separator
-                _pinMenuItem = (MenuItem)menu.Items[8];
+                _deleteCopilotChatMenuItem = (MenuItem)menu.Items[5];
+                _deleteCopilotChatMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(CopilotMonikers.GitHubCopilot);
+                // Items[6] is Separator
+                ((MenuItem)menu.Items[7]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
+                // Items[8] is Separator
+                _pinMenuItem = (MenuItem)menu.Items[9];
                 _pinMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Pin);
-                ((MenuItem)menu.Items[9]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Cancel);
+                ((MenuItem)menu.Items[10]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Cancel);
                 menu.Opened += ContextMenu_Opened;
             }
         }
@@ -229,6 +232,7 @@ namespace StartScreen.ToolWindows.Controls
         private void ContextMenu_Opened(object sender, RoutedEventArgs e)
         {
             UpdateGitPullState();
+            UpdateDeleteCopilotChatState();
         }
 
         private bool MoveToAdjacentMruItem(bool forward)
@@ -429,6 +433,57 @@ namespace StartScreen.ToolWindows.Controls
         private void RemoveMenuItem_Click(object sender, RoutedEventArgs e)
         {
             RemoveRequested?.Invoke(this, MruItem);
+        }
+
+        private void UpdateDeleteCopilotChatState()
+        {
+            if (_deleteCopilotChatMenuItem == null)
+            {
+                return;
+            }
+
+            var hasSessions = MruItem?.HasCopilotChatSessions == true;
+            _deleteCopilotChatMenuItem.Visibility = hasSessions ? Visibility.Visible : Visibility.Collapsed;
+            _deleteCopilotChatMenuItem.IsEnabled = hasSessions;
+        }
+
+#pragma warning disable VSTHRD100 // WPF event handlers must be void; exceptions are handled and logged.
+        private async void DeleteCopilotChatMenuItem_Click(object sender, RoutedEventArgs e)
+#pragma warning restore VSTHRD100
+        {
+            MruItem item = MruItem;
+            if (item == null || string.IsNullOrWhiteSpace(item.Path) || !item.HasCopilotChatSessions)
+            {
+                return;
+            }
+
+            try
+            {
+                var confirmed = await VS.MessageBox.ShowConfirmAsync(
+                    "Start Screen",
+                    $"Delete all GitHub Copilot Chat sessions for '{item.Name}'? This cannot be undone.");
+
+                if (!confirmed)
+                {
+                    return;
+                }
+
+                var path = item.Path;
+                MruItemType type = item.Type;
+
+                var deleted = await System.Threading.Tasks.Task.Run(() => CopilotChatHelper.DeleteAllSessions(path, type));
+
+                item.CopilotChatSessionCount = CopilotChatHelper.CountSessions(path, type);
+
+                await VS.StatusBar.ShowMessageAsync(deleted == 1
+                    ? $"Deleted 1 Copilot Chat session for {item.Name}."
+                    : $"Deleted {deleted} Copilot Chat sessions for {item.Name}.");
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen", $"Failed to delete Copilot Chat sessions: {ex.Message}");
+            }
         }
 
         private void UpdatePinState()

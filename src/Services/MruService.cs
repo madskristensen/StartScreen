@@ -205,6 +205,9 @@ namespace StartScreen.Services
                         // Update properties (INotifyPropertyChanged handles UI marshaling)
                         item.ApplyGitStatus(status);
 
+                        // Detect Copilot Chat sessions stored under .vs\*\copilot-chat\*\sessions
+                        item.CopilotChatSessionCount = CopilotChatHelper.CountSessions(item.Path, item.Type);
+
                         // Track repo path for phase 2 (if item is in a git repo
                         // and the current branch has an upstream we can fetch).
                         if (status.IsGitRepository

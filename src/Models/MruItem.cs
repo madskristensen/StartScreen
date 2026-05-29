@@ -35,6 +35,8 @@ namespace StartScreen.Models
         private string _remoteUrl;
         private bool _isSelected;
         private bool _isFromExtendedList;
+        private bool _hasCopilotChatSessions;
+        private int _copilotChatSessionCount;
 
         /// <summary>
         /// The raw MRU entry strings from IVsMRUItemsStore, used for deletion.
@@ -450,6 +452,50 @@ namespace StartScreen.Models
         /// Whether a remote URL is available for this item.
         /// </summary>
         public bool HasRemoteUrl => !string.IsNullOrEmpty(_remoteUrl);
+
+        /// <summary>
+        /// Whether one or more GitHub Copilot Chat sessions exist on disk for this
+        /// item's solution or repository root.
+        /// </summary>
+        public bool HasCopilotChatSessions
+        {
+            get => _hasCopilotChatSessions;
+            set
+            {
+                if (_hasCopilotChatSessions != value)
+                {
+                    _hasCopilotChatSessions = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Number of GitHub Copilot Chat sessions on disk for this item's
+        /// solution or repository root.
+        /// </summary>
+        public int CopilotChatSessionCount
+        {
+            get => _copilotChatSessionCount;
+            set
+            {
+                if (_copilotChatSessionCount != value)
+                {
+                    _copilotChatSessionCount = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(CopilotChatTooltip));
+                    HasCopilotChatSessions = value > 0;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tooltip text for the Copilot Chat indicator (e.g. "3 Copilot chat sessions").
+        /// </summary>
+        public string CopilotChatTooltip =>
+            _copilotChatSessionCount == 1
+                ? "1 Copilot chat session"
+                : $"{_copilotChatSessionCount} Copilot chat sessions";
 
         /// <summary>
         /// Updates all Git-related properties from a status snapshot.

@@ -8,6 +8,7 @@
              xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:controls="clr-namespace:StartScreen.ToolWindows.Controls"
+             xmlns:helpers="clr-namespace:StartScreen.Helpers"
              toolkit:Themes.UseVsTheme="True"
              Background="Transparent"
              Focusable="False"
@@ -113,6 +114,14 @@
         <DockPanel>
             <!-- Right side: Git info and pin -->
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Copilot Chat sessions indicator -->
+                <imaging:CrispImage Moniker="{x:Static helpers:CopilotMonikers.GitHubCopilot}"
+                                    Width="11" Height="11"
+                                    Margin="0 0 4 0"
+                                    VerticalAlignment="Center"
+                                    ToolTip="{Binding CopilotChatTooltip}"
+                                    Visibility="{Binding HasCopilotChatSessions, Converter={StaticResource BoolToVisibilityConverter}}"/>
+
                 <!-- Git status (right-aligned) -->
                 <StackPanel Orientation="Horizontal" 
                             VerticalAlignment="Center"
@@ -209,6 +218,7 @@
                 <MenuItem Header="Open Containing Folder" Click="OpenFolderMenuItem_Click" InputGestureText="O"/>
                 <MenuItem Header="Open in Terminal" Click="OpenTerminalMenuItem_Click" InputGestureText="T"/>
                 <MenuItem Header="Git Pull" Click="GitPullMenuItem_Click" InputGestureText="G"/>
+                <MenuItem Header="Delete Copilot Chat Sessions" Click="DeleteCopilotChatMenuItem_Click"/>
                 <Separator/>
                 <MenuItem Header="Copy Path" Click="CopyPathMenuItem_Click" InputGestureText="Ctrl+C"/>
                 <Separator/>
