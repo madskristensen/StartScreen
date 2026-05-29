@@ -361,9 +361,9 @@
             <DockPanel x:Name="NewsPanel" Margin="32 24 32 24" Focusable="False" LastChildFill="False">
                     <!-- Update Available Banner -->
                     <Border DockPanel.Dock="Top" Margin="0 0 0 16"
-                            Padding="12 10"
-                            CornerRadius="4"
-                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+                            Padding="0 10"
+                            HorizontalAlignment="Left"
+                            Background="Transparent"
                             Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Collapsed, TargetNullValue=Collapsed}">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.StatusInformation}"
