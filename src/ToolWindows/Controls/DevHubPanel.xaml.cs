@@ -24,6 +24,7 @@ namespace StartScreen.ToolWindows.Controls
         private ItemsControl _cachedBordersList;
         private bool _suppressSaveOnLostFocus;
         private bool _showGitHubCredentialHelp;
+        private bool _suppressGitHubAccountSelectionChanged;
 
         // Host that the inline PAT entry box is currently targeting (cloud or on-prem).
         // Set when the user clicks "Sign in" / "Change" on a server row; consumed by AdoPatBox_KeyDown.
@@ -184,10 +185,18 @@ namespace StartScreen.ToolWindows.Controls
         {
             ConnectedGitHubStatus.Visibility = hasGitHub ? Visibility.Visible : Visibility.Collapsed;
             SettingsConnectGitHubTextBlock.Visibility = hasGitHub ? Visibility.Collapsed : Visibility.Visible;
+            GitHubConnectedStatusText.Text = hasGitHub
+                ? $"GitHub: {GetConnectedGitHubAccountDisplayText()}"
+                : "GitHub: connected";
             if (hasGitHub)
             {
                 GitHubCredentialSettingsHelpTextBlock.Visibility = Visibility.Collapsed;
                 GitHubPatEntryPanel.Visibility = Visibility.Collapsed;
+                RefreshGitHubAccountsAsync().FireAndForget();
+            }
+            else
+            {
+                GitHubAccountSelectionPanel.Visibility = Visibility.Collapsed;
             }
 
             // Azure DevOps state is reflected by the AdoServersList; nothing else to do here.
@@ -574,6 +583,116 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
+        private string GetConnectedGitHubAccountDisplayText()
+        {
+            if (_currentDashboard?.Users != null)
+            {
+                for (int i = 0; i < _currentDashboard.Users.Count; i++)
+                {
+                    var user = _currentDashboard.Users[i];
+                    if (string.Equals(user?.Host, "github.com", StringComparison.OrdinalIgnoreCase) &&
+                        !string.IsNullOrWhiteSpace(user.Username))
+                    {
+                        return user.Username;
+                    }
+                }
+            }
+
+            return "connected";
+        }
+
+        private async Task RefreshGitHubAccountsAsync()
+        {
+            try
+            {
+                var accounts = await Services.DevHub.DevHubCredentialHelper.GetGitHubAccountsAsync(System.Threading.CancellationToken.None);
+                var preferred = Options.Instance.DevHubGitHubAccount?.Trim() ?? string.Empty;
+
+                _suppressGitHubAccountSelectionChanged = true;
+                GitHubAccountsComboBox.ItemsSource = accounts;
+
+                if (accounts.Count > 0)
+                {
+                    var selected = accounts.FirstOrDefault(account =>
+                        string.Equals(account, preferred, StringComparison.OrdinalIgnoreCase));
+
+                    if (selected == null)
+                    {
+                        var connected = GetConnectedGitHubAccountDisplayText();
+                        selected = accounts.FirstOrDefault(account =>
+                            string.Equals(account, connected, StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    if (selected != null)
+                    {
+                        GitHubAccountsComboBox.SelectedItem = selected;
+                    }
+                    else
+                    {
+                        GitHubAccountsComboBox.SelectedItem = null;
+                    }
+
+                    GitHubAccountSelectionPanel.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    GitHubAccountsComboBox.SelectedItem = null;
+                    GitHubAccountSelectionPanel.Visibility = Visibility.Collapsed;
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                GitHubAccountSelectionPanel.Visibility = Visibility.Collapsed;
+            }
+            finally
+            {
+                _suppressGitHubAccountSelectionChanged = false;
+            }
+        }
+
+        private void GitHubAccountsComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_suppressGitHubAccountSelectionChanged)
+                return;
+
+            var selectedAccount = GitHubAccountsComboBox.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(selectedAccount))
+                return;
+
+            var current = Options.Instance.DevHubGitHubAccount ?? string.Empty;
+            if (string.Equals(current, selectedAccount, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            Options.Instance.DevHubGitHubAccount = selectedAccount;
+            Options.Instance.SaveAsync().FireAndForget();
+            RefreshRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        private async void GitHubSignOut_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var selectedAccount = GitHubAccountsComboBox.SelectedItem as string;
+                if (!string.IsNullOrWhiteSpace(selectedAccount))
+                {
+                    await Services.DevHub.DevHubCredentialHelper.RemoveGitHubAccountAsync(
+                        selectedAccount, System.Threading.CancellationToken.None);
+                }
+
+                Services.DevHub.DevHubCredentialHelper.RemoveCredential("github.com");
+                Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
+                Options.Instance.DevHubGitHubAccount = string.Empty;
+                Options.Instance.SaveAsync().FireAndForget();
+                await RefreshGitHubAccountsAsync();
+                RefreshRequested?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
         private void ConnectGitHub_Click(object sender, RoutedEventArgs e)
         {
             ConnectAccountRequested?.Invoke(this, "github.com");
@@ -595,7 +714,10 @@ namespace StartScreen.ToolWindows.Controls
                 var pat = GitHubPatBox.Password?.Trim();
                 if (!string.IsNullOrEmpty(pat))
                 {
-                    Services.DevHub.DevHubCredentialHelper.StoreCredential("github.com", string.Empty, pat);
+                    var selectedAccount = GitHubAccountsComboBox.SelectedItem as string;
+                    Services.DevHub.DevHubCredentialHelper.StoreCredential("github.com", selectedAccount ?? string.Empty, pat);
+                    Options.Instance.DevHubGitHubAccount = selectedAccount ?? string.Empty;
+                    Options.Instance.SaveAsync().FireAndForget();
                     Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
                     _showGitHubCredentialHelp = false;
                     GitHubCredentialSettingsHelpTextBlock.Visibility = Visibility.Collapsed;

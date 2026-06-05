@@ -40,6 +40,12 @@ namespace StartScreen.Services.DevHub.Providers
 
         private string _cachedLogin;
 
+        private static string GetPreferredGitHubAccount()
+        {
+            var account = Options.Instance.DevHubGitHubAccount;
+            return string.IsNullOrWhiteSpace(account) ? null : account.Trim();
+        }
+
         public string DisplayName => "GitHub";
 
         public bool CanHandle(string remoteUrl)
@@ -61,7 +67,7 @@ namespace StartScreen.Services.DevHub.Providers
 
         public async Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", cancellationToken);
+            var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
             if (credential == null)
                 return null;
 
@@ -73,7 +79,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
                     DevHubCredentialHelper.InvalidateCachedCredential("github.com");
-                    credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", cancellationToken);
+                    credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
                     if (credential == null)
                         return null;
 
@@ -122,7 +128,7 @@ namespace StartScreen.Services.DevHub.Providers
         /// </summary>
         private async Task<(DevHubCredential credential, string login)> GetCredentialAndLoginAsync(CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", cancellationToken);
+            var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
             if (credential == null)
                 return (null, null);
 
@@ -136,7 +142,7 @@ namespace StartScreen.Services.DevHub.Providers
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
                 DevHubCredentialHelper.InvalidateCachedCredential("github.com");
-                credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", cancellationToken);
+                credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
                 if (credential == null)
                     return (null, null);
 
@@ -266,7 +272,7 @@ namespace StartScreen.Services.DevHub.Providers
             if (repo == null)
                 return null;
 
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", cancellationToken);
+            var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
             if (credential == null)
                 return null;
 

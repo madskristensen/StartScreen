@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,37 +23,43 @@ namespace StartScreen.Services.DevHub
         /// Tries GCM first, then falls back to a stored credential in Windows Credential Manager.
         /// Returns null if no credential is available.
         /// </summary>
-        public static async Task<DevHubCredential> GetCredentialAsync(string host, CancellationToken cancellationToken)
+        public static Task<DevHubCredential> GetCredentialAsync(string host, CancellationToken cancellationToken)
+        {
+            return GetCredentialAsync(host, username: null, cancellationToken);
+        }
+
+        /// <summary>
+        /// Attempts to acquire a credential (username + token) for the given host and optional username.
+        /// When username is provided, this asks GCM for that specific account.
+        /// </summary>
+        public static async Task<DevHubCredential> GetCredentialAsync(string host, string username, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(host))
                 return null;
 
+            var normalizedUsername = string.IsNullOrWhiteSpace(username) ? null : username.Trim();
+            var cacheKey = GetCacheKey(host, normalizedUsername);
+
             // Return cached credential if available
-            lock (_cacheLock)
-            {
-                if (_credentialCache.TryGetValue(host, out var cached))
-                    return cached;
-            }
+            var cached = TryGetCachedCredential(cacheKey);
+            if (cached != null)
+                return cached;
 
             // Try Git Credential Manager
-            var gcmResult = await TryGitCredentialManagerAsync(host, cancellationToken);
+            var gcmResult = await TryGitCredentialManagerAsync(host, normalizedUsername, cancellationToken);
             if (gcmResult != null)
             {
-                lock (_cacheLock)
-                {
-                    _credentialCache[host] = gcmResult;
-                }
+                CacheCredential(cacheKey, gcmResult);
                 return gcmResult;
             }
 
             // Fallback: Windows Credential Manager
             var stored = TryWindowsCredentialManager(host);
-            if (stored != null)
+            if (stored != null &&
+                (normalizedUsername == null ||
+                 string.Equals(normalizedUsername, stored.Username, StringComparison.OrdinalIgnoreCase)))
             {
-                lock (_cacheLock)
-                {
-                    _credentialCache[host] = stored;
-                }
+                CacheCredential(cacheKey, stored);
                 return stored;
             }
 
@@ -80,10 +87,7 @@ namespace StartScreen.Services.DevHub
             if (string.IsNullOrWhiteSpace(host))
                 return;
 
-            lock (_cacheLock)
-            {
-                _credentialCache.Remove(host);
-            }
+            RemoveCachedCredentialsForHost(host);
         }
 
         /// <summary>
@@ -143,6 +147,112 @@ namespace StartScreen.Services.DevHub
         }
 
         /// <summary>
+        /// Lists GitHub accounts known to Git Credential Manager.
+        /// </summary>
+        public static async Task<IReadOnlyList<string>> GetGitHubAccountsAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "credential-manager github list",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+
+                psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+
+                using (var process = Process.Start(psi))
+                {
+                    if (process == null)
+                        return Array.Empty<string>();
+
+                    var outputTask = process.StandardOutput.ReadToEndAsync();
+                    var completed = await Task.WhenAny(
+                        outputTask,
+                        Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+
+                    if (completed != outputTask)
+                    {
+                        TryKillProcess(process);
+                        return Array.Empty<string>();
+                    }
+
+                    if (!process.WaitForExit(3000))
+                    {
+                        TryKillProcess(process);
+                        return Array.Empty<string>();
+                    }
+
+                    if (process.ExitCode != 0)
+                        return Array.Empty<string>();
+
+                    return ParseGitHubAccountListOutput(await outputTask);
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                return Array.Empty<string>();
+            }
+        }
+
+        /// <summary>
+        /// Removes a specific GitHub account from Git Credential Manager.
+        /// </summary>
+        public static async Task<bool> RemoveGitHubAccountAsync(string account, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(account))
+                return false;
+
+            try
+            {
+                var escapedAccount = account.Trim().Replace("\"", "\\\"");
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = $"credential-manager github logout \"{escapedAccount}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+
+                psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+
+                using (var process = Process.Start(psi))
+                {
+                    if (process == null)
+                        return false;
+
+                    var waitTask = Task.Run(() => process.WaitForExit(8000), cancellationToken);
+                    var completed = await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromSeconds(8), cancellationToken));
+                    if (completed != waitTask || !waitTask.Result)
+                    {
+                        TryKillProcess(process);
+                        return false;
+                    }
+
+                    var success = process.ExitCode == 0;
+                    if (success)
+                    {
+                        InvalidateCachedCredential("github.com");
+                    }
+
+                    return success;
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Calls GCM interactively, allowing it to open a browser for OAuth.
         /// Used when the user explicitly clicks "Connect account".
         /// </summary>
@@ -167,9 +277,7 @@ namespace StartScreen.Services.DevHub
                     if (process == null)
                         return false;
 
-                    await process.StandardInput.WriteLineAsync("protocol=https");
-                    await process.StandardInput.WriteLineAsync($"host={host}");
-                    await process.StandardInput.WriteLineAsync();
+                    await process.StandardInput.WriteAsync(BuildGitCredentialInput(host));
                     process.StandardInput.Close();
 
                     // Wait up to 2 minutes for the user to complete the browser OAuth flow.
@@ -198,10 +306,7 @@ namespace StartScreen.Services.DevHub
                         return false;
 
                     // Cache the freshly acquired credential.
-                    lock (_cacheLock)
-                    {
-                        _credentialCache[host] = credential;
-                    }
+                    CacheCredential(GetCacheKey(host, username: null), credential);
 
                     // Also persist to Windows Credential Manager so the credential
                     // survives VS restarts even if GCM can't refresh non-interactively.
@@ -217,7 +322,7 @@ namespace StartScreen.Services.DevHub
             }
         }
 
-        private static async Task<DevHubCredential> TryGitCredentialManagerAsync(string host, CancellationToken cancellationToken)
+        private static async Task<DevHubCredential> TryGitCredentialManagerAsync(string host, string username, CancellationToken cancellationToken)
         {
             try
             {
@@ -242,10 +347,8 @@ namespace StartScreen.Services.DevHub
                     if (process == null)
                         return null;
 
-                    // Write the protocol/host to stdin
-                    await process.StandardInput.WriteLineAsync($"protocol=https");
-                    await process.StandardInput.WriteLineAsync($"host={host}");
-                    await process.StandardInput.WriteLineAsync();
+                    // Write the protocol/host (+ optional username) to stdin.
+                    await process.StandardInput.WriteAsync(BuildGitCredentialInput(host, username));
                     process.StandardInput.Close();
 
                     // Read output with timeout
@@ -306,6 +409,85 @@ namespace StartScreen.Services.DevHub
                 return null;
 
             return new DevHubCredential(username, password);
+        }
+
+        internal static IReadOnlyList<string> ParseGitHubAccountListOutput(string output)
+        {
+            if (string.IsNullOrWhiteSpace(output))
+                return Array.Empty<string>();
+
+            var accounts = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var rawLine in output.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var line = rawLine.Trim();
+                if (string.IsNullOrEmpty(line))
+                    continue;
+
+                if (line.StartsWith("warning:", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (seen.Add(line))
+                {
+                    accounts.Add(line);
+                }
+            }
+
+            return accounts;
+        }
+
+        private static string BuildGitCredentialInput(string host, string username = null)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine("protocol=https");
+            builder.AppendLine($"host={host}");
+
+            if (!string.IsNullOrWhiteSpace(username))
+            {
+                builder.AppendLine($"username={username.Trim()}");
+            }
+
+            // Empty line terminates input for `git credential fill`.
+            builder.AppendLine();
+            return builder.ToString();
+        }
+
+        private static string GetCacheKey(string host, string username)
+        {
+            return $"{host}\n{username ?? string.Empty}";
+        }
+
+        private static DevHubCredential TryGetCachedCredential(string key)
+        {
+            lock (_cacheLock)
+            {
+                if (_credentialCache.TryGetValue(key, out var cached))
+                    return cached;
+            }
+
+            return null;
+        }
+
+        private static void CacheCredential(string key, DevHubCredential credential)
+        {
+            lock (_cacheLock)
+            {
+                _credentialCache[key] = credential;
+            }
+        }
+
+        private static void RemoveCachedCredentialsForHost(string host)
+        {
+            lock (_cacheLock)
+            {
+                var prefix = $"{host}\n";
+                var keys = _credentialCache.Keys.Where(key => key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+                for (var i = 0; i < keys.Count; i++)
+                {
+                    _credentialCache.Remove(keys[i]);
+                }
+            }
         }
 
         private static DevHubCredential TryWindowsCredentialManager(string host)

@@ -100,6 +100,14 @@ namespace StartScreen
         public string DevHubSearchQuery { get; set; } = "";
 
         /// <summary>
+        /// Preferred GitHub account login for Dev Hub credential lookup.
+        /// When set, Dev Hub asks Git Credential Manager for this specific account.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue("")]
+        public string DevHubGitHubAccount { get; set; } = "";
+
+        /// <summary>
         /// Semicolon-delimited list of Azure DevOps Server (on-premises) hosts that the
         /// user has manually added through the Dev Hub settings panel. Each entry is the
         /// host portion only (e.g., "tfs.contoso.com"); credentials are stored separately

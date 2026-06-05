@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using StartScreen.Services.DevHub;
+using System.Linq;
 
 namespace StartScreen.Test.DevHub
 {
@@ -128,6 +129,34 @@ namespace StartScreen.Test.DevHub
             // Invalidating a host that was never cached should be a safe no-op.
             DevHubCredentialHelper.ClearCachedCredentials();
             DevHubCredentialHelper.InvalidateCachedCredential("unknown.example.com");
+        }
+
+        [TestMethod]
+        public void ParseGitHubAccountListOutput_ValidLines_ReturnsAccounts()
+        {
+            var output = "madskristensen\nwork-account\n";
+
+            var result = DevHubCredentialHelper.ParseGitHubAccountListOutput(output);
+
+            CollectionAssert.AreEqual(new[] { "madskristensen", "work-account" }, result.ToArray());
+        }
+
+        [TestMethod]
+        public void ParseGitHubAccountListOutput_DuplicateAndWarningLines_FiltersOutput()
+        {
+            var output = "madskristensen\nwarning: skipped helper\ntestuser\nmadskristensen\n";
+
+            var result = DevHubCredentialHelper.ParseGitHubAccountListOutput(output);
+
+            CollectionAssert.AreEqual(new[] { "madskristensen", "testuser" }, result.ToArray());
+        }
+
+        [TestMethod]
+        public void ParseGitHubAccountListOutput_EmptyInput_ReturnsEmpty()
+        {
+            var result = DevHubCredentialHelper.ParseGitHubAccountListOutput(" \n \r\n ");
+
+            Assert.AreEqual(0, result.Count);
         }
     }
 }

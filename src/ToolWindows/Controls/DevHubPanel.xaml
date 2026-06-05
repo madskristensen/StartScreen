@@ -136,14 +136,38 @@
                            FontSize="11"
                            FontWeight="SemiBold"
                            Margin="0 0 0 6"/>
-                <StackPanel x:Name="ConnectedGitHubStatus" Orientation="Horizontal" Margin="0 0 0 4">
-                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.StatusOK}"
-                                        Width="12" Height="12"
-                                        Margin="0 0 4 0"
-                                        VerticalAlignment="Center"/>
-                    <TextBlock Text="GitHub: connected"
-                               FontSize="11"
-                               Opacity="0.6"/>
+                <StackPanel x:Name="ConnectedGitHubStatus" Margin="0 0 0 4">
+                    <StackPanel Orientation="Horizontal">
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.StatusOK}"
+                                            Width="12" Height="12"
+                                            Margin="0 0 4 0"
+                                            VerticalAlignment="Center"/>
+                        <TextBlock x:Name="GitHubConnectedStatusText"
+                                   Text="GitHub: connected"
+                                   FontSize="11"
+                                   Opacity="0.6"/>
+                        <TextBlock FontSize="11" Margin="8 0 0 0">
+                            <Hyperlink Click="GitHubSignOut_Click"
+                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                                Sign out
+                            </Hyperlink>
+                        </TextBlock>
+                    </StackPanel>
+                    <StackPanel x:Name="GitHubAccountSelectionPanel" Orientation="Horizontal" Margin="16 4 0 0">
+                        <TextBlock Text="Use account"
+                                   FontSize="10"
+                                   Opacity="0.6"
+                                   VerticalAlignment="Center"
+                                   Margin="0 0 6 0"/>
+                        <ComboBox x:Name="GitHubAccountsComboBox"
+                                  MinWidth="180"
+                                  FontSize="11"
+                                  Padding="4 2"
+                                  SelectionChanged="GitHubAccountsComboBox_SelectionChanged"
+                                  Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                                  Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                                  BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}"/>
+                    </StackPanel>
                 </StackPanel>
                 <TextBlock x:Name="SettingsConnectGitHubTextBlock" FontSize="11" Margin="0 0 0 4">
                     <Hyperlink Click="ConnectGitHub_Click"
