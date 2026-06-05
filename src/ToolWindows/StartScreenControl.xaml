@@ -710,6 +710,7 @@
         <ScrollBar x:Name="ContentHorizontalScrollbar"
                    Grid.Row="1"
                    Orientation="Horizontal"
+                   Visibility="Collapsed"
                    Minimum="0"
                    SmallChange="24"
                    LargeChange="120"

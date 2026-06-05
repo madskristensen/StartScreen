@@ -630,10 +630,13 @@ namespace StartScreen.ToolWindows
 
             try
             {
+                var maximum = Math.Max(0, e.ExtentWidth - e.ViewportWidth);
+
                 ContentHorizontalScrollbar.ViewportSize = e.ViewportWidth;
-                ContentHorizontalScrollbar.Maximum = Math.Max(0, e.ExtentWidth - e.ViewportWidth);
-                ContentHorizontalScrollbar.IsEnabled = ContentHorizontalScrollbar.Maximum > 0;
-                ContentHorizontalScrollbar.Value = Math.Max(0, Math.Min(ContentHorizontalScrollbar.Maximum, e.HorizontalOffset));
+                ContentHorizontalScrollbar.Maximum = maximum;
+                ContentHorizontalScrollbar.IsEnabled = maximum > 0;
+                ContentHorizontalScrollbar.Visibility = maximum > 0 ? Visibility.Visible : Visibility.Collapsed;
+                ContentHorizontalScrollbar.Value = Math.Max(0, Math.Min(maximum, e.HorizontalOffset));
             }
             finally
             {
