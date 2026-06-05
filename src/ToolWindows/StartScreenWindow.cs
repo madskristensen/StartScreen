@@ -44,7 +44,7 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        [Guid("66da8633-f469-4bb6-acc2-56aab30b750a")]
+        [Guid("56d11d96-90e9-4d41-a3dd-fa3146284922")]
         internal class Pane : ToolWindowPane
         {
             public Pane()

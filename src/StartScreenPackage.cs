@@ -14,7 +14,8 @@ namespace StartScreen
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [InstalledProductRegistration(Vsix.Name, Vsix.Description, Vsix.Version)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
-    [ProvideToolWindow(typeof(StartScreenWindow.Pane), Window = WindowGuids.DocumentWell, DocumentLikeTool = true)]
+    [ProvideToolWindow(typeof(StartScreenWindow.Pane), Window = WindowGuids.DocumentWell, Style = VsDockStyle.MDI)]
+    [ProvideToolWindowVisibility(typeof(StartScreenWindow.Pane), VSConstants.UICONTEXT.NoSolution_string)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string, PackageAutoLoadFlags.BackgroundLoad)]
     [Guid(PackageGuids.StartScreenString)]
     public sealed class StartScreenPackage : ToolkitPackage
@@ -38,8 +39,6 @@ namespace StartScreen
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnBeforeOpenSolution += OnBeforeOpenSolution;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder += OnBeforeOpenSolution;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterCloseSolution += OnSolutionClosed;
-
-            ShowStartScreenAsync(100).FireAndForget();
         }
 
         private static async Task DisableBuiltInStartWindowOnFirstRunAsync()
