@@ -15,7 +15,6 @@ namespace StartScreen
     [InstalledProductRegistration(Vsix.Name, Vsix.Description, Vsix.Version)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [ProvideToolWindow(typeof(StartScreenWindow.Pane), Window = WindowGuids.DocumentWell, DocumentLikeTool = true)]
-    [ProvideToolWindowVisibility(typeof(StartScreenWindow.Pane), VSConstants.UICONTEXT.NoSolution_string, Name = StartScreenWindow.Name)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string, PackageAutoLoadFlags.BackgroundLoad)]
     [Guid(PackageGuids.StartScreenString)]
     public sealed class StartScreenPackage : ToolkitPackage
@@ -27,10 +26,9 @@ namespace StartScreen
             // Register tool window
             this.RegisterToolWindows();
 
-            // Do NOT call ShowAsync from InitializeAsync — it forces the WPF tree to be built
-            // on the UI thread during package load, which is what triggers the
-            // "this extension delayed VS startup" InfoBar. ProvideToolWindowVisibility
-            // (NoSolution) tells the shell to show the window when it is ready.
+            // Do not show the Start Screen synchronously during package initialization.
+            // Show it asynchronously after startup so the document well is ready and the
+            // window opens docked instead of flashing as a provisional floating frame.
 
             // Disable the built-in VS Start Window on first run so only this
             // extension's Start Screen is shown (see GitHub issue #9).
@@ -40,6 +38,8 @@ namespace StartScreen
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnBeforeOpenSolution += OnBeforeOpenSolution;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder += OnBeforeOpenSolution;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterCloseSolution += OnSolutionClosed;
+
+            ShowStartScreenAsync(100).FireAndForget();
         }
 
         private static async Task DisableBuiltInStartWindowOnFirstRunAsync()
@@ -95,9 +95,9 @@ namespace StartScreen
             await StartScreenWindow.HideAsync();
         }
 
-        private async Task ShowStartScreenAsync()
+        private async Task ShowStartScreenAsync(int delay = 500)
         {
-            await Task.Delay(500);
+            await Task.Delay(delay);
 
             if (!await VS.Solutions.IsOpeningAsync() && !await VS.Solutions.IsOpenAsync())
             {

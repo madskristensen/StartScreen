@@ -161,7 +161,12 @@
     </UserControl.Resources>
 
     <Grid>
-        <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False"
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ScrollViewer x:Name="PageScroll" Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False"
                   PreviewMouseWheel="PageScroll_PreviewMouseWheel">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -510,7 +515,22 @@
                         </Grid>
 
                     <!-- Content Row: Dev Hub | News (with Blogs / Videos tabs) -->
-                    <Grid DockPanel.Dock="Top">
+                    <!-- Horizontal scroll lets Dev Hub + News be panned when the tool window is narrow,
+                         while the tips and suggested extension cards above keep their dynamic full width.
+                         The inner grid matches the viewport width so the news WrapPanel still wraps into
+                         columns when there is room, but holds a minimum (Dev Hub + one news column) so a
+                         scrollbar appears instead of collapsing. -->
+                    <ScrollViewer x:Name="ContentScroll"
+                                  DockPanel.Dock="Top"
+                                  HorizontalScrollBarVisibility="Hidden"
+                                  VerticalScrollBarVisibility="Disabled"
+                                  Focusable="False"
+                                  Style="{x:Null}"
+                                  PreviewMouseWheel="ContentScroll_PreviewMouseWheel"
+                                  ScrollChanged="ContentScroll_ScrollChanged">
+                    <Grid Width="{Binding ActualWidth, ElementName=ContentScroll}"
+                          MinWidth="928"
+                          HorizontalAlignment="Left">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -561,6 +581,7 @@
                                         Background="Transparent"
                                         BorderThickness="0"
                                         Padding="0"
+                                        MinWidth="360"
                                         SelectionChanged="NewsTabs_SelectionChanged">
                                 <!-- Blogs Tab -->
                                 <TabItem x:Name="BlogsTab" Style="{StaticResource NewsTabItemStyle}">
@@ -680,10 +701,19 @@
                         </Grid>
 
                     </Grid>
+                    </ScrollViewer>
             </DockPanel>
         </Border>
     </Grid>
     </ScrollViewer>
+
+        <ScrollBar x:Name="ContentHorizontalScrollbar"
+                   Grid.Row="1"
+                   Orientation="Horizontal"
+                   Minimum="0"
+                   SmallChange="24"
+                   LargeChange="120"
+                   ValueChanged="ContentHorizontalScrollbar_ValueChanged"/>
 
         <!-- Unified refresh + settings (top-right overlay) -->
         <StackPanel Orientation="Horizontal"

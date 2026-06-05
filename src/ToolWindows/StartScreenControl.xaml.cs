@@ -26,6 +26,7 @@ namespace StartScreen.ToolWindows
         private readonly DevHubService _devHubService = new DevHubService();
         private readonly System.Threading.Tasks.Task<DevHubDashboard> _devHubCacheTask;
         private bool _isInitialized;
+        private bool _isSynchronizingContentHorizontalScroll;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -595,11 +596,59 @@ namespace StartScreen.ToolWindows
 
         private void PageScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (Keyboard.Modifiers == ModifierKeys.Shift)
+            if (Keyboard.Modifiers == ModifierKeys.Shift && ContentScroll != null && ContentScroll.ScrollableWidth > 0)
             {
-                PageScroll.ScrollToHorizontalOffset(PageScroll.HorizontalOffset - e.Delta);
+                ContentScroll.ScrollToHorizontalOffset(ContentScroll.HorizontalOffset - e.Delta);
                 e.Handled = true;
             }
+        }
+
+        private void ContentScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Shift && ContentScroll != null && ContentScroll.ScrollableWidth > 0)
+            {
+                ContentScroll.ScrollToHorizontalOffset(ContentScroll.HorizontalOffset - e.Delta);
+                e.Handled = true;
+                return;
+            }
+
+            if (PageScroll != null)
+            {
+                PageScroll.ScrollToVerticalOffset(PageScroll.VerticalOffset - e.Delta);
+                e.Handled = true;
+            }
+        }
+
+        private void ContentScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (ContentHorizontalScrollbar == null)
+            {
+                return;
+            }
+
+            _isSynchronizingContentHorizontalScroll = true;
+
+            try
+            {
+                ContentHorizontalScrollbar.ViewportSize = e.ViewportWidth;
+                ContentHorizontalScrollbar.Maximum = Math.Max(0, e.ExtentWidth - e.ViewportWidth);
+                ContentHorizontalScrollbar.IsEnabled = ContentHorizontalScrollbar.Maximum > 0;
+                ContentHorizontalScrollbar.Value = Math.Max(0, Math.Min(ContentHorizontalScrollbar.Maximum, e.HorizontalOffset));
+            }
+            finally
+            {
+                _isSynchronizingContentHorizontalScroll = false;
+            }
+        }
+
+        private void ContentHorizontalScrollbar_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_isSynchronizingContentHorizontalScroll || ContentScroll == null)
+            {
+                return;
+            }
+
+            ContentScroll.ScrollToHorizontalOffset(e.NewValue);
         }
 
         private void UserControl_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
