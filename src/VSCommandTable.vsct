@@ -37,5 +37,7 @@
       <IDSymbol name="StartScreenGroup" value="0x0001" />
       <IDSymbol name="ShowStartScreenCommand" value="0x0100" />
     </GuidSymbol>
+    
+    <GuidSymbol name="autoload" value="{4add43ae-71e4-4eec-b622-2e8ed3452025}" />
   </Symbols>
 </CommandTable>

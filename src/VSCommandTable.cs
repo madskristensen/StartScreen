@@ -15,6 +15,9 @@ namespace StartScreen
     {
         public const string StartScreenString = "4add43ae-71e4-4eec-b622-2e8ed3452024";
         public static Guid StartScreen = new Guid(StartScreenString);
+
+        public const string autoloadString = "4add43ae-71e4-4eec-b622-2e8ed3452025";
+        public static Guid autoload = new Guid(autoloadString);
     }
 
     /// <summary>

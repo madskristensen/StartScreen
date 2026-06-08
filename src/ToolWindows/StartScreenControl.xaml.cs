@@ -860,17 +860,12 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private bool _suppressKeepVisibleChanged;
-
         private async void StartScreenSettingsButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 Options options = await Options.GetLiveInstanceAsync();
-                _suppressKeepVisibleChanged = true;
-                KeepVisibleCheckBox.IsChecked = options.KeepVisibleOnSolutionLoad;
                 ShowTipsAndExtensionsCheckBox.IsChecked = options.ShowTipsAndExtensions;
-                _suppressKeepVisibleChanged = false;
                 StartScreenSettingsPopup.IsOpen = true;
             }
             catch (Exception ex)
@@ -879,32 +874,10 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async void KeepVisibleCheckBox_Changed(object sender, RoutedEventArgs e)
-        {
-            if (_suppressKeepVisibleChanged)
-            {
-                return;
-            }
 
-            try
-            {
-                Options options = await Options.GetLiveInstanceAsync();
-                options.KeepVisibleOnSolutionLoad = KeepVisibleCheckBox.IsChecked == true;
-                await options.SaveAsync();
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-            }
-        }
 
         private async void ShowTipsAndExtensionsCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            if (_suppressKeepVisibleChanged)
-            {
-                return;
-            }
-
             try
             {
                 bool show = ShowTipsAndExtensionsCheckBox.IsChecked == true;

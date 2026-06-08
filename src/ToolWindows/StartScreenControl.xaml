@@ -780,10 +780,7 @@
                     <TextBlock Text="Start Screen settings"
                                FontWeight="SemiBold"
                                Margin="0 0 0 8"/>
-                    <CheckBox x:Name="KeepVisibleCheckBox"
-                              Content="Keep visible when a solution loads"
-                              Checked="KeepVisibleCheckBox_Changed"
-                              Unchecked="KeepVisibleCheckBox_Changed"/>
+
                     <CheckBox x:Name="ShowTipsAndExtensionsCheckBox"
                               Content="Show tips and suggested extensions"
                               Margin="0 6 0 0"
