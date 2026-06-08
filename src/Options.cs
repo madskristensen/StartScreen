@@ -124,8 +124,6 @@ namespace StartScreen
         [DefaultValue(false)]
         public bool HasDisabledBuiltInStartWindow { get; set; }
 
-
-
         /// <summary>
         /// When true (default), the Tip of the Day and Suggested Extension cards
         /// are shown on the Start Screen. When false, they are hidden so the

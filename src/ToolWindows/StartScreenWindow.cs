@@ -50,7 +50,7 @@ namespace StartScreen.ToolWindows
             public Pane()
             {
                 BitmapImageMoniker = KnownMonikers.Home;
-                Caption = StartScreenWindow.Name;
+                Caption = Name;
             }
         }
     }

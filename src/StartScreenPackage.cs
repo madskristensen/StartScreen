@@ -32,10 +32,6 @@ namespace StartScreen
             // Register tool window
             this.RegisterToolWindows();
 
-            // Do not show the Start Screen synchronously during package initialization.
-            // Show it asynchronously after startup so the document well is ready and the
-            // window opens docked instead of flashing as a provisional floating frame.
-
             // Disable the built-in VS Start Window on first run so only this
             // extension's Start Screen is shown (see GitHub issue #9).
             await DisableBuiltInStartWindowOnFirstRunAsync();
