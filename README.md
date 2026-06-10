@@ -5,6 +5,7 @@
 # Start Screen for Visual Studio
 
 [![Build](https://github.com/madskristensen/StartScreen/actions/workflows/build.yaml/badge.svg)](https://github.com/madskristensen/StartScreen/actions/workflows/build.yaml)
+[![Install from VSIX Gallery](https://www.vsixgallery.com/badge/StartScreen.2d76ac3d-7ff2-47e1-82d8-e507cf765bbe.png)][vsixgallery]
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/madskristensen)](https://github.com/sponsors/madskristensen)
 
 Download this extension from the [Visual Studio Marketplace][marketplace]
