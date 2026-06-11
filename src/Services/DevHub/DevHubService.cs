@@ -110,18 +110,28 @@ namespace StartScreen.Services.DevHub
                 progress?.Report(dashboard);
 
                 // Fetch issues, PRs, and CI runs in parallel; report each as it arrives
+                DevHubSortOrder sortOrder = Options.Instance.DevHubSortOrder;
+
                 var issueTask = Task.Run(async () =>
                 {
                     var tasks = authenticated.Select(p => p.GetUserIssuesAsync(cancellationToken)).ToList();
                     var results = await Task.WhenAll(tasks);
-                    return results.SelectMany(r => r).OrderByDescending(i => i.UpdatedAt).ToList();
+                    return DevHubItemSorter.Sort(
+                        results.SelectMany(r => r),
+                        sortOrder,
+                        i => i.RepoIdentifier,
+                        i => i.UpdatedAt);
                 });
 
                 var prTask = Task.Run(async () =>
                 {
                     var tasks = authenticated.Select(p => p.GetUserPullRequestsAsync(cancellationToken)).ToList();
                     var results = await Task.WhenAll(tasks);
-                    return results.SelectMany(r => r).OrderByDescending(pr => pr.UpdatedAt).ToList();
+                    return DevHubItemSorter.Sort(
+                        results.SelectMany(r => r),
+                        sortOrder,
+                        pr => pr.RepoIdentifier,
+                        pr => pr.UpdatedAt);
                 });
 
                 var ciTask = Task.Run(async () =>

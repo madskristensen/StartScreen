@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using StartScreen.Models.DevHub;
 
 namespace StartScreen
 {
@@ -98,6 +99,22 @@ namespace StartScreen
         [Browsable(false)]
         [DefaultValue("")]
         public string DevHubSearchQuery { get; set; } = "";
+
+        /// <summary>
+        /// The Dev Hub sub-tab (Issues, Pull requests, or Builds) selected by default
+        /// when the Start Screen opens.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue(DevHubDefaultTab.Issues)]
+        public DevHubDefaultTab DevHubDefaultTab { get; set; } = DevHubDefaultTab.Issues;
+
+        /// <summary>
+        /// How issues and pull requests from multiple providers are ordered in the
+        /// Dev Hub lists.
+        /// </summary>
+        [Browsable(false)]
+        [DefaultValue(DevHubSortOrder.MostRecent)]
+        public DevHubSortOrder DevHubSortOrder { get; set; } = DevHubSortOrder.MostRecent;
 
         /// <summary>
         /// Preferred GitHub account login for Dev Hub credential lookup.

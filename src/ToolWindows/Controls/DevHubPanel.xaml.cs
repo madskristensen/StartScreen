@@ -25,6 +25,8 @@ namespace StartScreen.ToolWindows.Controls
         private bool _suppressSaveOnLostFocus;
         private bool _showGitHubCredentialHelp;
         private bool _suppressGitHubAccountSelectionChanged;
+        private bool _defaultTabApplied;
+        private bool _suppressSettingsComboChanged;
 
         // Host that the inline PAT entry box is currently targeting (cloud or on-prem).
         // Set when the user clicks "Sign in" / "Change" on a server row; consumed by AdoPatBox_KeyDown.
@@ -231,6 +233,26 @@ namespace StartScreen.ToolWindows.Controls
             LoadingPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Collapsed;
             DashboardPanel.Visibility = Visibility.Visible;
+
+            ApplyDefaultTab();
+        }
+
+        // Selects the user's preferred default sub-tab the first time the dashboard
+        // is shown. Subsequent refreshes leave the user's current tab untouched.
+        private void ApplyDefaultTab()
+        {
+            if (_defaultTabApplied)
+            {
+                return;
+            }
+
+            _defaultTabApplied = true;
+
+            int index = (int)Options.Instance.DevHubDefaultTab;
+            if (index >= 0 && index < DevHubSubTabs.Items.Count)
+            {
+                DevHubSubTabs.SelectedIndex = index;
+            }
         }
 
         private void UpdatePullRequests(IReadOnlyList<DevHubPullRequest> pullRequests, IReadOnlyList<DevHubPullRequest> previousPullRequests)
@@ -533,8 +555,68 @@ namespace StartScreen.ToolWindows.Controls
                 _pendingAdoHost = null;
                 RefreshAdoServersList();
 
+                PopulateDisplaySettings();
+
                 SettingsPanel.Visibility = Visibility.Visible;
             }
+        }
+
+        private void PopulateDisplaySettings()
+        {
+            _suppressSettingsComboChanged = true;
+            try
+            {
+                DefaultTabComboBox.SelectedIndex = (int)Options.Instance.DevHubDefaultTab;
+                SortOrderComboBox.SelectedIndex = (int)Options.Instance.DevHubSortOrder;
+            }
+            finally
+            {
+                _suppressSettingsComboChanged = false;
+            }
+        }
+
+        private void DefaultTabComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_suppressSettingsComboChanged)
+            {
+                return;
+            }
+
+            var selected = (DevHubDefaultTab)DefaultTabComboBox.SelectedIndex;
+            if (selected == Options.Instance.DevHubDefaultTab)
+            {
+                return;
+            }
+
+            Options.Instance.DevHubDefaultTab = selected;
+            Options.Instance.SaveAsync().FireAndForget();
+
+            // Reflect the new default immediately so the user sees the effect.
+            int index = (int)selected;
+            if (index >= 0 && index < DevHubSubTabs.Items.Count)
+            {
+                DevHubSubTabs.SelectedIndex = index;
+            }
+        }
+
+        private void SortOrderComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_suppressSettingsComboChanged)
+            {
+                return;
+            }
+
+            var selected = (DevHubSortOrder)SortOrderComboBox.SelectedIndex;
+            if (selected == Options.Instance.DevHubSortOrder)
+            {
+                return;
+            }
+
+            Options.Instance.DevHubSortOrder = selected;
+            Options.Instance.SaveAsync().FireAndForget();
+
+            // Re-fetch so the lists come back ordered by the new preference.
+            RefreshRequested?.Invoke(this, EventArgs.Empty);
         }
 
         private void SearchQueryTextBox_LostFocus(object sender, RoutedEventArgs e)

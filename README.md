@@ -139,6 +139,25 @@ not affected by the query.
 > The custom search query setting only applies to GitHub. Azure DevOps
 > uses dedicated REST APIs for each repository and is not affected.
 
+### Display options
+
+Click the gear icon next to the Dev Hub header to open its settings, where
+the **Display** section lets you tailor the layout:
+
+- **Default tab** - choose whether Issues, Pull requests, or Builds is
+  selected when the Start Screen opens.
+- **Sort issues and pull requests by** - order the lists by **Most recent
+  first** (the default), **GitHub first**, or **Azure DevOps first**. The
+  provider options group items by source, then fall back to most recent
+  within each group. The Builds tab is always ordered most recent first.
+
+### Hiding the Dev Hub
+
+If you don't use the Dev Hub, you can hide it. Click the settings (gear)
+button in the top-right of the Start Screen and uncheck **Show Dev Hub**.
+The News section expands to use the freed-up space. Re-check the box at
+any time to bring it back.
+
 ## Tip of the day
 
 Every time Visual Studio starts, a short productivity tip appears at the

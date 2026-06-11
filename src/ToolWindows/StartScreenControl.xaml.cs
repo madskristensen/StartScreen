@@ -61,6 +61,7 @@ namespace StartScreen.ToolWindows
                 _isInitialized = true;
 
                 await ApplyShowTipsAndExtensionsAsync();
+                await ApplyDevHubEnabledAsync();
 
                 UpdateResponsiveColumns();
 
@@ -325,6 +326,14 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_RefreshRequested(object sender, EventArgs e)
         {
+            // Don't fetch Dev Hub data when the section is hidden. The unified
+            // refresh button routes through here, so this keeps a refresh from
+            // hitting GitHub/Azure DevOps while the panel is collapsed.
+            if (!Options.Instance.DevHubEnabled)
+            {
+                return;
+            }
+
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
                 if (ViewModel != null)
@@ -866,6 +875,7 @@ namespace StartScreen.ToolWindows
             {
                 Options options = await Options.GetLiveInstanceAsync();
                 ShowTipsAndExtensionsCheckBox.IsChecked = options.ShowTipsAndExtensions;
+                ShowDevHubCheckBox.IsChecked = options.DevHubEnabled;
                 StartScreenSettingsPopup.IsOpen = true;
             }
             catch (Exception ex)
@@ -905,6 +915,51 @@ namespace StartScreen.ToolWindows
             {
                 await ex.LogAsync();
             }
+        }
+
+        private async void ShowDevHubCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                bool show = ShowDevHubCheckBox.IsChecked == true;
+                Options options = await Options.GetLiveInstanceAsync();
+                bool wasEnabled = options.DevHubEnabled;
+                options.DevHubEnabled = show;
+                await options.SaveAsync();
+
+                ApplyDevHubVisibility(show);
+
+                // When the user turns Dev Hub back on, load its data now since the
+                // initial UserControl_Loaded pass skipped it while it was disabled.
+                if (show && !wasEnabled)
+                {
+                    await LoadDevHubAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        private async Task ApplyDevHubEnabledAsync()
+        {
+            try
+            {
+                Options options = await Options.GetLiveInstanceAsync();
+                ApplyDevHubVisibility(options.DevHubEnabled);
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        private void ApplyDevHubVisibility(bool show)
+        {
+            DevHubPanelControl.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            DevHubColumn.Width = show ? GridLength.Auto : new GridLength(0);
+            DevHubSettingsLinkText.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void DevHubPanel_LastRefreshChanged(object sender, string text)

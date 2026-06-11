@@ -536,7 +536,7 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition x:Name="DevHubColumn" Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
@@ -787,11 +787,17 @@
                               Checked="ShowTipsAndExtensionsCheckBox_Changed"
                               Unchecked="ShowTipsAndExtensionsCheckBox_Changed"/>
 
+                    <CheckBox x:Name="ShowDevHubCheckBox"
+                              Content="Show Dev Hub"
+                              Margin="0 6 0 0"
+                              Checked="ShowDevHubCheckBox_Changed"
+                              Unchecked="ShowDevHubCheckBox_Changed"/>
+
                     <Border BorderThickness="0 0 0 1"
                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
                             Margin="0 10 0 8"/>
 
-                    <TextBlock Margin="0 0 0 4">
+                    <TextBlock x:Name="DevHubSettingsLinkText" Margin="0 0 0 4">
                         <Hyperlink Click="DevHubSettingsLink_Click"
                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                             Dev Hub accounts and search query...

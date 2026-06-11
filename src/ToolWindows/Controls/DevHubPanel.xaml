@@ -407,6 +407,52 @@
                            Opacity="0.5"
                            TextWrapping="Wrap"
                            Margin="0 4 0 0"/>
+
+                <!-- Separator between search query and display options -->
+                <Border BorderThickness="0 0 0 1"
+                        BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
+                        Margin="0 8 0 8"/>
+
+                <!-- Display section -->
+                <TextBlock Text="Display"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Margin="0 0 0 6"/>
+
+                <TextBlock Text="Default tab"
+                           FontSize="11"
+                           Margin="0 0 0 2"/>
+                <ComboBox x:Name="DefaultTabComboBox"
+                          FontSize="11"
+                          Padding="4 2"
+                          Margin="0 0 0 8"
+                          HorizontalAlignment="Left"
+                          MinWidth="160"
+                          SelectionChanged="DefaultTabComboBox_SelectionChanged"
+                          Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                          Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                          BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}">
+                    <ComboBoxItem Content="Issues"/>
+                    <ComboBoxItem Content="Pull requests"/>
+                    <ComboBoxItem Content="Builds"/>
+                </ComboBox>
+
+                <TextBlock Text="Sort issues and pull requests by"
+                           FontSize="11"
+                           Margin="0 0 0 2"/>
+                <ComboBox x:Name="SortOrderComboBox"
+                          FontSize="11"
+                          Padding="4 2"
+                          HorizontalAlignment="Left"
+                          MinWidth="160"
+                          SelectionChanged="SortOrderComboBox_SelectionChanged"
+                          Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                          Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
+                          BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}">
+                    <ComboBoxItem Content="Most recent first"/>
+                    <ComboBoxItem Content="GitHub first"/>
+                    <ComboBoxItem Content="Azure DevOps first"/>
+                </ComboBox>
             </StackPanel>
             </Grid>
         </Border>
