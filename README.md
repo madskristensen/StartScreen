@@ -103,6 +103,16 @@ responsive.
 
 ![Dev Hub](dev-hub.png)
 
+### Scope to a repository
+
+Right-click any pull request, issue, or build and choose **Scope to
+&lt;repo&gt;** to filter all three Dev Hub tabs down to that single
+repository. While scoped, right-click any item and choose **Show all
+repositories** to clear the scope and see everything again.
+
+The scope is not saved between sessions, so reopening the Start Screen
+always starts with the full view.
+
 ### Custom search query (GitHub)
 
 By default the Dev Hub shows issues and pull requests that "involve" your GitHub

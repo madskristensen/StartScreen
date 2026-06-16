@@ -17,6 +17,10 @@ namespace StartScreen.ToolWindows.Controls
     {
         private DevHubDashboard _currentDashboard;
         private RemoteRepoIdentifier _currentFilterRepo;
+
+        // Repo the user scoped to via the item context menu ("Scope to <repo>").
+        // Intentionally not persisted, so the scope resets when the Start Screen is reopened.
+        private RemoteRepoIdentifier _scopedRepo;
         private IReadOnlyList<DevHubPullRequest> _lastBoundPullRequests;
         private IReadOnlyList<DevHubIssue> _lastBoundIssues;
         private IReadOnlyList<DevHubCiRun> _lastBoundCiRuns;
@@ -47,11 +51,6 @@ namespace StartScreen.ToolWindows.Controls
         }
 
         /// <summary>
-        /// Raised when the user wants to clear the MRU selection filter.
-        /// </summary>
-        public event EventHandler ClearFilterRequested;
-
-        /// <summary>
         /// Raised when Left arrow is pressed to navigate back to MRU list.
         /// </summary>
         public event EventHandler FocusMruRequested;
@@ -70,11 +69,14 @@ namespace StartScreen.ToolWindows.Controls
             // progress several times (after auth, then after each of issues / PRs / CI),
             // and re-binding three ItemsControls each time causes a visible UI hitch
             // even though most of the data is unchanged between calls.
+            // A context-menu scope takes precedence over any externally supplied filter.
+            RemoteRepoIdentifier effectiveFilter = _scopedRepo ?? filterRepo;
+
             bool dashboardChanged = !ReferenceEquals(_currentDashboard, dashboard);
-            bool filterChanged = !Equals(_currentFilterRepo, filterRepo);
+            bool filterChanged = !Equals(_currentFilterRepo, effectiveFilter);
 
             _currentDashboard = dashboard;
-            _currentFilterRepo = filterRepo;
+            _currentFilterRepo = effectiveFilter;
 
             if (dashboard == null)
             {
@@ -98,18 +100,15 @@ namespace StartScreen.ToolWindows.Controls
             IReadOnlyList<DevHubIssue> issues;
             IReadOnlyList<DevHubCiRun> ciRuns;
 
-            if (filterRepo != null)
+            if (effectiveFilter != null)
             {
-                var detail = dashboard.FilterByRepo(filterRepo);
-                RepoContextName.Text = filterRepo.DisplayName;
-                RepoContextHeader.Visibility = Visibility.Visible;
+                var detail = dashboard.FilterByRepo(effectiveFilter);
                 prs = detail.PullRequests;
                 issues = detail.Issues;
                 ciRuns = detail.CiRuns;
             }
             else
             {
-                RepoContextHeader.Visibility = Visibility.Collapsed;
                 prs = dashboard.PullRequests;
                 issues = dashboard.Issues;
                 ciRuns = dashboard.CiRuns;
@@ -519,7 +518,67 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ClearFilter_Click(object sender, RoutedEventArgs e)
         {
-            ClearFilterRequested?.Invoke(this, EventArgs.Empty);
+            if (_scopedRepo == null)
+            {
+                return;
+            }
+
+            _scopedRepo = null;
+
+            if (_currentDashboard != null)
+            {
+                UpdateView(_currentDashboard);
+            }
+        }
+
+        private void ScopeToRepoMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            RemoteRepoIdentifier repo = GetRepoIdentifierFromDataContext(GetContextMenuItemDataContext(sender));
+            if (repo == null)
+            {
+                return;
+            }
+
+            _scopedRepo = repo;
+
+            if (_currentDashboard != null)
+            {
+                UpdateView(_currentDashboard);
+            }
+        }
+
+        // Shows "Scope to <repo>" when unscoped and "Show all repositories" when scoped.
+        private void DevHubContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            if (sender is ContextMenu menu && menu.Items.Count >= 6
+                && menu.Items[4] is MenuItem scopeTo
+                && menu.Items[5] is MenuItem showAll)
+            {
+                bool scoped = _scopedRepo != null;
+                scopeTo.Visibility = scoped ? Visibility.Collapsed : Visibility.Visible;
+                showAll.Visibility = scoped ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        // Themes each item's context menu as soon as the item is realized, so a plain
+        // right-click shows the VS-themed menu even before any keyboard navigation.
+        private void DevHubItemBorder_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is Border border)
+            {
+                ApplyContextMenuTheme(border);
+            }
+        }
+
+        private static RemoteRepoIdentifier GetRepoIdentifierFromDataContext(object dataContext)
+        {
+            switch (dataContext)
+            {
+                case DevHubPullRequest pr: return pr.RepoIdentifier;
+                case DevHubIssue issue: return issue.RepoIdentifier;
+                case DevHubCiRun ci: return ci.RepoIdentifier;
+                default: return null;
+            }
         }
 
         public void ToggleSettings()
@@ -1388,6 +1447,11 @@ namespace StartScreen.ToolWindows.Controls
             {
                 ((MenuItem)menu.Items[0]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.BrowserLink);
                 ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.Copy);
+            }
+            if (menu.Items.Count >= 6)
+            {
+                ((MenuItem)menu.Items[4]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.Filter);
+                ((MenuItem)menu.Items[5]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.DeleteFilter);
             }
             menu.Tag = "themed";
         }

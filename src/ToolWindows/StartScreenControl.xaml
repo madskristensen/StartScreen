@@ -560,7 +560,6 @@
                                               VerticalAlignment="Top"
                                               RefreshRequested="DevHubPanel_RefreshRequested"
                                               LastRefreshChanged="DevHubPanel_LastRefreshChanged"
-                                              ClearFilterRequested="DevHubPanel_ClearFilterRequested"
                                               ConnectAccountRequested="DevHubPanel_ConnectAccountRequested"
                                               FocusMruRequested="DevHubPanel_FocusMruRequested"
                                               FocusNewsRequested="DevHubPanel_FocusNewsRequested"/>

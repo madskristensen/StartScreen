@@ -77,29 +77,6 @@
 
     <Grid>
         <StackPanel>
-        <!-- Context header (shown when MRU item is selected) -->
-        <StackPanel x:Name="RepoContextHeader" Orientation="Horizontal" Margin="0 0 0 8" Visibility="Collapsed">
-            <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.GitRepository}"
-                                Width="12" Height="12"
-                                Margin="0 0 4 0"
-                                VerticalAlignment="Center"
-                                Opacity="0.6"/>
-            <TextBlock x:Name="RepoContextName"
-                       FontSize="12"
-                       Opacity="0.6"
-                       VerticalAlignment="Center"/>
-            <Button x:Name="ClearFilterButton" Click="ClearFilter_Click"
-                    Style="{DynamicResource ActionButtonStyle}"
-                    Padding="2 0"
-                    Margin="6 0 0 0"
-                    BorderThickness="0"
-                    VerticalAlignment="Center"
-                    Content="x"
-                    FontSize="10"
-                    Opacity="0.5"
-                    ToolTip="Clear selection"/>
-        </StackPanel>
-
         <!-- Settings panel (toggled by gear button) -->
         <Border x:Name="SettingsPanel" Visibility="Collapsed"
                 Margin="0 0 0 8"
@@ -540,12 +517,16 @@
                                     <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
                                             Focusable="True" FocusVisualStyle="{x:Null}"
                                             MouseUp="IssueItem_MouseUp"
+                                            Loaded="DevHubItemBorder_Loaded"
                                             Style="{StaticResource HoverItemBorderStyle}">
                                         <Border.ContextMenu>
-                                            <ContextMenu>
+                                            <ContextMenu Opened="DevHubContextMenu_Opened">
                                                 <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
                                                 <Separator/>
                                                 <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
+                                                <Separator/>
+                                                <MenuItem Header="{Binding RepoIdentifier.Repo}" HeaderStringFormat="Scope to {0}" Click="ScopeToRepoMenuItem_Click"/>
+                                                <MenuItem Header="Show all repositories" Click="ClearFilter_Click"/>
                                             </ContextMenu>
                                         </Border.ContextMenu>
                                         <DockPanel>
@@ -628,12 +609,16 @@
                                     <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
                                             Focusable="True" FocusVisualStyle="{x:Null}"
                                             MouseUp="PrItem_MouseUp"
+                                            Loaded="DevHubItemBorder_Loaded"
                                             Style="{StaticResource HoverItemBorderStyle}">
                                         <Border.ContextMenu>
-                                            <ContextMenu>
+                                            <ContextMenu Opened="DevHubContextMenu_Opened">
                                                 <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
                                                 <Separator/>
                                                 <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
+                                                <Separator/>
+                                                <MenuItem Header="{Binding RepoIdentifier.Repo}" HeaderStringFormat="Scope to {0}" Click="ScopeToRepoMenuItem_Click"/>
+                                                <MenuItem Header="Show all repositories" Click="ClearFilter_Click"/>
                                             </ContextMenu>
                                         </Border.ContextMenu>
                                         <DockPanel>
@@ -716,12 +701,16 @@
                                     <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
                                             Focusable="True" FocusVisualStyle="{x:Null}"
                                             MouseUp="CiItem_MouseUp"
+                                            Loaded="DevHubItemBorder_Loaded"
                                             Style="{StaticResource HoverItemBorderStyle}">
                                         <Border.ContextMenu>
-                                            <ContextMenu>
+                                            <ContextMenu Opened="DevHubContextMenu_Opened">
                                                 <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
                                                 <Separator/>
                                                 <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
+                                                <Separator/>
+                                                <MenuItem Header="{Binding RepoIdentifier.Repo}" HeaderStringFormat="Scope to {0}" Click="ScopeToRepoMenuItem_Click"/>
+                                                <MenuItem Header="Show all repositories" Click="ClearFilter_Click"/>
                                             </ContextMenu>
                                         </Border.ContextMenu>
                                         <DockPanel>

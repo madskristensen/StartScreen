@@ -373,14 +373,6 @@ namespace StartScreen.ToolWindows
             }).FileAndForget(nameof(StartScreenControl));
         }
 
-        private void DevHubPanel_ClearFilterRequested(object sender, EventArgs e)
-        {
-            if (ViewModel != null)
-            {
-                ViewModel.SelectedMruItem = null;
-            }
-        }
-
         private void DevHubPanel_ConnectAccountRequested(object sender, string host)
         {
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
