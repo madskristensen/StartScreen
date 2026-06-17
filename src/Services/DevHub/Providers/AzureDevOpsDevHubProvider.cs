@@ -262,10 +262,12 @@ namespace StartScreen.Services.DevHub.Providers
             return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(repos);
         }
 
-        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
         {
             if (repo == null || string.IsNullOrEmpty(repo.Project))
                 return null;
+
+            var top = NormalizeMaxItems(maxItems);
 
             var credentialHost = GetCredentialHost(repo);
             var credential = await DevHubCredentialHelper.GetCredentialAsync(credentialHost, cancellationToken);
@@ -288,7 +290,7 @@ namespace StartScreen.Services.DevHub.Providers
                 var apiVersion = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
 
                 // Fetch PRs
-                var prUrl = $"{projectUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top=10&api-version={apiVersion}";
+                var prUrl = $"{projectUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top={top}&api-version={apiVersion}";
                 var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
                 if (prResponse.IsSuccessStatusCode)
                 {
@@ -297,7 +299,7 @@ namespace StartScreen.Services.DevHub.Providers
                 }
 
                 // Fetch recent builds
-                var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top=5&api-version={apiVersion}";
+                var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top={top}&api-version={apiVersion}";
                 var buildResponse = await SendGetAsync(credential, buildUrl, cancellationToken);
                 if (buildResponse.IsSuccessStatusCode)
                 {
@@ -333,6 +335,8 @@ namespace StartScreen.Services.DevHub.Providers
 
             return s_httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
+
+        private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);
 
         private static List<DevHubPullRequest> ParseAdoPullRequests(string json, RemoteRepoIdentifier repo)
         {

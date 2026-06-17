@@ -407,6 +407,29 @@ namespace StartScreen.ToolWindows
             }).FileAndForget(nameof(StartScreenControl));
         }
 
+        private void DevHubPanel_ScopeToRepoRequested(object sender, RemoteRepoIdentifier repo)
+        {
+            if (repo == null)
+            {
+                return;
+            }
+
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                await TaskScheduler.Default;
+
+                // Fetch a fuller set of items for just this repo so the scoped view isn't
+                // limited to whatever happened to be loaded in the aggregate dashboard.
+                var dashboard = await _devHubService.ScopeToRepoAsync(repo, CancellationToken.None);
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (dashboard != null)
+                {
+                    DevHubPanelControl.UpdateView(dashboard);
+                }
+            }).FileAndForget(nameof(StartScreenControl));
+        }
+
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(StartScreenViewModel.SelectedMruItem))

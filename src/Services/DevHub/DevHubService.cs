@@ -182,7 +182,20 @@ namespace StartScreen.Services.DevHub
         }
 
         /// <summary>
+        /// Number of items fetched per repository during a full dashboard refresh. Kept small
+        /// because many repos may be queried.
+        /// </summary>
+        private const int DashboardRepoItemCount = 10;
+
+        /// <summary>
+        /// Number of items fetched per category when the user scopes the dashboard to a single
+        /// repository. Larger than the refresh count since only one repo is queried.
+        /// </summary>
+        public const int ScopedRepoItemCount = 25;
+
+        /// <summary>
         /// Fetches detailed data for a specific repository from the appropriate provider.
+        /// Returns cached/filtered data from the current dashboard when available.
         /// </summary>
         public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
@@ -197,10 +210,40 @@ namespace StartScreen.Services.DevHub
                     return filtered;
             }
 
-            // If no cached data, try fetching from the appropriate provider. Build a
-            // representative URL the registry's host-based matching can recognize, including
-            // the "/_git/" segment when we have ADO project info so on-prem servers route
-            // to the Azure DevOps provider.
+            return await FetchRepoDetailFromProviderAsync(repo, DashboardRepoItemCount, cancellationToken);
+        }
+
+        /// <summary>
+        /// Fetches fresh detail for a single repository (bypassing the dashboard filter shortcut)
+        /// and merges it into the current dashboard, replacing any previously loaded items for
+        /// that repo. Used by the "Scope to repo" command so the scoped view shows the full set
+        /// of PRs / issues / builds rather than whatever happened to already be loaded.
+        /// Returns the updated dashboard.
+        /// </summary>
+        public async Task<DevHubDashboard> ScopeToRepoAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        {
+            if (repo == null)
+                return _currentDashboard;
+
+            var detail = await FetchRepoDetailFromProviderAsync(repo, ScopedRepoItemCount, cancellationToken);
+            if (detail == null)
+                return _currentDashboard;
+
+            var dashboard = _currentDashboard ?? new DevHubDashboard { FetchedAt = DateTime.UtcNow };
+            MergeRepoDetail(dashboard, repo, detail);
+
+            _currentDashboard = dashboard;
+            _cache.WriteDashboard(dashboard);
+            return dashboard;
+        }
+
+        /// <summary>
+        /// Builds a representative URL the registry's host-based matching can recognize (including
+        /// the "/_git/" segment for ADO so on-prem servers route to the Azure DevOps provider) and
+        /// fetches repo detail from the matching provider.
+        /// </summary>
+        private static async Task<DevHubRepoDetail> FetchRepoDetailFromProviderAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
+        {
             var lookupUrl = !string.IsNullOrEmpty(repo.Project) && !string.IsNullOrEmpty(repo.BaseUrl)
                 ? $"{repo.BaseUrl}/{repo.Project}/_git/{repo.Repo}"
                 : $"https://{repo.Host}/{repo.Owner}/{repo.Repo}";
@@ -209,7 +252,26 @@ namespace StartScreen.Services.DevHub
             if (provider == null)
                 return null;
 
-            return await provider.GetRepoDetailAsync(repo, cancellationToken);
+            return await provider.GetRepoDetailAsync(repo, maxItems, cancellationToken);
+        }
+
+        /// <summary>
+        /// Replaces the dashboard's items for <paramref name="repo"/> with the freshly fetched set.
+        /// </summary>
+        internal static void MergeRepoDetail(DevHubDashboard dashboard, RemoteRepoIdentifier repo, DevHubRepoDetail detail)
+        {
+            dashboard.PullRequests = dashboard.PullRequests
+                .Where(pr => !repo.Equals(pr.RepoIdentifier))
+                .Concat(detail.PullRequests)
+                .ToList();
+            dashboard.Issues = dashboard.Issues
+                .Where(i => !repo.Equals(i.RepoIdentifier))
+                .Concat(detail.Issues)
+                .ToList();
+            dashboard.CiRuns = dashboard.CiRuns
+                .Where(c => !repo.Equals(c.RepoIdentifier))
+                .Concat(detail.CiRuns)
+                .ToList();
         }
 
         /// <summary>
@@ -235,7 +297,7 @@ namespace StartScreen.Services.DevHub
 
                     foreach (var repo in repos)
                     {
-                        detailTasks.Add(provider.GetRepoDetailAsync(repo, cancellationToken));
+                        detailTasks.Add(provider.GetRepoDetailAsync(repo, DashboardRepoItemCount, cancellationToken));
                     }
                 }
 

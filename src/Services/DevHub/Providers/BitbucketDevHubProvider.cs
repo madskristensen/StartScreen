@@ -193,10 +193,12 @@ namespace StartScreen.Services.DevHub.Providers
             return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(Array.Empty<RemoteRepoIdentifier>());
         }
 
-        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
         {
             if (repo == null)
                 return null;
+
+            var pageLen = NormalizeMaxItems(maxItems);
 
             var credential = await DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", cancellationToken);
             if (credential == null)
@@ -213,7 +215,7 @@ namespace StartScreen.Services.DevHub.Providers
                 var repoSlug = $"{Uri.EscapeDataString(repo.Owner)}/{Uri.EscapeDataString(repo.Repo)}";
 
                 // Fetch open PRs
-                var prUrl = $"https://api.bitbucket.org/2.0/repositories/{repoSlug}/pullrequests?state=OPEN&pagelen=10";
+                var prUrl = $"https://api.bitbucket.org/2.0/repositories/{repoSlug}/pullrequests?state=OPEN&pagelen={pageLen}";
                 var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
                 if (prResponse.IsSuccessStatusCode)
                 {
@@ -222,7 +224,7 @@ namespace StartScreen.Services.DevHub.Providers
                 }
 
                 // Fetch open issues (only if the repo has the issue tracker enabled)
-                var issueUrl = $"https://api.bitbucket.org/2.0/repositories/{repoSlug}/issues?q=state%3D%22open%22&pagelen=10";
+                var issueUrl = $"https://api.bitbucket.org/2.0/repositories/{repoSlug}/issues?q=state%3D%22open%22&pagelen={pageLen}";
                 var issueResponse = await SendGetAsync(credential, issueUrl, cancellationToken);
                 if (issueResponse.IsSuccessStatusCode)
                 {
@@ -231,7 +233,7 @@ namespace StartScreen.Services.DevHub.Providers
                 }
 
                 // Fetch recent pipelines
-                var pipeUrl = $"https://api.bitbucket.org/2.0/repositories/{repoSlug}/pipelines/?sort=-created_on&pagelen=5";
+                var pipeUrl = $"https://api.bitbucket.org/2.0/repositories/{repoSlug}/pipelines/?sort=-created_on&pagelen={pageLen}";
                 var pipeResponse = await SendGetAsync(credential, pipeUrl, cancellationToken);
                 if (pipeResponse.IsSuccessStatusCode)
                 {
@@ -326,6 +328,8 @@ namespace StartScreen.Services.DevHub.Providers
                 IsAuthoredByCurrentUser = string.Equals(authorUsername, currentUser, StringComparison.OrdinalIgnoreCase),
             };
         }
+
+        private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);
 
         private static List<DevHubPullRequest> ParseRepoPullRequests(string json, RemoteRepoIdentifier repo, string currentUser)
         {

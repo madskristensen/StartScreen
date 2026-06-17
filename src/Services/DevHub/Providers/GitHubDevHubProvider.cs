@@ -249,6 +249,8 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
+        private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);
+
         private static List<RemoteRepoIdentifier> ParseRepoList(string json)
         {
             var repos = new List<RemoteRepoIdentifier>();
@@ -274,10 +276,12 @@ namespace StartScreen.Services.DevHub.Providers
             return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(Array.Empty<RemoteRepoIdentifier>());
         }
 
-        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
         {
             if (repo == null)
                 return null;
+
+            var perPage = NormalizeMaxItems(maxItems);
 
             var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
             if (credential == null)
@@ -292,7 +296,7 @@ namespace StartScreen.Services.DevHub.Providers
                 };
 
                 // Fetch PRs for this repo
-                var prUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/pulls?state=open&sort=updated&direction=desc&per_page=10";
+                var prUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/pulls?state=open&sort=updated&direction=desc&per_page={perPage}";
                 var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
                 if (prResponse.IsSuccessStatusCode)
                 {
@@ -301,7 +305,7 @@ namespace StartScreen.Services.DevHub.Providers
                 }
 
                 // Fetch issues for this repo
-                var issueUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/issues?state=open&sort=updated&direction=desc&per_page=10";
+                var issueUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/issues?state=open&sort=updated&direction=desc&per_page={perPage}";
                 var issueResponse = await SendGetAsync(credential, issueUrl, cancellationToken);
                 if (issueResponse.IsSuccessStatusCode)
                 {
@@ -310,7 +314,7 @@ namespace StartScreen.Services.DevHub.Providers
                 }
 
                 // Fetch latest CI runs
-                var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page=5";
+                var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page={perPage}";
                 var runsResponse = await SendGetAsync(credential, runsUrl, cancellationToken);
                 if (runsResponse.IsSuccessStatusCode)
                 {

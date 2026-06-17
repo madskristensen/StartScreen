@@ -76,9 +76,10 @@ namespace StartScreen.Services.DevHub
 
         /// <summary>
         /// Fetches detailed PR, issue, and CI data for a specific repository.
+        /// <paramref name="maxItems"/> caps how many of each category are requested.
         /// Returns null if the user is not authenticated or on error.
         /// </summary>
-        Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken);
+        Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken);
 
         /// <summary>
         /// Builds the web URL for a repository's home page.

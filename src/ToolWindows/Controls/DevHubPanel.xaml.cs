@@ -117,21 +117,33 @@ namespace StartScreen.ToolWindows.Controls
             // Only re-bind sections whose data changed. Each Update* method
             // resets ItemsSource and forces WPF to rebuild the visual tree, which is
             // the primary cause of the UI thread hitch when DevHub data arrives.
+            //
+            // Identity-based NEW detection is only meaningful when the previous and current
+            // lists describe the same population (a plain background refresh). It produces
+            // garbage across a scope/filter transition and whenever a scope is active, because
+            // the visible items are then a freshly fetched historical slice for one repo rather
+            // than the live aggregate feed - diffing those against the previously bound list
+            // would flag items as NEW purely because they were absent from the other view, even
+            // though they are older than what the user already saw. In those cases pass null as
+            // the previous list so the NEW calculation falls back to the timestamp-vs-lastSeen
+            // path, which only flags items genuinely newer than the user's last visit.
+            bool useTimestampBaseline = effectiveFilter != null || filterChanged;
+
             if (filterChanged || !DevHubItemComparer.SamePullRequests(_lastBoundPullRequests, prs))
             {
-                IReadOnlyList<DevHubPullRequest> previousPrs = _lastBoundPullRequests;
+                IReadOnlyList<DevHubPullRequest> previousPrs = useTimestampBaseline ? null : _lastBoundPullRequests;
                 _lastBoundPullRequests = Snapshot(prs);
                 UpdatePullRequests(prs, previousPrs);
             }
             if (filterChanged || !DevHubItemComparer.SameIssues(_lastBoundIssues, issues))
             {
-                IReadOnlyList<DevHubIssue> previousIssues = _lastBoundIssues;
+                IReadOnlyList<DevHubIssue> previousIssues = useTimestampBaseline ? null : _lastBoundIssues;
                 _lastBoundIssues = Snapshot(issues);
                 UpdateIssues(issues, previousIssues);
             }
             if (filterChanged || !DevHubItemComparer.SameCiRuns(_lastBoundCiRuns, ciRuns))
             {
-                IReadOnlyList<DevHubCiRun> previousCi = _lastBoundCiRuns;
+                IReadOnlyList<DevHubCiRun> previousCi = useTimestampBaseline ? null : _lastBoundCiRuns;
                 _lastBoundCiRuns = Snapshot(ciRuns);
                 UpdateCiRuns(ciRuns, previousCi);
             }
@@ -543,8 +555,12 @@ namespace StartScreen.ToolWindows.Controls
 
             if (_currentDashboard != null)
             {
+                // Show the already-loaded items for this repo immediately, then let the host
+                // fetch a fuller set in the background.
                 UpdateView(_currentDashboard);
             }
+
+            ScopeToRepoRequested?.Invoke(this, repo);
         }
 
         // Shows "Scope to <repo>" when unscoped and "Show all repositories" when scoped.
@@ -1213,6 +1229,12 @@ namespace StartScreen.ToolWindows.Controls
         /// The string argument is the host (e.g., "github.com" or "dev.azure.com").
         /// </summary>
         public event EventHandler<string> ConnectAccountRequested;
+
+        /// <summary>
+        /// Raised when the user scopes the dashboard to a single repository via the item
+        /// context menu, so the host can fetch a fuller set of data for just that repo.
+        /// </summary>
+        public event EventHandler<RemoteRepoIdentifier> ScopeToRepoRequested;
 
         private static void OpenUrl(string url)
         {
