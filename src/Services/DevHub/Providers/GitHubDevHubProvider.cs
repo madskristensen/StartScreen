@@ -267,6 +267,13 @@ namespace StartScreen.Services.DevHub.Providers
             return repos;
         }
 
+        public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> candidateRemoteUrls, CancellationToken cancellationToken)
+        {
+            // GitHub aggregates the user's activity across all repositories via the search API
+            // (GetUserPullRequestsAsync / GetUserIssuesAsync), so no per-repo fetch is needed.
+            return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(Array.Empty<RemoteRepoIdentifier>());
+        }
+
         public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
             if (repo == null)

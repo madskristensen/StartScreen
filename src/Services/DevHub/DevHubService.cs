@@ -112,12 +112,18 @@ namespace StartScreen.Services.DevHub
                 // Fetch issues, PRs, and CI runs in parallel; report each as it arrives
                 DevHubSortOrder sortOrder = Options.Instance.DevHubSortOrder;
 
+                // Providers without a user-level activity API (Azure DevOps) are populated by
+                // fetching each MRU repo individually. Fetch once and split the result into the
+                // issue / PR / CI categories below so each repo is only requested a single time.
+                var perRepoActivityTask = FetchPerRepoActivityAsync(authenticated, cancellationToken);
+
                 var issueTask = Task.Run(async () =>
                 {
                     var tasks = authenticated.Select(p => p.GetUserIssuesAsync(cancellationToken)).ToList();
                     var results = await Task.WhenAll(tasks);
+                    var perRepo = await perRepoActivityTask;
                     return DevHubItemSorter.Sort(
-                        results.SelectMany(r => r),
+                        results.SelectMany(r => r).Concat(perRepo.SelectMany(d => d.Issues)),
                         sortOrder,
                         i => i.RepoIdentifier,
                         i => i.UpdatedAt);
@@ -127,8 +133,9 @@ namespace StartScreen.Services.DevHub
                 {
                     var tasks = authenticated.Select(p => p.GetUserPullRequestsAsync(cancellationToken)).ToList();
                     var results = await Task.WhenAll(tasks);
+                    var perRepo = await perRepoActivityTask;
                     return DevHubItemSorter.Sort(
-                        results.SelectMany(r => r),
+                        results.SelectMany(r => r).Concat(perRepo.SelectMany(d => d.PullRequests)),
                         sortOrder,
                         pr => pr.RepoIdentifier,
                         pr => pr.UpdatedAt);
@@ -138,7 +145,11 @@ namespace StartScreen.Services.DevHub
                 {
                     var tasks = authenticated.Select(p => p.GetUserCiRunsAsync(cancellationToken)).ToList();
                     var results = await Task.WhenAll(tasks);
-                    return results.SelectMany(r => r).OrderByDescending(r => r.Timestamp).ToList();
+                    var perRepo = await perRepoActivityTask;
+                    return results.SelectMany(r => r)
+                        .Concat(perRepo.SelectMany(d => d.CiRuns))
+                        .OrderByDescending(r => r.Timestamp)
+                        .ToList();
                 });
 
                 // Report each category as it completes
@@ -199,6 +210,68 @@ namespace StartScreen.Services.DevHub
                 return null;
 
             return await provider.GetRepoDetailAsync(repo, cancellationToken);
+        }
+
+        /// <summary>
+        /// Fetches per-repository activity for providers that have no user-level aggregation
+        /// API (currently Azure DevOps). The repos are taken from the user's MRU list, so the
+        /// number of requests stays proportional to what the user is actually working on.
+        /// </summary>
+        private static async Task<IReadOnlyList<DevHubRepoDetail>> FetchPerRepoActivityAsync(
+            IReadOnlyList<IDevHubProvider> providers, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var candidateUrls = await GetCandidateRemoteUrlsAsync();
+                if (candidateUrls.Count == 0)
+                    return Array.Empty<DevHubRepoDetail>();
+
+                var detailTasks = new List<Task<DevHubRepoDetail>>();
+                foreach (var provider in providers)
+                {
+                    var repos = await provider.GetActivityReposAsync(candidateUrls, cancellationToken);
+                    if (repos == null)
+                        continue;
+
+                    foreach (var repo in repos)
+                    {
+                        detailTasks.Add(provider.GetRepoDetailAsync(repo, cancellationToken));
+                    }
+                }
+
+                if (detailTasks.Count == 0)
+                    return Array.Empty<DevHubRepoDetail>();
+
+                var details = await Task.WhenAll(detailTasks);
+                return details.Where(d => d != null).ToList();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                return Array.Empty<DevHubRepoDetail>();
+            }
+        }
+
+        /// <summary>
+        /// Reads distinct git remote URLs from the MRU list to use as the candidate set of
+        /// repositories for per-repo activity fetching.
+        /// </summary>
+        private static async Task<IReadOnlyList<string>> GetCandidateRemoteUrlsAsync()
+        {
+            try
+            {
+                var items = await MruService.GetMruItemsAsync();
+                return items
+                    .Select(i => i.RemoteUrl)
+                    .Where(u => !string.IsNullOrWhiteSpace(u))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                return Array.Empty<string>();
+            }
         }
 
         /// <summary>

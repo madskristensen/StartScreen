@@ -224,6 +224,44 @@ namespace StartScreen.Services.DevHub.Providers
             return Array.Empty<DevHubCiRun>();
         }
 
+        public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> candidateRemoteUrls, CancellationToken cancellationToken)
+        {
+            // Azure DevOps has no cross-project/cross-org activity query, so the dashboard is
+            // populated by fetching each known repo individually. Use the candidate remote URLs
+            // (the MRU repositories) as the set of repos to look at, keeping the request count
+            // bounded instead of enumerating every repo the PAT can see.
+            var repos = new List<RemoteRepoIdentifier>();
+
+            if (candidateRemoteUrls != null)
+            {
+                var seen = new HashSet<RemoteRepoIdentifier>();
+                foreach (var url in candidateRemoteUrls)
+                {
+                    if (string.IsNullOrWhiteSpace(url))
+                        continue;
+
+                    RemoteRepoIdentifier repo;
+                    try
+                    {
+                        repo = ParseRemoteUrl(url);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    // GetRepoDetailAsync needs the project to build the REST URLs.
+                    if (repo == null || string.IsNullOrEmpty(repo.Project))
+                        continue;
+
+                    if (seen.Add(repo))
+                        repos.Add(repo);
+                }
+            }
+
+            return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(repos);
+        }
+
         public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
             if (repo == null || string.IsNullOrEmpty(repo.Project))

@@ -186,6 +186,13 @@ namespace StartScreen.Services.DevHub.Providers
             return Array.Empty<DevHubCiRun>();
         }
 
+        public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> candidateRemoteUrls, CancellationToken cancellationToken)
+        {
+            // Bitbucket pull requests are aggregated for the user via the cross-repo PR endpoint
+            // in GetUserPullRequestsAsync, so no per-repo activity fetch is wired up here.
+            return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(Array.Empty<RemoteRepoIdentifier>());
+        }
+
         public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
             if (repo == null)

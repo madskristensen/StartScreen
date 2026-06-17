@@ -64,6 +64,17 @@ namespace StartScreen.Services.DevHub
         Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken);
 
         /// <summary>
+        /// Returns the repositories whose activity must be fetched individually via
+        /// <see cref="GetRepoDetailAsync"/> during a dashboard refresh, selected from the
+        /// supplied candidate git remote URLs (typically the user's MRU repositories).
+        /// Providers that aggregate activity at the user level (e.g. GitHub) return an empty
+        /// list. Azure DevOps, which has no cross-project / cross-organization query API,
+        /// returns the repositories it recognizes so their PRs and builds can be fetched
+        /// per-repo.
+        /// </summary>
+        Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> candidateRemoteUrls, CancellationToken cancellationToken);
+
+        /// <summary>
         /// Fetches detailed PR, issue, and CI data for a specific repository.
         /// Returns null if the user is not authenticated or on error.
         /// </summary>
