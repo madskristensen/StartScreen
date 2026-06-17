@@ -599,25 +599,30 @@ namespace StartScreen.ToolWindows.Controls
             }
             else
             {
-                SearchQueryTextBox.Text = Options.Instance.DevHubSearchQuery ?? "";
-                SearchQueryPlaceholder.Visibility = string.IsNullOrEmpty(SearchQueryTextBox.Text)
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
-
-                bool hasGitHub = _currentDashboard?.HasProvider("github.com") == true;
-                bool hasAdo = HasAnyAdoConnection(_currentDashboard) || HasAnyAdoCredential();
-                UpdateSettingsAccountStatus(hasGitHub, hasAdo);
-                AdoPatBox.Clear();
-                AdoPatEntryPanel.Visibility = Visibility.Collapsed;
-                AddAdoServerPanel.Visibility = Visibility.Collapsed;
-                AddAdoServerLink.Visibility = Visibility.Visible;
-                _pendingAdoHost = null;
-                RefreshAdoServersList();
-
-                PopulateDisplaySettings();
-
-                SettingsPanel.Visibility = Visibility.Visible;
+                OpenSettingsPanel();
             }
+        }
+
+        private void OpenSettingsPanel()
+        {
+            SearchQueryTextBox.Text = Options.Instance.DevHubSearchQuery ?? "";
+            SearchQueryPlaceholder.Visibility = string.IsNullOrEmpty(SearchQueryTextBox.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            bool hasGitHub = _currentDashboard?.HasProvider("github.com") == true;
+            bool hasAdo = HasAnyAdoConnection(_currentDashboard) || HasAnyAdoCredential();
+            UpdateSettingsAccountStatus(hasGitHub, hasAdo);
+            AdoPatBox.Clear();
+            AdoPatEntryPanel.Visibility = Visibility.Collapsed;
+            AddAdoServerPanel.Visibility = Visibility.Collapsed;
+            AddAdoServerLink.Visibility = Visibility.Visible;
+            _pendingAdoHost = null;
+            RefreshAdoServersList();
+
+            PopulateDisplaySettings();
+
+            SettingsPanel.Visibility = Visibility.Visible;
         }
 
         private void PopulateDisplaySettings()
@@ -887,7 +892,10 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ConnectAdo_Click(object sender, RoutedEventArgs e)
         {
-            ConnectAccountRequested?.Invoke(this, "dev.azure.com");
+            // Azure DevOps cannot be connected through Git Credential Manager, so prompt
+            // for a personal access token directly instead of firing the (always-failing)
+            // GCM-based connect flow used for GitHub.
+            ShowAdoPatEntry(AzureDevOpsServerHelper.CloudHost);
         }
 
         private void AdoPatBox_KeyDown(object sender, KeyEventArgs e)
@@ -1036,16 +1044,31 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (sender is System.Windows.Documents.Hyperlink hl && hl.Tag is string host && !string.IsNullOrWhiteSpace(host))
             {
-                _pendingAdoHost = host;
-                AdoPatHostLabel.Text = host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase)
-                    ? "Azure DevOps (cloud) personal access token"
-                    : $"Personal access token for {host}";
-                AdoPatBox.Clear();
-                AdoPatEntryPanel.Visibility = Visibility.Visible;
-                AddAdoServerPanel.Visibility = Visibility.Collapsed;
-                AddAdoServerLink.Visibility = Visibility.Visible;
-                AdoPatBox.Focus();
+                ShowAdoPatEntry(host);
             }
+        }
+
+        private void ShowAdoPatEntry(string host)
+        {
+            if (string.IsNullOrWhiteSpace(host))
+                return;
+
+            // The PAT entry box lives inside the settings panel, so make sure it is open
+            // (e.g. when invoked from the empty "Connect Azure DevOps account..." prompt).
+            if (SettingsPanel.Visibility != Visibility.Visible)
+            {
+                OpenSettingsPanel();
+            }
+
+            _pendingAdoHost = host;
+            AdoPatHostLabel.Text = host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase)
+                ? "Azure DevOps (cloud) personal access token"
+                : $"Personal access token for {host}";
+            AdoPatBox.Clear();
+            AdoPatEntryPanel.Visibility = Visibility.Visible;
+            AddAdoServerPanel.Visibility = Visibility.Collapsed;
+            AddAdoServerLink.Visibility = Visibility.Visible;
+            AdoPatBox.Focus();
         }
 
         private void AdoServer_Disconnect_Click(object sender, RoutedEventArgs e)
