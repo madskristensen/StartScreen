@@ -269,7 +269,7 @@
                                      KeyDown="AdoPatBox_KeyDown"
                                      PasswordChanged="AdoPatBox_PasswordChanged"/>
                         <TextBlock x:Name="AdoPatPlaceholder"
-                                   Text="Paste your PAT and press Enter"
+                                   Text="Paste your PAT"
                                    FontSize="11"
                                    Padding="6 4"
                                    Opacity="0.4"
@@ -283,6 +283,19 @@
                         </Hyperlink>
                         <Run Text="with Code (read) and Work Items (read) scopes."/>
                     </TextBlock>
+                    <StackPanel Orientation="Horizontal" Margin="0 6 0 0" HorizontalAlignment="Left">
+                        <Button Content="Save" Click="SaveAdoPat_Click"
+                                Style="{DynamicResource ActionButtonStyle}"
+                                FontSize="11"
+                                MinWidth="0" MinHeight="0"
+                                Padding="8 2"/>
+                        <Button Content="Cancel" Click="CancelAdoPat_Click"
+                                Style="{DynamicResource ActionButtonStyle}"
+                                FontSize="11"
+                                MinWidth="0" MinHeight="0"
+                                Padding="8 2"
+                                Margin="6 0 0 0"/>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- Manually add an Azure DevOps Server -->

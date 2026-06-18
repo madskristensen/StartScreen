@@ -918,28 +918,47 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (e.Key == Key.Enter)
             {
-                var pat = AdoPatBox.Password?.Trim();
-                var host = string.IsNullOrEmpty(_pendingAdoHost) ? AzureDevOpsServerHelper.CloudHost : _pendingAdoHost;
-                if (!string.IsNullOrEmpty(pat))
-                {
-                    Services.DevHub.DevHubCredentialHelper.StoreCredential(host, string.Empty, pat);
-                    Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
-                    AdoPatBox.Clear();
-                    AdoPatEntryPanel.Visibility = Visibility.Collapsed;
-                    _pendingAdoHost = null;
-                    RefreshAdoServersList();
-                    RefreshRequested?.Invoke(this, EventArgs.Empty);
-                }
-
+                CommitAdoPat();
                 e.Handled = true;
             }
             else if (e.Key == Key.Escape)
             {
+                CancelAdoPatEntry();
+                e.Handled = true;
+            }
+        }
+
+        private void SaveAdoPat_Click(object sender, RoutedEventArgs e)
+        {
+            CommitAdoPat();
+        }
+
+        private void CancelAdoPat_Click(object sender, RoutedEventArgs e)
+        {
+            CancelAdoPatEntry();
+        }
+
+        private void CommitAdoPat()
+        {
+            var pat = AdoPatBox.Password?.Trim();
+            var host = string.IsNullOrEmpty(_pendingAdoHost) ? AzureDevOpsServerHelper.CloudHost : _pendingAdoHost;
+            if (!string.IsNullOrEmpty(pat))
+            {
+                Services.DevHub.DevHubCredentialHelper.StoreCredential(host, string.Empty, pat);
+                Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
                 AdoPatBox.Clear();
                 AdoPatEntryPanel.Visibility = Visibility.Collapsed;
                 _pendingAdoHost = null;
-                e.Handled = true;
+                RefreshAdoServersList();
+                RefreshRequested?.Invoke(this, EventArgs.Empty);
             }
+        }
+
+        private void CancelAdoPatEntry()
+        {
+            AdoPatBox.Clear();
+            AdoPatEntryPanel.Visibility = Visibility.Collapsed;
+            _pendingAdoHost = null;
         }
 
         private void AdoPatBox_PasswordChanged(object sender, RoutedEventArgs e)
