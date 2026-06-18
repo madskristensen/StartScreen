@@ -112,5 +112,22 @@ namespace StartScreen.Test.DevHub
 
             Assert.AreEqual("https://dev.azure.com/myorg/MyProject/_workitems", _provider.GetIssuesWebUrl(repo));
         }
+
+        [TestMethod]
+        public void GetLegacyProfileHosts_ReturnsLegacyVisualStudioBaseUrls()
+        {
+            var urls = new[]
+            {
+                "https://dev.azure.com/myorg/MyProject/_git/MyRepo",
+                "https://devdiv.visualstudio.com/DevDiv/_git/Repo",
+                "https://devdiv.visualstudio.com/DevDiv/_git/Repo/",
+                "https://github.com/owner/repo",
+            };
+
+            var results = AzureDevOpsDevHubProvider.GetLegacyProfileHosts(urls);
+
+            Assert.AreEqual(1, results.Count);
+            Assert.AreEqual("devdiv.visualstudio.com", results[0]);
+        }
     }
 }

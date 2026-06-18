@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using StartScreen.Models.DevHub;
+using StartScreen.Services;
 
 namespace StartScreen.Services.DevHub.Providers
 {
@@ -102,12 +104,26 @@ namespace StartScreen.Services.DevHub.Providers
 
         public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)
         {
-            var hosts = AzureDevOpsServerHelper.GetAllKnownHosts();
             var results = new List<DevHubUser>();
+            var credentialHosts = AzureDevOpsServerHelper.GetAllKnownHosts().ToList();
+            var profileTargets = new List<(string CredentialHost, string ProfileHost)>();
 
-            foreach (var host in hosts)
+            foreach (var host in credentialHosts)
             {
-                var user = await GetUserForHostAsync(host, cancellationToken);
+                profileTargets.Add((host, null));
+            }
+
+            var legacyProfileHosts = await GetLegacyProfileHostsAsync(cancellationToken);
+            foreach (var legacyProfileHost in legacyProfileHosts)
+            {
+                var target = (AzureDevOpsServerHelper.CloudHost, legacyProfileHost);
+                if (!profileTargets.Contains(target))
+                    profileTargets.Add(target);
+            }
+
+            foreach (var (credentialHost, profileHost) in profileTargets)
+            {
+                var user = await GetUserForHostAsync(credentialHost, profileHost, cancellationToken);
                 if (user != null)
                     results.Add(user);
             }
@@ -115,33 +131,39 @@ namespace StartScreen.Services.DevHub.Providers
             return results;
         }
 
-        private async Task<DevHubUser> GetUserForHostAsync(string host, CancellationToken cancellationToken)
+        private async Task<DevHubUser> GetUserForHostAsync(string credentialHost, string profileHost, CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync(host, cancellationToken);
+            if (string.IsNullOrWhiteSpace(credentialHost))
+                return null;
+
+            var credential = await DevHubCredentialHelper.GetCredentialAsync(credentialHost, cancellationToken);
             if (credential == null)
                 return null;
 
             try
             {
-                bool isCloud = host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase);
+                bool isCloud = credentialHost.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase);
+                string effectiveProfileHost = string.IsNullOrWhiteSpace(profileHost)
+                    ? credentialHost
+                    : profileHost;
 
-                // Cloud: SPS profile endpoint. On-prem: connectionData on the server itself.
-                // `host` may include a path (e.g. "tfs.contoso.com/tfs/DefaultCollection") which
-                // older Azure DevOps Server installations require for REST routing.
-                // api-version=3.0 is GA on every shipping Azure DevOps Server / TFS release
-                // (TFS 2015+) and on Azure DevOps Services, so it avoids the
-                // VssInvalidPreviewVersionException that newer numbers trigger on older servers.
+                // Cloud: SPS profile endpoint. Legacy *.visualstudio.com orgs can authenticate
+                // against their real org host, so prefer that profile endpoint over the generic
+                // app.vssps host when we can derive one from the user's MRU remotes.
+                // On-prem: connectionData on the server itself.
                 string profileUrl = isCloud
-                    ? "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"
-                    : $"https://{host.TrimEnd('/')}/_apis/connectionData?api-version=3.0";
+                    ? (effectiveProfileHost.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase)
+                        ? "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"
+                        : $"https://{effectiveProfileHost.TrimEnd('/')}/_apis/profile/profiles/me?api-version=7.1")
+                    : $"https://{effectiveProfileHost.TrimEnd('/')}/_apis/connectionData?api-version=3.0";
 
                 var response = await SendGetAsync(credential, profileUrl, cancellationToken);
 
                 // Token expired - invalidate cache and retry once with a fresh credential.
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
-                    DevHubCredentialHelper.InvalidateCachedCredential(host);
-                    credential = await DevHubCredentialHelper.GetCredentialAsync(host, cancellationToken);
+                    DevHubCredentialHelper.InvalidateCachedCredential(credentialHost);
+                    credential = await DevHubCredentialHelper.GetCredentialAsync(credentialHost, cancellationToken);
                     if (credential == null)
                         return null;
 
@@ -192,7 +214,7 @@ namespace StartScreen.Services.DevHub.Providers
                         DisplayName = displayName,
                         AvatarUrl = null,
                         ProviderName = DisplayName,
-                        Host = host,
+                        Host = effectiveProfileHost,
                     };
                 }
             }
@@ -200,6 +222,49 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 await ex.LogAsync();
                 return null;
+            }
+        }
+
+        internal static IReadOnlyList<string> GetLegacyProfileHosts(IEnumerable<string> remoteUrls)
+        {
+            var results = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var url in remoteUrls ?? Array.Empty<string>())
+            {
+                try
+                {
+                    var repo = RemoteRepoIdentifier.TryParse(url);
+                    if (repo == null || string.IsNullOrWhiteSpace(repo.BaseUrl))
+                        continue;
+
+                    if (!repo.BaseUrl.Contains(".visualstudio.com", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var legacyHost = new Uri(repo.BaseUrl).Host;
+                    if (seen.Add(legacyHost))
+                        results.Add(legacyHost);
+                }
+                catch
+                {
+                    // Ignore malformed MRU entries.
+                }
+            }
+
+            return results;
+        }
+
+        private static async Task<IReadOnlyList<string>> GetLegacyProfileHostsAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var items = await MruService.GetMruItemsAsync();
+                return GetLegacyProfileHosts(items.Select(i => i.RemoteUrl).Where(u => !string.IsNullOrWhiteSpace(u)));
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                return Array.Empty<string>();
             }
         }
 
