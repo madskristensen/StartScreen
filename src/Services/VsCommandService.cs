@@ -145,14 +145,12 @@ namespace StartScreen.Services
             if (dte == null)
                 return;
 
-            var extension = Path.GetExtension(path)?.ToLowerInvariant();
-
             if (Directory.Exists(path))
             {
                 // Quote the path so spaces don't break command argument parsing
                 await VS.Commands.ExecuteAsync("File.OpenFolder", $"\"{path}\"");
             }
-            else if (extension == ".sln" || extension == ".slnx")
+            else if (IsSolutionPath(path))
             {
                 // Use StartOnIdle to defer opening until the UI thread is idle.
                 // This prevents race conditions during document restoration by ensuring
@@ -169,6 +167,15 @@ namespace StartScreen.Services
                 // Project file or other - use open project command
                 dte.Solution.AddFromFile(path);
             }
+        }
+
+        internal static bool IsSolutionPath(string path)
+        {
+            var extension = Path.GetExtension(path);
+
+            return extension.Equals(".sln", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".slnx", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".slnf", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
