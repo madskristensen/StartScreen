@@ -349,13 +349,12 @@ namespace StartScreen.ToolWindows
                         DevHubPanelControl.ShowLoading();
                     }
 
-                    var progress = new Progress<DevHubDashboard>(UpdateDevHubPanel);
-                    await _devHubService.RefreshAsync(CancellationToken.None, progress);
-                    UpdateDevHubPanel();
+                    await RefreshDevHubInBackgroundAsync();
                 }
                 catch (Exception ex)
                 {
                     await ex.LogAsync();
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
                     // Only show error if we have no cached data to fall back to
                     if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
@@ -365,6 +364,7 @@ namespace StartScreen.ToolWindows
                 }
                 finally
                 {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                     if (ViewModel != null)
                     {
                         ViewModel.IsRefreshingDevHub = false;
