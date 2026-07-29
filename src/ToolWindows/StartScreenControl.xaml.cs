@@ -9,6 +9,7 @@ using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
@@ -270,6 +271,30 @@ namespace StartScreen.ToolWindows
             {
                 ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.RemoveMruItemAsync(item)).FileAndForget(nameof(StartScreenControl));
             }
+        }
+
+        private void ClearRecentButton_Click(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            var shell = ServiceProvider.GlobalProvider.GetService(typeof(SVsUIShell)) as IVsUIShell;
+            if (shell == null)
+                return;
+
+            shell.UpdateCommandUI(1);
+
+            Point screenPoint = ClearRecentButton.PointToScreen(new Point(0, ClearRecentButton.ActualHeight));
+            Guid commandSet = PackageGuids.StartScreen;
+            var points = new[]
+            {
+                new POINTS
+                {
+                    x = (short)screenPoint.X,
+                    y = (short)screenPoint.Y
+                }
+            };
+
+            shell.ShowContextMenu(0, ref commandSet, PackageIds.ClearRecentMenu, points, null);
         }
 
         private void MruItemControl_SelectionRequested(object sender, MruItem item)

@@ -14,6 +14,8 @@ namespace StartScreen.ToolWindows
         private StartScreenViewModel _viewModel;
         private StartScreenControl _control;
 
+        internal static StartScreenViewModel CurrentViewModel { get; private set; }
+
         public const string Name = "⌂ Start";
 
         public override string GetTitle(int toolWindowId) => Name;
@@ -31,6 +33,7 @@ namespace StartScreen.ToolWindows
             {
                 // Start loading data immediately (head start while window renders)
                 _viewModel = new StartScreenViewModel();
+                CurrentViewModel = _viewModel;
                 Task loadTask = _viewModel.LoadMruAsync();
 
                 // Return control immediately for fast window paint

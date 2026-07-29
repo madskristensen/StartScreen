@@ -127,26 +127,54 @@ namespace StartScreen.Services
         }
 
         /// <summary>
-        /// Removes an item from VS's MRU store via IVsMRUItemsStore.DeleteMRUItem.
+        /// Removes items from VS's MRU store and the persisted Start Screen history.
         /// </summary>
-        public static async Task RemoveItemAsync(MruItem item)
+        public static async Task RemoveItemsAsync(IEnumerable<MruItem> items, Options options = null)
         {
-            if (item == null)
+            List<MruItem> itemList = items?
+                .Where(item => item != null && !string.IsNullOrWhiteSpace(item.Path))
+                .ToList();
+
+            if (itemList == null || itemList.Count == 0)
                 return;
 
             try
             {
+                IVsMRUItemsStore store = await VS.GetServiceAsync<SVsMRUItemsStore, IVsMRUItemsStore>();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                IVsMRUItemsStore store = await VS.GetServiceAsync<SVsMRUItemsStore, IVsMRUItemsStore>();
-                if (store == null)
-                    return;
-
-                Guid projectsGuid = MruList.Projects;
-                foreach (var rawEntry in item.RawMruEntries)
+                if (store != null)
                 {
-                    store.DeleteMRUItem(ref projectsGuid, rawEntry);
+                    Guid projectsGuid = MruList.Projects;
+                    foreach (MruItem item in itemList)
+                    {
+                        foreach (var rawEntry in item.RawMruEntries)
+                        {
+                            store.DeleteMRUItem(ref projectsGuid, rawEntry);
+                        }
+                    }
                 }
+
+                await TaskScheduler.Default;
+                options ??= await Options.GetLiveInstanceAsync();
+
+                var removedKeys = new HashSet<string>(
+                    itemList.Select(item => GetDeduplicationKeyFromPath(item.Path, item.Type)),
+                    StringComparer.OrdinalIgnoreCase);
+                List<ExtendedMruEntry> entries = LoadExtendedEntries(options);
+                entries.RemoveAll(entry => removedKeys.Contains(
+                    GetDeduplicationKeyFromPath(entry.Path, (MruItemType)entry.Type)));
+
+                var removedPaths = new HashSet<string>(
+                    itemList.Select(item => item.Path),
+                    StringComparer.OrdinalIgnoreCase);
+                IEnumerable<string> pinnedPaths = (options.PinnedItems ?? "")
+                    .Split([';'], StringSplitOptions.RemoveEmptyEntries)
+                    .Where(path => !removedPaths.Contains(path));
+
+                options.ExtendedMruItems = JsonSerializer.Serialize(entries, _jsonOptions);
+                options.PinnedItems = string.Join(";", pinnedPaths);
+                await options.SaveAsync();
             }
             catch (Exception ex)
             {
@@ -697,40 +725,5 @@ namespace StartScreen.Services
             return [.. result.OrderByDescending(i => i.LastAccessed)];
         }
 
-        /// <summary>
-        /// Removes an item from the persisted extended MRU list.
-        /// Safe to call for items that are not in the extended list (no-op).
-        /// </summary>
-        internal static async Task RemoveFromExtendedAsync(MruItem item, Options options = null)
-        {
-            if (item == null || string.IsNullOrWhiteSpace(item.Path))
-                return;
-
-            try
-            {
-                if (options == null)
-                    options = await Options.GetLiveInstanceAsync();
-
-                var entries = LoadExtendedEntries(options);
-                if (entries.Count == 0)
-                    return;
-
-                var key = GetDeduplicationKeyFromPath(item.Path, item.Type);
-                var before = entries.Count;
-                entries.RemoveAll(e =>
-                    GetDeduplicationKeyFromPath(e.Path, (MruItemType)e.Type)
-                        .Equals(key, StringComparison.OrdinalIgnoreCase));
-
-                if (entries.Count != before)
-                {
-                    options.ExtendedMruItems = JsonSerializer.Serialize(entries, _jsonOptions);
-                    await options.SaveAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-            }
-        }
     }
 }

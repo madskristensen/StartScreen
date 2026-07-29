@@ -7,9 +7,20 @@
   <Include href="VSGlobals.vsct"/>
 
   <Commands package="StartScreen">
+    <Menus>
+      <Menu guid="StartScreen" id="ClearRecentMenu" type="Context">
+        <Strings>
+          <CommandName>Clear Recent</CommandName>
+        </Strings>
+      </Menu>
+    </Menus>
+
     <Groups>
       <Group guid="StartScreen" id="StartScreenGroup" priority="0x0300">
         <Parent guid="VSMainMenu" id="File"/>
+      </Group>
+      <Group guid="StartScreen" id="ClearRecentGroup" priority="0x0100">
+        <Parent guid="StartScreen" id="ClearRecentMenu"/>
       </Group>
     </Groups>
 
@@ -25,6 +36,24 @@
           <LocCanonicalName>.StartScreen.ShowStartScreen</LocCanonicalName>
         </Strings>
       </Button>
+      <Button guid="StartScreen" id="ClearAllRecentCommand" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="ClearRecentGroup" />
+        <Strings>
+          <ButtonText>Clear All</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="StartScreen" id="ClearAllButPinnedCommand" priority="0x0200" type="Button">
+        <Parent guid="StartScreen" id="ClearRecentGroup" />
+        <Strings>
+          <ButtonText>Clear All But Pinned</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="StartScreen" id="ClearMissingRecentCommand" priority="0x0300" type="Button">
+        <Parent guid="StartScreen" id="ClearRecentGroup" />
+        <Strings>
+          <ButtonText>Clear Missing</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -35,7 +64,12 @@
   <Symbols>
     <GuidSymbol name="StartScreen" value="{4add43ae-71e4-4eec-b622-2e8ed3452024}">
       <IDSymbol name="StartScreenGroup" value="0x0001" />
+      <IDSymbol name="ClearRecentGroup" value="0x0002" />
+      <IDSymbol name="ClearRecentMenu" value="0x1000" />
       <IDSymbol name="ShowStartScreenCommand" value="0x0100" />
+      <IDSymbol name="ClearAllRecentCommand" value="0x0101" />
+      <IDSymbol name="ClearAllButPinnedCommand" value="0x0102" />
+      <IDSymbol name="ClearMissingRecentCommand" value="0x0103" />
     </GuidSymbol>
     
     <GuidSymbol name="autoload" value="{4add43ae-71e4-4eec-b622-2e8ed3452025}" />

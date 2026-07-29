@@ -13,6 +13,13 @@ using StartScreen.Services;
 
 namespace StartScreen.ToolWindows
 {
+    internal enum MruClearMode
+    {
+        All,
+        AllButPinned,
+        Missing
+    }
+
     /// <summary>
     /// Main ViewModel for the Start Screen.
     /// </summary>
@@ -1031,13 +1038,82 @@ namespace StartScreen.ToolWindows
             if (item == null)
                 return;
 
-            _allMruItems.Remove(item);
-
             Options options = await Options.GetLiveInstanceAsync();
-            await MruService.RemoveItemAsync(item);
-            await MruService.RemoveFromExtendedAsync(item, options);
+            await MruService.RemoveItemsAsync([item], options);
 
-            UpdateMruCollections();
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            _allMruItems.Remove(item);
+            if (SelectedMruItem == item)
+            {
+                SelectedMruItem = null;
+            }
+
+            RefreshMruCollections();
+        }
+
+        internal bool CanClearMruItems(MruClearMode mode)
+        {
+            return _allMruItems.Any(item => ShouldClearMruItem(item, mode));
+        }
+
+        internal async Task ClearMruItemsAsync(MruClearMode mode)
+        {
+            List<MruItem> items = _allMruItems
+                .Where(item => ShouldClearMruItem(item, mode))
+                .ToList();
+
+            if (items.Count == 0)
+                return;
+
+            await MruService.RemoveItemsAsync(items);
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            var removedKeys = new HashSet<string>(
+                items.Select(item => MruService.GetDeduplicationKeyFromPath(item.Path, item.Type)),
+                StringComparer.OrdinalIgnoreCase);
+            _allMruItems = new ObservableCollection<MruItem>(
+                _allMruItems.Where(item => !removedKeys.Contains(
+                    MruService.GetDeduplicationKeyFromPath(item.Path, item.Type))));
+
+            if (SelectedMruItem != null && removedKeys.Contains(
+                MruService.GetDeduplicationKeyFromPath(SelectedMruItem.Path, SelectedMruItem.Type)))
+            {
+                SelectedMruItem = null;
+            }
+
+            RefreshMruCollections();
+        }
+
+        internal static bool ShouldClearMruItem(MruItem item, MruClearMode mode)
+        {
+            if (item == null)
+                return false;
+
+            switch (mode)
+            {
+                case MruClearMode.All:
+                    return true;
+                case MruClearMode.AllButPinned:
+                    return !item.IsPinned;
+                case MruClearMode.Missing:
+                    return !item.Exists;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(mode));
+            }
+        }
+
+        private void RefreshMruCollections()
+        {
+            if (string.IsNullOrWhiteSpace(_searchFilter))
+            {
+                UpdateMruCollections();
+            }
+            else
+            {
+                FilterMru(_searchFilter);
+            }
+
+            OnPropertyChanged(nameof(HasNoSearchResults));
         }
 
         /// <summary>
