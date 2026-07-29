@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio.Settings;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Helpers;
@@ -12,21 +14,32 @@ using static Microsoft.VisualStudio.VSConstants;
 namespace StartScreen.Services
 {
     /// <summary>
-    /// Manages the Most Recently Used (MRU) list by reading from VS's IVsMRUItemsStore.
+    /// Manages the Most Recently Used (MRU) list by reading from VS's recent-project stores.
     /// Pinned state is stored in VS Options.
     /// </summary>
     internal static class MruService
     {
+        private const string RecentProjectsListName = "CodeContainers.Offline";
         private const uint MaxVsItems = 50;
+
+        [Guid("9b164e40-c3a2-4363-9bc5-eb4039def653")]
+        private sealed class SVsSettingsPersistenceManager
+        {
+        }
 
         /// <summary>
         /// Reads VS's MRU via IVsMRUItemsStore and applies pinned state from Options.
         /// </summary>
         public static async Task<List<MruItem>> GetMruItemsAsync(Options options = null)
         {
-            // Acquire the service first - this is free-threaded and does not require
-            // the UI thread. Doing it before the SwitchToMainThreadAsync below means
-            // the UI-thread region is as small as possible.
+            // CodeContainers.Offline drives Visual Studio's Recent Projects UI. The legacy
+            // MRU store supplies richer entry metadata, but can retain entries after that
+            // list is cleared.
+            ISettingsManager settingsManager = await VS.GetServiceAsync<SVsSettingsPersistenceManager, ISettingsManager>();
+            string[] recentProjectPaths = settingsManager?
+                .GetOrCreateList(RecentProjectsListName, isMachineLocal: true)
+                .Keys;
+
             IVsMRUItemsStore store = await VS.GetServiceAsync<SVsMRUItemsStore, IVsMRUItemsStore>();
 
             // Use caller-provided options or load from settings (also free-threaded).
@@ -35,7 +48,12 @@ namespace StartScreen.Services
                 options = await Options.GetLiveInstanceAsync();
             }
 
-            // Only the COM call itself requires the UI thread.
+            if (ClearPersistedHistoryIfRecentProjectsEmpty(recentProjectPaths, options))
+            {
+                await options.SaveAsync();
+            }
+
+            // Only the legacy COM call requires the UI thread.
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             var rawEntries = new List<string>();
@@ -99,7 +117,7 @@ namespace StartScreen.Services
                 }
             }
 
-            List<MruItem> vsItems = itemsByKey.Values.ToList();
+            List<MruItem> vsItems = FilterToCurrentRecentProjects(itemsByKey.Values, recentProjectPaths);
 
             // Apply pinned state from Options and build an ordered list for stable pin ordering
             var pinnedOrderList = (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries);
@@ -124,6 +142,39 @@ namespace StartScreen.Services
 
             pinned.AddRange(unpinned);
             return pinned;
+        }
+
+        internal static List<MruItem> FilterToCurrentRecentProjects(
+            IEnumerable<MruItem> items, IEnumerable<string> recentProjectPaths)
+        {
+            var itemList = items.ToList();
+            if (recentProjectPaths == null)
+                return itemList;
+
+            var recentKeys = new HashSet<string>(
+                recentProjectPaths
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Select(path => GetDeduplicationKeyFromPath(path, DetermineType(path))),
+                StringComparer.OrdinalIgnoreCase);
+
+            return itemList
+                .Where(item => recentKeys.Contains(GetDeduplicationKey(item)))
+                .ToList();
+        }
+
+        internal static bool ClearPersistedHistoryIfRecentProjectsEmpty(
+            IReadOnlyCollection<string> recentProjectPaths, Options options)
+        {
+            if (recentProjectPaths == null
+                || recentProjectPaths.Count > 0
+                || (string.IsNullOrEmpty(options.ExtendedMruItems) && string.IsNullOrEmpty(options.PinnedItems)))
+            {
+                return false;
+            }
+
+            options.ExtendedMruItems = "";
+            options.PinnedItems = "";
+            return true;
         }
 
         /// <summary>
