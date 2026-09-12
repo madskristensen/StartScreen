@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using LibGit2Sharp;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using StartScreen.Helpers;
 
@@ -74,6 +75,23 @@ namespace StartScreen.Test
             GitHelper.FetchUpstream(System.IO.Path.GetTempPath(), null, "refs/heads/main");
             GitHelper.FetchUpstream(System.IO.Path.GetTempPath(), "origin", null);
             GitHelper.FetchUpstream(System.IO.Path.GetTempPath(), string.Empty, string.Empty);
+        }
+
+        [TestMethod]
+        public void IsRepositoryOwnershipFailure_WithOwnershipError_ReturnsTrue()
+        {
+            var exception = new LibGit2SharpException(
+                "repository path 'C:/repos/example' is not owned by current user");
+
+            Assert.IsTrue(GitHelper.IsRepositoryOwnershipFailure(exception));
+        }
+
+        [TestMethod]
+        public void IsRepositoryOwnershipFailure_WithOtherError_ReturnsFalse()
+        {
+            var exception = new LibGit2SharpException("failed to read repository");
+
+            Assert.IsFalse(GitHelper.IsRepositoryOwnershipFailure(exception));
         }
     }
 }

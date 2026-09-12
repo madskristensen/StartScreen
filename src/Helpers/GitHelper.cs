@@ -117,6 +117,11 @@ namespace StartScreen.Helpers
                 // Not a git repository - return empty status
                 return new GitStatus();
             }
+            catch (LibGit2SharpException ex) when (IsRepositoryOwnershipFailure(ex))
+            {
+                // Git intentionally rejected a repository owned by another user.
+                return new GitStatus();
+            }
             catch (Exception ex)
             {
                 ex.Log();
@@ -150,6 +155,13 @@ namespace StartScreen.Helpers
             }
 
             return null;
+        }
+
+        internal static bool IsRepositoryOwnershipFailure(LibGit2SharpException exception)
+        {
+            return exception?.Message?.IndexOf(
+                " is not owned by current user",
+                StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>
@@ -372,6 +384,10 @@ namespace StartScreen.Helpers
                         return (tracking.AheadBy, tracking.BehindBy);
                     }
                 }
+            }
+            catch (LibGit2SharpException ex) when (IsRepositoryOwnershipFailure(ex))
+            {
+                return (null, null);
             }
             catch (Exception ex)
             {
