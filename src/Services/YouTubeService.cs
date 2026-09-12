@@ -43,16 +43,28 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task<List<YouTubeVideo>> GetCachedVideosAsync()
         {
+            return await GetCachedVideosAsync(CacheFile);
+        }
+
+        internal static async Task<List<YouTubeVideo>> GetCachedVideosAsync(string cacheFile)
+        {
             try
             {
-                if (!File.Exists(CacheFile))
+                if (!File.Exists(cacheFile))
                     return null;
 
-                byte[] fileBytes;
-                using (var stream = new FileStream(CacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
+                byte[] fileBytes = new byte[new FileInfo(cacheFile).Length];
+                using (var stream = new FileStream(cacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
                 {
-                    fileBytes = new byte[stream.Length];
-                    await stream.ReadAsync(fileBytes, 0, fileBytes.Length);
+                    var offset = 0;
+                    while (offset < fileBytes.Length)
+                    {
+                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset);
+                        if (bytesRead == 0)
+                            break;
+
+                        offset += bytesRead;
+                    }
                 }
 
                 var entries = JsonSerializer.Deserialize<List<YouTubeCacheEntry>>(fileBytes);
@@ -74,11 +86,16 @@ namespace StartScreen.Services
         /// </summary>
         public static bool IsCacheStale()
         {
-            if (!File.Exists(CacheFile))
+            return IsCacheStale(CacheFile, DateTime.UtcNow);
+        }
+
+        internal static bool IsCacheStale(string cacheFile, DateTime utcNow)
+        {
+            if (!File.Exists(cacheFile))
                 return true;
 
-            var lastModified = File.GetLastWriteTimeUtc(CacheFile);
-            return DateTime.UtcNow - lastModified >= StaleThreshold;
+            var lastModified = File.GetLastWriteTimeUtc(cacheFile);
+            return utcNow - lastModified >= StaleThreshold;
         }
 
         /// <summary>
@@ -88,14 +105,25 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task<List<YouTubeVideo>> DownloadVideosAsync()
         {
-            const int maxAttempts = 3;
             const int baseDelayMs = 2000;
+            return await DownloadVideosAsync(
+                HttpClient,
+                attempt => Task.Delay(baseDelayMs * attempt),
+                CacheFile);
+        }
+
+        internal static async Task<List<YouTubeVideo>> DownloadVideosAsync(
+            HttpClient httpClient,
+            Func<int, Task> delayAsync,
+            string cacheFile)
+        {
+            const int maxAttempts = 3;
 
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 try
                 {
-                    using (var response = await HttpClient.GetAsync(FeedUrl))
+                    using (var response = await httpClient.GetAsync(FeedUrl))
                     {
                         if (!response.IsSuccessStatusCode)
                         {
@@ -103,7 +131,7 @@ namespace StartScreen.Services
 
                             if (attempt < maxAttempts)
                             {
-                                await Task.Delay(baseDelayMs * attempt);
+                                await delayAsync(attempt);
                                 continue;
                             }
 
@@ -124,7 +152,7 @@ namespace StartScreen.Services
                                 .Where(v => v != null)
                                 .ToList();
 
-                            WriteCacheToDisk(videos);
+                            WriteCacheToDisk(videos, cacheFile);
 
                             Trace.TraceInformation("YouTube feed cache refreshed successfully.");
 
@@ -138,7 +166,7 @@ namespace StartScreen.Services
 
                     if (attempt < maxAttempts)
                     {
-                        await Task.Delay(baseDelayMs * attempt);
+                        await delayAsync(attempt);
                     }
                 }
             }
@@ -216,16 +244,21 @@ namespace StartScreen.Services
         /// </summary>
         private static void WriteCacheToDisk(List<YouTubeVideo> videos)
         {
+            WriteCacheToDisk(videos, CacheFile);
+        }
+
+        internal static void WriteCacheToDisk(List<YouTubeVideo> videos, string cacheFile)
+        {
             try
             {
-                Directory.CreateDirectory(CacheFolder);
+                Directory.CreateDirectory(Path.GetDirectoryName(cacheFile));
 
                 var entries = videos
                     .Select(v => v.ToCacheEntry())
                     .ToList();
 
                 var json = JsonSerializer.SerializeToUtf8Bytes(entries);
-                File.WriteAllBytes(CacheFile, json);
+                File.WriteAllBytes(cacheFile, json);
             }
             catch (Exception ex)
             {

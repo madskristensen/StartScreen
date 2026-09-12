@@ -15,7 +15,7 @@ namespace StartScreen.Test.DevHub
                 i => i.UpdatedAt);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count);
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -78,8 +78,8 @@ namespace StartScreen.Test.DevHub
                 i => i.RepoIdentifier,
                 i => i.UpdatedAt);
 
-            Assert.IsTrue(result[0].RepoIdentifier.Host == "tfs.contoso.com");
-            Assert.IsTrue(result[1].RepoIdentifier.Host == "dev.azure.com");
+            Assert.AreEqual("tfs.contoso.com", result[0].RepoIdentifier.Host);
+            Assert.AreEqual("dev.azure.com", result[1].RepoIdentifier.Host);
             Assert.AreEqual("github.com", result[2].RepoIdentifier.Host);
         }
 

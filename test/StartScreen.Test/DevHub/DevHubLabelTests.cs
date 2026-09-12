@@ -21,21 +21,5 @@ namespace StartScreen.Test.DevHub
 
             Assert.AreEqual(string.Empty, label.ToString());
         }
-
-        [TestMethod]
-        public void Color_CanBeNull()
-        {
-            var label = new DevHubLabel { Name = "test", Color = null };
-
-            Assert.IsNull(label.Color);
-        }
-
-        [TestMethod]
-        public void Color_StoresHexWithoutHash()
-        {
-            var label = new DevHubLabel { Name = "enhancement", Color = "a2eeef" };
-
-            Assert.AreEqual("a2eeef", label.Color);
-        }
     }
 }

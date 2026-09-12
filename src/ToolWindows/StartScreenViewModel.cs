@@ -419,6 +419,13 @@ namespace StartScreen.ToolWindows
             FeedStore.FeedsChanged += OnFeedsChanged;
         }
 
+        internal StartScreenViewModel(IEnumerable<MruItem> mruItems)
+            : this()
+        {
+            _allMruItems = new ObservableCollection<MruItem>(mruItems ?? Enumerable.Empty<MruItem>());
+            UpdateMruCollections();
+        }
+
         private void OnFeedsChanged(object sender, EventArgs e)
         {
             // Force refresh news when feeds file changes

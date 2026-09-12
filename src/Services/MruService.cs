@@ -438,7 +438,7 @@ namespace StartScreen.Services
         /// The first segment is the path (may contain environment variables).
         /// The fourth segment is the display name.
         /// </remarks>
-        private static MruItem ParseMruEntry(string raw)
+        internal static MruItem ParseMruEntry(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
                 return null;
@@ -483,7 +483,7 @@ namespace StartScreen.Services
         /// <summary>
         /// Determines the MRU item type from file path.
         /// </summary>
-        private static MruItemType DetermineType(string path)
+        internal static MruItemType DetermineType(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
                 return MruItemType.Solution;
@@ -555,7 +555,7 @@ namespace StartScreen.Services
         /// Using a targeted search avoids walking the entire .vs tree which may contain
         /// large intellisense caches, build artifacts, and other VS data.
         /// </remarks>
-        private static DateTime? FindSuoLastWriteTime(string filePath)
+        internal static DateTime? FindSuoLastWriteTime(string filePath)
         {
             try
             {

@@ -18,7 +18,7 @@ namespace StartScreen.Test.DevHub
 
             var repos = await _ado.GetActivityReposAsync(urls, CancellationToken.None);
 
-            Assert.AreEqual(1, repos.Count);
+            Assert.HasCount(1, repos);
             Assert.AreEqual("org", repos[0].Owner);
             Assert.AreEqual("project", repos[0].Project);
             Assert.AreEqual("repo", repos[0].Repo);
@@ -35,7 +35,7 @@ namespace StartScreen.Test.DevHub
 
             var repos = await _ado.GetActivityReposAsync(urls, CancellationToken.None);
 
-            Assert.AreEqual(1, repos.Count);
+            Assert.HasCount(1, repos);
         }
 
         [TestMethod]
@@ -49,7 +49,7 @@ namespace StartScreen.Test.DevHub
 
             var repos = await _ado.GetActivityReposAsync(urls, CancellationToken.None);
 
-            Assert.AreEqual(0, repos.Count);
+            Assert.IsEmpty(repos);
         }
 
         [TestMethod]
@@ -59,7 +59,7 @@ namespace StartScreen.Test.DevHub
 
             var repos = await _ado.GetActivityReposAsync(urls, CancellationToken.None);
 
-            Assert.AreEqual(0, repos.Count);
+            Assert.IsEmpty(repos);
         }
 
         [TestMethod]
@@ -67,7 +67,7 @@ namespace StartScreen.Test.DevHub
         {
             var repos = await _ado.GetActivityReposAsync(null, CancellationToken.None);
 
-            Assert.AreEqual(0, repos.Count);
+            Assert.IsEmpty(repos);
         }
 
         [TestMethod]
@@ -77,7 +77,7 @@ namespace StartScreen.Test.DevHub
 
             var repos = await _ado.GetActivityReposAsync(urls, CancellationToken.None);
 
-            Assert.AreEqual(1, repos.Count);
+            Assert.HasCount(1, repos);
             Assert.IsTrue(repos[0].IsAzureDevOpsServer);
             Assert.AreEqual("MyProject", repos[0].Project);
             Assert.AreEqual("MyRepo", repos[0].Repo);
@@ -90,7 +90,7 @@ namespace StartScreen.Test.DevHub
 
             var repos = await _gitHub.GetActivityReposAsync(urls, CancellationToken.None);
 
-            Assert.AreEqual(0, repos.Count);
+            Assert.IsEmpty(repos);
         }
     }
 }

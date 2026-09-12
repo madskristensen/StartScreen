@@ -1,18 +1,18 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using StartScreen.Services.DevHub;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using StartScreen.Models.DevHub;
-using System.Collections.Generic;
+using StartScreen.Services.DevHub;
 
 namespace StartScreen.Test.DevHub
 {
     [TestClass]
     public class DevHubCacheServiceTests
     {
-        private string _testCacheFolder;
-        private DevHubCacheService _cache;
+        private string _testCacheFolder = null!;
+        private DevHubCacheService _cache = null!;
 
         [TestInitialize]
         public void Setup()
@@ -24,12 +24,10 @@ namespace StartScreen.Test.DevHub
         [TestCleanup]
         public void Cleanup()
         {
-            try
+            if (Directory.Exists(_testCacheFolder))
             {
-                if (Directory.Exists(_testCacheFolder))
-                    Directory.Delete(_testCacheFolder, recursive: true);
+                Directory.Delete(_testCacheFolder, recursive: true);
             }
-            catch { }
         }
 
         [TestMethod]

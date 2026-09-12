@@ -27,6 +27,8 @@ jobs:
       Solution: StartScreen.slnx
       TestProject: test\StartScreen.Test\StartScreen.Test.csproj
       TestResultsDirectory: ${{ github.workspace }}\TestResults
+      MinimumLineCoverage: 0.29
+      MinimumBranchCoverage: 0.30
       VsixManifestPath: src\source.extension.vsixmanifest
       VsixManifestSourcePath: src\source.extension.cs
 
@@ -69,6 +71,7 @@ jobs:
         --no-build
         --no-restore
         --verbosity normal
+        --settings test\StartScreen.Test\CodeCoverage.runsettings
         --results-directory "${{ env.TestResultsDirectory }}"
         --logger "trx;LogFileName=test-results.trx"
         --collect "Code Coverage;Format=Cobertura"
@@ -94,7 +97,17 @@ jobs:
 
         [xml]$coverage = Get-Content $coverageFile.FullName
         $lineCoverage = [double]$coverage.coverage.'line-rate'
+        $branchCoverage = [double]$coverage.coverage.'branch-rate'
         "Code coverage: **$($lineCoverage.ToString('P2'))**" >> $env:GITHUB_STEP_SUMMARY
+        "Branch coverage: **$($branchCoverage.ToString('P2'))**" >> $env:GITHUB_STEP_SUMMARY
+
+        if ($lineCoverage -lt [double]"${{ env.MinimumLineCoverage }}") {
+          throw "Line coverage $lineCoverage is below the required ${{ env.MinimumLineCoverage }}."
+        }
+
+        if ($branchCoverage -lt [double]"${{ env.MinimumBranchCoverage }}") {
+          throw "Branch coverage $branchCoverage is below the required ${{ env.MinimumBranchCoverage }}."
+        }
 
     - name: Upload artifact
       uses: actions/upload-artifact@v7

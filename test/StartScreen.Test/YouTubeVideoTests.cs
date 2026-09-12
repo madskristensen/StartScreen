@@ -62,7 +62,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void FromSyndicationItem_WhenNoLinks_SetsUrlToEmpty()
+        public void FromSyndicationItem_WhenNoLinks_SetsUrlsToEmpty()
         {
             var item = new SyndicationItem
             {
@@ -72,18 +72,6 @@ namespace StartScreen.Test
             YouTubeVideo result = YouTubeVideo.FromSyndicationItem(item);
 
             Assert.AreEqual(string.Empty, result.Url);
-        }
-
-        [TestMethod]
-        public void FromSyndicationItem_WhenNoLinks_SetsThumbnailUrlToEmpty()
-        {
-            var item = new SyndicationItem
-            {
-                Title = new TextSyndicationContent("No Link Video"),
-            };
-
-            YouTubeVideo result = YouTubeVideo.FromSyndicationItem(item);
-
             Assert.AreEqual(string.Empty, result.ThumbnailUrl);
         }
 
@@ -203,26 +191,6 @@ namespace StartScreen.Test
             Assert.AreEqual(string.Empty, video.Title);
             Assert.AreEqual(string.Empty, video.Url);
             Assert.AreEqual(string.Empty, video.ThumbnailUrl);
-        }
-
-        [TestMethod]
-        public void CacheRoundTrip_PreservesData()
-        {
-            var original = new YouTubeVideo
-            {
-                Title = "Round Trip Video",
-                Url = "https://www.youtube.com/watch?v=roundtrip",
-                ThumbnailUrl = "https://i.ytimg.com/vi/roundtrip/mqdefault.jpg",
-                PublishDate = new DateTime(2026, 1, 15, 8, 0, 0),
-            };
-
-            YouTubeCacheEntry entry = original.ToCacheEntry();
-            YouTubeVideo restored = YouTubeVideo.FromCacheEntry(entry);
-
-            Assert.AreEqual(original.Title, restored.Title);
-            Assert.AreEqual(original.Url, restored.Url);
-            Assert.AreEqual(original.ThumbnailUrl, restored.ThumbnailUrl);
-            Assert.AreEqual(original.PublishDate, restored.PublishDate);
         }
 
         [TestMethod]

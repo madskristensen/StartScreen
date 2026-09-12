@@ -126,7 +126,7 @@ namespace StartScreen.Test.DevHub
 
             var results = AzureDevOpsDevHubProvider.GetLegacyProfileHosts(urls);
 
-            Assert.AreEqual(1, results.Count);
+            Assert.HasCount(1, results);
             Assert.AreEqual("devdiv.visualstudio.com", results[0]);
         }
     }

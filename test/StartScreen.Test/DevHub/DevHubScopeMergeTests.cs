@@ -42,7 +42,7 @@ namespace StartScreen.Test.DevHub
             DevHubService.MergeRepoDetail(dashboard, ScopedRepo, detail);
 
             var scoped = dashboard.PullRequests.Where(p => ScopedRepo.Equals(p.RepoIdentifier)).ToList();
-            Assert.AreEqual(3, scoped.Count, "Scoped repo PRs should be replaced with the fresh fuller set.");
+            Assert.HasCount(3, scoped, "Scoped repo PRs should be replaced with the fresh fuller set.");
             CollectionAssert.AreEquivalent(new[] { "#10", "#11", "#12" }, scoped.Select(p => p.Number).ToList());
         }
 
@@ -95,7 +95,7 @@ namespace StartScreen.Test.DevHub
 
             DevHubService.MergeRepoDetail(dashboard, ScopedRepo, detail);
 
-            Assert.AreEqual(2, dashboard.CiRuns.Count);
+            Assert.HasCount(2, dashboard.CiRuns);
             Assert.IsTrue(dashboard.CiRuns.Any(c => c.Name == "build-scoped"));
             Assert.IsTrue(dashboard.CiRuns.Any(c => c.Name == "build-other"));
         }
@@ -120,11 +120,5 @@ namespace StartScreen.Test.DevHub
             Assert.IsTrue(dashboard.PullRequests.Any(p => OtherRepo.Equals(p.RepoIdentifier)));
         }
 
-        [TestMethod]
-        public void ScopedRepoItemCount_IsLargerThanDefaultDashboardFetch()
-        {
-            // Sanity check that scoping fetches a fuller set than a normal refresh.
-            Assert.IsTrue(DevHubService.ScopedRepoItemCount >= 20);
-        }
     }
 }

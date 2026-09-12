@@ -156,7 +156,7 @@ namespace StartScreen.Test.DevHub
         {
             var result = DevHubCredentialHelper.ParseGitHubAccountListOutput(" \n \r\n ");
 
-            Assert.AreEqual(0, result.Count);
+            Assert.IsEmpty(result);
         }
     }
 }

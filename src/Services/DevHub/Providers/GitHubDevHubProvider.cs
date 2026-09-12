@@ -340,7 +340,7 @@ namespace StartScreen.Services.DevHub.Providers
         public string GetIssuesWebUrl(RemoteRepoIdentifier repo) =>
             $"https://github.com/{repo.Owner}/{repo.Repo}/issues";
 
-        private static List<DevHubPullRequest> ParsePullRequests(string json, string currentUser)
+        internal static List<DevHubPullRequest> ParsePullRequests(string json, string currentUser)
         {
             var results = new List<DevHubPullRequest>();
 
@@ -419,7 +419,7 @@ namespace StartScreen.Services.DevHub.Providers
             return results;
         }
 
-        private static List<DevHubIssue> ParseIssues(string json)
+        internal static List<DevHubIssue> ParseIssues(string json)
         {
             var results = new List<DevHubIssue>();
 
@@ -528,7 +528,7 @@ namespace StartScreen.Services.DevHub.Providers
             return results;
         }
 
-        private static List<DevHubCiRun> ParseCiRuns(string json, RemoteRepoIdentifier repo)
+        internal static List<DevHubCiRun> ParseCiRuns(string json, RemoteRepoIdentifier repo)
         {
             var results = new List<DevHubCiRun>();
 

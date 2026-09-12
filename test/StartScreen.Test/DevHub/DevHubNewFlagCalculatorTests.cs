@@ -128,7 +128,7 @@ namespace StartScreen.Test.DevHub
             Assert.IsTrue(current[0].IsNew);
         }
 
-        private static void ApplyToItems(IReadOnlyList<Item> items, IReadOnlyList<Item> previous, DateTime lastSeen)
+        private static void ApplyToItems(IReadOnlyList<Item>? items, IReadOnlyList<Item>? previous, DateTime lastSeen)
         {
             DevHubNewFlagCalculator.Apply(
                 items,
@@ -142,13 +142,13 @@ namespace StartScreen.Test.DevHub
 
         private sealed class Item
         {
-            public Item(string key, DateTime timestamp)
+            public Item(string? key, DateTime timestamp)
             {
                 Key = key;
                 Timestamp = timestamp;
             }
 
-            public string Key { get; }
+            public string? Key { get; }
             public DateTime Timestamp { get; }
             public bool IsNew { get; set; }
         }

@@ -42,17 +42,28 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task<List<NewsPost>> GetCachedPostsAsync()
         {
+            return await GetCachedPostsAsync(CombinedFeedFile);
+        }
+
+        internal static async Task<List<NewsPost>> GetCachedPostsAsync(string cacheFile)
+        {
             try
             {
-                if (!File.Exists(CombinedFeedFile))
+                if (!File.Exists(cacheFile))
                     return null;
 
-                // Read file content asynchronously
-                byte[] fileBytes;
-                using (var stream = new FileStream(CombinedFeedFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
+                byte[] fileBytes = new byte[new FileInfo(cacheFile).Length];
+                using (var stream = new FileStream(cacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
                 {
-                    fileBytes = new byte[stream.Length];
-                    await stream.ReadAsync(fileBytes, 0, fileBytes.Length);
+                    var offset = 0;
+                    while (offset < fileBytes.Length)
+                    {
+                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset);
+                        if (bytesRead == 0)
+                            break;
+
+                        offset += bytesRead;
+                    }
                 }
 
                 List<FeedCacheEntry> entries = JsonSerializer.Deserialize<List<FeedCacheEntry>>(fileBytes);
@@ -74,11 +85,16 @@ namespace StartScreen.Services
         /// </summary>
         public static bool IsCacheStale()
         {
-            if (!File.Exists(CombinedFeedFile))
+            return IsCacheStale(CombinedFeedFile, DateTime.UtcNow);
+        }
+
+        internal static bool IsCacheStale(string cacheFile, DateTime utcNow)
+        {
+            if (!File.Exists(cacheFile))
                 return true;
 
-            DateTime lastModified = File.GetLastWriteTimeUtc(CombinedFeedFile);
-            return DateTime.UtcNow - lastModified >= StaleThreshold;
+            DateTime lastModified = File.GetLastWriteTimeUtc(cacheFile);
+            return utcNow - lastModified >= StaleThreshold;
         }
 
         /// <summary>
@@ -230,6 +246,14 @@ namespace StartScreen.Services
         /// </summary>
         private static async Task<SyndicationFeed> DownloadFromUrlAsync(string url, DateTime lastModified)
         {
+            return await DownloadFromUrlAsync(HttpClient, url, lastModified);
+        }
+
+        internal static async Task<SyndicationFeed> DownloadFromUrlAsync(
+            HttpClient httpClient,
+            string url,
+            DateTime lastModified)
+        {
             if (!Uri.IsWellFormedUriString(url, UriKind.Absolute))
                 return null;
 
@@ -239,7 +263,7 @@ namespace StartScreen.Services
                 {
                     request.Headers.IfModifiedSince = lastModified;
 
-                    HttpResponseMessage response = await HttpClient.SendAsync(request);
+                    HttpResponseMessage response = await httpClient.SendAsync(request);
                     if (response.IsSuccessStatusCode)
                     {
                         using (Stream stream = await response.Content.ReadAsStreamAsync())
@@ -294,7 +318,7 @@ namespace StartScreen.Services
         /// <summary>
         /// Combines multiple feeds into a single feed, deduping by title.
         /// </summary>
-        private static SyndicationFeed CombineFeeds(List<SyndicationFeed> feeds)
+        internal static SyndicationFeed CombineFeeds(List<SyndicationFeed> feeds)
         {
             var combined = new SyndicationFeed("Start Screen", "Developer News", null);
 
@@ -319,7 +343,7 @@ namespace StartScreen.Services
         /// <summary>
         /// Converts a SyndicationFeed to a list of NewsPost models.
         /// </summary>
-        private static List<NewsPost> ConvertToNewsPosts(SyndicationFeed feed)
+        internal static List<NewsPost> ConvertToNewsPosts(SyndicationFeed feed)
         {
             if (feed?.Items == null)
                 return new List<NewsPost>();
@@ -335,16 +359,21 @@ namespace StartScreen.Services
         /// </summary>
         private static void WriteCacheToDisk(List<NewsPost> posts)
         {
+            WriteCacheToDisk(posts, CombinedFeedFile);
+        }
+
+        internal static void WriteCacheToDisk(List<NewsPost> posts, string cacheFile)
+        {
             try
             {
-                Directory.CreateDirectory(CacheFolder);
+                Directory.CreateDirectory(Path.GetDirectoryName(cacheFile));
 
                 List<FeedCacheEntry> entries = posts
                     .Select(p => p.ToCacheEntry())
                     .ToList();
 
                 var json = JsonSerializer.SerializeToUtf8Bytes(entries);
-                File.WriteAllBytes(CombinedFeedFile, json);
+                File.WriteAllBytes(cacheFile, json);
             }
             catch (Exception ex)
             {

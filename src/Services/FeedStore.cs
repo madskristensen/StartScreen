@@ -103,9 +103,7 @@ namespace StartScreen.Services
                 // Read from the file
                 if (File.Exists(NewsFeedsFile))
                 {
-                    var json = File.ReadAllText(NewsFeedsFile);
-                    NewsFeedsWrapper wrapper = JsonSerializer.Deserialize<NewsFeedsWrapper>(json);
-                    return wrapper?.Feeds ?? GetHardcodedDefaultFeeds();
+                    return ReadFeeds(NewsFeedsFile);
                 }
 
                 return GetHardcodedDefaultFeeds();
@@ -115,6 +113,13 @@ namespace StartScreen.Services
                 ex.Log();
                 return GetHardcodedDefaultFeeds();
             }
+        }
+
+        internal static List<FeedInfo> ReadFeeds(string filePath)
+        {
+            var json = File.ReadAllText(filePath);
+            NewsFeedsWrapper wrapper = JsonSerializer.Deserialize<NewsFeedsWrapper>(json);
+            return wrapper?.Feeds ?? GetHardcodedDefaultFeeds();
         }
 
         /// <summary>
@@ -144,11 +149,16 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task SaveFeedsAsync(IEnumerable<FeedInfo> feeds)
         {
+            await SaveFeedsAsync(feeds, NewsFeedsFile);
+        }
+
+        internal static async Task SaveFeedsAsync(IEnumerable<FeedInfo> feeds, string filePath)
+        {
             await Task.Run(() =>
             {
                 try
                 {
-                    Directory.CreateDirectory(UserProfileFolder);
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
 
                     var wrapper = new NewsFeedsWrapper
                     {
@@ -161,7 +171,7 @@ namespace StartScreen.Services
                         WriteIndented = true
                     });
 
-                    File.WriteAllText(NewsFeedsFile, json);
+                    File.WriteAllText(filePath, json);
                 }
                 catch (Exception ex)
                 {
@@ -175,7 +185,14 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task AddCustomFeedAsync(string name, string url)
         {
-            List<FeedInfo> feeds = GetFeeds();
+            await AddCustomFeedAsync(name, url, NewsFeedsFile);
+        }
+
+        internal static async Task AddCustomFeedAsync(string name, string url, string filePath)
+        {
+            List<FeedInfo> feeds = File.Exists(filePath)
+                ? ReadFeeds(filePath)
+                : GetHardcodedDefaultFeeds();
 
             // Check for duplicates
             if (feeds.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase) ||
@@ -191,7 +208,7 @@ namespace StartScreen.Services
                 Enabled = true
             });
 
-            await SaveFeedsAsync(feeds);
+            await SaveFeedsAsync(feeds, filePath);
         }
 
         /// <summary>
@@ -199,9 +216,16 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task RemoveFeedAsync(string name)
         {
-            List<FeedInfo> feeds = GetFeeds();
+            await RemoveFeedAsync(name, NewsFeedsFile);
+        }
+
+        internal static async Task RemoveFeedAsync(string name, string filePath)
+        {
+            List<FeedInfo> feeds = File.Exists(filePath)
+                ? ReadFeeds(filePath)
+                : GetHardcodedDefaultFeeds();
             feeds.RemoveAll(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
-            await SaveFeedsAsync(feeds);
+            await SaveFeedsAsync(feeds, filePath);
         }
 
         /// <summary>

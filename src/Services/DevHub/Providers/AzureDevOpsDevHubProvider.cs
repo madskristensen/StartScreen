@@ -403,7 +403,7 @@ namespace StartScreen.Services.DevHub.Providers
 
         private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);
 
-        private static List<DevHubPullRequest> ParseAdoPullRequests(string json, RemoteRepoIdentifier repo)
+        internal static List<DevHubPullRequest> ParseAdoPullRequests(string json, RemoteRepoIdentifier repo)
         {
             var results = new List<DevHubPullRequest>();
 
@@ -448,7 +448,7 @@ namespace StartScreen.Services.DevHub.Providers
             return results;
         }
 
-        private static List<DevHubCiRun> ParseAdoBuilds(string json, RemoteRepoIdentifier repo)
+        internal static List<DevHubCiRun> ParseAdoBuilds(string json, RemoteRepoIdentifier repo)
         {
             var results = new List<DevHubCiRun>();
 

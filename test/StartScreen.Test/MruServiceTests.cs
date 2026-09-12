@@ -75,5 +75,93 @@ namespace StartScreen.Test
             Assert.IsFalse(changed);
             Assert.AreEqual("history", options.ExtendedMruItems);
         }
+
+        [TestMethod]
+        [DataRow(@"C:\Code\App.sln", MruItemType.Solution)]
+        [DataRow(@"C:\Code\App.slnx", MruItemType.Solution)]
+        [DataRow(@"C:\Code\App.csproj", MruItemType.Project)]
+        [DataRow(@"C:\Code\App.vbproj", MruItemType.Project)]
+        [DataRow(@"C:\Code\App.fsproj", MruItemType.Project)]
+        [DataRow(@"C:\Code\App.vcxproj", MruItemType.Project)]
+        [DataRow(@"C:\Code\Folder", MruItemType.Folder)]
+        public void DetermineType_ReturnsExpectedType(string path, MruItemType expected)
+        {
+            Assert.AreEqual(expected, MruService.DetermineType(path));
+        }
+
+        [TestMethod]
+        public void ParseMruEntry_WithValidEntry_MapsFieldsAndPreservesRawValue()
+        {
+            const string raw = @"C:\Code\App.sln|{guid}|False|Display App|ignored";
+
+            MruItem item = MruService.ParseMruEntry(raw);
+
+            Assert.IsNotNull(item);
+            Assert.AreEqual(@"C:\Code\App.sln", item.Path);
+            Assert.AreEqual("Display App", item.Name);
+            Assert.AreEqual(MruItemType.Solution, item.Type);
+            CollectionAssert.AreEqual(new[] { raw }, item.RawMruEntries);
+        }
+
+        [TestMethod]
+        public void ParseMruEntry_WithMissingDisplayName_UsesFileName()
+        {
+            MruItem item = MruService.ParseMruEntry(@"C:\Code\App.csproj|{guid}|False||ignored");
+
+            Assert.AreEqual("App", item.Name);
+        }
+
+        [TestMethod]
+        public void ParseMruEntry_WithMalformedEntry_ReturnsNull()
+        {
+            Assert.IsNull(MruService.ParseMruEntry("not|enough|parts"));
+        }
+
+        [TestMethod]
+        public void FindSuoLastWriteTime_ReturnsNewestSuo()
+        {
+            using var directory = new TemporaryDirectory();
+            var solutionPath = directory.GetPath("App.sln");
+            File.WriteAllText(solutionPath, string.Empty);
+            var first = directory.GetPath(@".vs\App\v17\.suo");
+            var second = directory.GetPath(@".vs\App\v18\.suo");
+            Directory.CreateDirectory(Path.GetDirectoryName(first));
+            Directory.CreateDirectory(Path.GetDirectoryName(second));
+            File.WriteAllText(first, string.Empty);
+            File.WriteAllText(second, string.Empty);
+            var older = new DateTime(2026, 1, 1, 0, 0, 0);
+            var newer = older.AddDays(1);
+            File.SetLastWriteTime(first, older);
+            File.SetLastWriteTime(second, newer);
+
+            DateTime? result = MruService.FindSuoLastWriteTime(solutionPath);
+
+            Assert.AreEqual(newer, result);
+        }
+
+        [TestMethod]
+        public async Task GetExtendedOnlyItemsAsync_ExcludesCurrentItemsAndRestoresPinsAsync()
+        {
+            var current = new MruItem
+            {
+                Path = @"C:\Code\Current\Current.sln",
+                Name = "Current",
+                Type = MruItemType.Solution,
+            };
+            var options = new Options
+            {
+                ExtendedMruItems =
+                    "[{\"Path\":\"C:\\\\Code\\\\Current\\\\Current.sln\",\"Name\":\"Old current\",\"Type\":0,\"LastAccessed\":\"2026-01-01T00:00:00\"}," +
+                    "{\"Path\":\"C:\\\\Code\\\\Older\\\\Older.sln\",\"Name\":\"Older\",\"Type\":0,\"LastAccessed\":\"2025-01-01T00:00:00\"}]",
+                PinnedItems = @"C:\Code\Older\Older.sln",
+            };
+
+            List<MruItem> result = await MruService.GetExtendedOnlyItemsAsync([current], options);
+
+            Assert.HasCount(1, result);
+            Assert.AreEqual("Older", result[0].Name);
+            Assert.IsTrue(result[0].IsFromExtendedList);
+            Assert.IsTrue(result[0].IsPinned);
+        }
     }
 }

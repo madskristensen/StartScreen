@@ -9,7 +9,7 @@ namespace StartScreen.Test
     [TestClass]
     public class CopilotChatHelperTests
     {
-        private string _tempRoot;
+        private string _tempRoot = null!;
 
         [TestInitialize]
         public void Initialize()
@@ -21,16 +21,9 @@ namespace StartScreen.Test
         [TestCleanup]
         public void Cleanup()
         {
-            try
+            if (Directory.Exists(_tempRoot))
             {
-                if (Directory.Exists(_tempRoot))
-                {
-                    Directory.Delete(_tempRoot, recursive: true);
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup; leftover temp dirs are harmless.
+                Directory.Delete(_tempRoot, recursive: true);
             }
         }
 

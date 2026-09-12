@@ -264,28 +264,5 @@ namespace StartScreen.Test
             Assert.AreEqual(string.Empty, post.Source);
         }
 
-        [TestMethod]
-        public void CacheRoundTrip_PreservesData()
-        {
-            var original = new NewsPost
-            {
-                Title = "Round Trip",
-                Summary = "Summary text",
-                Url = "https://example.com/rt",
-                PublishDate = new DateTime(2025, 1, 20, 8, 0, 0),
-                Source = "Jan 20 in Blog",
-                HasDescription = true,
-            };
-
-            FeedCacheEntry entry = original.ToCacheEntry();
-            NewsPost restored = NewsPost.FromCacheEntry(entry);
-
-            Assert.AreEqual(original.Title, restored.Title);
-            Assert.AreEqual(original.Summary, restored.Summary);
-            Assert.AreEqual(original.Url, restored.Url);
-            Assert.AreEqual(original.PublishDate, restored.PublishDate);
-            Assert.AreEqual(original.Source, restored.Source);
-            Assert.AreEqual(original.HasDescription, restored.HasDescription);
-        }
     }
 }

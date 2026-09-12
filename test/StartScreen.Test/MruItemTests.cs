@@ -580,7 +580,7 @@ namespace StartScreen.Test
             public void PropertyChanged_WhenIsFromExtendedListChanges_RaisesEvent()
             {
                 var item = new MruItem();
-                string changedProperty = null;
+                string? changedProperty = null;
                 item.PropertyChanged += (s, e) => changedProperty = e.PropertyName;
 
                 item.IsFromExtendedList = true;
