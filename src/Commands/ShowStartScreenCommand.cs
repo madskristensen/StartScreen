@@ -1,7 +1,7 @@
-using Community.VisualStudio.Toolkit;
-using Microsoft.VisualStudio.Shell;
 using System;
 using System.Threading.Tasks;
+using Community.VisualStudio.Toolkit;
+using Microsoft.VisualStudio.Shell;
 
 namespace StartScreen.Commands
 {

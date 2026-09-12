@@ -18,23 +18,23 @@ namespace StartScreen.Services
     /// </summary>
     public static class YouTubeService
     {
-        private const string FeedUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=UChqrDOwARrxdJF-ykAptc7w";
-        private const int MaxVideos = 10;
+        private const string _feedUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=UChqrDOwARrxdJF-ykAptc7w";
+        private const int _maxVideos = 10;
 
-        private static readonly string CacheFolder = Path.Combine(
+        private static readonly string _cacheFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "StartScreen", "FeedCache");
 
-        private static readonly string CacheFile = Path.Combine(CacheFolder, "_youtube.json");
-        private static readonly string ThumbsFolder = Path.Combine(CacheFolder, "thumbs");
+        private static readonly string _cacheFile = Path.Combine(_cacheFolder, "_youtube.json");
+        private static readonly string _thumbsFolder = Path.Combine(_cacheFolder, "thumbs");
 
-        private static readonly HttpClient HttpClient = new HttpClient();
-        private static readonly TimeSpan StaleThreshold = TimeSpan.FromHours(4);
+        private static readonly HttpClient _httpClient = new HttpClient();
+        private static readonly TimeSpan _staleThreshold = TimeSpan.FromHours(4);
 
         static YouTubeService()
         {
-            HttpClient.DefaultRequestHeaders.Add("User-Agent", "Start Screen for Visual Studio");
-            HttpClient.Timeout = TimeSpan.FromSeconds(30);
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Start Screen for Visual Studio");
+            _httpClient.Timeout = TimeSpan.FromSeconds(30);
         }
 
         /// <summary>
@@ -43,7 +43,7 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task<List<YouTubeVideo>> GetCachedVideosAsync()
         {
-            return await GetCachedVideosAsync(CacheFile);
+            return await GetCachedVideosAsync(_cacheFile);
         }
 
         internal static async Task<List<YouTubeVideo>> GetCachedVideosAsync(string cacheFile)
@@ -86,7 +86,7 @@ namespace StartScreen.Services
         /// </summary>
         public static bool IsCacheStale()
         {
-            return IsCacheStale(CacheFile, DateTime.UtcNow);
+            return IsCacheStale(_cacheFile, DateTime.UtcNow);
         }
 
         internal static bool IsCacheStale(string cacheFile, DateTime utcNow)
@@ -95,7 +95,7 @@ namespace StartScreen.Services
                 return true;
 
             var lastModified = File.GetLastWriteTimeUtc(cacheFile);
-            return utcNow - lastModified >= StaleThreshold;
+            return utcNow - lastModified >= _staleThreshold;
         }
 
         /// <summary>
@@ -107,9 +107,9 @@ namespace StartScreen.Services
         {
             const int baseDelayMs = 2000;
             return await DownloadVideosAsync(
-                HttpClient,
+                _httpClient,
                 attempt => Task.Delay(baseDelayMs * attempt),
-                CacheFile);
+                _cacheFile);
         }
 
         internal static async Task<List<YouTubeVideo>> DownloadVideosAsync(
@@ -123,7 +123,7 @@ namespace StartScreen.Services
             {
                 try
                 {
-                    using (var response = await httpClient.GetAsync(FeedUrl))
+                    using (var response = await httpClient.GetAsync(_feedUrl))
                     {
                         if (!response.IsSuccessStatusCode)
                         {
@@ -147,7 +147,7 @@ namespace StartScreen.Services
                                 return null;
 
                             var videos = feed.Items
-                                .Take(MaxVideos)
+                                .Take(_maxVideos)
                                 .Select(YouTubeVideo.FromSyndicationItem)
                                 .Where(v => v != null)
                                 .ToList();
@@ -184,7 +184,7 @@ namespace StartScreen.Services
             if (videos == null || videos.Count == 0)
                 return;
 
-            PackageUtilities.EnsureOutputPath(ThumbsFolder);
+            PackageUtilities.EnsureOutputPath(_thumbsFolder);
 
             await Task.WhenAll(videos
                 .Where(v => !string.IsNullOrEmpty(v.ThumbnailUrl))
@@ -199,7 +199,7 @@ namespace StartScreen.Services
                 if (string.IsNullOrEmpty(videoId))
                     return;
 
-                var localPath = Path.Combine(ThumbsFolder, videoId + ".jpg");
+                var localPath = Path.Combine(_thumbsFolder, videoId + ".jpg");
 
                 byte[] imageBytes;
                 if (File.Exists(localPath))
@@ -212,7 +212,7 @@ namespace StartScreen.Services
                 }
                 else
                 {
-                    imageBytes = await HttpClient.GetByteArrayAsync(video.ThumbnailUrl);
+                    imageBytes = await _httpClient.GetByteArrayAsync(video.ThumbnailUrl);
                     var tmp = localPath + ".tmp";
                     using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
                     {
@@ -244,7 +244,7 @@ namespace StartScreen.Services
         /// </summary>
         private static void WriteCacheToDisk(List<YouTubeVideo> videos)
         {
-            WriteCacheToDisk(videos, CacheFile);
+            WriteCacheToDisk(videos, _cacheFile);
         }
 
         internal static void WriteCacheToDisk(List<YouTubeVideo> videos, string cacheFile)

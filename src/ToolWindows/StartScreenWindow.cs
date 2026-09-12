@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.Threading;
 
 namespace StartScreen.ToolWindows
 {
@@ -34,7 +35,8 @@ namespace StartScreen.ToolWindows
                 // Start loading data immediately (head start while window renders)
                 _viewModel = new StartScreenViewModel();
                 CurrentViewModel = _viewModel;
-                Task loadTask = _viewModel.LoadMruAsync();
+                JoinableTask loadTask =
+                    StartScreenPackage.BackgroundTaskFactory.RunAsync(() => _viewModel.LoadMruAsync());
 
                 // Return control immediately for fast window paint
                 _control = new StartScreenControl(_viewModel, loadTask);

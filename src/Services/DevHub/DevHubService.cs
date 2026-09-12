@@ -116,41 +116,14 @@ namespace StartScreen.Services.DevHub
                 // fetching each MRU repo individually. Fetch once and split the result into the
                 // issue / PR / CI categories below so each repo is only requested a single time.
                 var perRepoActivityTask = FetchPerRepoActivityAsync(authenticated, cancellationToken);
+                var issueTask = Task.WhenAll(authenticated.Select(
+                    p => p.GetUserIssuesAsync(cancellationToken)));
+                var prTask = Task.WhenAll(authenticated.Select(
+                    p => p.GetUserPullRequestsAsync(cancellationToken)));
+                var ciTask = Task.WhenAll(authenticated.Select(
+                    p => p.GetUserCiRunsAsync(cancellationToken)));
 
-                var issueTask = Task.Run(async () =>
-                {
-                    var tasks = authenticated.Select(p => p.GetUserIssuesAsync(cancellationToken)).ToList();
-                    var results = await Task.WhenAll(tasks);
-                    var perRepo = await perRepoActivityTask;
-                    return DevHubItemSorter.Sort(
-                        results.SelectMany(r => r).Concat(perRepo.SelectMany(d => d.Issues)),
-                        sortOrder,
-                        i => i.RepoIdentifier,
-                        i => i.UpdatedAt);
-                });
-
-                var prTask = Task.Run(async () =>
-                {
-                    var tasks = authenticated.Select(p => p.GetUserPullRequestsAsync(cancellationToken)).ToList();
-                    var results = await Task.WhenAll(tasks);
-                    var perRepo = await perRepoActivityTask;
-                    return DevHubItemSorter.Sort(
-                        results.SelectMany(r => r).Concat(perRepo.SelectMany(d => d.PullRequests)),
-                        sortOrder,
-                        pr => pr.RepoIdentifier,
-                        pr => pr.UpdatedAt);
-                });
-
-                var ciTask = Task.Run(async () =>
-                {
-                    var tasks = authenticated.Select(p => p.GetUserCiRunsAsync(cancellationToken)).ToList();
-                    var results = await Task.WhenAll(tasks);
-                    var perRepo = await perRepoActivityTask;
-                    return results.SelectMany(r => r)
-                        .Concat(perRepo.SelectMany(d => d.CiRuns))
-                        .OrderByDescending(r => r.Timestamp)
-                        .ToList();
-                });
+                var perRepo = await perRepoActivityTask;
 
                 // Report each category as it completes
                 var remaining = new List<Task> { issueTask, prTask, ciTask };
@@ -160,11 +133,31 @@ namespace StartScreen.Services.DevHub
                     remaining.Remove(completed);
 
                     if (completed == issueTask)
-                        dashboard.Issues = await issueTask;
+                    {
+                        var results = await issueTask;
+                        dashboard.Issues = DevHubItemSorter.Sort(
+                            results.SelectMany(r => r).Concat(perRepo.SelectMany(d => d.Issues)),
+                            sortOrder,
+                            i => i.RepoIdentifier,
+                            i => i.UpdatedAt);
+                    }
                     else if (completed == prTask)
-                        dashboard.PullRequests = await prTask;
+                    {
+                        var results = await prTask;
+                        dashboard.PullRequests = DevHubItemSorter.Sort(
+                            results.SelectMany(r => r).Concat(perRepo.SelectMany(d => d.PullRequests)),
+                            sortOrder,
+                            pr => pr.RepoIdentifier,
+                            pr => pr.UpdatedAt);
+                    }
                     else if (completed == ciTask)
-                        dashboard.CiRuns = await ciTask;
+                    {
+                        var results = await ciTask;
+                        dashboard.CiRuns = results.SelectMany(r => r)
+                            .Concat(perRepo.SelectMany(d => d.CiRuns))
+                            .OrderByDescending(r => r.Timestamp)
+                            .ToList();
+                    }
 
                     _currentDashboard = dashboard;
                     progress?.Report(dashboard);
@@ -185,7 +178,7 @@ namespace StartScreen.Services.DevHub
         /// Number of items fetched per repository during a full dashboard refresh. Kept small
         /// because many repos may be queried.
         /// </summary>
-        private const int DashboardRepoItemCount = 10;
+        private const int _dashboardRepoItemCount = 10;
 
         /// <summary>
         /// Number of items fetched per category when the user scopes the dashboard to a single
@@ -210,7 +203,7 @@ namespace StartScreen.Services.DevHub
                     return filtered;
             }
 
-            return await FetchRepoDetailFromProviderAsync(repo, DashboardRepoItemCount, cancellationToken);
+            return await FetchRepoDetailFromProviderAsync(repo, _dashboardRepoItemCount, cancellationToken);
         }
 
         /// <summary>
@@ -297,7 +290,7 @@ namespace StartScreen.Services.DevHub
 
                     foreach (var repo in repos)
                     {
-                        detailTasks.Add(provider.GetRepoDetailAsync(repo, DashboardRepoItemCount, cancellationToken));
+                        detailTasks.Add(provider.GetRepoDetailAsync(repo, _dashboardRepoItemCount, cancellationToken));
                     }
                 }
 

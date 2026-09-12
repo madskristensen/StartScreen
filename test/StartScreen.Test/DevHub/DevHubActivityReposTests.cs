@@ -12,7 +12,7 @@ namespace StartScreen.Test.DevHub
         private readonly GitHubDevHubProvider _gitHub = new GitHubDevHubProvider();
 
         [TestMethod]
-        public async System.Threading.Tasks.Task Ado_ReturnsCloudRepoWithProject()
+        public async System.Threading.Tasks.Task Ado_ReturnsCloudRepoWithProjectAsync()
         {
             var urls = new[] { "https://dev.azure.com/org/project/_git/repo" };
 
@@ -25,7 +25,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async System.Threading.Tasks.Task Ado_DeduplicatesIdenticalRepos()
+        public async System.Threading.Tasks.Task Ado_DeduplicatesIdenticalReposAsync()
         {
             var urls = new[]
             {
@@ -39,7 +39,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async System.Threading.Tasks.Task Ado_IgnoresNonAdoUrls()
+        public async System.Threading.Tasks.Task Ado_IgnoresNonAdoUrlsAsync()
         {
             var urls = new[]
             {
@@ -53,7 +53,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async System.Threading.Tasks.Task Ado_IgnoresNullAndEmptyEntries()
+        public async System.Threading.Tasks.Task Ado_IgnoresNullAndEmptyEntriesAsync()
         {
             var urls = new[] { null, "", "   ", "not a url" };
 
@@ -63,7 +63,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async System.Threading.Tasks.Task Ado_NullInput_ReturnsEmpty()
+        public async System.Threading.Tasks.Task Ado_NullInput_ReturnsEmptyAsync()
         {
             var repos = await _ado.GetActivityReposAsync(null, CancellationToken.None);
 
@@ -71,7 +71,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async System.Threading.Tasks.Task Ado_OnPremServerRepo_IsIncluded()
+        public async System.Threading.Tasks.Task Ado_OnPremServerRepo_IsIncludedAsync()
         {
             var urls = new[] { "https://tfs.contoso.com/tfs/DefaultCollection/MyProject/_git/MyRepo" };
 
@@ -84,7 +84,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async System.Threading.Tasks.Task GitHub_ReturnsEmpty()
+        public async System.Threading.Tasks.Task GitHub_ReturnsEmptyAsync()
         {
             var urls = new[] { "https://github.com/owner/repo" };
 

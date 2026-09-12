@@ -21,7 +21,7 @@ namespace StartScreen.Services.DevHub.Providers
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
         // The Authorization header is per-request because the credential token can change at runtime
         // and DefaultRequestHeaders is not safe to mutate while parallel requests are in flight.
-        private static readonly HttpClient s_httpClient = CreateSharedHttpClient();
+        private static readonly HttpClient _httpClient = CreateSharedHttpClient();
 
         private static HttpClient CreateSharedHttpClient()
         {
@@ -398,7 +398,7 @@ namespace StartScreen.Services.DevHub.Providers
             var authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($":{credential.Token}"));
             request.Headers.TryAddWithoutValidation("Authorization", $"Basic {authValue}");
 
-            return s_httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
 
         private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);

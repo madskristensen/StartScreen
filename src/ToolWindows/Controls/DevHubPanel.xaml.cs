@@ -831,7 +831,12 @@ namespace StartScreen.ToolWindows.Controls
             RefreshRequested?.Invoke(this, EventArgs.Empty);
         }
 
-        private async void GitHubSignOut_Click(object sender, RoutedEventArgs e)
+        private void GitHubSignOut_Click(object sender, RoutedEventArgs e)
+        {
+            SignOutFromGitHubAsync().FileAndForget(nameof(DevHubPanel));
+        }
+
+        private async Task SignOutFromGitHubAsync()
         {
             try
             {
@@ -1587,8 +1592,8 @@ namespace StartScreen.ToolWindows.Controls
     /// </summary>
     public class HexColorToForegroundConverter : System.Windows.Data.IValueConverter
     {
-        private static readonly SolidColorBrush DarkBrush = CreateFrozen(Color.FromRgb(30, 30, 30));
-        private static readonly SolidColorBrush LightBrush = CreateFrozen(Color.FromRgb(255, 255, 255));
+        private static readonly SolidColorBrush _darkBrush = CreateFrozen(Color.FromRgb(30, 30, 30));
+        private static readonly SolidColorBrush _lightBrush = CreateFrozen(Color.FromRgb(255, 255, 255));
 
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
@@ -1600,7 +1605,7 @@ namespace StartScreen.ToolWindows.Controls
                     byte.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))
                 {
                     double luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
-                    return luminance > 0.5 ? DarkBrush : LightBrush;
+                    return luminance > 0.5 ? _darkBrush : _lightBrush;
                 }
             }
 

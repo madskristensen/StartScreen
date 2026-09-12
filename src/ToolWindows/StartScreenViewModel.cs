@@ -25,7 +25,7 @@ namespace StartScreen.ToolWindows
     /// </summary>
     public class StartScreenViewModel : INotifyPropertyChanged
     {
-        private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromHours(4);
+        private static readonly TimeSpan _autoRefreshInterval = TimeSpan.FromHours(4);
         private bool _isRefreshingNews;
         private bool _isNewsUnavailable;
         private bool _isRefreshingYouTube;
@@ -510,7 +510,7 @@ namespace StartScreen.ToolWindows
 
             // Defer until after MRU paints to avoid blocking the first frame.
             FeedStore.StartWatching();
-            _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, AutoRefreshInterval, AutoRefreshInterval);
+            _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, _autoRefreshInterval, _autoRefreshInterval);
         }
 
         /// <summary>
@@ -609,7 +609,7 @@ namespace StartScreen.ToolWindows
         {
             IsRefreshingNews = true;
 
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 var minDisplay = Task.Delay(1000);
                 try
@@ -700,7 +700,7 @@ namespace StartScreen.ToolWindows
         {
             IsRefreshingYouTube = true;
 
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 var minDisplay = Task.Delay(1000);
                 try
@@ -1131,7 +1131,7 @@ namespace StartScreen.ToolWindows
             _filterDebounceTimer?.Dispose();
             _filterDebounceTimer = new Timer(_ =>
             {
-                ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                     FilterMru(query);

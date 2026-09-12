@@ -230,7 +230,7 @@ namespace StartScreen.Services.DevHub
 
                     var waitTask = Task.Run(() => process.WaitForExit(8000), cancellationToken);
                     var completed = await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromSeconds(8), cancellationToken));
-                    if (completed != waitTask || !waitTask.Result)
+                    if (completed != waitTask || !await waitTask)
                     {
                         TryKillProcess(process);
                         return false;

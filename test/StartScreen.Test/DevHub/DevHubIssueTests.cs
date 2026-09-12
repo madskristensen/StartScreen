@@ -1,7 +1,7 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using StartScreen.Models.DevHub;
 using System;
 using System.Collections.Generic;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using StartScreen.Models.DevHub;
 
 namespace StartScreen.Test.DevHub
 {

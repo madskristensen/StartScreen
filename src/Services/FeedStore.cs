@@ -15,11 +15,11 @@ namespace StartScreen.Services
     /// </summary>
     public static class FeedStore
     {
-        private static readonly string UserProfileFolder = Path.Combine(
+        private static readonly string _userProfileFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".vs", "StartScreen");
 
-        private static readonly string NewsFeedsFile = Path.Combine(UserProfileFolder, "newsfeeds.json");
+        private static readonly string _newsFeedsFile = Path.Combine(_userProfileFolder, "newsfeeds.json");
 
         private static FileSystemWatcher _watcher;
 
@@ -41,9 +41,8 @@ namespace StartScreen.Services
             try
             {
                 // Ensure the folder exists
-                Directory.CreateDirectory(UserProfileFolder);
-
-                _watcher = new FileSystemWatcher(UserProfileFolder, "newsfeeds.json")
+                Directory.CreateDirectory(_userProfileFolder);
+                _watcher = new FileSystemWatcher(_userProfileFolder, "newsfeeds.json")
                 {
                     NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime,
                     EnableRaisingEvents = true
@@ -95,15 +94,15 @@ namespace StartScreen.Services
             try
             {
                 // Always ensure the file exists
-                if (!File.Exists(NewsFeedsFile))
+                if (!File.Exists(_newsFeedsFile))
                 {
                     CopyEmbeddedResourceToUserProfile();
                 }
 
                 // Read from the file
-                if (File.Exists(NewsFeedsFile))
+                if (File.Exists(_newsFeedsFile))
                 {
-                    return ReadFeeds(NewsFeedsFile);
+                    return ReadFeeds(_newsFeedsFile);
                 }
 
                 return GetHardcodedDefaultFeeds();
@@ -130,12 +129,12 @@ namespace StartScreen.Services
         {
             try
             {
-                if (!File.Exists(NewsFeedsFile))
+                if (!File.Exists(_newsFeedsFile))
                 {
                     CopyEmbeddedResourceToUserProfile();
                 }
 
-                return NewsFeedsFile;
+                return _newsFeedsFile;
             }
             catch (Exception ex)
             {
@@ -149,7 +148,7 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task SaveFeedsAsync(IEnumerable<FeedInfo> feeds)
         {
-            await SaveFeedsAsync(feeds, NewsFeedsFile);
+            await SaveFeedsAsync(feeds, _newsFeedsFile);
         }
 
         internal static async Task SaveFeedsAsync(IEnumerable<FeedInfo> feeds, string filePath)
@@ -185,7 +184,7 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task AddCustomFeedAsync(string name, string url)
         {
-            await AddCustomFeedAsync(name, url, NewsFeedsFile);
+            await AddCustomFeedAsync(name, url, _newsFeedsFile);
         }
 
         internal static async Task AddCustomFeedAsync(string name, string url, string filePath)
@@ -216,7 +215,7 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task RemoveFeedAsync(string name)
         {
-            await RemoveFeedAsync(name, NewsFeedsFile);
+            await RemoveFeedAsync(name, _newsFeedsFile);
         }
 
         internal static async Task RemoveFeedAsync(string name, string filePath)
@@ -236,7 +235,7 @@ namespace StartScreen.Services
         {
             try
             {
-                Directory.CreateDirectory(UserProfileFolder);
+                Directory.CreateDirectory(_userProfileFolder);
 
                 var assembly = Assembly.GetExecutingAssembly();
 
@@ -253,7 +252,7 @@ namespace StartScreen.Services
                             using (var reader = new StreamReader(stream))
                             {
                                 var content = reader.ReadToEnd();
-                                File.WriteAllText(NewsFeedsFile, content);
+                                File.WriteAllText(_newsFeedsFile, content);
                                 return;
                             }
                         }
@@ -288,7 +287,7 @@ namespace StartScreen.Services
             };
 
             var json = JsonSerializer.Serialize(wrapper, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(NewsFeedsFile, json);
+            File.WriteAllText(_newsFeedsFile, json);
         }
 
         /// <summary>

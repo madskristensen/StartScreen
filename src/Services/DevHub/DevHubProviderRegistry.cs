@@ -13,7 +13,7 @@ namespace StartScreen.Services.DevHub
     /// </summary>
     internal static class DevHubProviderRegistry
     {
-        private static readonly IDevHubProvider[] Providers =
+        private static readonly IDevHubProvider[] _providers =
         [
             new GitHubDevHubProvider(),
             new AzureDevOpsDevHubProvider(),
@@ -28,13 +28,13 @@ namespace StartScreen.Services.DevHub
             if (string.IsNullOrWhiteSpace(remoteUrl))
                 return null;
 
-            return Providers.FirstOrDefault(p => p.CanHandle(remoteUrl));
+            return _providers.FirstOrDefault(p => p.CanHandle(remoteUrl));
         }
 
         /// <summary>
         /// Returns all registered providers, regardless of authentication state.
         /// </summary>
-        public static IReadOnlyList<IDevHubProvider> GetAllProviders() => Providers;
+        public static IReadOnlyList<IDevHubProvider> GetAllProviders() => _providers;
 
         /// <summary>
         /// Returns all providers that currently have valid credentials.
@@ -43,7 +43,7 @@ namespace StartScreen.Services.DevHub
         {
             var results = new List<IDevHubProvider>();
 
-            foreach (var provider in Providers)
+            foreach (var provider in _providers)
             {
                 var user = await provider.GetAuthenticatedUserAsync(cancellationToken);
                 if (user != null)

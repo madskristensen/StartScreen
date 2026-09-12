@@ -17,12 +17,12 @@ namespace StartScreen.Services.DevHub
 
             var credential = new CREDENTIAL
             {
-                Type = CRED_TYPE_GENERIC,
+                Type = _credTypeGeneric,
                 TargetName = targetName,
                 UserName = username,
                 CredentialBlobSize = (uint)passwordBytes.Length,
                 CredentialBlob = Marshal.AllocHGlobal(passwordBytes.Length),
-                Persist = CRED_PERSIST_LOCAL_MACHINE,
+                Persist = _credPersistLocalMachine,
             };
 
             try
@@ -40,7 +40,7 @@ namespace StartScreen.Services.DevHub
 
         public static (string username, string password)? Read(string targetName)
         {
-            if (!CredRead(targetName, CRED_TYPE_GENERIC, 0, out var credPtr))
+            if (!CredRead(targetName, _credTypeGeneric, 0, out var credPtr))
                 return null;
 
             try
@@ -60,11 +60,11 @@ namespace StartScreen.Services.DevHub
 
         public static void Delete(string targetName)
         {
-            CredDelete(targetName, CRED_TYPE_GENERIC, 0);
+            CredDelete(targetName, _credTypeGeneric, 0);
         }
 
-        private const int CRED_TYPE_GENERIC = 1;
-        private const int CRED_PERSIST_LOCAL_MACHINE = 2;
+        private const int _credTypeGeneric = 1;
+        private const int _credPersistLocalMachine = 2;
 
         [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern bool CredWrite(ref CREDENTIAL credential, uint flags);

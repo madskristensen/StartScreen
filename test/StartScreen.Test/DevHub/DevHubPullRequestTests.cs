@@ -1,6 +1,6 @@
+using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using StartScreen.Models.DevHub;
-using System;
 
 namespace StartScreen.Test.DevHub
 {

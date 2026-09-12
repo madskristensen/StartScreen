@@ -7,6 +7,7 @@ using System.Threading;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Settings;
 using Microsoft.VisualStudio.Shell.Settings;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.ToolWindows;
 
 namespace StartScreen
@@ -25,6 +26,13 @@ namespace StartScreen
     [Guid(PackageGuids.StartScreenString)]
     public sealed class StartScreenPackage : ToolkitPackage
     {
+        internal static JoinableTaskFactory BackgroundTaskFactory { get; private set; }
+
+        public StartScreenPackage()
+        {
+            BackgroundTaskFactory = JoinableTaskFactory;
+        }
+
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
             await this.RegisterCommandsAsync();

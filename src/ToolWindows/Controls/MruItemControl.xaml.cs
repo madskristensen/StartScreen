@@ -25,10 +25,8 @@ namespace StartScreen.ToolWindows.Controls
 
         public event EventHandler<MruItem> PinToggleRequested;
         public event EventHandler<MruItem> RemoveRequested;
-        public event EventHandler<MruItem> SelectionRequested;
         public event EventHandler FocusSearchBoxRequested;
         public event EventHandler FocusDevHubRequested;
-        public event EventHandler FocusActionBarRequested;
 
         public MruItemControl()
         {
@@ -127,7 +125,8 @@ namespace StartScreen.ToolWindows.Controls
 
                 _dragStartPoint = null;
 
-                ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => OpenItemAsync())
+                    .FileAndForget(nameof(MruItemControl));
             }
         }
 
@@ -312,7 +311,8 @@ namespace StartScreen.ToolWindows.Controls
 
         private void OpenMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            ThreadHelper.JoinableTaskFactory.RunAsync(() => OpenItemAsync()).FileAndForget(nameof(MruItemControl));
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(() => OpenItemAsync())
+                .FileAndForget(nameof(MruItemControl));
         }
 
         private void OpenInNewInstanceMenuItem_Click(object sender, RoutedEventArgs e)
@@ -367,9 +367,12 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
-#pragma warning disable VSTHRD100 // WPF event handlers must be void; exceptions are handled and logged.
-        private async void GitPullMenuItem_Click(object sender, RoutedEventArgs e)
-#pragma warning restore VSTHRD100
+        private void GitPullMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            PullGitAsync().FileAndForget(nameof(MruItemControl));
+        }
+
+        private async Task PullGitAsync()
         {
             MruItem item = MruItem;
 
@@ -447,9 +450,12 @@ namespace StartScreen.ToolWindows.Controls
             _deleteCopilotChatMenuItem.IsEnabled = hasSessions;
         }
 
-#pragma warning disable VSTHRD100 // WPF event handlers must be void; exceptions are handled and logged.
-        private async void DeleteCopilotChatMenuItem_Click(object sender, RoutedEventArgs e)
-#pragma warning restore VSTHRD100
+        private void DeleteCopilotChatMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            DeleteCopilotChatAsync().FileAndForget(nameof(MruItemControl));
+        }
+
+        private async Task DeleteCopilotChatAsync()
         {
             MruItem item = MruItem;
             if (item == null || string.IsNullOrWhiteSpace(item.Path) || !item.HasCopilotChatSessions)

@@ -321,10 +321,8 @@
                                     <controls:MruItemControl 
                                         PinToggleRequested="MruItemControl_PinToggleRequested"
                                         RemoveRequested="MruItemControl_RemoveRequested"
-                                        SelectionRequested="MruItemControl_SelectionRequested"
                                         FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"
-                                        FocusDevHubRequested="MruItemControl_FocusDevHubRequested"
-                                        FocusActionBarRequested="MruItemControl_FocusActionBarRequested"/>
+                                        FocusDevHubRequested="MruItemControl_FocusDevHubRequested"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -354,10 +352,8 @@
                                                     <controls:MruItemControl 
                                                         PinToggleRequested="MruItemControl_PinToggleRequested"
                                                         RemoveRequested="MruItemControl_RemoveRequested"
-                                                        SelectionRequested="MruItemControl_SelectionRequested"
                                                         FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"
-                                                        FocusDevHubRequested="MruItemControl_FocusDevHubRequested"
-                                                        FocusActionBarRequested="MruItemControl_FocusActionBarRequested"/>
+                                                        FocusDevHubRequested="MruItemControl_FocusDevHubRequested"/>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>

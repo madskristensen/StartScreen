@@ -1,8 +1,8 @@
+using System;
+using System.Threading.Tasks;
 using Community.VisualStudio.Toolkit;
 using Microsoft.VisualStudio.Shell;
 using StartScreen.ToolWindows;
-using System;
-using System.Threading.Tasks;
 
 namespace StartScreen.Commands
 {

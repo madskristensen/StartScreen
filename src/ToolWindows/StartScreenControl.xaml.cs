@@ -22,23 +22,24 @@ namespace StartScreen.ToolWindows
     public partial class StartScreenControl : UserControl
     {
         private readonly StartScreenViewModel _viewModel;
-        private readonly Task _loadTask;
+        private readonly JoinableTask _loadTask;
         private DropIndicatorAdorner _dropAdorner;
         private readonly DevHubService _devHubService = new DevHubService();
-        private readonly System.Threading.Tasks.Task<DevHubDashboard> _devHubCacheTask;
+        private readonly JoinableTask<DevHubDashboard> _devHubCacheTask;
         private bool _isInitialized;
         private bool _isSynchronizingContentHorizontalScroll;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
-        public StartScreenControl(StartScreenViewModel viewModel, Task loadTask)
+        public StartScreenControl(StartScreenViewModel viewModel, JoinableTask loadTask)
         {
             _viewModel = viewModel;
             _loadTask = loadTask;
             // Kick off the DevHub cache read on a background thread so the file I/O
             // overlaps with MRU loading. This does NOT touch the UI - the panel is
             // only updated later, after MRU has painted.
-            _devHubCacheTask = Task.Run(() => _devHubService.LoadFromCacheAsync());
+            _devHubCacheTask =
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => _devHubService.LoadFromCacheAsync());
             InitializeComponent();
 
             // Bind the ViewModel up front so the MRU list pops in as soon as
@@ -48,7 +49,12 @@ namespace StartScreen.ToolWindows
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         }
 
-        private async void UserControl_Loaded(object sender, RoutedEventArgs e)
+        private void UserControl_Loaded(object sender, RoutedEventArgs e)
+        {
+            LoadControlAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private async Task LoadControlAsync()
         {
             try
             {
@@ -88,9 +94,9 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async void ReleaseNotesLink_Click(object sender, RoutedEventArgs e)
+        private void ReleaseNotesLink_Click(object sender, RoutedEventArgs e)
         {
-            await VS.Commands.ExecuteAsync("Help.ReleaseNotes");
+            VS.Commands.ExecuteAsync("Help.ReleaseNotes").FileAndForget(nameof(StartScreenControl));
         }
 
         private async Task RestoreSplitterPositionAsync()
@@ -149,24 +155,24 @@ namespace StartScreen.ToolWindows
             ViewModel.UpdateColumnCounts(newsColumns, videoColumns);
         }
 
-        private async void NewProjectButton_Click(object sender, RoutedEventArgs e)
+        private void NewProjectButton_Click(object sender, RoutedEventArgs e)
         {
-            await VsCommandService.NewProjectAsync();
+            VsCommandService.NewProjectAsync().FileAndForget(nameof(StartScreenControl));
         }
 
-        private async void OpenProjectButton_Click(object sender, RoutedEventArgs e)
+        private void OpenProjectButton_Click(object sender, RoutedEventArgs e)
         {
-            await VsCommandService.OpenProjectAsync();
+            VsCommandService.OpenProjectAsync().FileAndForget(nameof(StartScreenControl));
         }
 
-        private async void OpenFolderButton_Click(object sender, RoutedEventArgs e)
+        private void OpenFolderButton_Click(object sender, RoutedEventArgs e)
         {
-            await VsCommandService.OpenFolderAsync();
+            VsCommandService.OpenFolderAsync().FileAndForget(nameof(StartScreenControl));
         }
 
-        private async void CloneRepoButton_Click(object sender, RoutedEventArgs e)
+        private void CloneRepoButton_Click(object sender, RoutedEventArgs e)
         {
-            await VsCommandService.CloneRepositoryAsync();
+            VsCommandService.CloneRepositoryAsync().FileAndForget(nameof(StartScreenControl));
         }
 
         private void AttachToProcessButton_Click(object sender, RoutedEventArgs e)
@@ -252,7 +258,7 @@ namespace StartScreen.ToolWindows
 
             var hadFocus = sender is MruItemControl ctrl && ctrl.IsItemFocused();
 
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 await ViewModel.TogglePinAsync(item);
 
@@ -269,7 +275,8 @@ namespace StartScreen.ToolWindows
         {
             if (ViewModel != null)
             {
-                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.RemoveMruItemAsync(item)).FileAndForget(nameof(StartScreenControl));
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(
+                    () => ViewModel.RemoveMruItemAsync(item)).FileAndForget(nameof(StartScreenControl));
             }
         }
 
@@ -295,15 +302,6 @@ namespace StartScreen.ToolWindows
             };
 
             shell.ShowContextMenu(0, ref commandSet, PackageIds.ClearRecentMenu, points, null);
-        }
-
-        private void MruItemControl_SelectionRequested(object sender, MruItem item)
-        {
-            if (ViewModel != null)
-            {
-                // Toggle selection: clicking the already-selected item deselects it
-                ViewModel.SelectedMruItem = ViewModel.SelectedMruItem == item ? null : item;
-            }
         }
 
         private void MruItemControl_FocusSearchBoxRequested(object sender, EventArgs e)
@@ -340,15 +338,6 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private void MruItemControl_FocusActionBarRequested(object sender, EventArgs e)
-        {
-            // Focus the first action button
-            if (ActionBar.Children.Count > 0 && ActionBar.Children[0] is Button btn)
-            {
-                btn.Focus();
-            }
-        }
-
         private void DevHubPanel_RefreshRequested(object sender, EventArgs e)
         {
             // Don't fetch Dev Hub data when the section is hidden. The unified
@@ -359,7 +348,7 @@ namespace StartScreen.ToolWindows
                 return;
             }
 
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 if (ViewModel != null)
                 {
@@ -400,7 +389,7 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_ConnectAccountRequested(object sender, string host)
         {
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 DevHubPanelControl.ShowLoading($"Connecting to {host}...");
@@ -439,7 +428,7 @@ namespace StartScreen.ToolWindows
                 return;
             }
 
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 await TaskScheduler.Default;
 
@@ -480,7 +469,8 @@ namespace StartScreen.ToolWindows
                     // Refresh in background if stale - don't block the UI
                     if (_devHubService.IsCacheStale())
                     {
-                        ThreadHelper.JoinableTaskFactory.RunAsync(() => RefreshDevHubInBackgroundAsync()).FileAndForget(nameof(StartScreenControl));
+                        StartScreenPackage.BackgroundTaskFactory.RunAsync(
+                            () => RefreshDevHubInBackgroundAsync()).FileAndForget(nameof(StartScreenControl));
                     }
                 }
                 else
@@ -837,7 +827,7 @@ namespace StartScreen.ToolWindows
 
             e.Handled = true;
 
-            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 await ViewModel.MovePinnedItemAsync(draggedItem, targetIndex);
             }).FileAndForget(nameof(StartScreenControl));
@@ -881,11 +871,17 @@ namespace StartScreen.ToolWindows
         {
             if (ViewModel != null)
             {
-                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.ToggleNewsPinAsync(post)).FileAndForget(nameof(StartScreenControl));
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(
+                    () => ViewModel.ToggleNewsPinAsync(post)).FileAndForget(nameof(StartScreenControl));
             }
         }
 
-        private async void NewsFeedsSettings_Click(object sender, RoutedEventArgs e)
+        private void NewsFeedsSettings_Click(object sender, RoutedEventArgs e)
+        {
+            OpenNewsFeedsSettingsAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private async Task OpenNewsFeedsSettingsAsync()
         {
             try
             {
@@ -909,7 +905,12 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async void StartScreenSettingsButton_Click(object sender, RoutedEventArgs e)
+        private void StartScreenSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ShowStartScreenSettingsAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private async Task ShowStartScreenSettingsAsync()
         {
             try
             {
@@ -926,7 +927,12 @@ namespace StartScreen.ToolWindows
 
 
 
-        private async void ShowTipsAndExtensionsCheckBox_Changed(object sender, RoutedEventArgs e)
+        private void ShowTipsAndExtensionsCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            SaveShowTipsAndExtensionsAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private async Task SaveShowTipsAndExtensionsAsync()
         {
             try
             {
@@ -957,7 +963,12 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async void ShowDevHubCheckBox_Changed(object sender, RoutedEventArgs e)
+        private void ShowDevHubCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            SaveShowDevHubAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private async Task SaveShowDevHubAsync()
         {
             try
             {
@@ -1049,17 +1060,24 @@ namespace StartScreen.ToolWindows
             object selected = NewsTabs.SelectedItem;
             if (ReferenceEquals(selected, BlogsTab))
             {
-                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.MarkBlogsAsSeenAsync())
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(
+                    () => ViewModel.MarkBlogsAsSeenAsync())
                     .FileAndForget(nameof(StartScreenControl));
             }
             else if (ReferenceEquals(selected, VideosTab))
             {
-                ThreadHelper.JoinableTaskFactory.RunAsync(() => ViewModel.MarkVideosAsSeenAsync())
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(
+                    () => ViewModel.MarkVideosAsSeenAsync())
                     .FileAndForget(nameof(StartScreenControl));
             }
         }
 
-        private async void UpdateNowButton_Click(object sender, RoutedEventArgs e)
+        private void UpdateNowButton_Click(object sender, RoutedEventArgs e)
+        {
+            UpdateVisualStudioAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private async Task UpdateVisualStudioAsync()
         {
             try
             {
@@ -1110,7 +1128,7 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private static readonly string[] OpenableExtensions = { ".sln", ".slnx", ".csproj", ".vbproj", ".fsproj", ".vcxproj" };
+        private static readonly string[] _openableExtensions = { ".sln", ".slnx", ".csproj", ".vbproj", ".fsproj", ".vcxproj" };
 
         private void UserControl_DragOver(object sender, DragEventArgs e)
         {
@@ -1130,7 +1148,7 @@ namespace StartScreen.ToolWindows
             e.Handled = true;
         }
 
-        private async void UserControl_Drop(object sender, DragEventArgs e)
+        private void UserControl_Drop(object sender, DragEventArgs e)
         {
             if (!e.Data.GetDataPresent(DataFormats.FileDrop))
                 return;
@@ -1143,6 +1161,11 @@ namespace StartScreen.ToolWindows
             if (!IsOpenablePath(path))
                 return;
 
+            OpenDroppedPathAsync(path).FileAndForget(nameof(StartScreenControl));
+        }
+
+        private static async Task OpenDroppedPathAsync(string path)
+        {
             try
             {
                 await VsCommandService.OpenPathAsync(path);
@@ -1162,7 +1185,7 @@ namespace StartScreen.ToolWindows
                 return true;
 
             var ext = Path.GetExtension(path)?.ToLowerInvariant();
-            return ext != null && OpenableExtensions.Contains(ext);
+            return ext != null && _openableExtensions.Contains(ext);
         }
     }
 
@@ -1275,7 +1298,7 @@ namespace StartScreen.ToolWindows
     internal sealed class DropIndicatorAdorner : Adorner
     {
         private readonly bool _below;
-        private static readonly Pen IndicatorPen = CreateIndicatorPen();
+        private static readonly Pen _indicatorPen = CreateIndicatorPen();
 
         public DropIndicatorAdorner(UIElement adornedElement, bool below)
             : base(adornedElement)
@@ -1295,7 +1318,7 @@ namespace StartScreen.ToolWindows
         {
             Size size = AdornedElement.RenderSize;
             var y = _below ? size.Height : 0;
-            drawingContext.DrawLine(IndicatorPen, new Point(0, y), new Point(size.Width, y));
+            drawingContext.DrawLine(_indicatorPen, new Point(0, y), new Point(size.Width, y));
         }
     }
 }

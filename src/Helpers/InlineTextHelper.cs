@@ -15,7 +15,7 @@ namespace StartScreen.Helpers
     /// </summary>
     public static class InlineTextHelper
     {
-        private static readonly Regex LinkPattern = new Regex(
+        private static readonly Regex _linkPattern = new Regex(
             @"\[(?<text>[^\]]+)\]\((?<url>[^\)]+)\)",
             RegexOptions.Compiled);
 
@@ -70,7 +70,7 @@ namespace StartScreen.Helpers
             var inlines = new List<Inline>();
             var lastIndex = 0;
 
-            foreach (Match match in LinkPattern.Matches(text))
+            foreach (Match match in _linkPattern.Matches(text))
             {
                 if (match.Index > lastIndex)
                 {

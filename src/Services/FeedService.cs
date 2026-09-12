@@ -1,4 +1,3 @@
-using StartScreen.Models;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using StartScreen.Models;
 
 namespace StartScreen.Services
 {
@@ -19,21 +19,21 @@ namespace StartScreen.Services
     /// </summary>
     public static class FeedService
     {
-        private static readonly string CacheFolder = Path.Combine(
+        private static readonly string _cacheFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "StartScreen", "FeedCache");
 
-        private static readonly string CombinedFeedFile = Path.Combine(CacheFolder, "_feed.json");
+        private static readonly string _combinedFeedFile = Path.Combine(_cacheFolder, "_feed.json");
 
-        private static readonly HttpClient HttpClient = new HttpClient();
-        private static readonly TimeSpan StaleThreshold = TimeSpan.FromHours(4);
-        private const int MaxConcurrentDownloads = 6;
-        private const int MaxNewsItems = 40;
+        private static readonly HttpClient _httpClient = new HttpClient();
+        private static readonly TimeSpan _staleThreshold = TimeSpan.FromHours(4);
+        private const int _maxConcurrentDownloads = 6;
+        private const int _maxNewsItems = 40;
 
         static FeedService()
         {
-            HttpClient.DefaultRequestHeaders.Add("User-Agent", "Start Screen for Visual Studio");
-            HttpClient.Timeout = TimeSpan.FromSeconds(30);
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Start Screen for Visual Studio");
+            _httpClient.Timeout = TimeSpan.FromSeconds(30);
         }
 
         /// <summary>
@@ -42,7 +42,7 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task<List<NewsPost>> GetCachedPostsAsync()
         {
-            return await GetCachedPostsAsync(CombinedFeedFile);
+            return await GetCachedPostsAsync(_combinedFeedFile);
         }
 
         internal static async Task<List<NewsPost>> GetCachedPostsAsync(string cacheFile)
@@ -85,7 +85,7 @@ namespace StartScreen.Services
         /// </summary>
         public static bool IsCacheStale()
         {
-            return IsCacheStale(CombinedFeedFile, DateTime.UtcNow);
+            return IsCacheStale(_combinedFeedFile, DateTime.UtcNow);
         }
 
         internal static bool IsCacheStale(string cacheFile, DateTime utcNow)
@@ -94,7 +94,7 @@ namespace StartScreen.Services
                 return true;
 
             DateTime lastModified = File.GetLastWriteTimeUtc(cacheFile);
-            return utcNow - lastModified >= StaleThreshold;
+            return utcNow - lastModified >= _staleThreshold;
         }
 
         /// <summary>
@@ -156,7 +156,7 @@ namespace StartScreen.Services
 
             var downloadedFeeds = new List<SyndicationFeed>();
 
-            using (var semaphore = new SemaphoreSlim(MaxConcurrentDownloads, MaxConcurrentDownloads))
+            using (var semaphore = new SemaphoreSlim(_maxConcurrentDownloads, _maxConcurrentDownloads))
             {
                 IEnumerable<Task<SyndicationFeed>> downloadTasks = selectedFeeds.Select(async feedInfo =>
                 {
@@ -205,14 +205,14 @@ namespace StartScreen.Services
         private static async Task<SyndicationFeed> DownloadFeedAsync(FeedInfo feedInfo)
         {
             var fileName = $"{feedInfo.Name}.xml";
-            var cacheFile = Path.Combine(CacheFolder, fileName);
+            var cacheFile = Path.Combine(_cacheFolder, fileName);
 
             DateTime lastModified = File.Exists(cacheFile) 
                 ? File.GetLastWriteTimeUtc(cacheFile) 
                 : DateTime.UtcNow.AddMonths(-2);
 
             // Try download if cache is stale
-            if (DateTime.UtcNow - lastModified >= StaleThreshold)
+            if (DateTime.UtcNow - lastModified >= _staleThreshold)
             {
                 SyndicationFeed feed = await DownloadFromUrlAsync(feedInfo.Url, lastModified);
                 if (feed != null)
@@ -246,7 +246,7 @@ namespace StartScreen.Services
         /// </summary>
         private static async Task<SyndicationFeed> DownloadFromUrlAsync(string url, DateTime lastModified)
         {
-            return await DownloadFromUrlAsync(HttpClient, url, lastModified);
+            return await DownloadFromUrlAsync(_httpClient, url, lastModified);
         }
 
         internal static async Task<SyndicationFeed> DownloadFromUrlAsync(
@@ -296,11 +296,11 @@ namespace StartScreen.Services
         {
             try
             {
-                Directory.CreateDirectory(CacheFolder);
+                Directory.CreateDirectory(_cacheFolder);
 
                 using (var writer = XmlWriter.Create(filePath))
                 {
-                    feed.Items = feed.Items.Take(MaxNewsItems);
+                    feed.Items = feed.Items.Take(_maxNewsItems);
                     feed.SaveAsRss20(writer);
                 }
 
@@ -333,7 +333,7 @@ namespace StartScreen.Services
                 .GroupBy(i => i.Title.Text, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.OrderByDescending(i => i.PublishDate).First())
                 .OrderByDescending(i => i.PublishDate.Date)
-                .Take(MaxNewsItems)
+                .Take(_maxNewsItems)
                 .ToList();
 
             combined.LastUpdatedTime = DateTime.UtcNow;
@@ -359,7 +359,7 @@ namespace StartScreen.Services
         /// </summary>
         private static void WriteCacheToDisk(List<NewsPost> posts)
         {
-            WriteCacheToDisk(posts, CombinedFeedFile);
+            WriteCacheToDisk(posts, _combinedFeedFile);
         }
 
         internal static void WriteCacheToDisk(List<NewsPost> posts, string cacheFile)

@@ -10,10 +10,10 @@ namespace StartScreen.Test.DevHub
     [TestClass]
     public class DevHubScopeMergeTests
     {
-        private static readonly RemoteRepoIdentifier ScopedRepo =
+        private static readonly RemoteRepoIdentifier _scopedRepo =
             new RemoteRepoIdentifier("github.com", "madskristensen", "StartScreen");
 
-        private static readonly RemoteRepoIdentifier OtherRepo =
+        private static readonly RemoteRepoIdentifier _otherRepo =
             new RemoteRepoIdentifier("github.com", "madskristensen", "FileIcons");
 
         [TestMethod]
@@ -23,25 +23,25 @@ namespace StartScreen.Test.DevHub
             {
                 PullRequests = new List<DevHubPullRequest>
                 {
-                    new DevHubPullRequest { Number = "#1", RepoIdentifier = ScopedRepo },
-                    new DevHubPullRequest { Number = "#2", RepoIdentifier = OtherRepo },
+                    new DevHubPullRequest { Number = "#1", RepoIdentifier = _scopedRepo },
+                    new DevHubPullRequest { Number = "#2", RepoIdentifier = _otherRepo },
                 },
             };
 
             var detail = new DevHubRepoDetail
             {
-                RepoIdentifier = ScopedRepo,
+                RepoIdentifier = _scopedRepo,
                 PullRequests = new List<DevHubPullRequest>
                 {
-                    new DevHubPullRequest { Number = "#10", RepoIdentifier = ScopedRepo },
-                    new DevHubPullRequest { Number = "#11", RepoIdentifier = ScopedRepo },
-                    new DevHubPullRequest { Number = "#12", RepoIdentifier = ScopedRepo },
+                    new DevHubPullRequest { Number = "#10", RepoIdentifier = _scopedRepo },
+                    new DevHubPullRequest { Number = "#11", RepoIdentifier = _scopedRepo },
+                    new DevHubPullRequest { Number = "#12", RepoIdentifier = _scopedRepo },
                 },
             };
 
-            DevHubService.MergeRepoDetail(dashboard, ScopedRepo, detail);
+            DevHubService.MergeRepoDetail(dashboard, _scopedRepo, detail);
 
-            var scoped = dashboard.PullRequests.Where(p => ScopedRepo.Equals(p.RepoIdentifier)).ToList();
+            var scoped = dashboard.PullRequests.Where(p => _scopedRepo.Equals(p.RepoIdentifier)).ToList();
             Assert.HasCount(3, scoped, "Scoped repo PRs should be replaced with the fresh fuller set.");
             CollectionAssert.AreEquivalent(new[] { "#10", "#11", "#12" }, scoped.Select(p => p.Number).ToList());
         }
@@ -53,23 +53,23 @@ namespace StartScreen.Test.DevHub
             {
                 Issues = new List<DevHubIssue>
                 {
-                    new DevHubIssue { Number = "#1", RepoIdentifier = ScopedRepo },
-                    new DevHubIssue { Number = "#2", RepoIdentifier = OtherRepo },
+                    new DevHubIssue { Number = "#1", RepoIdentifier = _scopedRepo },
+                    new DevHubIssue { Number = "#2", RepoIdentifier = _otherRepo },
                 },
             };
 
             var detail = new DevHubRepoDetail
             {
-                RepoIdentifier = ScopedRepo,
+                RepoIdentifier = _scopedRepo,
                 Issues = new List<DevHubIssue>
                 {
-                    new DevHubIssue { Number = "#10", RepoIdentifier = ScopedRepo },
+                    new DevHubIssue { Number = "#10", RepoIdentifier = _scopedRepo },
                 },
             };
 
-            DevHubService.MergeRepoDetail(dashboard, ScopedRepo, detail);
+            DevHubService.MergeRepoDetail(dashboard, _scopedRepo, detail);
 
-            Assert.IsTrue(dashboard.Issues.Any(i => i.Number == "#2" && OtherRepo.Equals(i.RepoIdentifier)),
+            Assert.IsTrue(dashboard.Issues.Any(i => i.Number == "#2" && _otherRepo.Equals(i.RepoIdentifier)),
                 "Items belonging to other repos must be preserved.");
         }
 
@@ -80,20 +80,20 @@ namespace StartScreen.Test.DevHub
             {
                 CiRuns = new List<DevHubCiRun>
                 {
-                    new DevHubCiRun { Name = "build-other", RepoIdentifier = OtherRepo },
+                    new DevHubCiRun { Name = "build-other", RepoIdentifier = _otherRepo },
                 },
             };
 
             var detail = new DevHubRepoDetail
             {
-                RepoIdentifier = ScopedRepo,
+                RepoIdentifier = _scopedRepo,
                 CiRuns = new List<DevHubCiRun>
                 {
-                    new DevHubCiRun { Name = "build-scoped", RepoIdentifier = ScopedRepo },
+                    new DevHubCiRun { Name = "build-scoped", RepoIdentifier = _scopedRepo },
                 },
             };
 
-            DevHubService.MergeRepoDetail(dashboard, ScopedRepo, detail);
+            DevHubService.MergeRepoDetail(dashboard, _scopedRepo, detail);
 
             Assert.HasCount(2, dashboard.CiRuns);
             Assert.IsTrue(dashboard.CiRuns.Any(c => c.Name == "build-scoped"));
@@ -107,17 +107,17 @@ namespace StartScreen.Test.DevHub
             {
                 PullRequests = new List<DevHubPullRequest>
                 {
-                    new DevHubPullRequest { Number = "#1", RepoIdentifier = ScopedRepo },
-                    new DevHubPullRequest { Number = "#2", RepoIdentifier = OtherRepo },
+                    new DevHubPullRequest { Number = "#1", RepoIdentifier = _scopedRepo },
+                    new DevHubPullRequest { Number = "#2", RepoIdentifier = _otherRepo },
                 },
             };
 
-            var detail = new DevHubRepoDetail { RepoIdentifier = ScopedRepo };
+            var detail = new DevHubRepoDetail { RepoIdentifier = _scopedRepo };
 
-            DevHubService.MergeRepoDetail(dashboard, ScopedRepo, detail);
+            DevHubService.MergeRepoDetail(dashboard, _scopedRepo, detail);
 
-            Assert.IsFalse(dashboard.PullRequests.Any(p => ScopedRepo.Equals(p.RepoIdentifier)));
-            Assert.IsTrue(dashboard.PullRequests.Any(p => OtherRepo.Equals(p.RepoIdentifier)));
+            Assert.IsFalse(dashboard.PullRequests.Any(p => _scopedRepo.Equals(p.RepoIdentifier)));
+            Assert.IsTrue(dashboard.PullRequests.Any(p => _otherRepo.Equals(p.RepoIdentifier)));
         }
 
     }

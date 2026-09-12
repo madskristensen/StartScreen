@@ -1,6 +1,6 @@
+using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using StartScreen.Services.DevHub;
-using System.Linq;
 
 namespace StartScreen.Test.DevHub
 {

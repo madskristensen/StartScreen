@@ -37,7 +37,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async Task ReadDashboard_NoCacheFile_ReturnsNull()
+        public async Task ReadDashboard_NoCacheFile_ReturnsNullAsync()
         {
             var result = await _cache.ReadDashboardAsync();
 
@@ -45,7 +45,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async Task WriteThenRead_RoundTrips()
+        public async Task WriteThenRead_RoundTripsAsync()
         {
             var dashboard = new DevHubDashboard
             {

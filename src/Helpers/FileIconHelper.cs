@@ -1,8 +1,8 @@
+using System;
+using System.IO;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Imaging.Interop;
 using StartScreen.Models;
-using System;
-using System.IO;
 
 namespace StartScreen.Helpers
 {

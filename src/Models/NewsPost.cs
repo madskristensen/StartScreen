@@ -13,11 +13,11 @@ namespace StartScreen.Models
     /// </summary>
     public class NewsPost : INotifyPropertyChanged
     {
-        private static readonly Regex HtmlRegex = new Regex(@"<[^>]+>", RegexOptions.Compiled);
+        private static readonly Regex _htmlRegex = new Regex(@"<[^>]+>", RegexOptions.Compiled);
 
-        private const string TrackingParameter = "?cid=vs_start_screen";
-        private const int MaxSummaryLength = 1000;
-        private const string NoDescriptionText = "(No description)";
+        private const string _trackingParameter = "?cid=vs_start_screen";
+        private const int _maxSummaryLength = 1000;
+        private const string _noDescriptionText = "(No description)";
 
         private string _title;
         private string _summary;
@@ -154,13 +154,13 @@ namespace StartScreen.Models
             post.Url = item.Links?.FirstOrDefault()?.Uri?.OriginalString ?? string.Empty;
             if (!string.IsNullOrEmpty(post.Url) && !post.Url.Contains('?'))
             {
-                post.Url += TrackingParameter;
+                post.Url += _trackingParameter;
             }
 
             // Summary (strip HTML and truncate)
-            var summary = item.Summary?.Text ?? NoDescriptionText;
+            var summary = item.Summary?.Text ?? _noDescriptionText;
             post.Summary = WebUtility.HtmlDecode(TruncateHtml(summary.Trim()));
-            post.HasDescription = summary != NoDescriptionText;
+            post.HasDescription = summary != _noDescriptionText;
 
             // Publish date and source
             post.PublishDate = item.PublishDate.DateTime;
@@ -214,12 +214,12 @@ namespace StartScreen.Models
                 return string.Empty;
 
             // Remove HTML tags
-            var clearText = HtmlRegex.Replace(input, string.Empty)
+            var clearText = _htmlRegex.Replace(input, string.Empty)
                 .Replace("\r", " ")
                 .Replace("\n", string.Empty);
 
             // Truncate to max length
-            var maxLength = Math.Min(MaxSummaryLength, clearText.Length);
+            var maxLength = Math.Min(_maxSummaryLength, clearText.Length);
             return clearText.Substring(0, maxLength);
         }
 

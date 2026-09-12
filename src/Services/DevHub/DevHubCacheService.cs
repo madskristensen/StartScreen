@@ -16,7 +16,7 @@ namespace StartScreen.Services.DevHub
         private readonly string _cacheFolder;
         private readonly TimeSpan _staleThreshold;
 
-        private const string DashboardFileName = "dashboard.json";
+        private const string _dashboardFileName = "dashboard.json";
 
         public DevHubCacheService(string cacheFolder, TimeSpan? staleThreshold = null)
         {
@@ -39,7 +39,7 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public bool IsCacheStale()
         {
-            var filePath = Path.Combine(_cacheFolder, DashboardFileName);
+            var filePath = Path.Combine(_cacheFolder, _dashboardFileName);
             if (!File.Exists(filePath))
                 return true;
 
@@ -53,7 +53,7 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public async Task<DevHubDashboard> ReadDashboardAsync()
         {
-            var filePath = Path.Combine(_cacheFolder, DashboardFileName);
+            var filePath = Path.Combine(_cacheFolder, _dashboardFileName);
             if (!File.Exists(filePath))
                 return null;
 
@@ -66,7 +66,7 @@ namespace StartScreen.Services.DevHub
                     await stream.ReadAsync(fileBytes, 0, fileBytes.Length);
                 }
 
-                return JsonSerializer.Deserialize<DevHubDashboard>(fileBytes, JsonOptions);
+                return JsonSerializer.Deserialize<DevHubDashboard>(fileBytes, _jsonOptions);
             }
             catch (Exception ex)
             {
@@ -87,8 +87,8 @@ namespace StartScreen.Services.DevHub
             {
                 Directory.CreateDirectory(_cacheFolder);
 
-                var filePath = Path.Combine(_cacheFolder, DashboardFileName);
-                var json = JsonSerializer.SerializeToUtf8Bytes(dashboard, JsonOptions);
+                var filePath = Path.Combine(_cacheFolder, _dashboardFileName);
+                var json = JsonSerializer.SerializeToUtf8Bytes(dashboard, _jsonOptions);
                 File.WriteAllBytes(filePath, json);
             }
             catch (Exception ex)
@@ -120,14 +120,14 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public DateTime? GetCacheTimestamp()
         {
-            var filePath = Path.Combine(_cacheFolder, DashboardFileName);
+            var filePath = Path.Combine(_cacheFolder, _dashboardFileName);
             if (!File.Exists(filePath))
                 return null;
 
             return File.GetLastWriteTimeUtc(filePath);
         }
 
-        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             WriteIndented = false,

@@ -27,7 +27,7 @@ namespace StartScreen.Helpers
     /// </summary>
     internal static class GitHelper
     {
-        private const int MaxParentWalk = 10;
+        private const int _maxParentWalk = 10;
 
         /// <summary>
         /// Gets comprehensive Git status for a given solution, project, or folder path.
@@ -139,7 +139,7 @@ namespace StartScreen.Helpers
 
             var current = startDir;
 
-            for (var i = 0; i < MaxParentWalk && current != null; i++)
+            for (var i = 0; i < _maxParentWalk && current != null; i++)
             {
                 var gitPath = Path.Combine(current, ".git");
 

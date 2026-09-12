@@ -6,13 +6,13 @@ namespace StartScreen.Test.DevHub
     [TestClass]
     public class ProviderPayloadParsingTests
     {
-        private static readonly RemoteRepoIdentifier GitHubRepo =
+        private static readonly RemoteRepoIdentifier _gitHubRepo =
             new RemoteRepoIdentifier("github.com", "owner", "repo");
 
-        private static readonly RemoteRepoIdentifier BitbucketRepo =
+        private static readonly RemoteRepoIdentifier _bitbucketRepo =
             new RemoteRepoIdentifier("bitbucket.org", "owner", "repo");
 
-        private static readonly RemoteRepoIdentifier AzureDevOpsRepo =
+        private static readonly RemoteRepoIdentifier _azureDevOpsRepo =
             new RemoteRepoIdentifier("dev.azure.com", "organization", "repo", "project");
 
         [TestMethod]
@@ -69,7 +69,7 @@ namespace StartScreen.Test.DevHub
                 "\"updated_at\":\"2026-09-12T10:00:00Z\"," +
                 "\"html_url\":\"https://github.com/owner/repo/actions/runs/1\"}]}";
 
-            List<DevHubCiRun> result = GitHubDevHubProvider.ParseCiRuns(json, GitHubRepo);
+            List<DevHubCiRun> result = GitHubDevHubProvider.ParseCiRuns(json, _gitHubRepo);
 
             Assert.AreEqual(expected, result[0].Status);
             Assert.AreEqual("main", result[0].Branch);
@@ -106,7 +106,7 @@ namespace StartScreen.Test.DevHub
                 "\"links\":{\"html\":{\"href\":\"https://bitbucket.org/owner/repo/issues/8\"}}," +
                 "\"updated_on\":\"2026-09-12T10:00:00Z\",\"created_on\":\"2026-09-11T10:00:00Z\"}]}";
 
-            List<DevHubIssue> result = BitbucketDevHubProvider.ParseRepoIssues(json, BitbucketRepo);
+            List<DevHubIssue> result = BitbucketDevHubProvider.ParseRepoIssues(json, _bitbucketRepo);
 
             Assert.HasCount(1, result);
             Assert.AreEqual("major", result[0].Priority);
@@ -121,7 +121,7 @@ namespace StartScreen.Test.DevHub
                 "\"build_number\":42,\"state\":{\"name\":\"COMPLETED\",\"result\":{\"name\":\"SUCCESSFUL\"}}," +
                 "\"target\":{\"ref_name\":\"main\"},\"completed_on\":\"2026-09-12T10:00:00Z\"}]}";
 
-            List<DevHubCiRun> result = BitbucketDevHubProvider.ParsePipelines(json, BitbucketRepo);
+            List<DevHubCiRun> result = BitbucketDevHubProvider.ParsePipelines(json, _bitbucketRepo);
 
             Assert.HasCount(1, result);
             Assert.AreEqual("success", result[0].Status);
@@ -139,7 +139,7 @@ namespace StartScreen.Test.DevHub
                 "\"creationDate\":\"2026-09-11T10:00:00Z\"}]}";
 
             List<DevHubPullRequest> result =
-                AzureDevOpsDevHubProvider.ParseAdoPullRequests(json, AzureDevOpsRepo);
+                AzureDevOpsDevHubProvider.ParseAdoPullRequests(json, _azureDevOpsRepo);
 
             Assert.HasCount(1, result);
             Assert.AreEqual("open", result[0].Status);
@@ -164,7 +164,7 @@ namespace StartScreen.Test.DevHub
                 "\"_links\":{\"web\":{\"href\":\"https://dev.azure.com/build/1\"}}}]}";
 
             List<DevHubCiRun> result =
-                AzureDevOpsDevHubProvider.ParseAdoBuilds(json, AzureDevOpsRepo);
+                AzureDevOpsDevHubProvider.ParseAdoBuilds(json, _azureDevOpsRepo);
 
             Assert.AreEqual(expected, result[0].Status);
             Assert.AreEqual("main", result[0].Branch);
@@ -175,12 +175,12 @@ namespace StartScreen.Test.DevHub
         {
             Assert.IsEmpty(GitHubDevHubProvider.ParsePullRequests("{}", "user"));
             Assert.IsEmpty(GitHubDevHubProvider.ParseIssues("{}"));
-            Assert.IsEmpty(GitHubDevHubProvider.ParseCiRuns("{}", GitHubRepo));
+            Assert.IsEmpty(GitHubDevHubProvider.ParseCiRuns("{}", _gitHubRepo));
             Assert.IsEmpty(BitbucketDevHubProvider.ParsePullRequests("{}", "user"));
-            Assert.IsEmpty(BitbucketDevHubProvider.ParseRepoIssues("{}", BitbucketRepo));
-            Assert.IsEmpty(BitbucketDevHubProvider.ParsePipelines("{}", BitbucketRepo));
-            Assert.IsEmpty(AzureDevOpsDevHubProvider.ParseAdoPullRequests("{}", AzureDevOpsRepo));
-            Assert.IsEmpty(AzureDevOpsDevHubProvider.ParseAdoBuilds("{}", AzureDevOpsRepo));
+            Assert.IsEmpty(BitbucketDevHubProvider.ParseRepoIssues("{}", _bitbucketRepo));
+            Assert.IsEmpty(BitbucketDevHubProvider.ParsePipelines("{}", _bitbucketRepo));
+            Assert.IsEmpty(AzureDevOpsDevHubProvider.ParseAdoPullRequests("{}", _azureDevOpsRepo));
+            Assert.IsEmpty(AzureDevOpsDevHubProvider.ParseAdoBuilds("{}", _azureDevOpsRepo));
         }
     }
 }
