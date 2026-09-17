@@ -33,18 +33,18 @@ jobs:
       VsixManifestSourcePath: src\source.extension.cs
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v3
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 9.0.x
 
     - name: Cache NuGet packages
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/.nuget/packages
         key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.slnx', '**/*.sln', '**/*.csproj', '**/packages.config', '**/packages.lock.json', '**/nuget.config') }}
@@ -109,6 +109,15 @@ jobs:
           throw "Branch coverage $branchCoverage is below the required ${{ env.MinimumBranchCoverage }}."
         }
 
+    - name: Upload test results and coverage
+      uses: actions/upload-artifact@v7
+      if: ${{ !cancelled() }}
+      with:
+        name: test-results-and-coverage
+        path: TestResults/**/*
+        if-no-files-found: error
+        retention-days: 14
+
     - name: Upload artifact
       uses: actions/upload-artifact@v7
       with:
@@ -124,7 +133,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
