@@ -111,5 +111,25 @@ namespace StartScreen.Test
             Assert.AreEqual(3, handler.RequestCount);
             CollectionAssert.AreEqual(new[] { 1, 2 }, delays);
         }
+
+        [TestMethod]
+        public async Task DownloadVideosAsync_WhenCanceled_DoesNotStartRequestAsync()
+        {
+            var handler = new TestHttpMessageHandler(
+                (_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+            using var client = new HttpClient(handler);
+            using var directory = new TemporaryDirectory();
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+                YouTubeService.DownloadVideosAsync(
+                    client,
+                    _ => Task.CompletedTask,
+                    directory.GetPath("youtube.json"),
+                    cancellation.Token));
+
+            Assert.AreEqual(0, handler.RequestCount);
+        }
     }
 }

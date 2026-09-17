@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.ServiceModel.Syndication;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 using System.Xml;
@@ -103,27 +104,32 @@ namespace StartScreen.Services
         /// Retries up to 3 times with exponential backoff for transient failures.
         /// Returns the updated videos, or null if all attempts failed.
         /// </summary>
-        public static async Task<List<YouTubeVideo>> DownloadVideosAsync()
+        public static async Task<List<YouTubeVideo>> DownloadVideosAsync(
+            CancellationToken cancellationToken = default)
         {
             const int baseDelayMs = 2000;
             return await DownloadVideosAsync(
                 _httpClient,
-                attempt => Task.Delay(baseDelayMs * attempt),
-                _cacheFile);
+                attempt => Task.Delay(baseDelayMs * attempt, cancellationToken),
+                _cacheFile,
+                cancellationToken);
         }
 
         internal static async Task<List<YouTubeVideo>> DownloadVideosAsync(
             HttpClient httpClient,
             Func<int, Task> delayAsync,
-            string cacheFile)
+            string cacheFile,
+            CancellationToken cancellationToken = default)
         {
             const int maxAttempts = 3;
 
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 try
                 {
-                    using (var response = await httpClient.GetAsync(_feedUrl))
+                    using (var response = await httpClient.GetAsync(_feedUrl, cancellationToken))
                     {
                         if (!response.IsSuccessStatusCode)
                         {
@@ -160,6 +166,10 @@ namespace StartScreen.Services
                         }
                     }
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     await ex.LogAsync();
@@ -179,7 +189,9 @@ namespace StartScreen.Services
         /// <see cref="YouTubeVideo.Thumbnail"/> so the UI can bind to it directly.
         /// Safe to call on a background thread.
         /// </summary>
-        public static async Task LoadThumbnailsAsync(List<YouTubeVideo> videos)
+        public static async Task LoadThumbnailsAsync(
+            List<YouTubeVideo> videos,
+            CancellationToken cancellationToken = default)
         {
             if (videos == null || videos.Count == 0)
                 return;
@@ -188,13 +200,17 @@ namespace StartScreen.Services
 
             await Task.WhenAll(videos
                 .Where(v => !string.IsNullOrEmpty(v.ThumbnailUrl))
-                .Select(v => LoadThumbnailForVideoAsync(v)));
+                .Select(v => LoadThumbnailForVideoAsync(v, cancellationToken)));
         }
 
-        private static async Task LoadThumbnailForVideoAsync(YouTubeVideo video)
+        private static async Task LoadThumbnailForVideoAsync(
+            YouTubeVideo video,
+            CancellationToken cancellationToken)
         {
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var videoId = YouTubeVideo.ExtractVideoIdFromUrl(video.Url);
                 if (string.IsNullOrEmpty(videoId))
                     return;
@@ -207,16 +223,22 @@ namespace StartScreen.Services
                     using (var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
                     {
                         imageBytes = new byte[fs.Length];
-                        await fs.ReadAsync(imageBytes, 0, imageBytes.Length);
+                        await fs.ReadAsync(imageBytes, 0, imageBytes.Length, cancellationToken);
                     }
                 }
                 else
                 {
-                    imageBytes = await _httpClient.GetByteArrayAsync(video.ThumbnailUrl);
+                    using (var response = await _httpClient.GetAsync(video.ThumbnailUrl, cancellationToken))
+                    {
+                        response.EnsureSuccessStatusCode();
+                        imageBytes = await response.Content.ReadAsByteArrayAsync();
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
                     var tmp = localPath + ".tmp";
                     using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
                     {
-                        await fs.WriteAsync(imageBytes, 0, imageBytes.Length);
+                        await fs.WriteAsync(imageBytes, 0, imageBytes.Length, cancellationToken);
                     }
                     File.Move(tmp, localPath);
                 }
@@ -232,6 +254,10 @@ namespace StartScreen.Services
                 bitmap.Freeze();
 
                 video.Thumbnail = bitmap;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

@@ -102,7 +102,9 @@ namespace StartScreen.Services
         /// Retries the full download up to 2 times for transient failures.
         /// Returns the updated news posts, or null if all attempts failed.
         /// </summary>
-        public static async Task<List<NewsPost>> DownloadFeedsAsync(IEnumerable<FeedInfo> feeds)
+        public static async Task<List<NewsPost>> DownloadFeedsAsync(
+            IEnumerable<FeedInfo> feeds,
+            CancellationToken cancellationToken = default)
         {
             if (feeds == null || !feeds.Any())
                 return null;
@@ -112,9 +114,11 @@ namespace StartScreen.Services
 
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 try
                 {
-                    SyndicationFeed combinedFeed = await DownloadAndCombineFeedsAsync(feeds);
+                    SyndicationFeed combinedFeed = await DownloadAndCombineFeedsAsync(feeds, cancellationToken);
 
                     if (combinedFeed?.Items != null && combinedFeed.Items.Any())
                     {
@@ -128,8 +132,12 @@ namespace StartScreen.Services
 
                     if (attempt < maxAttempts)
                     {
-                        await Task.Delay(baseDelayMs * attempt);
+                        await Task.Delay(baseDelayMs * attempt, cancellationToken);
                     }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -137,7 +145,7 @@ namespace StartScreen.Services
 
                     if (attempt < maxAttempts)
                     {
-                        await Task.Delay(baseDelayMs * attempt);
+                        await Task.Delay(baseDelayMs * attempt, cancellationToken);
                     }
                 }
             }
@@ -148,7 +156,9 @@ namespace StartScreen.Services
         /// <summary>
         /// Downloads and combines multiple feeds with concurrency limiting.
         /// </summary>
-        private static async Task<SyndicationFeed> DownloadAndCombineFeedsAsync(IEnumerable<FeedInfo> feeds)
+        private static async Task<SyndicationFeed> DownloadAndCombineFeedsAsync(
+            IEnumerable<FeedInfo> feeds,
+            CancellationToken cancellationToken)
         {
             var selectedFeeds = feeds.Where(f => f.Enabled).ToList();
             if (!selectedFeeds.Any())
@@ -160,10 +170,10 @@ namespace StartScreen.Services
             {
                 IEnumerable<Task<SyndicationFeed>> downloadTasks = selectedFeeds.Select(async feedInfo =>
                 {
-                    await semaphore.WaitAsync();
+                    await semaphore.WaitAsync(cancellationToken);
                     try
                     {
-                        SyndicationFeed feed = await DownloadFeedAsync(feedInfo);
+                        SyndicationFeed feed = await DownloadFeedAsync(feedInfo, cancellationToken);
                         if (feed != null)
                         {
                             feed.Title = new TextSyndicationContent(feedInfo.Name);
@@ -179,6 +189,10 @@ namespace StartScreen.Services
 
                             return feed;
                         }
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
                     }
                     catch (Exception ex)
                     {
@@ -202,7 +216,9 @@ namespace StartScreen.Services
         /// <summary>
         /// Downloads a single feed with disk caching.
         /// </summary>
-        private static async Task<SyndicationFeed> DownloadFeedAsync(FeedInfo feedInfo)
+        private static async Task<SyndicationFeed> DownloadFeedAsync(
+            FeedInfo feedInfo,
+            CancellationToken cancellationToken)
         {
             var fileName = $"{feedInfo.Name}.xml";
             var cacheFile = Path.Combine(_cacheFolder, fileName);
@@ -214,7 +230,7 @@ namespace StartScreen.Services
             // Try download if cache is stale
             if (DateTime.UtcNow - lastModified >= _staleThreshold)
             {
-                SyndicationFeed feed = await DownloadFromUrlAsync(feedInfo.Url, lastModified);
+                SyndicationFeed feed = await DownloadFromUrlAsync(feedInfo.Url, lastModified, cancellationToken);
                 if (feed != null)
                 {
                     WriteFeedToDisk(cacheFile, feed);
@@ -244,18 +260,24 @@ namespace StartScreen.Services
         /// <summary>
         /// Downloads feed from URL with If-Modified-Since header.
         /// </summary>
-        private static async Task<SyndicationFeed> DownloadFromUrlAsync(string url, DateTime lastModified)
+        private static async Task<SyndicationFeed> DownloadFromUrlAsync(
+            string url,
+            DateTime lastModified,
+            CancellationToken cancellationToken)
         {
-            return await DownloadFromUrlAsync(_httpClient, url, lastModified);
+            return await DownloadFromUrlAsync(_httpClient, url, lastModified, cancellationToken);
         }
 
         internal static async Task<SyndicationFeed> DownloadFromUrlAsync(
             HttpClient httpClient,
             string url,
-            DateTime lastModified)
+            DateTime lastModified,
+            CancellationToken cancellationToken = default)
         {
             if (!Uri.IsWellFormedUriString(url, UriKind.Absolute))
                 return null;
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             try
             {
@@ -263,7 +285,7 @@ namespace StartScreen.Services
                 {
                     request.Headers.IfModifiedSince = lastModified;
 
-                    HttpResponseMessage response = await httpClient.SendAsync(request);
+                    HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
                     if (response.IsSuccessStatusCode)
                     {
                         using (Stream stream = await response.Content.ReadAsStreamAsync())
@@ -280,6 +302,10 @@ namespace StartScreen.Services
                         }
                     }
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

@@ -51,6 +51,11 @@ namespace StartScreen.ToolWindows
         private bool _isRefreshingInBackground;
         private bool _hasNewBlogs;
         private bool _hasNewVideos;
+        private readonly object _cancellationSync = new object();
+        private CancellationTokenSource _lifetimeCancellation = new CancellationTokenSource();
+        private CancellationTokenSource _newsRefreshCancellation;
+        private CancellationTokenSource _youTubeRefreshCancellation;
+        private CancellationTokenSource _mruMetadataCancellation;
 
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
@@ -419,6 +424,32 @@ namespace StartScreen.ToolWindows
             FeedStore.FeedsChanged += OnFeedsChanged;
         }
 
+        public void ActivateBackgroundWork()
+        {
+            lock (_cancellationSync)
+            {
+                if (_lifetimeCancellation.IsCancellationRequested)
+                {
+                    _lifetimeCancellation.Dispose();
+                    _lifetimeCancellation = new CancellationTokenSource();
+                }
+            }
+        }
+
+        public void CancelBackgroundWork()
+        {
+            lock (_cancellationSync)
+            {
+                _lifetimeCancellation.Cancel();
+                _newsRefreshCancellation?.Cancel();
+                _youTubeRefreshCancellation?.Cancel();
+                _mruMetadataCancellation?.Cancel();
+            }
+
+            IsRefreshingNews = false;
+            IsRefreshingYouTube = false;
+        }
+
         internal StartScreenViewModel(IEnumerable<MruItem> mruItems)
             : this()
         {
@@ -430,6 +461,73 @@ namespace StartScreen.ToolWindows
         {
             // Force refresh news when feeds file changes
             ForceRefreshNews();
+        }
+
+        private CancellationToken GetBackgroundCancellationToken()
+        {
+            lock (_cancellationSync)
+            {
+                return _lifetimeCancellation.Token;
+            }
+        }
+
+        private CancellationTokenSource ReplaceRefreshCancellation(
+            ref CancellationTokenSource refreshCancellation)
+        {
+            lock (_cancellationSync)
+            {
+                refreshCancellation?.Cancel();
+                refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    _lifetimeCancellation.Token);
+                return refreshCancellation;
+            }
+        }
+
+        private void CompleteRefresh(
+            ref CancellationTokenSource currentCancellation,
+            CancellationTokenSource completedCancellation,
+            Action onCompleted)
+        {
+            var isCurrent = false;
+
+            lock (_cancellationSync)
+            {
+                if (ReferenceEquals(currentCancellation, completedCancellation))
+                {
+                    currentCancellation = null;
+                    isCurrent = true;
+                }
+            }
+
+            completedCancellation.Dispose();
+
+            if (isCurrent)
+            {
+                onCompleted();
+            }
+        }
+
+        private void StartMruMetadataRefresh(IReadOnlyCollection<MruItem> items)
+        {
+            CancellationTokenSource refreshCancellation =
+                ReplaceRefreshCancellation(ref _mruMetadataCancellation);
+
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    await Task.WhenAll(
+                        MruService.PopulateGitStatusAsync(items, refreshCancellation.Token),
+                        MruService.PopulateExistenceAsync(items, refreshCancellation.Token));
+                }
+                catch (OperationCanceledException) when (refreshCancellation.IsCancellationRequested)
+                {
+                }
+                finally
+                {
+                    CompleteRefresh(ref _mruMetadataCancellation, refreshCancellation, () => { });
+                }
+            }).FileAndForget(nameof(StartScreenViewModel));
         }
 
         /// <summary>
@@ -481,9 +579,12 @@ namespace StartScreen.ToolWindows
         /// </summary>
         public async Task LoadMruAsync()
         {
+            CancellationToken cancellationToken = GetBackgroundCancellationToken();
+
             // Get off the UI thread immediately. CreateAsync invokes us from the UI
             // thread; all work below must not run there.
             await TaskScheduler.Default;
+            cancellationToken.ThrowIfCancellationRequested();
 
             // 1) MRU FIRST. Only the bare minimum needed to fetch MRU runs before the
             //    UI is updated. Options is just a settings-store read and is needed
@@ -494,12 +595,12 @@ namespace StartScreen.ToolWindows
             var allItems = mruItems.Concat(extendedItems).ToList();
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            cancellationToken.ThrowIfCancellationRequested();
             _allMruItems = new ObservableCollection<MruItem>(allItems);
             RefreshMruCollections();
 
             // Populate git status and file existence in background after UI is updated
-            MruService.PopulateGitStatusAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
-            MruService.PopulateExistenceAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
+            StartMruMetadataRefresh(allItems);
 
             // 2) Everything else runs after MRU is visible. Stay off the UI thread.
             await TaskScheduler.Default;
@@ -522,17 +623,21 @@ namespace StartScreen.ToolWindows
             if (_isRefreshingInBackground)
                 return;
 
+            CancellationToken cancellationToken = GetBackgroundCancellationToken();
             _isRefreshingInBackground = true;
 
             try
             {
-                Task newsTask = RefreshNewsAsync();
-                Task youtubeTask = RefreshYouTubeAsync();
-                Task versionTask = RefreshVersionTitleAsync();
-                Task mruTask = refreshMru ? RefreshMruAsync() : Task.CompletedTask;
-                Task updateTask = CheckForUpdateAsync();
+                Task newsTask = RefreshNewsAsync(cancellationToken);
+                Task youtubeTask = RefreshYouTubeAsync(cancellationToken);
+                Task versionTask = RefreshVersionTitleAsync(cancellationToken);
+                Task mruTask = refreshMru ? RefreshMruAsync(cancellationToken) : Task.CompletedTask;
+                Task updateTask = CheckForUpdateAsync(cancellationToken);
 
                 await Task.WhenAll(newsTask, youtubeTask, versionTask, mruTask, updateTask);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             finally
             {
@@ -540,10 +645,11 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async Task RefreshMruAsync()
+        private async Task RefreshMruAsync(CancellationToken cancellationToken)
         {
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 Options options = await Options.GetLiveInstanceAsync();
                 List<MruItem> updatedMru = await MruService.GetMruItemsAsync(options);
                 List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(updatedMru, options);
@@ -551,13 +657,16 @@ namespace StartScreen.ToolWindows
 
                 // Update on UI thread
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                cancellationToken.ThrowIfCancellationRequested();
 
                 _allMruItems = new ObservableCollection<MruItem>(allItems);
                 RefreshMruCollections();
 
                 // Populate git status and file existence in background after UI is updated
-                MruService.PopulateGitStatusAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
-                MruService.PopulateExistenceAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
+                StartMruMetadataRefresh(allItems);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {
@@ -565,17 +674,19 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async Task RefreshNewsAsync()
+        private async Task RefreshNewsAsync(CancellationToken cancellationToken)
         {
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 // Load from cache asynchronously to avoid blocking
                 List<NewsPost> posts = await FeedService.GetCachedPostsAsync();
                 var hasCachedItems = posts != null && posts.Count > 0;
 
                 if (hasCachedItems)
                 {
-                    await UpdateNewsPostsOnUIThreadAsync(posts);
+                    await UpdateNewsPostsOnUIThreadAsync(posts, cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
                     LastNewsRefreshText = "Updated from cache";
                 }
 
@@ -584,6 +695,9 @@ namespace StartScreen.ToolWindows
                 {
                     StartBackgroundFeedRefresh();
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {
@@ -607,19 +721,22 @@ namespace StartScreen.ToolWindows
         /// </summary>
         private void StartBackgroundFeedRefresh()
         {
+            CancellationTokenSource refreshCancellation = ReplaceRefreshCancellation(ref _newsRefreshCancellation);
+            CancellationToken cancellationToken = refreshCancellation.Token;
             IsRefreshingNews = true;
 
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
-                var minDisplay = Task.Delay(1000);
+                var minDisplay = Task.Delay(1000, cancellationToken);
                 try
                 {
                     List<FeedInfo> feeds = FeedStore.GetFeeds();
-                    List<NewsPost> posts = await FeedService.DownloadFeedsAsync(feeds);
+                    List<NewsPost> posts = await FeedService.DownloadFeedsAsync(feeds, cancellationToken);
 
                     if (posts != null)
                     {
-                        await UpdateNewsPostsOnUIThreadAsync(posts);
+                        await UpdateNewsPostsOnUIThreadAsync(posts, cancellationToken);
+                        cancellationToken.ThrowIfCancellationRequested();
                         IsNewsUnavailable = false;
                         LastNewsRefreshText = "Updated just now";
                     }
@@ -629,6 +746,9 @@ namespace StartScreen.ToolWindows
                         LastNewsRefreshText = "Feed unavailable";
                     }
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                }
                 catch (Exception ex)
                 {
                     ex.Log();
@@ -637,18 +757,28 @@ namespace StartScreen.ToolWindows
                 }
                 finally
                 {
-                    await minDisplay;
-                    IsRefreshingNews = false;
+                    try
+                    {
+                        await minDisplay;
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                    }
+
+                    CompleteRefresh(ref _newsRefreshCancellation, refreshCancellation, () => IsRefreshingNews = false);
                 }
             }).FileAndForget(nameof(StartScreenViewModel));
         }
 
-        private async Task UpdateNewsPostsOnUIThreadAsync(List<NewsPost> posts)
+        private async Task UpdateNewsPostsOnUIThreadAsync(
+            List<NewsPost> posts,
+            CancellationToken cancellationToken)
         {
             Options options = await Options.GetLiveInstanceAsync();
 
             // Update on UI thread
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            cancellationToken.ThrowIfCancellationRequested();
 
             _allNewsPosts.Clear();
             _allNewsPosts.AddRange(posts);
@@ -657,17 +787,19 @@ namespace StartScreen.ToolWindows
             UpdateHasNewBlogs(options);
         }
 
-        private async Task RefreshYouTubeAsync()
+        private async Task RefreshYouTubeAsync(CancellationToken cancellationToken)
         {
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var videos = await YouTubeService.GetCachedVideosAsync();
                 var hasCached = videos != null && videos.Count > 0;
 
                 if (hasCached)
                 {
-                    await YouTubeService.LoadThumbnailsAsync(videos);
-                    await UpdateYouTubeOnUIThreadAsync(videos);
+                    await YouTubeService.LoadThumbnailsAsync(videos, cancellationToken);
+                    await UpdateYouTubeOnUIThreadAsync(videos, cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
                     LastYouTubeRefreshText = "Updated from cache";
                 }
 
@@ -675,6 +807,9 @@ namespace StartScreen.ToolWindows
                 {
                     StartBackgroundYouTubeRefresh();
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {
@@ -698,19 +833,22 @@ namespace StartScreen.ToolWindows
         /// </summary>
         private void StartBackgroundYouTubeRefresh()
         {
+            CancellationTokenSource refreshCancellation = ReplaceRefreshCancellation(ref _youTubeRefreshCancellation);
+            CancellationToken cancellationToken = refreshCancellation.Token;
             IsRefreshingYouTube = true;
 
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
-                var minDisplay = Task.Delay(1000);
+                var minDisplay = Task.Delay(1000, cancellationToken);
                 try
                 {
-                    var videos = await YouTubeService.DownloadVideosAsync();
+                    var videos = await YouTubeService.DownloadVideosAsync(cancellationToken);
 
                     if (videos != null)
                     {
-                        await YouTubeService.LoadThumbnailsAsync(videos);
-                        await UpdateYouTubeOnUIThreadAsync(videos);
+                        await YouTubeService.LoadThumbnailsAsync(videos, cancellationToken);
+                        await UpdateYouTubeOnUIThreadAsync(videos, cancellationToken);
+                        cancellationToken.ThrowIfCancellationRequested();
                         IsYouTubeUnavailable = false;
                         LastYouTubeRefreshText = "Updated just now";
                     }
@@ -720,6 +858,9 @@ namespace StartScreen.ToolWindows
                         LastYouTubeRefreshText = "Feed unavailable";
                     }
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                }
                 catch (Exception ex)
                 {
                     ex.Log();
@@ -728,15 +869,25 @@ namespace StartScreen.ToolWindows
                 }
                 finally
                 {
-                    await minDisplay;
-                    IsRefreshingYouTube = false;
+                    try
+                    {
+                        await minDisplay;
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                    }
+
+                    CompleteRefresh(ref _youTubeRefreshCancellation, refreshCancellation, () => IsRefreshingYouTube = false);
                 }
             }).FileAndForget(nameof(StartScreenViewModel));
         }
 
-        private async Task UpdateYouTubeOnUIThreadAsync(List<YouTubeVideo> videos)
+        private async Task UpdateYouTubeOnUIThreadAsync(
+            List<YouTubeVideo> videos,
+            CancellationToken cancellationToken)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            cancellationToken.ThrowIfCancellationRequested();
             _allYouTubeVideos.Clear();
             _allYouTubeVideos.AddRange(videos);
             UpdateYouTubeCollections();
@@ -891,7 +1042,7 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async Task RefreshVersionTitleAsync()
+        private async Task RefreshVersionTitleAsync(CancellationToken cancellationToken)
         {
             try
             {
@@ -919,12 +1070,16 @@ namespace StartScreen.ToolWindows
                     }
 
                     return (resultTitle, resultVersion);
-                });
+                }, cancellationToken);
 
                 // Update on UI thread
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                cancellationToken.ThrowIfCancellationRequested();
                 DiscoverySectionTitle = title;
                 DiscoverySectionVersion = version;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {
@@ -935,18 +1090,22 @@ namespace StartScreen.ToolWindows
         /// <summary>
         /// Checks whether a Visual Studio update is available via the setup composition service.
         /// </summary>
-        private async Task CheckForUpdateAsync()
+        private async Task CheckForUpdateAsync(CancellationToken cancellationToken)
         {
             try
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                cancellationToken.ThrowIfCancellationRequested();
 
                 IVsSetupCompositionService setupService = await VS.GetServiceAsync<SVsSetupCompositionService, IVsSetupCompositionService>();
                 if (setupService != null && setupService.IsManifestRefreshedAndUpdateAvailable)
                 {
-                    await Task.Delay(2000);
+                    await Task.Delay(2000, cancellationToken);
                     IsUpdateAvailable = true;
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {

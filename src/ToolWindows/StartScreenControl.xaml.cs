@@ -28,6 +28,7 @@ namespace StartScreen.ToolWindows
         private readonly JoinableTask<DevHubDashboard> _devHubCacheTask;
         private bool _isInitialized;
         private bool _isSynchronizingContentHorizontalScroll;
+        private CancellationTokenSource _lifetimeCancellation = new CancellationTokenSource();
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -51,11 +52,26 @@ namespace StartScreen.ToolWindows
 
         private void UserControl_Loaded(object sender, RoutedEventArgs e)
         {
+            if (_lifetimeCancellation.IsCancellationRequested)
+            {
+                _lifetimeCancellation.Dispose();
+                _lifetimeCancellation = new CancellationTokenSource();
+            }
+
+            _viewModel.ActivateBackgroundWork();
             LoadControlAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private void UserControl_Unloaded(object sender, RoutedEventArgs e)
+        {
+            _lifetimeCancellation.Cancel();
+            _viewModel.CancelBackgroundWork();
         }
 
         private async Task LoadControlAsync()
         {
+            CancellationToken cancellationToken = _lifetimeCancellation.Token;
+
             try
             {
                 // If already initialized, just refresh in background
@@ -87,6 +103,9 @@ namespace StartScreen.ToolWindows
                 Task newsTask = _viewModel.RefreshInBackgroundAsync(refreshMru: false);
 
                 await Task.WhenAll(restoreSplitterTask, newsTask, devHubTask);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {
@@ -348,6 +367,7 @@ namespace StartScreen.ToolWindows
                 return;
             }
 
+            CancellationToken cancellationToken = _lifetimeCancellation.Token;
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 if (ViewModel != null)
@@ -363,7 +383,10 @@ namespace StartScreen.ToolWindows
                         DevHubPanelControl.ShowLoading();
                     }
 
-                    await RefreshDevHubInBackgroundAsync();
+                    await RefreshDevHubInBackgroundAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
                 }
                 catch (Exception ex)
                 {
@@ -389,26 +412,28 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_ConnectAccountRequested(object sender, string host)
         {
+            CancellationToken cancellationToken = _lifetimeCancellation.Token;
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                DevHubPanelControl.ShowLoading($"Connecting to {host}...");
-
-                await TaskScheduler.Default;
-                var connected = await Services.DevHub.DevHubCredentialHelper.ConnectInteractiveAsync(
-                    host, System.Threading.CancellationToken.None);
-
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (connected)
+                try
                 {
-                    // Note: do NOT call ClearCachedCredentials here. ConnectInteractiveAsync
-                    // already stored the freshly acquired credential in both the in-memory
-                    // cache and Windows Credential Manager.
-                    await RefreshDevHubInBackgroundAsync();
-                }
-                else
-                {
-                    if (host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    DevHubPanelControl.ShowLoading($"Connecting to {host}...");
+
+                    await TaskScheduler.Default;
+                    var connected = await Services.DevHub.DevHubCredentialHelper.ConnectInteractiveAsync(
+                        host, cancellationToken);
+
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (connected)
+                    {
+                        // Note: do NOT call ClearCachedCredentials here. ConnectInteractiveAsync
+                        // already stored the freshly acquired credential in both the in-memory
+                        // cache and Windows Credential Manager.
+                        await RefreshDevHubInBackgroundAsync(cancellationToken);
+                    }
+                    else if (host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
                     {
                         DevHubPanelControl.ShowGitHubCredentialManagerUnavailable();
                     }
@@ -417,6 +442,9 @@ namespace StartScreen.ToolWindows
                         // GCM not available or user cancelled - fall back to showing panel state
                         UpdateDevHubPanel();
                     }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
                 }
             }).FileAndForget(nameof(StartScreenControl));
         }
@@ -428,18 +456,26 @@ namespace StartScreen.ToolWindows
                 return;
             }
 
+            CancellationToken cancellationToken = _lifetimeCancellation.Token;
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
-                await TaskScheduler.Default;
-
-                // Fetch a fuller set of items for just this repo so the scoped view isn't
-                // limited to whatever happened to be loaded in the aggregate dashboard.
-                var dashboard = await _devHubService.ScopeToRepoAsync(repo, CancellationToken.None);
-
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (dashboard != null)
+                try
                 {
-                    DevHubPanelControl.UpdateView(dashboard);
+                    await TaskScheduler.Default;
+
+                    // Fetch a fuller set of items for just this repo so the scoped view isn't
+                    // limited to whatever happened to be loaded in the aggregate dashboard.
+                    var dashboard = await _devHubService.ScopeToRepoAsync(repo, cancellationToken);
+
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (dashboard != null)
+                    {
+                        DevHubPanelControl.UpdateView(dashboard);
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
                 }
             }).FileAndForget(nameof(StartScreenControl));
         }
@@ -454,6 +490,8 @@ namespace StartScreen.ToolWindows
 
         private async Task LoadDevHubAsync()
         {
+            CancellationToken cancellationToken = _lifetimeCancellation.Token;
+
             try
             {
                 if (!Options.Instance.DevHubEnabled)
@@ -470,15 +508,19 @@ namespace StartScreen.ToolWindows
                     if (_devHubService.IsCacheStale())
                     {
                         StartScreenPackage.BackgroundTaskFactory.RunAsync(
-                            () => RefreshDevHubInBackgroundAsync()).FileAndForget(nameof(StartScreenControl));
+                            () => RefreshDevHubInBackgroundAsync(cancellationToken))
+                            .FileAndForget(nameof(StartScreenControl));
                     }
                 }
                 else
                 {
                     // No usable cache - must do a full load
                     DevHubPanelControl.ShowLoading("Signing in to GitHub and Azure DevOps...");
-                    await RefreshDevHubInBackgroundAsync();
+                    await RefreshDevHubInBackgroundAsync(cancellationToken);
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {
@@ -487,7 +529,7 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async Task RefreshDevHubInBackgroundAsync()
+        private async Task RefreshDevHubInBackgroundAsync(CancellationToken cancellationToken)
         {
             try
             {
@@ -504,10 +546,14 @@ namespace StartScreen.ToolWindows
                 // we stayed on the captured UI SynchronizationContext.
                 await TaskScheduler.Default;
 
-                await _devHubService.RefreshAsync(CancellationToken.None, progress);
+                await _devHubService.RefreshAsync(cancellationToken, progress);
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                cancellationToken.ThrowIfCancellationRequested();
                 UpdateDevHubPanel();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {

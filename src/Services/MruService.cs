@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Settings;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -247,7 +248,9 @@ namespace StartScreen.Services
         /// Updates each item's Git properties as they resolve, triggering UI updates via INotifyPropertyChanged.
         /// Returns a task that represents both local status discovery and remote fetching.
         /// </summary>
-        public static async Task PopulateGitStatusAsync(IEnumerable<MruItem> items)
+        public static async Task PopulateGitStatusAsync(
+            IEnumerable<MruItem> items,
+            System.Threading.CancellationToken cancellationToken = default)
         {
             // Switch to background thread for parallel Git operations
             await TaskScheduler.Default;
@@ -264,10 +267,16 @@ namespace StartScreen.Services
             var repoPathCache = new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             // Phase 1: Read local status (fast, no network)
-            Parallel.ForEach(itemList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
+            Parallel.ForEach(itemList, new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = 4
+            }, item =>
             {
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     // Skip items whose target no longer exists on disk; otherwise we'd
                     // pay for a parent-chain walk and a libgit2 Repository open per
                     // dead path for nothing.
@@ -302,6 +311,10 @@ namespace StartScreen.Services
                         }
                     }
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     ex.Log();
@@ -320,13 +333,19 @@ namespace StartScreen.Services
 
             await Task.Run(() =>
             {
-                Parallel.ForEach(itemRepoMap, new ParallelOptions { MaxDegreeOfParallelism = 2 }, kvp =>
+                Parallel.ForEach(itemRepoMap, new ParallelOptions
+                {
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = 2
+                }, kvp =>
                 {
                     var repoPath = kvp.Key;
                     RepoFetchInfo info = kvp.Value;
 
                     try
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
+
                         // Throttle: if FETCH_HEAD was written within the throttle window,
                         // the ahead/behind we already read in phase 1 is fresh enough.
                         // Skip both the fetch and the post-fetch re-read entirely.
@@ -350,12 +369,16 @@ namespace StartScreen.Services
                             }
                         }
                     }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         ex.Log();
                     }
                 });
-            });
+            }, cancellationToken);
         }
 
         /// <summary>
@@ -402,17 +425,28 @@ namespace StartScreen.Services
         /// Checks file/folder existence for each MRU item on a background thread.
         /// Updates each item's Exists property, triggering UI updates via INotifyPropertyChanged.
         /// </summary>
-        public static async Task PopulateExistenceAsync(IEnumerable<MruItem> items)
+        public static async Task PopulateExistenceAsync(
+            IEnumerable<MruItem> items,
+            System.Threading.CancellationToken cancellationToken = default)
         {
             await TaskScheduler.Default;
 
             var itemList = items.ToList();
 
-            Parallel.ForEach(itemList, new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
+            Parallel.ForEach(itemList, new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = 4
+            }, item =>
             {
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     item.RefreshExists();
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {

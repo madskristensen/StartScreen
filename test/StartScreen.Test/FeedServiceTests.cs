@@ -136,6 +136,23 @@ namespace StartScreen.Test
             Assert.AreEqual(1, handler.RequestCount);
         }
 
+        [TestMethod]
+        public async Task DownloadFromUrlAsync_WhenCanceled_ThrowsAsync()
+        {
+            var handler = new TestHttpMessageHandler(
+                (_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+            using var client = new HttpClient(handler);
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+                FeedService.DownloadFromUrlAsync(
+                    client,
+                    "https://example.com/feed",
+                    DateTime.UtcNow,
+                    cancellation.Token));
+        }
+
         private static SyndicationItem CreateItem(string title, DateTimeOffset publishDate)
         {
             return new SyndicationItem(title, "Content", null)

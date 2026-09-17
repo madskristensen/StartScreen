@@ -20,6 +20,7 @@
              DragOver="UserControl_DragOver"
              Drop="UserControl_Drop"
              Loaded="UserControl_Loaded"
+             Unloaded="UserControl_Unloaded"
              PreviewKeyDown="UserControl_PreviewKeyDown"
              GotKeyboardFocus="UserControl_GotKeyboardFocus">
 
