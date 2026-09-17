@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 using Microsoft.VisualStudio.Settings;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
@@ -245,8 +246,7 @@ namespace StartScreen.Services
         /// Populates Git status information for items in the background.
         /// Phase 1: Reads local status (branch, stash, dirty, operation) immediately.
         /// Phase 2: Fetches from remotes and updates ahead/behind counts as they complete.
-        /// Updates each item's Git properties as they resolve, triggering UI updates via INotifyPropertyChanged.
-        /// Returns a task that represents both local status discovery and remote fetching.
+        /// Background results are applied to bound items on the UI thread in small batches.
         /// </summary>
         public static async Task PopulateGitStatusAsync(
             IEnumerable<MruItem> items,
@@ -265,6 +265,9 @@ namespace StartScreen.Services
             // MRU items in the same repo (solution + projects + folders) don't each
             // walk the parent chain independently.
             var repoPathCache = new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            var localUpdates =
+                new System.Collections.Concurrent.ConcurrentBag<(MruItem Item, GitStatus Status, int SessionCount)>();
 
             // Phase 1: Read local status (fast, no network)
             Parallel.ForEach(itemList, new ParallelOptions
@@ -288,11 +291,9 @@ namespace StartScreen.Services
 
                     GitStatus status = GitHelper.GetGitStatus(item.Path);
 
-                    // Update properties (INotifyPropertyChanged handles UI marshaling)
-                    item.ApplyGitStatus(status);
-
                     // Detect Copilot Chat sessions stored under .vs\*\copilot-chat\*\sessions
-                    item.CopilotChatSessionCount = CopilotChatHelper.CountSessions(item.Path, item.Type);
+                    var sessionCount = CopilotChatHelper.CountSessions(item.Path, item.Type);
+                    localUpdates.Add((item, status, sessionCount));
 
                     // Track repo path for phase 2 (if item is in a git repo
                     // and the current branch has an upstream we can fetch).
@@ -321,6 +322,8 @@ namespace StartScreen.Services
                 }
             });
 
+            await ApplyGitStatusUpdatesAsync(localUpdates, cancellationToken);
+
             // Phase 2: Fetch and update ahead/behind (slow, network).
             if (itemRepoMap.Count == 0)
                 return;
@@ -330,6 +333,10 @@ namespace StartScreen.Services
             // killed, turning an offline laptop into a 25+ second git.exe storm.
             if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
                 return;
+
+            await TaskScheduler.Default;
+            var remoteUpdates =
+                new System.Collections.Concurrent.ConcurrentBag<(MruItem Item, int? Ahead, int? Behind)>();
 
             await Task.Run(() =>
             {
@@ -364,8 +371,7 @@ namespace StartScreen.Services
                             // Only update if fetch succeeded and tracking branch exists
                             if (ahead.HasValue || behind.HasValue)
                             {
-                                item.CommitsAhead = ahead;
-                                item.CommitsBehind = behind;
+                                remoteUpdates.Add((item, ahead, behind));
                             }
                         }
                     }
@@ -379,6 +385,48 @@ namespace StartScreen.Services
                     }
                 });
             }, cancellationToken);
+
+            await ApplyAheadBehindUpdatesAsync(remoteUpdates, cancellationToken);
+        }
+
+        private static async Task ApplyGitStatusUpdatesAsync(
+            IEnumerable<(MruItem Item, GitStatus Status, int SessionCount)> updates,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            var index = 0;
+
+            foreach (var update in updates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                update.Item.ApplyGitStatus(update.Status);
+                update.Item.CopilotChatSessionCount = update.SessionCount;
+
+                if (++index % 8 == 0)
+                {
+                    await Dispatcher.Yield(DispatcherPriority.Background);
+                }
+            }
+        }
+
+        private static async Task ApplyAheadBehindUpdatesAsync(
+            IEnumerable<(MruItem Item, int? Ahead, int? Behind)> updates,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            var index = 0;
+
+            foreach (var update in updates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                update.Item.CommitsAhead = update.Ahead;
+                update.Item.CommitsBehind = update.Behind;
+
+                if (++index % 8 == 0)
+                {
+                    await Dispatcher.Yield(DispatcherPriority.Background);
+                }
+            }
         }
 
         /// <summary>
@@ -422,8 +470,8 @@ namespace StartScreen.Services
         }
 
         /// <summary>
-        /// Checks file/folder existence for each MRU item on a background thread.
-        /// Updates each item's Exists property, triggering UI updates via INotifyPropertyChanged.
+        /// Checks file/folder existence on background threads, then applies bound state
+        /// on the UI thread in small batches.
         /// </summary>
         public static async Task PopulateExistenceAsync(
             IEnumerable<MruItem> items,
@@ -432,6 +480,8 @@ namespace StartScreen.Services
             await TaskScheduler.Default;
 
             var itemList = items.ToList();
+            var updates =
+                new System.Collections.Concurrent.ConcurrentBag<(MruItem Item, bool Exists)>();
 
             Parallel.ForEach(itemList, new ParallelOptions
             {
@@ -442,7 +492,7 @@ namespace StartScreen.Services
                 try
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    item.RefreshExists();
+                    updates.Add((item, item.CalculateExists()));
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -453,6 +503,20 @@ namespace StartScreen.Services
                     ex.Log();
                 }
             });
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            var index = 0;
+
+            foreach (var update in updates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                update.Item.ApplyExists(update.Exists);
+
+                if (++index % 16 == 0)
+                {
+                    await Dispatcher.Yield(DispatcherPriority.Background);
+                }
+            }
         }
 
         /// <summary>

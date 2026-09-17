@@ -392,41 +392,41 @@ namespace StartScreen.Models
             {
                 if (!_exists.HasValue)
                 {
-                    _exists = CheckExists();
+                    _exists = CalculateExists();
                 }
                 return _exists.Value;
             }
         }
 
         /// <summary>
-        /// Re-checks file existence on disk and raises PropertyChanged if the value changed.
-        /// Safe to call from a background thread.
+        /// Calculates file existence without changing bound state.
         /// </summary>
-        public void RefreshExists()
-        {
-            var newValue = CheckExists();
-            if (_exists != newValue)
-            {
-                _exists = newValue;
-                OnPropertyChanged(nameof(Exists));
-            }
-        }
-
-        private bool CheckExists()
+        internal bool CalculateExists()
         {
             if (string.IsNullOrWhiteSpace(_path))
                 return false;
 
             try
             {
-                if (Type == MruItemType.Folder)
-                    return Directory.Exists(_path);
-                else
-                    return File.Exists(_path);
+                return Type == MruItemType.Folder
+                    ? Directory.Exists(_path)
+                    : File.Exists(_path);
             }
             catch
             {
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Updates the cached existence state and notifies the UI.
+        /// </summary>
+        internal void ApplyExists(bool exists)
+        {
+            if (_exists != exists)
+            {
+                _exists = exists;
+                OnPropertyChanged(nameof(Exists));
             }
         }
 
