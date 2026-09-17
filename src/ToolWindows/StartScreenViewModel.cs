@@ -514,10 +514,10 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
-        /// Refreshes news and version info in the background after the UI is shown.
+        /// Refreshes cached and remote content in the background after the UI is shown.
         /// Guarded against concurrent execution to prevent duplicate work.
         /// </summary>
-        public async Task RefreshInBackgroundAsync()
+        public async Task RefreshInBackgroundAsync(bool refreshMru = true)
         {
             if (_isRefreshingInBackground)
                 return;
@@ -529,7 +529,7 @@ namespace StartScreen.ToolWindows
                 Task newsTask = RefreshNewsAsync();
                 Task youtubeTask = RefreshYouTubeAsync();
                 Task versionTask = RefreshVersionTitleAsync();
-                Task mruTask = RefreshMruAsync();
+                Task mruTask = refreshMru ? RefreshMruAsync() : Task.CompletedTask;
                 Task updateTask = CheckForUpdateAsync();
 
                 await Task.WhenAll(newsTask, youtubeTask, versionTask, mruTask, updateTask);

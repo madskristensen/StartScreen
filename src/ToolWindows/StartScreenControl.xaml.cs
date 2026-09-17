@@ -84,7 +84,7 @@ namespace StartScreen.ToolWindows
                 // hook it up to the UI. News/splitter run in parallel.
                 Task restoreSplitterTask = RestoreSplitterPositionAsync();
                 Task devHubTask = LoadDevHubAsync();
-                Task newsTask = _viewModel.RefreshInBackgroundAsync();
+                Task newsTask = _viewModel.RefreshInBackgroundAsync(refreshMru: false);
 
                 await Task.WhenAll(restoreSplitterTask, newsTask, devHubTask);
             }
