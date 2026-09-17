@@ -494,8 +494,14 @@ namespace StartScreen.ToolWindows
         internal StartScreenViewModel(IEnumerable<MruItem> mruItems)
             : this()
         {
-            _allMruItems = new ObservableCollection<MruItem>(mruItems ?? Enumerable.Empty<MruItem>());
-            UpdateMruCollections();
+            SetMruItems(mruItems);
+        }
+
+        internal void SetMruItems(IEnumerable<MruItem> mruItems)
+        {
+            _allMruItems = new ObservableCollection<MruItem>(
+                mruItems ?? Enumerable.Empty<MruItem>());
+            RefreshMruCollections();
         }
 
         private void OnFeedsChanged(object sender, EventArgs e)
@@ -657,8 +663,7 @@ namespace StartScreen.ToolWindows
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             cancellationToken.ThrowIfCancellationRequested();
-            _allMruItems = new ObservableCollection<MruItem>(allItems);
-            RefreshMruCollections();
+            SetMruItems(allItems);
             StartupDiagnostics.Mark("MRU displayed");
 
             StartScreenPackage.BackgroundTaskFactory.RunAsync(
@@ -711,8 +716,7 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 cancellationToken.ThrowIfCancellationRequested();
 
-                _allMruItems = new ObservableCollection<MruItem>(allItems);
-                RefreshMruCollections();
+                SetMruItems(allItems);
 
                 StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
                 {

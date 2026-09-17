@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using StartScreen.Models;
 using StartScreen.ToolWindows;
@@ -114,6 +115,53 @@ namespace StartScreen.Test
             Assert.HasCount(1, viewModel.GroupedMruItems);
             Assert.HasCount(1, viewModel.GroupedMruItems[0].Items);
             Assert.AreSame(matching, viewModel.GroupedMruItems[0].Items[0]);
+        }
+
+        [TestMethod]
+        public void SearchFilter_RapidChangesKeepLatestQuery()
+        {
+            var alpha = CreateItem("Alpha", @"C:\Code\Alpha.sln");
+            var beta = CreateItem("Beta", @"C:\Code\Beta.sln");
+            var viewModel = new StartScreenViewModel([alpha, beta]);
+
+            viewModel.SearchFilter = "Alpha";
+            viewModel.SearchFilter = "Beta";
+
+            Assert.HasCount(1, viewModel.VisibleMruItems);
+            Assert.AreSame(beta, viewModel.VisibleMruItems[0]);
+        }
+
+        [TestMethod]
+        public void SetMruItems_PreservesActiveSearchFilter()
+        {
+            var original = CreateItem("Original match", @"C:\Code\Original.sln");
+            var refreshedMatch = CreateItem("Refreshed match", @"C:\Code\Refreshed.sln");
+            var refreshedOther = CreateItem("Other", @"C:\Code\Other.sln");
+            var viewModel = new StartScreenViewModel([original])
+            {
+                SearchFilter = "match",
+            };
+
+            viewModel.SetMruItems([refreshedMatch, refreshedOther]);
+
+            Assert.HasCount(1, viewModel.VisibleMruItems);
+            Assert.AreSame(refreshedMatch, viewModel.VisibleMruItems[0]);
+        }
+
+        [TestMethod]
+        public void SearchFilter_LargeMruCompletesWithinInteractionBudget()
+        {
+            var items = Enumerable.Range(0, 2000)
+                .Select(index => CreateItem($"Project {index}", $@"C:\Code\Project{index}.sln"))
+                .ToList();
+            var viewModel = new StartScreenViewModel(items);
+            var stopwatch = Stopwatch.StartNew();
+
+            viewModel.SearchFilter = "Project 1999";
+
+            stopwatch.Stop();
+            Assert.HasCount(1, viewModel.VisibleMruItems);
+            Assert.IsLessThan(1000, stopwatch.ElapsedMilliseconds);
         }
 
         [TestMethod]
