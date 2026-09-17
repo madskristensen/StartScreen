@@ -32,6 +32,13 @@
         <local:RefreshingToOpacityConverter x:Key="RefreshingToOpacityConverter"/>
         <local:CountToVisibilityConverter x:Key="CountToVisibilityConverter"/>
         <local:ColumnCountToWidthConverter x:Key="ColumnCountToWidthConverter"/>
+        <local:ViewportHeightConverter x:Key="ViewportHeightConverter"/>
+        <CollectionViewSource x:Key="GroupedMruItemsView"
+                              Source="{Binding VisibleMruItems}">
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription PropertyName="DisplayGroup"/>
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
 
         <!-- Action Button Style -->
         <Style x:Key="ActionButtonStyle" TargetType="Button">
@@ -296,80 +303,78 @@
                 </Grid>
 
                 <!-- MRU Section -->
-                <StackPanel x:Name="MruPanel" Focusable="False">
-                        <!-- Pinned Items -->
-                        <TextBlock Text="Pinned"
-                                  FontSize="13"
-                                  FontWeight="SemiBold"
-                                  Opacity="0.7"
-                                  Margin="0 12 0 4"
-                                  Focusable="False"
-                                  Visibility="{Binding PinnedItems.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
-                        <ItemsControl x:Name="PinnedItemsControl" ItemsSource="{Binding PinnedItems}" Focusable="False"
-                                      AllowDrop="True"
-                                      DragOver="PinnedItems_DragOver"
-                                      Drop="PinnedItems_Drop"
-                                      DragLeave="PinnedItems_DragLeave"
-                                      PreviewMouseLeftButtonDown="PinnedItems_PreviewMouseLeftButtonDown"
-                                      PreviewMouseMove="PinnedItems_PreviewMouseMove">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <VirtualizingStackPanel/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <controls:MruItemControl 
-                                        PinToggleRequested="MruItemControl_PinToggleRequested"
-                                        RemoveRequested="MruItemControl_RemoveRequested"
-                                        FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"
-                                        FocusDevHubRequested="MruItemControl_FocusDevHubRequested"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                <Grid>
+                    <ListBox x:Name="MruPanel"
+                             ItemsSource="{Binding Source={StaticResource GroupedMruItemsView}}"
+                             Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource ViewportHeightConverter}, ConverterParameter=220}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Focusable="False"
+                             ScrollViewer.CanContentScroll="True"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             VirtualizingPanel.ScrollUnit="Pixel"
+                             AllowDrop="True"
+                             DragOver="PinnedItems_DragOver"
+                             Drop="PinnedItems_Drop"
+                             DragLeave="PinnedItems_DragLeave"
+                             PreviewMouseLeftButtonDown="PinnedItems_PreviewMouseLeftButtonDown"
+                             PreviewMouseMove="PinnedItems_PreviewMouseMove">
+                        <ListBox.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Opacity="0.7"
+                                                   Margin="0 12 0 4"
+                                                   Focusable="False"/>
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                                <GroupStyle.Panel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel/>
+                                    </ItemsPanelTemplate>
+                                </GroupStyle.Panel>
+                            </GroupStyle>
+                        </ListBox.GroupStyle>
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel/>
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <controls:MruItemControl
+                                    PinToggleRequested="MruItemControl_PinToggleRequested"
+                                    RemoveRequested="MruItemControl_RemoveRequested"
+                                    FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"
+                                    FocusDevHubRequested="MruItemControl_FocusDevHubRequested"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
 
-                        <!-- Recent Items (Time-Grouped) -->
-                        <ItemsControl ItemsSource="{Binding GroupedMruItems}" Focusable="False">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Focusable="False">
-                                        <!-- Time Group Header -->
-                                        <TextBlock Text="{Binding GroupName}"
-                                                  FontSize="13"
-                                                  FontWeight="SemiBold"
-                                                  Opacity="0.7"
-                                                  Margin="0 12 0 4"
-                                                  Focusable="False"/>
-
-                                        <!-- Items in this group -->
-                                        <ItemsControl ItemsSource="{Binding Items}" Focusable="False">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <VirtualizingStackPanel/>
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <controls:MruItemControl 
-                                                        PinToggleRequested="MruItemControl_PinToggleRequested"
-                                                        RemoveRequested="MruItemControl_RemoveRequested"
-                                                        FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"
-                                                        FocusDevHubRequested="MruItemControl_FocusDevHubRequested"/>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <!-- No search results message -->
-                        <TextBlock Text="No matching projects or solutions found."
-                                   Opacity="0.5"
-                                   FontSize="13"
-                                   Margin="0 16 0 0"
-                                   Visibility="{Binding HasNoSearchResults, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                </StackPanel>
+                    <TextBlock Text="No matching projects or solutions found."
+                               Opacity="0.5"
+                               FontSize="13"
+                               Margin="0 16 0 0"
+                               VerticalAlignment="Top"
+                               Visibility="{Binding HasNoSearchResults, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                </Grid>
             </DockPanel>
         </Border>
 

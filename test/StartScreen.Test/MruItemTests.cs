@@ -204,6 +204,19 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void DisplayGroup_UsesPinnedExtendedAndTimeGroups()
+        {
+            var item = new MruItem { LastAccessed = DateTime.Today };
+            Assert.AreEqual("Today", item.DisplayGroup);
+
+            item.IsFromExtendedList = true;
+            Assert.AreEqual("Earlier", item.DisplayGroup);
+
+            item.IsPinned = true;
+            Assert.AreEqual("Pinned", item.DisplayGroup);
+        }
+
+        [TestMethod]
         public void ToolTipText_WhenPathOnly_ReturnsPath()
         {
             var item = new MruItem { Path = @"C:\Projects\Test.sln" };
@@ -272,12 +285,13 @@ namespace StartScreen.Test
         public void PropertyChanged_WhenIsPinnedChanges_RaisesEvent()
         {
             var item = new MruItem();
-            string? changedProperty = null;
-            item.PropertyChanged += (s, e) => changedProperty = e.PropertyName;
+            var changedProperties = new List<string?>();
+            item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
 
             item.IsPinned = true;
 
-            Assert.AreEqual(nameof(MruItem.IsPinned), changedProperty);
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.IsPinned));
+            CollectionAssert.Contains(changedProperties, nameof(MruItem.DisplayGroup));
         }
 
         [TestMethod]
@@ -580,12 +594,13 @@ namespace StartScreen.Test
             public void PropertyChanged_WhenIsFromExtendedListChanges_RaisesEvent()
             {
                 var item = new MruItem();
-                string? changedProperty = null;
-                item.PropertyChanged += (s, e) => changedProperty = e.PropertyName;
+                var changedProperties = new List<string?>();
+                item.PropertyChanged += (s, e) => changedProperties.Add(e.PropertyName);
 
                 item.IsFromExtendedList = true;
 
-                Assert.AreEqual(nameof(MruItem.IsFromExtendedList), changedProperty);
+                CollectionAssert.Contains(changedProperties, nameof(MruItem.IsFromExtendedList));
+                CollectionAssert.Contains(changedProperties, nameof(MruItem.DisplayGroup));
             }
 
             [TestMethod]

@@ -117,6 +117,24 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void VisibleMruItems_OrdersPinnedBeforeTimeGroupsAndExtendedItems()
+        {
+            var older = CreateItem("Older", @"C:\Code\Older.sln");
+            older.LastAccessed = DateTime.Today.AddDays(-60);
+            var today = CreateItem("Today", @"C:\Code\Today.sln");
+            var pinned = CreateItem("Pinned", @"C:\Code\Pinned.sln");
+            pinned.IsPinned = true;
+            var extended = CreateItem("Extended", @"C:\Code\Extended.sln");
+            extended.IsFromExtendedList = true;
+
+            var viewModel = new StartScreenViewModel([older, extended, today, pinned]);
+
+            CollectionAssert.AreEqual(
+                new[] { pinned, today, older, extended },
+                viewModel.VisibleMruItems.ToArray());
+        }
+
+        [TestMethod]
         public void SelectedMruItem_UpdatesSelectionState()
         {
             var first = new MruItem();

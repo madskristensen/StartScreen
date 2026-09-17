@@ -60,6 +60,7 @@ namespace StartScreen.ToolWindows
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
         public ObservableCollection<MruTimeGroup> GroupedMruItems { get; private set; }
+        public ObservableCollection<MruItem> VisibleMruItems { get; private set; }
         public ObservableCollection<NewsPost> NewsPosts { get; private set; }
         public ObservableCollection<NewsPost> PinnedNewsPosts { get; private set; }
         public ObservableCollection<RecentTemplate> RecentTemplates { get; private set; }
@@ -405,6 +406,7 @@ namespace StartScreen.ToolWindows
             MruItems = new ObservableCollection<MruItem>();
             PinnedItems = new ObservableCollection<MruItem>();
             GroupedMruItems = new ObservableCollection<MruTimeGroup>();
+            VisibleMruItems = new ObservableCollection<MruItem>();
             NewsPosts = new ObservableCollection<NewsPost>();
             PinnedNewsPosts = new ObservableCollection<NewsPost>();
             RecentTemplates = new ObservableCollection<RecentTemplate>();
@@ -1324,6 +1326,7 @@ namespace StartScreen.ToolWindows
 
             GroupedMruItems = groups;
             OnPropertyChanged(nameof(GroupedMruItems));
+            UpdateVisibleMruItems(PinnedItems.Concat(groups.SelectMany(group => group.Items)));
         }
 
         /// <summary>
@@ -1361,6 +1364,13 @@ namespace StartScreen.ToolWindows
 
             GroupedMruItems = groups;
             OnPropertyChanged(nameof(GroupedMruItems));
+            UpdateVisibleMruItems(pinned.Concat(unpinnedVs).Concat(unpinnedExtended));
+        }
+
+        private void UpdateVisibleMruItems(IEnumerable<MruItem> items)
+        {
+            VisibleMruItems = new ObservableCollection<MruItem>(items);
+            OnPropertyChanged(nameof(VisibleMruItems));
         }
 
         /// <summary>

@@ -94,6 +94,8 @@ namespace StartScreen.Models
                 {
                     _lastAccessed = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(TimeGroup));
+                    OnPropertyChanged(nameof(DisplayGroup));
                 }
             }
         }
@@ -107,6 +109,7 @@ namespace StartScreen.Models
                 {
                     _isPinned = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(DisplayGroup));
                 }
             }
         }
@@ -378,6 +381,11 @@ namespace StartScreen.Models
             }
         }
 
+        public string DisplayGroup =>
+            IsPinned ? "Pinned" :
+            IsFromExtendedList ? "Earlier" :
+            TimeGroup;
+
         /// <summary>
         /// Returns a formatted date/time string for display (e.g. "4/8/2026 1:44 PM").
         /// </summary>
@@ -528,6 +536,7 @@ namespace StartScreen.Models
                 {
                     _isFromExtendedList = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(DisplayGroup));
                 }
             }
         }
