@@ -79,6 +79,7 @@ namespace StartScreen.ToolWindows
                 // If already initialized, just refresh in background
                 if (_isInitialized)
                 {
+                    _viewModel.EnsureDeferredContentInitialized();
                     await ViewModel?.RefreshInBackgroundAsync();
                     return;
                 }

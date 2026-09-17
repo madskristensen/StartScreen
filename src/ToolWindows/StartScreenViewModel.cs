@@ -60,6 +60,8 @@ namespace StartScreen.ToolWindows
         private CancellationTokenSource _newsRefreshCancellation;
         private CancellationTokenSource _youTubeRefreshCancellation;
         private CancellationTokenSource _mruMetadataCancellation;
+        private bool _isDeferredContentInitializing;
+        private bool _isDeferredContentInitialized;
 
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
@@ -492,6 +494,26 @@ namespace StartScreen.ToolWindows
             IsRefreshingYouTube = false;
         }
 
+        internal void EnsureDeferredContentInitialized()
+        {
+            IReadOnlyCollection<MruItem> mruItems;
+            CancellationToken cancellationToken;
+
+            lock (_cancellationSync)
+            {
+                if (_isDeferredContentInitialized || _isDeferredContentInitializing)
+                    return;
+
+                _isDeferredContentInitializing = true;
+                mruItems = _allMruItems.ToList();
+                cancellationToken = _lifetimeCancellation.Token;
+            }
+
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(
+                () => InitializeDeferredContentAsync(mruItems, cancellationToken))
+                .FileAndForget(nameof(StartScreenViewModel));
+        }
+
         internal StartScreenViewModel(IEnumerable<MruItem> mruItems)
             : this()
         {
@@ -614,6 +636,11 @@ namespace StartScreen.ToolWindows
                 CurrentTip = currentTip;
                 _currentExtensionIndex = extensionIndex;
                 CurrentSuggestedExtension = suggestedExtension;
+
+                lock (_cancellationSync)
+                {
+                    _isDeferredContentInitialized = true;
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -621,6 +648,13 @@ namespace StartScreen.ToolWindows
             catch (Exception ex)
             {
                 await ex.LogAsync();
+            }
+            finally
+            {
+                lock (_cancellationSync)
+                {
+                    _isDeferredContentInitializing = false;
+                }
             }
         }
 
@@ -667,9 +701,7 @@ namespace StartScreen.ToolWindows
             SetMruItems(allItems);
             StartupDiagnostics.Mark("MRU displayed");
 
-            StartScreenPackage.BackgroundTaskFactory.RunAsync(
-                () => InitializeDeferredContentAsync(allItems, cancellationToken))
-                .FileAndForget(nameof(StartScreenViewModel));
+            EnsureDeferredContentInitialized();
         }
 
         /// <summary>
