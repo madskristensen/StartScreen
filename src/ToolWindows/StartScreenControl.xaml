@@ -306,7 +306,9 @@
                 <Grid>
                     <ListBox x:Name="MruPanel"
                              ItemsSource="{Binding Source={StaticResource GroupedMruItemsView}}"
-                             Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource ViewportHeightConverter}, ConverterParameter=220}"
+                             MaxHeight="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource ViewportHeightConverter}, ConverterParameter=220}"
+                             VerticalAlignment="Top"
+                             VerticalContentAlignment="Top"
                              Background="Transparent"
                              BorderThickness="0"
                              Focusable="False"
