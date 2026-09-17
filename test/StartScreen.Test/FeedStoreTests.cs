@@ -27,6 +27,20 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void ReadFeeds_WhenFeedsPropertyMissing_ReturnsDefaults()
+        {
+            using var directory = new TemporaryDirectory();
+            var filePath = directory.GetPath("newsfeeds.json");
+            File.WriteAllText(filePath, "{}");
+
+            List<FeedInfo> result = FeedStore.ReadFeeds(filePath);
+
+            Assert.HasCount(6, result);
+            Assert.AreEqual("Visual Studio", result[0].Name);
+            Assert.IsTrue(result[0].Enabled);
+        }
+
+        [TestMethod]
         public async Task AddCustomFeedAsync_DoesNotAddDuplicateNameOrUrlAsync()
         {
             using var directory = new TemporaryDirectory();
@@ -39,6 +53,19 @@ namespace StartScreen.Test
             await FeedStore.AddCustomFeedAsync("Other", "https://example.com/FEED", filePath);
 
             Assert.HasCount(1, FeedStore.ReadFeeds(filePath));
+        }
+
+        [TestMethod]
+        public async Task AddCustomFeedAsync_WhenFileMissing_AppendsToDefaultsAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var filePath = directory.GetPath("newsfeeds.json");
+
+            await FeedStore.AddCustomFeedAsync("Custom", "https://example.com/custom", filePath);
+
+            List<FeedInfo> result = FeedStore.ReadFeeds(filePath);
+            Assert.HasCount(7, result);
+            Assert.IsTrue(result.Any(feed => feed.Name == "Custom" && feed.Enabled));
         }
 
         [TestMethod]

@@ -51,6 +51,18 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task GetCachedPostsAsync_WhenCacheIsMalformed_ReturnsNullAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var cacheFile = directory.GetPath("feed.json");
+            File.WriteAllText(cacheFile, "not json");
+
+            List<NewsPost> result = await FeedService.GetCachedPostsAsync(cacheFile);
+
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
         public void IsCacheStale_UsesFourHourBoundary()
         {
             using var directory = new TemporaryDirectory();
@@ -63,6 +75,24 @@ namespace StartScreen.Test
 
             File.SetLastWriteTimeUtc(cacheFile, now.AddHours(-4));
             Assert.IsTrue(FeedService.IsCacheStale(cacheFile, now));
+        }
+
+        [TestMethod]
+        public void IsCacheStale_WhenCacheMissing_ReturnsTrue()
+        {
+            using var directory = new TemporaryDirectory();
+
+            Assert.IsTrue(FeedService.IsCacheStale(
+                directory.GetPath("missing.json"),
+                new DateTime(2026, 9, 12, 12, 0, 0, DateTimeKind.Utc)));
+        }
+
+        [TestMethod]
+        public void CombineFeeds_WhenNoFeeds_ReturnsEmptyFeed()
+        {
+            SyndicationFeed result = FeedService.CombineFeeds([]);
+
+            Assert.IsEmpty(result.Items);
         }
 
         [TestMethod]
@@ -99,6 +129,14 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void ConvertToNewsPosts_WhenFeedIsNull_ReturnsEmptyList()
+        {
+            List<NewsPost> result = FeedService.ConvertToNewsPosts(null);
+
+            Assert.IsEmpty(result);
+        }
+
+        [TestMethod]
         public async Task DownloadFromUrlAsync_SendsConditionalRequestAndParsesFeedAsync()
         {
             const string rss =
@@ -120,6 +158,63 @@ namespace StartScreen.Test
             Assert.AreEqual("Post", result.Items.Single().Title.Text);
             Assert.IsNotNull(handler.LastRequest);
             Assert.AreEqual(lastModified, handler.LastRequest.Headers.IfModifiedSince?.UtcDateTime);
+        }
+
+        [TestMethod]
+        public async Task DownloadFromUrlAsync_UsesResponseLastModifiedAsync()
+        {
+            const string rss =
+                "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>Feed</title>" +
+                "<description>Description</description><link>https://example.com</link></channel></rss>";
+            var responseLastModified = new DateTimeOffset(2026, 9, 2, 3, 4, 5, TimeSpan.Zero);
+            var handler = new TestHttpMessageHandler((_, _) =>
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(rss, Encoding.UTF8, "application/rss+xml"),
+                };
+                response.Content.Headers.LastModified = responseLastModified;
+                return response;
+            });
+            using var client = new HttpClient(handler);
+
+            SyndicationFeed result = await FeedService.DownloadFromUrlAsync(
+                client,
+                "https://example.com/feed",
+                new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc));
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(responseLastModified, result.LastUpdatedTime);
+        }
+
+        [TestMethod]
+        public async Task DownloadFromUrlAsync_WithInvalidUrl_DoesNotSendRequestAsync()
+        {
+            var handler = new TestHttpMessageHandler(
+                (_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+            using var client = new HttpClient(handler);
+
+            SyndicationFeed result =
+                await FeedService.DownloadFromUrlAsync(client, "not a url", DateTime.UtcNow);
+
+            Assert.IsNull(result);
+            Assert.AreEqual(0, handler.RequestCount);
+        }
+
+        [TestMethod]
+        public async Task DownloadFromUrlAsync_WithMalformedFeed_ReturnsNullAsync()
+        {
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("not xml", Encoding.UTF8, "application/rss+xml"),
+            });
+            using var client = new HttpClient(handler);
+
+            SyndicationFeed result =
+                await FeedService.DownloadFromUrlAsync(client, "https://example.com/feed", DateTime.UtcNow);
+
+            Assert.IsNull(result);
+            Assert.AreEqual(1, handler.RequestCount);
         }
 
         [TestMethod]

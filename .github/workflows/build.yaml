@@ -109,12 +109,12 @@ jobs:
           throw "Branch coverage $branchCoverage is below the required ${{ env.MinimumBranchCoverage }}."
         }
 
-    - name: Upload test results and coverage
+    - name: Upload test results
       uses: actions/upload-artifact@v7
       if: ${{ !cancelled() }}
       with:
-        name: test-results-and-coverage
-        path: TestResults/**/*
+        name: test-results
+        path: TestResults/**/*.trx
         if-no-files-found: error
         retention-days: 14
 

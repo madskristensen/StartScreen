@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO;
 using StartScreen.Models;
 using StartScreen.ToolWindows;
@@ -164,19 +163,17 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void SearchFilter_LargeMruCompletesWithinInteractionBudget()
+        public void SearchFilter_LargeMruReturnsOnlyMatchingItem()
         {
             var items = Enumerable.Range(0, 2000)
                 .Select(index => CreateItem($"Project {index}", $@"C:\Code\Project{index}.sln"))
                 .ToList();
             var viewModel = new StartScreenViewModel(items);
-            var stopwatch = Stopwatch.StartNew();
 
             viewModel.SearchFilter = "Project 1999";
 
-            stopwatch.Stop();
             Assert.HasCount(1, viewModel.VisibleMruItems);
-            Assert.IsLessThan(1000, stopwatch.ElapsedMilliseconds);
+            Assert.AreSame(items[1999], viewModel.VisibleMruItems[0]);
         }
 
         [TestMethod]

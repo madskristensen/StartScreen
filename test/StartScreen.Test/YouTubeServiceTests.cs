@@ -46,6 +46,18 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task GetCachedVideosAsync_WhenCacheIsMalformed_ReturnsNullAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var cacheFile = directory.GetPath("youtube.json");
+            File.WriteAllText(cacheFile, "not json");
+
+            List<YouTubeVideo> result = await YouTubeService.GetCachedVideosAsync(cacheFile);
+
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
         public void IsCacheStale_UsesFourHourBoundary()
         {
             using var directory = new TemporaryDirectory();
@@ -94,6 +106,31 @@ namespace StartScreen.Test
         {
             var handler = new TestHttpMessageHandler(
                 (_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            using var client = new HttpClient(handler);
+            using var directory = new TemporaryDirectory();
+            var delays = new List<int>();
+
+            List<YouTubeVideo> result = await YouTubeService.DownloadVideosAsync(
+                client,
+                attempt =>
+                {
+                    delays.Add(attempt);
+                    return Task.CompletedTask;
+                },
+                directory.GetPath("youtube.json"));
+
+            Assert.IsNull(result);
+            Assert.AreEqual(3, handler.RequestCount);
+            CollectionAssert.AreEqual(new[] { 1, 2 }, delays);
+        }
+
+        [TestMethod]
+        public async Task DownloadVideosAsync_WithMalformedFeed_RetriesThreeTimesAsync()
+        {
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("not xml", Encoding.UTF8, "application/atom+xml"),
+            });
             using var client = new HttpClient(handler);
             using var directory = new TemporaryDirectory();
             var delays = new List<int>();
