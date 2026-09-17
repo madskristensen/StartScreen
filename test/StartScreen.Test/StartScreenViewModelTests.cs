@@ -103,6 +103,20 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void SearchFilter_FiltersMruImmediately()
+        {
+            var matching = CreateItem("Matching", @"C:\Code\Matching.sln");
+            var other = CreateItem("Other", @"C:\Code\Other.sln");
+            var viewModel = new StartScreenViewModel([matching, other]);
+
+            viewModel.SearchFilter = "Matching";
+
+            Assert.HasCount(1, viewModel.GroupedMruItems);
+            Assert.HasCount(1, viewModel.GroupedMruItems[0].Items);
+            Assert.AreSame(matching, viewModel.GroupedMruItems[0].Items[0]);
+        }
+
+        [TestMethod]
         public void SelectedMruItem_UpdatesSelectionState()
         {
             var first = new MruItem();

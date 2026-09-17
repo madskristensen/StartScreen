@@ -45,7 +45,6 @@ namespace StartScreen.ToolWindows
         private int _newsColumnCount = 2;
         private int _youTubeColumnCount = 1;
         private Timer _autoRefreshTimer;
-        private Timer _filterDebounceTimer;
         private MruItem _selectedMruItem;
         private string _lastNewsRefreshText;
         private string _lastYouTubeRefreshText;
@@ -291,7 +290,8 @@ namespace StartScreen.ToolWindows
                 {
                     _searchFilter = value;
                     OnPropertyChanged();
-                    DebounceFilterMru(value);
+                    FilterMru(value);
+                    OnPropertyChanged(nameof(HasNoSearchResults));
                 }
             }
         }
@@ -495,7 +495,7 @@ namespace StartScreen.ToolWindows
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             _allMruItems = new ObservableCollection<MruItem>(allItems);
-            UpdateMruCollections();
+            RefreshMruCollections();
 
             // Populate git status and file existence in background after UI is updated
             MruService.PopulateGitStatusAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
@@ -553,7 +553,7 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
                 _allMruItems = new ObservableCollection<MruItem>(allItems);
-                UpdateMruCollections();
+                RefreshMruCollections();
 
                 // Populate git status and file existence in background after UI is updated
                 MruService.PopulateGitStatusAsync(allItems).FileAndForget(nameof(StartScreenViewModel));
@@ -1121,23 +1121,6 @@ namespace StartScreen.ToolWindows
             }
 
             OnPropertyChanged(nameof(HasNoSearchResults));
-        }
-
-        /// <summary>
-        /// Debounces the search filter to avoid rebuilding collections on every keystroke.
-        /// </summary>
-        private void DebounceFilterMru(string query)
-        {
-            _filterDebounceTimer?.Dispose();
-            _filterDebounceTimer = new Timer(_ =>
-            {
-                StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
-                {
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    FilterMru(query);
-                    OnPropertyChanged(nameof(HasNoSearchResults));
-                }).FileAndForget(nameof(StartScreenViewModel));
-            }, null, 200, Timeout.Infinite);
         }
 
         /// <summary>
