@@ -41,6 +41,8 @@ namespace StartScreen.ToolWindows
         private SuggestedExtension _currentSuggestedExtension;
         private int _currentExtensionIndex;
         private ObservableCollection<MruItem> _allMruItems;
+        private readonly BulkObservableCollection<MruItem> _visibleMruItems =
+            new BulkObservableCollection<MruItem>();
         private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
         private readonly List<YouTubeVideo> _allYouTubeVideos = new List<YouTubeVideo>();
         private int _newsColumnCount = 2;
@@ -62,7 +64,7 @@ namespace StartScreen.ToolWindows
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
         public ObservableCollection<MruTimeGroup> GroupedMruItems { get; private set; }
-        public ObservableCollection<MruItem> VisibleMruItems { get; private set; }
+        public ObservableCollection<MruItem> VisibleMruItems => _visibleMruItems;
         public ObservableCollection<NewsPost> NewsPosts { get; private set; }
         public ObservableCollection<NewsPost> PinnedNewsPosts { get; private set; }
         public ObservableCollection<RecentTemplate> RecentTemplates { get; private set; }
@@ -445,7 +447,6 @@ namespace StartScreen.ToolWindows
             MruItems = new ObservableCollection<MruItem>();
             PinnedItems = new ObservableCollection<MruItem>();
             GroupedMruItems = new ObservableCollection<MruTimeGroup>();
-            VisibleMruItems = new ObservableCollection<MruItem>();
             NewsPosts = new ObservableCollection<NewsPost>();
             PinnedNewsPosts = new ObservableCollection<NewsPost>();
             RecentTemplates = new ObservableCollection<RecentTemplate>();
@@ -1440,8 +1441,7 @@ namespace StartScreen.ToolWindows
 
         private void UpdateVisibleMruItems(IEnumerable<MruItem> items)
         {
-            VisibleMruItems = new ObservableCollection<MruItem>(items);
-            OnPropertyChanged(nameof(VisibleMruItems));
+            _visibleMruItems.ReplaceAll(items);
         }
 
         /// <summary>
@@ -1474,6 +1474,24 @@ namespace StartScreen.ToolWindows
         protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        private sealed class BulkObservableCollection<T> : ObservableCollection<T>
+        {
+            public void ReplaceAll(IEnumerable<T> items)
+            {
+                Items.Clear();
+
+                foreach (T item in items)
+                {
+                    Items.Add(item);
+                }
+
+                OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+                OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+                OnCollectionChanged(new System.Collections.Specialized.NotifyCollectionChangedEventArgs(
+                    System.Collections.Specialized.NotifyCollectionChangedAction.Reset));
+            }
         }
     }
 }

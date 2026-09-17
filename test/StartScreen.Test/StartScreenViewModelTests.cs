@@ -132,6 +132,21 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void SearchFilter_PreservesBoundCollectionInstance()
+        {
+            var viewModel = new StartScreenViewModel(
+                [
+                    CreateItem("Alpha", @"C:\Code\Alpha.sln"),
+                    CreateItem("Beta", @"C:\Code\Beta.sln"),
+                ]);
+            var boundCollection = viewModel.VisibleMruItems;
+
+            viewModel.SearchFilter = "Alpha";
+
+            Assert.AreSame(boundCollection, viewModel.VisibleMruItems);
+        }
+
+        [TestMethod]
         public void SetMruItems_PreservesActiveSearchFilter()
         {
             var original = CreateItem("Original match", @"C:\Code\Original.sln");
