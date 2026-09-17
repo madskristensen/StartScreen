@@ -1074,10 +1074,20 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_LastRefreshChanged(object sender, string text)
         {
-            if (LastRefreshText != null)
+            if (ViewModel != null)
             {
-                LastRefreshText.Text = text ?? string.Empty;
+                ViewModel.LastDevHubRefreshText = text ?? string.Empty;
             }
+        }
+
+        private void RefreshNewsLink_Click(object sender, RoutedEventArgs e)
+        {
+            ViewModel?.ForceRefreshNews();
+        }
+
+        private void RefreshYouTubeLink_Click(object sender, RoutedEventArgs e)
+        {
+            ViewModel?.ForceRefreshYouTube();
         }
 
         private void UnifiedRefreshButton_Click(object sender, RoutedEventArgs e)

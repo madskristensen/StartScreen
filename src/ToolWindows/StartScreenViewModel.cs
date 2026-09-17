@@ -48,6 +48,7 @@ namespace StartScreen.ToolWindows
         private MruItem _selectedMruItem;
         private string _lastNewsRefreshText;
         private string _lastYouTubeRefreshText;
+        private string _lastDevHubRefreshText;
         private bool _isRefreshingInBackground;
         private bool _hasNewBlogs;
         private bool _hasNewVideos;
@@ -102,6 +103,7 @@ namespace StartScreen.ToolWindows
                     _isRefreshingNews = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
+                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
                 }
             }
         }
@@ -129,6 +131,7 @@ namespace StartScreen.ToolWindows
                     _isRefreshingYouTube = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
+                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
                 }
             }
         }
@@ -143,6 +146,7 @@ namespace StartScreen.ToolWindows
                     _isRefreshingDevHub = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
+                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
                 }
             }
         }
@@ -171,6 +175,7 @@ namespace StartScreen.ToolWindows
                 {
                     _lastNewsRefreshText = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
                 }
             }
         }
@@ -184,7 +189,40 @@ namespace StartScreen.ToolWindows
                 {
                     _lastYouTubeRefreshText = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
                 }
+            }
+        }
+
+        public string LastDevHubRefreshText
+        {
+            get => _lastDevHubRefreshText;
+            set
+            {
+                if (_lastDevHubRefreshText != value)
+                {
+                    _lastDevHubRefreshText = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
+                }
+            }
+        }
+
+        public string UnifiedRefreshStatus
+        {
+            get
+            {
+                var refreshing = new List<string>();
+                if (IsRefreshingDevHub)
+                    refreshing.Add("Dev Hub");
+                if (IsRefreshingNews)
+                    refreshing.Add("news");
+                if (IsRefreshingYouTube)
+                    refreshing.Add("videos");
+
+                return refreshing.Count > 0
+                    ? $"Refreshing {string.Join(", ", refreshing)}..."
+                    : LastDevHubRefreshText ?? string.Empty;
             }
         }
 
@@ -760,7 +798,9 @@ namespace StartScreen.ToolWindows
                     else
                     {
                         IsNewsUnavailable = _allNewsPosts.Count == 0;
-                        LastNewsRefreshText = "Feed unavailable";
+                        LastNewsRefreshText = _allNewsPosts.Count == 0
+                            ? "Feed unavailable"
+                            : "Showing cached content - refresh failed";
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -770,7 +810,9 @@ namespace StartScreen.ToolWindows
                 {
                     ex.Log();
                     IsNewsUnavailable = _allNewsPosts.Count == 0;
-                    LastNewsRefreshText = "Feed unavailable";
+                    LastNewsRefreshText = _allNewsPosts.Count == 0
+                        ? "Feed unavailable"
+                        : "Showing cached content - refresh failed";
                 }
                 finally
                 {
@@ -872,7 +914,9 @@ namespace StartScreen.ToolWindows
                     else
                     {
                         IsYouTubeUnavailable = _allYouTubeVideos.Count == 0;
-                        LastYouTubeRefreshText = "Feed unavailable";
+                        LastYouTubeRefreshText = _allYouTubeVideos.Count == 0
+                            ? "Feed unavailable"
+                            : "Showing cached content - refresh failed";
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -882,7 +926,9 @@ namespace StartScreen.ToolWindows
                 {
                     ex.Log();
                     IsYouTubeUnavailable = _allYouTubeVideos.Count == 0;
-                    LastYouTubeRefreshText = "Feed unavailable";
+                    LastYouTubeRefreshText = _allYouTubeVideos.Count == 0
+                        ? "Feed unavailable"
+                        : "Showing cached content - refresh failed";
                 }
                 finally
                 {

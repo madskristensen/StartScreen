@@ -626,6 +626,15 @@
                                         </StackPanel>
                                     </TabItem.Header>
                                     <StackPanel Margin="0 24 0 0">
+                                        <TextBlock FontSize="11"
+                                                   Opacity="0.5"
+                                                   Margin="0 0 0 8">
+                                            <Run Text="{Binding LastNewsRefreshText}"/>
+                                            <Hyperlink Click="RefreshNewsLink_Click"
+                                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                                                Refresh
+                                            </Hyperlink>
+                                        </TextBlock>
                                         <TextBlock Text="News feeds are currently unavailable. Click refresh to try again."
                                                    TextWrapping="Wrap"
                                                    Opacity="0.6"
@@ -690,6 +699,15 @@
                                         </StackPanel>
                                     </TabItem.Header>
                                     <StackPanel Margin="0 24 0 0">
+                                        <TextBlock FontSize="11"
+                                                   Opacity="0.5"
+                                                   Margin="0 0 0 8">
+                                            <Run Text="{Binding LastYouTubeRefreshText}"/>
+                                            <Hyperlink Click="RefreshYouTubeLink_Click"
+                                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                                                Refresh
+                                            </Hyperlink>
+                                        </TextBlock>
                                         <TextBlock Text="YouTube feed is currently unavailable. Click refresh to try again."
                                                    TextWrapping="Wrap"
                                                    Opacity="0.6"
@@ -754,6 +772,7 @@
                     Margin="0 8 24 0"
                     Panel.ZIndex="10">
             <TextBlock x:Name="LastRefreshText"
+                       Text="{Binding UnifiedRefreshStatus}"
                        FontSize="10"
                        Opacity="0.3"
                        VerticalAlignment="Center"

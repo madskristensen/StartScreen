@@ -168,6 +168,22 @@ namespace StartScreen.Test
             Assert.IsTrue(viewModel.IsRefreshingAny);
         }
 
+        [TestMethod]
+        public void UnifiedRefreshStatus_ListsRefreshingSectionsAndFallsBackToDevHubTime()
+        {
+            var viewModel = new StartScreenViewModel
+            {
+                LastDevHubRefreshText = "Updated 5 minutes ago",
+            };
+
+            Assert.AreEqual("Updated 5 minutes ago", viewModel.UnifiedRefreshStatus);
+
+            viewModel.IsRefreshingNews = true;
+            viewModel.IsRefreshingYouTube = true;
+
+            Assert.AreEqual("Refreshing news, videos...", viewModel.UnifiedRefreshStatus);
+        }
+
         private static MruItem CreateItem(string name, string path)
         {
             return new MruItem
