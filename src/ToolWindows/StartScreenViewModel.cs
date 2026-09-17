@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
+using StartScreen.Helpers;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -658,6 +659,7 @@ namespace StartScreen.ToolWindows
             cancellationToken.ThrowIfCancellationRequested();
             _allMruItems = new ObservableCollection<MruItem>(allItems);
             RefreshMruCollections();
+            StartupDiagnostics.Mark("MRU displayed");
 
             StartScreenPackage.BackgroundTaskFactory.RunAsync(
                 () => InitializeDeferredContentAsync(allItems, cancellationToken))
@@ -743,6 +745,7 @@ namespace StartScreen.ToolWindows
                     await UpdateNewsPostsOnUIThreadAsync(posts, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                     LastNewsRefreshText = "Updated from cache";
+                    StartupDiagnostics.Mark("news cache displayed");
                 }
 
                 // Trigger background sync if no cache, empty cache, or stale cache
@@ -794,6 +797,7 @@ namespace StartScreen.ToolWindows
                         cancellationToken.ThrowIfCancellationRequested();
                         IsNewsUnavailable = false;
                         LastNewsRefreshText = "Updated just now";
+                        StartupDiagnostics.Mark("news remote refresh completed");
                     }
                     else
                     {
@@ -860,6 +864,7 @@ namespace StartScreen.ToolWindows
                     await UpdateYouTubeOnUIThreadAsync(videos, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                     LastYouTubeRefreshText = "Updated from cache";
+                    StartupDiagnostics.Mark("video cache displayed");
                 }
 
                 if (!hasCached || YouTubeService.IsCacheStale())
@@ -910,6 +915,7 @@ namespace StartScreen.ToolWindows
                         cancellationToken.ThrowIfCancellationRequested();
                         IsYouTubeUnavailable = false;
                         LastYouTubeRefreshText = "Updated just now";
+                        StartupDiagnostics.Mark("video remote refresh completed");
                     }
                     else
                     {

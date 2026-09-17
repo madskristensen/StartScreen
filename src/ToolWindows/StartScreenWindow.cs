@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Threading;
+using StartScreen.Helpers;
 
 namespace StartScreen.ToolWindows
 {
@@ -32,6 +33,8 @@ namespace StartScreen.ToolWindows
 
             try
             {
+                StartupDiagnostics.Start();
+
                 // Start loading data immediately (head start while window renders)
                 _viewModel = new StartScreenViewModel();
                 CurrentViewModel = _viewModel;

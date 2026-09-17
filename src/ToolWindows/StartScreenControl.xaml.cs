@@ -15,6 +15,7 @@ using StartScreen.Models;
 using StartScreen.Models.DevHub;
 using StartScreen.Services;
 using StartScreen.Services.DevHub;
+using StartScreen.Helpers;
 using StartScreen.ToolWindows.Controls;
 
 namespace StartScreen.ToolWindows
@@ -48,6 +49,7 @@ namespace StartScreen.ToolWindows
             // waiting until the Loaded handler awaits _loadTask before binding.
             DataContext = _viewModel;
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+            StartupDiagnostics.Mark("control created and search ready");
         }
 
         private void UserControl_Loaded(object sender, RoutedEventArgs e)
@@ -505,6 +507,7 @@ namespace StartScreen.ToolWindows
                 {
                     // Show cached data immediately (same pattern as News/MRU)
                     UpdateDevHubPanel();
+                    StartupDiagnostics.Mark("Dev Hub cache displayed");
 
                     // Refresh in background if stale - don't block the UI
                     if (_devHubService.IsCacheStale())
@@ -553,6 +556,7 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 cancellationToken.ThrowIfCancellationRequested();
                 UpdateDevHubPanel();
+                StartupDiagnostics.Mark("Dev Hub remote refresh completed");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
