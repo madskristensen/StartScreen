@@ -532,29 +532,49 @@ namespace StartScreen.ToolWindows
             }).FileAndForget(nameof(StartScreenViewModel));
         }
 
-        /// <summary>
-        /// Initializes the current tip and suggested extension in parallel.
-        /// Must be called from a background thread because the underlying providers do
-        /// synchronous resource and registry I/O on first use.
-        /// </summary>
-        private void InitializeTipAndExtension()
+        private async Task InitializeDeferredContentAsync(
+            IReadOnlyCollection<MruItem> mruItems,
+            CancellationToken cancellationToken)
         {
             try
             {
-                _currentTipIndex = DateTime.Now.DayOfYear % TipProvider.TipCount;
-                CurrentTip = TipProvider.GetTipOfTheDay();
+                await System.Windows.Threading.Dispatcher.Yield(
+                    System.Windows.Threading.DispatcherPriority.ContextIdle);
+                cancellationToken.ThrowIfCancellationRequested();
 
-                _currentExtensionIndex = DateTime.Now.DayOfYear % SuggestedExtensionProvider.SuggestionCount;
+                StartMruMetadataRefresh(mruItems);
+
+                await TaskScheduler.Default;
+
+                var tipIndex = DateTime.Now.DayOfYear % TipProvider.TipCount;
+                var currentTip = TipProvider.GetTipOfTheDay();
+
+                var extensionIndex = DateTime.Now.DayOfYear % SuggestedExtensionProvider.SuggestionCount;
                 var suggestedExtension = SuggestedExtensionProvider.GetSuggestionOfTheDay();
                 if (suggestedExtension != null)
                 {
                     suggestedExtension.IsInstalled = InstalledExtensionChecker.IsInstalled(suggestedExtension.Id);
-                    CurrentSuggestedExtension = suggestedExtension;
                 }
+
+                FeedStore.StartWatching();
+                _autoRefreshTimer ??= new Timer(
+                    OnAutoRefreshTimerTick,
+                    null,
+                    _autoRefreshInterval,
+                    _autoRefreshInterval);
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                _currentTipIndex = tipIndex;
+                CurrentTip = currentTip;
+                _currentExtensionIndex = extensionIndex;
+                CurrentSuggestedExtension = suggestedExtension;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
             }
         }
 
@@ -601,19 +621,9 @@ namespace StartScreen.ToolWindows
             _allMruItems = new ObservableCollection<MruItem>(allItems);
             RefreshMruCollections();
 
-            // Populate git status and file existence in background after UI is updated
-            StartMruMetadataRefresh(allItems);
-
-            // 2) Everything else runs after MRU is visible. Stay off the UI thread.
-            await TaskScheduler.Default;
-
-            // First-touch static initializers (embedded resource reads + JsonSerializer)
-            // and InstalledExtensionChecker's registry I/O happen here on a thread-pool thread.
-            InitializeTipAndExtension();
-
-            // Defer until after MRU paints to avoid blocking the first frame.
-            FeedStore.StartWatching();
-            _autoRefreshTimer = new Timer(OnAutoRefreshTimerTick, null, _autoRefreshInterval, _autoRefreshInterval);
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(
+                () => InitializeDeferredContentAsync(allItems, cancellationToken))
+                .FileAndForget(nameof(StartScreenViewModel));
         }
 
         /// <summary>
@@ -664,8 +674,13 @@ namespace StartScreen.ToolWindows
                 _allMruItems = new ObservableCollection<MruItem>(allItems);
                 RefreshMruCollections();
 
-                // Populate git status and file existence in background after UI is updated
-                StartMruMetadataRefresh(allItems);
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
+                {
+                    await System.Windows.Threading.Dispatcher.Yield(
+                        System.Windows.Threading.DispatcherPriority.ContextIdle);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    StartMruMetadataRefresh(allItems);
+                }).FileAndForget(nameof(StartScreenViewModel));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

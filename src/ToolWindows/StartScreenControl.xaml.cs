@@ -93,8 +93,10 @@ namespace StartScreen.ToolWindows
                 // so MRU items render the moment LoadMruAsync completes.
                 await _loadTask;
 
-                // Yield so MRU paints before we start any other work.
-                await Task.Yield();
+                // Let rendering and pending user input run before secondary sections start.
+                await System.Windows.Threading.Dispatcher.Yield(
+                    System.Windows.Threading.DispatcherPriority.ContextIdle);
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // DevHub cache is already loading (started in the constructor); now
                 // hook it up to the UI. News/splitter run in parallel.
