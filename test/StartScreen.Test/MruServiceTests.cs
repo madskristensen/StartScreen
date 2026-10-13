@@ -7,6 +7,49 @@ namespace StartScreen.Test
     public class MruServiceTests
     {
         [TestMethod]
+        public async Task GetExtendedOnlyItems_CancellationPreservesHistoryAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            var options = new Options { ExtendedMruItems = "history", PinnedItems = "pinned" };
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                MruService.GetExtendedOnlyItemsAsync([], options, cancellation.Token));
+
+            Assert.AreEqual("history", options.ExtendedMruItems);
+            Assert.AreEqual("pinned", options.PinnedItems);
+        }
+
+        [TestMethod]
+        public void TryReserveBackgroundFetch_ThrottlesReopensAndExpiresAtBoundary()
+        {
+            var repoPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            var now = new DateTime(2026, 10, 13, 12, 0, 0, DateTimeKind.Utc);
+
+            Assert.IsTrue(MruService.TryReserveBackgroundFetch(repoPath, now));
+            Assert.IsFalse(MruService.TryReserveBackgroundFetch(repoPath.ToUpperInvariant(), now.AddMinutes(14)));
+            Assert.IsTrue(MruService.TryReserveBackgroundFetch(repoPath, now.AddMinutes(15)));
+            Assert.IsFalse(MruService.TryReserveBackgroundFetch(repoPath, now.AddMinutes(16)));
+        }
+
+        [TestMethod]
+        public void TryReserveBackgroundFetch_ConcurrentRefreshesReserveOnlyOnce()
+        {
+            var repoPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            var now = DateTime.UtcNow;
+            var reservations = 0;
+
+            Parallel.For(0, 20, _ =>
+            {
+                if (MruService.TryReserveBackgroundFetch(repoPath, now))
+                    Interlocked.Increment(ref reservations);
+            });
+
+            Assert.AreEqual(1, reservations);
+            Assert.IsTrue(MruService.TryReserveBackgroundFetch(repoPath + ".other", now));
+        }
+
+        [TestMethod]
         public void FilterToCurrentRecentProjects_WhenSettingsUnavailable_PreservesLegacyItems()
         {
             var item = new MruItem { Path = @"C:\Projects\App\App.sln", Type = MruItemType.Solution };

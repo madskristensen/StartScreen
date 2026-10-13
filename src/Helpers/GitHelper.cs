@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using LibGit2Sharp;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 
 namespace StartScreen.Helpers
@@ -222,19 +224,23 @@ namespace StartScreen.Helpers
         /// This is dramatically faster than "fetch --all" because it skips every other
         /// remote, every other branch, and tag negotiation - we only need the tip of
         /// the current branch's upstream to compute ahead/behind.
-        /// Best-effort: returns silently on any failure (offline, timeout, no remote, etc.).
         /// Credential prompts are suppressed so the background fetch never pops up
-        /// login windows; if stored credentials don't work, the fetch fails silently.
+        /// login windows. Cancellation and timeout terminate the fetch.
         /// </summary>
-        internal static void FetchUpstream(string repoPath, string remoteName, string upstreamBranchRef)
+        internal static async Task<GitCommandResult> FetchUpstreamAsync(
+            string repoPath, string remoteName, string upstreamBranchRef,
+            CancellationToken cancellationToken = default)
         {
+            await TaskScheduler.Default;
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
-                return;
+                return new GitCommandResult(false, "The Git repository could not be found.");
 
             // No upstream configured means ahead/behind is undefined - skip the fetch
             // entirely instead of wastefully running fetch --all for nothing.
             if (string.IsNullOrEmpty(remoteName) || string.IsNullOrEmpty(upstreamBranchRef))
-                return;
+                return new GitCommandResult(false, "The Git branch does not have an upstream.");
 
             try
             {
@@ -258,28 +264,73 @@ namespace StartScreen.Helpers
                 // Git Credential Manager so a background fetch can't spam login dialogs.
                 SuppressCredentialPrompts(psi);
 
-                using (var process = Process.Start(psi))
-                {
-                    if (process == null)
-                        return;
-
-                    // 5-second timeout (best-effort, silent failure on slow networks)
-                    if (!process.WaitForExit(5000))
-                    {
-                        try
-                        {
-                            process.Kill();
-                        }
-                        catch
-                        {
-                            // Best-effort kill
-                        }
-                    }
-                }
+                return await RunFetchProcessAsync(psi, cancellationToken);
             }
-            catch
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // Best-effort: silent failure for offline, no git, no remote, etc.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                return new GitCommandResult(false, ex.Message);
+            }
+        }
+
+        internal static async Task<GitCommandResult> RunFetchProcessAsync(
+            ProcessStartInfo startInfo, CancellationToken cancellationToken = default)
+        {
+            await TaskScheduler.Default.SwitchTo(alwaysYield: true);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using (var process = new Process { StartInfo = startInfo })
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                if (!process.Start())
+                    return new GitCommandResult(false, "Git could not be started.");
+
+                Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+                Task<string> errorTask = process.StandardError.ReadToEndAsync();
+                Task completionTask = Task.WhenAll(process.WaitForExitAsync(timeout.Token), outputTask, errorTask);
+                try
+                {
+                    Task completed = await Task.WhenAny(completionTask, Task.Delay(5000, timeout.Token));
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (completed != completionTask)
+                        return new GitCommandResult(false, "The background Git fetch timed out.");
+
+                    await completionTask;
+                    var output = await outputTask;
+                    var error = await errorTask;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (process.ExitCode == 0)
+                        return GitCommandResult.Success;
+
+                    var message = string.IsNullOrWhiteSpace(error) ? output : error;
+                    return new GitCommandResult(false, string.IsNullOrWhiteSpace(message)
+                        ? "The background Git fetch failed." : message.Trim());
+                }
+                finally
+                {
+                    timeout.Cancel();
+                    try
+                    {
+                        if (!process.HasExited)
+                            process.Kill();
+                    }
+                    catch (Exception ex)
+                    {
+                        await ex.LogAsync();
+                    }
+
+                    // A child process may still hold the redirected pipes after Git exits.
+                    // Observe cleanup without extending the fetch's cancellation/timeout.
+                    completionTask.ContinueWith(
+                        task => task.Exception.LogAsync(),
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted,
+                        TaskScheduler.Default).Unwrap().Forget();
+                }
             }
         }
 

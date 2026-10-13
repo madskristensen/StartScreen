@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 
 namespace StartScreen.Services
@@ -40,13 +41,16 @@ namespace StartScreen.Services
         /// Gets the cached news posts asynchronously (no network).
         /// Returns null if no cache exists.
         /// </summary>
-        public static async Task<List<NewsPost>> GetCachedPostsAsync()
+        public static Task<List<NewsPost>> GetCachedPostsAsync(CancellationToken cancellationToken = default)
         {
-            return await GetCachedPostsAsync(_combinedFeedFile);
+            return GetCachedPostsAsync(_combinedFeedFile, cancellationToken);
         }
 
-        internal static async Task<List<NewsPost>> GetCachedPostsAsync(string cacheFile)
+        internal static async Task<List<NewsPost>> GetCachedPostsAsync(string cacheFile, CancellationToken cancellationToken = default)
         {
+            await TaskScheduler.Default.SwitchTo(alwaysYield: true);
+            cancellationToken.ThrowIfCancellationRequested();
+
             try
             {
                 if (!File.Exists(cacheFile))
@@ -58,7 +62,7 @@ namespace StartScreen.Services
                     var offset = 0;
                     while (offset < fileBytes.Length)
                     {
-                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset);
+                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset, cancellationToken);
                         if (bytesRead == 0)
                             break;
 
@@ -66,12 +70,17 @@ namespace StartScreen.Services
                     }
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
                 List<FeedCacheEntry> entries = JsonSerializer.Deserialize<List<FeedCacheEntry>>(fileBytes);
 
                 return entries
                     ?.Select(NewsPost.FromCacheEntry)
                     .Where(post => post != null)
                     .ToList();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

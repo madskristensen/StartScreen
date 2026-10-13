@@ -258,8 +258,12 @@ namespace StartScreen.Services.DevHub.Providers
         {
             try
             {
-                var items = await MruService.GetMruItemsAsync();
+                var items = await MruService.GetMruItemsAsync(cancellationToken: cancellationToken);
                 return GetLegacyProfileHosts(items.Select(i => i.RemoteUrl).Where(u => !string.IsNullOrWhiteSpace(u)));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

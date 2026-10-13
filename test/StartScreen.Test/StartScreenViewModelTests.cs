@@ -8,6 +8,24 @@ namespace StartScreen.Test
     public class StartScreenViewModelTests
     {
         [TestMethod]
+        public void CancelBackgroundWork_SuppressesRefreshRequestsWhileHidden()
+        {
+            var item = CreateItem("Existing", @"C:\Code\Existing.sln");
+            var viewModel = new StartScreenViewModel([item]);
+            var changedProperties = new List<string?>();
+            viewModel.PropertyChanged += (sender, args) => changedProperties.Add(args.PropertyName);
+            viewModel.CancelBackgroundWork();
+
+            viewModel.ForceRefreshNews();
+            viewModel.ForceRefreshYouTube();
+
+            Assert.IsFalse(viewModel.IsRefreshingNews);
+            Assert.IsFalse(viewModel.IsRefreshingYouTube);
+            Assert.IsEmpty(changedProperties);
+            CollectionAssert.AreEqual(new[] { item }, viewModel.VisibleMruItems.ToArray());
+        }
+
+        [TestMethod]
         public void ShouldClearMruItem_All_ReturnsTrueForPinnedItem()
         {
             var item = new MruItem { IsPinned = true };

@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 using System.Xml;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 
 namespace StartScreen.Services
@@ -42,13 +43,16 @@ namespace StartScreen.Services
         /// Gets the cached YouTube videos asynchronously (no network).
         /// Returns null if no cache exists.
         /// </summary>
-        public static async Task<List<YouTubeVideo>> GetCachedVideosAsync()
+        public static Task<List<YouTubeVideo>> GetCachedVideosAsync(CancellationToken cancellationToken = default)
         {
-            return await GetCachedVideosAsync(_cacheFile);
+            return GetCachedVideosAsync(_cacheFile, cancellationToken);
         }
 
-        internal static async Task<List<YouTubeVideo>> GetCachedVideosAsync(string cacheFile)
+        internal static async Task<List<YouTubeVideo>> GetCachedVideosAsync(string cacheFile, CancellationToken cancellationToken = default)
         {
+            await TaskScheduler.Default.SwitchTo(alwaysYield: true);
+            cancellationToken.ThrowIfCancellationRequested();
+
             try
             {
                 if (!File.Exists(cacheFile))
@@ -60,7 +64,7 @@ namespace StartScreen.Services
                     var offset = 0;
                     while (offset < fileBytes.Length)
                     {
-                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset);
+                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset, cancellationToken);
                         if (bytesRead == 0)
                             break;
 
@@ -68,12 +72,17 @@ namespace StartScreen.Services
                     }
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
                 var entries = JsonSerializer.Deserialize<List<YouTubeCacheEntry>>(fileBytes);
 
                 return entries
                     ?.Select(YouTubeVideo.FromCacheEntry)
                     .Where(v => v != null)
                     .ToList();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -193,14 +202,31 @@ namespace StartScreen.Services
             List<YouTubeVideo> videos,
             CancellationToken cancellationToken = default)
         {
+            await TaskScheduler.Default.SwitchTo(alwaysYield: true);
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (videos == null || videos.Count == 0)
                 return;
 
             PackageUtilities.EnsureOutputPath(_thumbsFolder);
 
-            await Task.WhenAll(videos
-                .Where(v => !string.IsNullOrEmpty(v.ThumbnailUrl))
-                .Select(v => LoadThumbnailForVideoAsync(v, cancellationToken)));
+            using (var semaphore = new SemaphoreSlim(2))
+            {
+                await Task.WhenAll(videos
+                    .Where(v => !string.IsNullOrEmpty(v.ThumbnailUrl))
+                    .Select(async video =>
+                    {
+                        await semaphore.WaitAsync(cancellationToken);
+                        try
+                        {
+                            await LoadThumbnailForVideoAsync(video, cancellationToken);
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    }));
+            }
         }
 
         private static async Task LoadThumbnailForVideoAsync(

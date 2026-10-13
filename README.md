@@ -17,6 +17,24 @@ or get the latest CI build from [Open VSIX Gallery][vsixgallery].
 replaces the default launch experience with a clean, modern dashboard that
 gets you into code immediately - no clicking through menus, no waiting.
 
+### Startup and background work
+
+The action bar and search are available before secondary content loads. Recent
+projects load first; Git metadata, tips, Dev Hub, and news start after the UI has
+yielded to rendering and user input. Cache reads, feed parsing, and thumbnail
+decoding run on background threads with bounded disk and network concurrency.
+Dev Hub does not read its cache or authenticate providers when disabled.
+
+Hiding the Start Screen cancels refreshes and pauses its automatic refresh timer.
+Background Git fetches suppress credential prompts, honor cancellation, and time
+out after five seconds. Reopening the screen does not retry the same repository
+more than once every fifteen minutes, including failed fetch attempts.
+
+For startup profiling, Debug builds emit `[StartScreen startup]` trace milestones
+for control creation, loading, MRU display, and secondary content. These are
+diagnostics, not a startup-time guarantee; compare cold and warm VS launches,
+including offline and large-repository scenarios, in the Performance Profiler.
+
 ![Start Screen screenshot](art/startscreen.png)
 
 ## Get to work in one click

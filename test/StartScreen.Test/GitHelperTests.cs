@@ -55,27 +55,190 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void FetchUpstream_WithMissingDirectory_ReturnsSilently()
+        public async Task FetchUpstream_WithMissingDirectory_ReturnsFailureAsync()
         {
-            // Best-effort: must never throw, even when the path is invalid.
-            GitHelper.FetchUpstream(@"C:\this\path\does\not\exist\for\sure", "origin", "refs/heads/main");
+            var result = await GitHelper.FetchUpstreamAsync(@"C:\this\path\does\not\exist\for\sure", "origin", "refs/heads/main");
+
+            Assert.IsFalse(result.Succeeded);
+            Assert.AreEqual("The Git repository could not be found.", result.ErrorMessage);
         }
 
         [TestMethod]
-        public void FetchUpstream_WithEmptyPath_ReturnsSilently()
+        [DataRow("")]
+        [DataRow(null)]
+        public async Task FetchUpstream_WithEmptyPath_ReturnsFailureAsync(string path)
         {
-            GitHelper.FetchUpstream(string.Empty, "origin", "refs/heads/main");
-            GitHelper.FetchUpstream(null, "origin", "refs/heads/main");
+            var result = await GitHelper.FetchUpstreamAsync(path, "origin", "refs/heads/main");
+
+            Assert.IsFalse(result.Succeeded);
+            Assert.AreEqual("The Git repository could not be found.", result.ErrorMessage);
         }
 
         [TestMethod]
-        public void FetchUpstream_WithMissingUpstream_ReturnsSilently()
+        [DataRow(null, "refs/heads/main")]
+        [DataRow("origin", null)]
+        [DataRow("", "")]
+        public async Task FetchUpstream_WithMissingUpstream_ReturnsFailureAsync(string remote, string branch)
         {
-            // No upstream configured (no remote or no branch ref) means ahead/behind
-            // is undefined - the helper must skip the fetch instead of running it.
-            GitHelper.FetchUpstream(System.IO.Path.GetTempPath(), null, "refs/heads/main");
-            GitHelper.FetchUpstream(System.IO.Path.GetTempPath(), "origin", null);
-            GitHelper.FetchUpstream(System.IO.Path.GetTempPath(), string.Empty, string.Empty);
+            var result = await GitHelper.FetchUpstreamAsync(Path.GetTempPath(), remote, branch);
+
+            Assert.IsFalse(result.Succeeded);
+            Assert.AreEqual("The Git branch does not have an upstream.", result.ErrorMessage);
+        }
+
+        [TestMethod]
+        public async Task FetchUpstream_WithCancellation_DoesNotStartGitAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => GitHelper.FetchUpstreamAsync(
+                Path.GetTempPath(), "origin", "refs/heads/main", cancellation.Token));
+        }
+
+        [TestMethod]
+        public async Task FetchUpstream_WithLocalRemote_UpdatesTrackingBranchAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var remotePath = directory.GetPath("remote.git");
+            var clonePath = directory.GetPath("clone");
+            Repository.Init(remotePath, isBare: true);
+            using Repository seed = CreateRepositoryWithCommit(directory.GetPath("seed"));
+            Remote remote = seed.Network.Remotes.Add("origin", remotePath);
+            seed.Network.Push(remote, seed.Head.CanonicalName, seed.Head.CanonicalName, new PushOptions());
+            Repository.Clone(remotePath, clonePath);
+            File.AppendAllText(Path.Combine(seed.Info.WorkingDirectory, "file.txt"), "changed");
+            LibGit2Sharp.Commands.Stage(seed, "file.txt");
+            seed.Commit("Next commit", CreateSignature(), CreateSignature());
+            seed.Network.Push(remote, seed.Head.CanonicalName, seed.Head.CanonicalName, new PushOptions());
+
+            var result = await GitHelper.FetchUpstreamAsync(clonePath, "origin", seed.Head.CanonicalName);
+            var counts = GitHelper.GetUpdatedAheadBehind(clonePath);
+
+            Assert.IsTrue(result.Succeeded, result.ErrorMessage);
+            Assert.AreEqual(0, counts.ahead);
+            Assert.AreEqual(1, counts.behind);
+        }
+
+        [TestMethod]
+        public async Task FetchUpstream_WithInvalidRemote_ReturnsGitErrorAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using Repository repository = CreateRepositoryWithCommit(directory.Path);
+
+            var result = await GitHelper.FetchUpstreamAsync(directory.Path, "missing-remote", repository.Head.CanonicalName);
+
+            Assert.IsFalse(result.Succeeded);
+            StringAssert.Contains(result.ErrorMessage, "missing-remote");
+        }
+
+        [TestMethod]
+        public async Task RunFetchProcess_CancellationTerminatesRunningProcessAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var cancellation = new CancellationTokenSource();
+            var pidPath = directory.GetPath("pid.txt");
+            Task<GitCommandResult> fetch = GitHelper.RunFetchProcessAsync(CreateSleepingProcess(pidPath), cancellation.Token);
+            int pid = await ReadStartedProcessIdAsync(pidPath);
+
+            try
+            {
+                var stopwatch = Stopwatch.StartNew();
+                cancellation.Cancel();
+                Task completed = await Task.WhenAny(fetch, Task.Delay(3000));
+                Assert.AreSame(fetch, completed);
+                Assert.IsTrue(fetch.IsCanceled);
+                Assert.IsLessThan(3000, stopwatch.ElapsedMilliseconds, "Cancellation should not wait for the five-second timeout.");
+                AssertProcessExited(pid);
+            }
+            finally
+            {
+                cancellation.Cancel();
+                StopTestProcess(pid);
+            }
+        }
+
+        [TestMethod]
+        public async Task RunFetchProcess_TimeoutTerminatesRunningProcessAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var cancellation = new CancellationTokenSource();
+            var pidPath = directory.GetPath("pid.txt");
+            var stopwatch = Stopwatch.StartNew();
+            Task<GitCommandResult> fetch = GitHelper.RunFetchProcessAsync(CreateSleepingProcess(pidPath), cancellation.Token);
+            int pid = await ReadStartedProcessIdAsync(pidPath);
+
+            try
+            {
+                GitCommandResult result = await fetch;
+                Assert.IsFalse(result.Succeeded);
+                Assert.AreEqual("The background Git fetch timed out.", result.ErrorMessage);
+                Assert.IsLessThan(10000, stopwatch.ElapsedMilliseconds);
+                AssertProcessExited(pid);
+            }
+            finally
+            {
+                cancellation.Cancel();
+                StopTestProcess(pid);
+            }
+        }
+
+        private static ProcessStartInfo CreateSleepingProcess(string pidPath)
+        {
+            return new ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe"),
+                Arguments = $"-NoProfile -NonInteractive -Command \"[System.IO.File]::WriteAllText('{pidPath}', $PID.ToString()); Start-Sleep -Seconds 30\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+        }
+
+        private static async Task<int> ReadStartedProcessIdAsync(string pidPath)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            while (stopwatch.ElapsedMilliseconds < 4000)
+            {
+                if (File.Exists(pidPath) && int.TryParse(File.ReadAllText(pidPath), out int pid))
+                    return pid;
+
+                await Task.Delay(20);
+            }
+
+            Assert.Fail("The test process did not publish its PID before the fetch timeout.");
+            return 0;
+        }
+
+        private static void AssertProcessExited(int pid)
+        {
+            try
+            {
+                using Process process = Process.GetProcessById(pid);
+                Assert.IsTrue(process.WaitForExit(1000), "The background process must terminate after cancellation or timeout.");
+            }
+            catch (ArgumentException)
+            {
+                // The process has already exited and its ID is no longer registered.
+            }
+        }
+
+        private static void StopTestProcess(int pid)
+        {
+            try
+            {
+                using Process process = Process.GetProcessById(pid);
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                    process.WaitForExit(1000);
+                }
+            }
+            catch (ArgumentException)
+            {
+                // The process has already exited and its ID is no longer registered.
+            }
         }
 
         [TestMethod]

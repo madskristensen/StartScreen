@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models.DevHub;
 
 namespace StartScreen.Services.DevHub
@@ -51,8 +53,11 @@ namespace StartScreen.Services.DevHub
         /// Reads the cached dashboard from disk.
         /// Returns null if no cache exists or on error.
         /// </summary>
-        public async Task<DevHubDashboard> ReadDashboardAsync()
+        public async Task<DevHubDashboard> ReadDashboardAsync(CancellationToken cancellationToken = default)
         {
+            await TaskScheduler.Default.SwitchTo(alwaysYield: true);
+            cancellationToken.ThrowIfCancellationRequested();
+
             var filePath = Path.Combine(_cacheFolder, _dashboardFileName);
             if (!File.Exists(filePath))
                 return null;
@@ -63,14 +68,27 @@ namespace StartScreen.Services.DevHub
                 using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
                 {
                     fileBytes = new byte[stream.Length];
-                    await stream.ReadAsync(fileBytes, 0, fileBytes.Length);
+                    var offset = 0;
+                    while (offset < fileBytes.Length)
+                    {
+                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset, cancellationToken);
+                        if (bytesRead == 0)
+                            break;
+
+                        offset += bytesRead;
+                    }
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
                 return JsonSerializer.Deserialize<DevHubDashboard>(fileBytes, _jsonOptions);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
                 return null;
             }
         }

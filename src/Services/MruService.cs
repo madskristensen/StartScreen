@@ -32,8 +32,9 @@ namespace StartScreen.Services
         /// <summary>
         /// Reads VS's MRU via IVsMRUItemsStore and applies pinned state from Options.
         /// </summary>
-        public static async Task<List<MruItem>> GetMruItemsAsync(Options options = null)
+        public static async Task<List<MruItem>> GetMruItemsAsync(Options options = null, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             // CodeContainers.Offline drives Visual Studio's Recent Projects UI. The legacy
             // MRU store supplies richer entry metadata, but can retain entries after that
             // list is cleared.
@@ -56,7 +57,8 @@ namespace StartScreen.Services
             }
 
             // Only the legacy COM call requires the UI thread.
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
 
             var rawEntries = new List<string>();
             if (store != null)
@@ -88,7 +90,11 @@ namespace StartScreen.Services
             // to locate .suo files). Deduplicate so .sln and .slnx in the same
             // directory collapse to one entry, keeping the most recently accessed.
             var parsed = new MruItem[rawEntries.Count];
-            Parallel.For(0, rawEntries.Count, new ParallelOptions { MaxDegreeOfParallelism = 8 }, i =>
+            Parallel.For(0, rawEntries.Count, new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = 2
+            }, i =>
             {
                 parsed[i] = ParseMruEntry(rawEntries[i]);
             });
@@ -241,6 +247,27 @@ namespace StartScreen.Services
         /// ticks into a single network call per repo per window.
         /// </summary>
         private static readonly TimeSpan _fetchThrottleWindow = TimeSpan.FromMinutes(15);
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _fetchAttempts =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        internal static bool TryReserveBackgroundFetch(string repoPath, DateTime utcNow)
+        {
+            while (true)
+            {
+                if (_fetchAttempts.TryGetValue(repoPath, out DateTime lastAttempt))
+                {
+                    if (utcNow - lastAttempt < _fetchThrottleWindow)
+                        return false;
+
+                    if (_fetchAttempts.TryUpdate(repoPath, utcNow, lastAttempt))
+                        return true;
+                }
+                else if (_fetchAttempts.TryAdd(repoPath, utcNow))
+                {
+                    return true;
+                }
+            }
+        }
 
         /// <summary>
         /// Populates Git status information for items in the background.
@@ -265,6 +292,7 @@ namespace StartScreen.Services
             // MRU items in the same repo (solution + projects + folders) don't each
             // walk the parent chain independently.
             var repoPathCache = new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var statusCache = new System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<GitStatus>>(StringComparer.OrdinalIgnoreCase);
 
             var localUpdates =
                 new System.Collections.Concurrent.ConcurrentBag<(MruItem Item, GitStatus Status, int SessionCount)>();
@@ -273,7 +301,7 @@ namespace StartScreen.Services
             Parallel.ForEach(itemList, new ParallelOptions
             {
                 CancellationToken = cancellationToken,
-                MaxDegreeOfParallelism = 4
+                MaxDegreeOfParallelism = 2
             }, item =>
             {
                 try
@@ -289,7 +317,12 @@ namespace StartScreen.Services
                         return;
                     }
 
-                    GitStatus status = GitHelper.GetGitStatus(item.Path);
+                    var startDir = item.Type == MruItemType.Folder ? item.Path : Path.GetDirectoryName(item.Path);
+                    var repoPath = repoPathCache.GetOrAdd(startDir ?? string.Empty, GitHelper.FindRepositoryPath);
+                    GitStatus status = repoPath == null
+                        ? new GitStatus()
+                        : statusCache.GetOrAdd(repoPath,
+                            path => new Lazy<GitStatus>(() => GitHelper.GetGitStatus(path))).Value;
 
                     // Detect Copilot Chat sessions stored under .vs\*\copilot-chat\*\sessions
                     var sessionCount = CopilotChatHelper.CountSessions(item.Path, item.Type);
@@ -301,8 +334,6 @@ namespace StartScreen.Services
                         && !string.IsNullOrEmpty(status.UpstreamRemoteName)
                         && !string.IsNullOrEmpty(status.UpstreamBranchRef))
                     {
-                        var startDir = Directory.Exists(item.Path) ? item.Path : Path.GetDirectoryName(item.Path);
-                        var repoPath = repoPathCache.GetOrAdd(startDir ?? string.Empty, GitHelper.FindRepositoryPath);
                         if (!string.IsNullOrEmpty(repoPath))
                         {
                             itemRepoMap.AddOrUpdate(
@@ -318,7 +349,7 @@ namespace StartScreen.Services
                 }
                 catch (Exception ex)
                 {
-                    ex.Log();
+                    ex.LogAsync().FileAndForget(nameof(MruService));
                 }
             });
 
@@ -338,14 +369,11 @@ namespace StartScreen.Services
             var remoteUpdates =
                 new System.Collections.Concurrent.ConcurrentBag<(MruItem Item, int? Ahead, int? Behind)>();
 
-            await Task.Run(() =>
+            using (var semaphore = new SemaphoreSlim(2))
             {
-                Parallel.ForEach(itemRepoMap, new ParallelOptions
+                await Task.WhenAll(itemRepoMap.Select(async kvp =>
                 {
-                    CancellationToken = cancellationToken,
-                    MaxDegreeOfParallelism = 2
-                }, kvp =>
-                {
+                    await semaphore.WaitAsync(cancellationToken);
                     var repoPath = kvp.Key;
                     RepoFetchInfo info = kvp.Value;
 
@@ -356,12 +384,19 @@ namespace StartScreen.Services
                         // Throttle: if FETCH_HEAD was written within the throttle window,
                         // the ahead/behind we already read in phase 1 is fresh enough.
                         // Skip both the fetch and the post-fetch re-read entirely.
-                        if (GitHelper.WasRecentlyFetched(repoPath, _fetchThrottleWindow))
+                        if (GitHelper.WasRecentlyFetched(repoPath, _fetchThrottleWindow)
+                            || !TryReserveBackgroundFetch(repoPath, DateTime.UtcNow))
                             return;
 
-                        // Targeted fetch of just the upstream ref of the current
-                        // branch (best-effort, silent on failure).
-                        GitHelper.FetchUpstream(repoPath, info.Remote, info.UpstreamRef);
+                        GitCommandResult result = await GitHelper.FetchUpstreamAsync(
+                            repoPath, info.Remote, info.UpstreamRef, cancellationToken);
+                        if (!result.Succeeded)
+                        {
+                            System.Diagnostics.Trace.TraceWarning(result.ErrorMessage);
+                            return;
+                        }
+
+                        cancellationToken.ThrowIfCancellationRequested();
 
                         // Re-read ahead/behind for all items in this repo
                         (var ahead, var behind) = GitHelper.GetUpdatedAheadBehind(repoPath);
@@ -381,10 +416,14 @@ namespace StartScreen.Services
                     }
                     catch (Exception ex)
                     {
-                        ex.Log();
+                        await ex.LogAsync();
                     }
-                });
-            }, cancellationToken);
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                }));
+            }
 
             await ApplyAheadBehindUpdatesAsync(remoteUpdates, cancellationToken);
         }
@@ -486,7 +525,7 @@ namespace StartScreen.Services
             Parallel.ForEach(itemList, new ParallelOptions
             {
                 CancellationToken = cancellationToken,
-                MaxDegreeOfParallelism = 4
+                MaxDegreeOfParallelism = 2
             }, item =>
             {
                 try
@@ -782,8 +821,9 @@ namespace StartScreen.Services
         /// Must be called from a background thread.
         /// </summary>
         internal static async Task<List<MruItem>> GetExtendedOnlyItemsAsync(
-            IEnumerable<MruItem> vsItems, Options options)
+            IEnumerable<MruItem> vsItems, Options options, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var vsItemList = vsItems.ToList();
 
             // Build a set of dedup keys already covered by the VS MRU store.
@@ -829,6 +869,7 @@ namespace StartScreen.Services
 
             if (changed)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 options.ExtendedMruItems = JsonSerializer.Serialize(byKey.Values.ToList(), _jsonOptions);
                 await options.SaveAsync();
             }

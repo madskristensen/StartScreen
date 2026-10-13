@@ -277,7 +277,7 @@ namespace StartScreen.Services.DevHub
         {
             try
             {
-                var candidateUrls = await GetCandidateRemoteUrlsAsync();
+                var candidateUrls = await GetCandidateRemoteUrlsAsync(cancellationToken);
                 if (candidateUrls.Count == 0)
                     return Array.Empty<DevHubRepoDetail>();
 
@@ -300,6 +300,10 @@ namespace StartScreen.Services.DevHub
                 var details = await Task.WhenAll(detailTasks);
                 return details.Where(d => d != null).ToList();
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 await ex.LogAsync();
@@ -311,16 +315,20 @@ namespace StartScreen.Services.DevHub
         /// Reads distinct git remote URLs from the MRU list to use as the candidate set of
         /// repositories for per-repo activity fetching.
         /// </summary>
-        private static async Task<IReadOnlyList<string>> GetCandidateRemoteUrlsAsync()
+        private static async Task<IReadOnlyList<string>> GetCandidateRemoteUrlsAsync(CancellationToken cancellationToken)
         {
             try
             {
-                var items = await MruService.GetMruItemsAsync();
+                var items = await MruService.GetMruItemsAsync(cancellationToken: cancellationToken);
                 return items
                     .Select(i => i.RemoteUrl)
                     .Where(u => !string.IsNullOrWhiteSpace(u))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

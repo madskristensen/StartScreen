@@ -26,7 +26,8 @@ namespace StartScreen.ToolWindows
         private readonly JoinableTask _loadTask;
         private DropIndicatorAdorner _dropAdorner;
         private readonly DevHubService _devHubService = new DevHubService();
-        private readonly JoinableTask<DevHubDashboard> _devHubCacheTask;
+        private readonly AsyncLazy<DevHubDashboard> _devHubCacheTask;
+        private JoinableTask _controlLoadTask;
         private bool _isInitialized;
         private bool _isSynchronizingContentHorizontalScroll;
         private CancellationTokenSource _lifetimeCancellation = new CancellationTokenSource();
@@ -37,11 +38,8 @@ namespace StartScreen.ToolWindows
         {
             _viewModel = viewModel;
             _loadTask = loadTask;
-            // Kick off the DevHub cache read on a background thread so the file I/O
-            // overlaps with MRU loading. This does NOT touch the UI - the panel is
-            // only updated later, after MRU has painted.
-            _devHubCacheTask =
-                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => _devHubService.LoadFromCacheAsync());
+            _devHubCacheTask = new AsyncLazy<DevHubDashboard>(
+                () => _devHubService.LoadFromCacheAsync(), StartScreenPackage.BackgroundTaskFactory);
             InitializeComponent();
 
             // Bind the ViewModel up front so the MRU list pops in as soon as
@@ -54,6 +52,7 @@ namespace StartScreen.ToolWindows
 
         private void UserControl_Loaded(object sender, RoutedEventArgs e)
         {
+            StartupDiagnostics.Mark("control loaded");
             if (_lifetimeCancellation.IsCancellationRequested)
             {
                 _lifetimeCancellation.Dispose();
@@ -61,7 +60,17 @@ namespace StartScreen.ToolWindows
             }
 
             _viewModel.ActivateBackgroundWork();
-            LoadControlAsync().FileAndForget(nameof(StartScreenControl));
+            CancellationToken cancellationToken = _lifetimeCancellation.Token;
+            JoinableTask previousLoad = _controlLoadTask;
+            _controlLoadTask = StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
+            {
+                if (previousLoad != null)
+                    await previousLoad;
+
+                if (!cancellationToken.IsCancellationRequested)
+                    await LoadControlAsync(cancellationToken);
+            });
+            _controlLoadTask.FileAndForget(nameof(StartScreenControl));
         }
 
         private void UserControl_Unloaded(object sender, RoutedEventArgs e)
@@ -70,10 +79,8 @@ namespace StartScreen.ToolWindows
             _viewModel.CancelBackgroundWork();
         }
 
-        private async Task LoadControlAsync()
+        private async Task LoadControlAsync(CancellationToken cancellationToken)
         {
-            CancellationToken cancellationToken = _lifetimeCancellation.Token;
-
             try
             {
                 // If already initialized, just refresh in background
@@ -81,10 +88,10 @@ namespace StartScreen.ToolWindows
                 {
                     _viewModel.EnsureDeferredContentInitialized();
                     await ViewModel?.RefreshInBackgroundAsync();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await LoadDevHubAsync();
                     return;
                 }
-
-                _isInitialized = true;
 
                 await ApplyShowTipsAndExtensionsAsync();
                 await ApplyDevHubEnabledAsync();
@@ -94,20 +101,26 @@ namespace StartScreen.ToolWindows
                 // Wait for MRU to finish so secondary loads (DevHub, news) don't
                 // contend with the MRU paint. The DataContext is already bound,
                 // so MRU items render the moment LoadMruAsync completes.
-                await _loadTask;
+                if (_loadTask.Task.IsCanceled)
+                    await _viewModel.LoadMruAsync();
+                else
+                    await _loadTask;
 
                 // Let rendering and pending user input run before secondary sections start.
                 await System.Windows.Threading.Dispatcher.Yield(
                     System.Windows.Threading.DispatcherPriority.ContextIdle);
                 cancellationToken.ThrowIfCancellationRequested();
+                StartupDiagnostics.Mark("MRU render yielded to input");
 
-                // DevHub cache is already loading (started in the constructor); now
-                // hook it up to the UI. News/splitter run in parallel.
+                _viewModel.EnsureDeferredContentInitialized();
+
                 Task restoreSplitterTask = RestoreSplitterPositionAsync();
                 Task devHubTask = LoadDevHubAsync();
                 Task newsTask = _viewModel.RefreshInBackgroundAsync(refreshMru: false);
 
                 await Task.WhenAll(restoreSplitterTask, newsTask, devHubTask);
+                cancellationToken.ThrowIfCancellationRequested();
+                _isInitialized = true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -502,8 +515,8 @@ namespace StartScreen.ToolWindows
                 if (!Options.Instance.DevHubEnabled)
                     return;
 
-                // Use the cache task that was started in the constructor
-                var cached = await _devHubCacheTask;
+                var cached = await _devHubCacheTask.GetValueAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 if (cached != null && cached.HasAuthentication)
                 {
                     // Show cached data immediately (same pattern as News/MRU)
@@ -511,7 +524,11 @@ namespace StartScreen.ToolWindows
                     StartupDiagnostics.Mark("Dev Hub cache displayed");
 
                     // Refresh in background if stale - don't block the UI
-                    if (_devHubService.IsCacheStale())
+                    await TaskScheduler.Default;
+                    var isStale = _devHubService.IsCacheStale();
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (isStale)
                     {
                         StartScreenPackage.BackgroundTaskFactory.RunAsync(
                             () => RefreshDevHubInBackgroundAsync(cancellationToken))
@@ -531,6 +548,7 @@ namespace StartScreen.ToolWindows
             catch (Exception ex)
             {
                 await ex.LogAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 DevHubPanelControl.ShowError("Could not load Dev Hub data.");
             }
         }
@@ -543,7 +561,11 @@ namespace StartScreen.ToolWindows
                 // the UI SynchronizationContext and marshals UpdateDevHubPanel back
                 // to the UI thread.
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                var progress = new Progress<DevHubDashboard>(UpdateDevHubPanel);
+                var progress = new Progress<DevHubDashboard>(dashboard =>
+                {
+                    if (!cancellationToken.IsCancellationRequested)
+                        UpdateDevHubPanel(dashboard);
+                });
 
                 // Now hop to the thread pool BEFORE doing any DevHub work. The
                 // provider auth path eventually calls Process.Start("git", "credential
