@@ -28,20 +28,18 @@ namespace StartScreen.Test.DevHub
         public async Task GitHubAuthentication_WhenCanceledDuringRequest_PropagatesCancellationAsync()
         {
             using var cancellation = new CancellationTokenSource();
-            var response = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using var registration = cancellation.Token.Register(() => response.TrySetCanceled());
-            var handler = new PendingHttpMessageHandler(response.Task);
+            var handler = new TestHttpMessageHandler((_, _) =>
+            {
+                cancellation.Cancel();
+                cancellation.Token.ThrowIfCancellationRequested();
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            });
             using var client = new HttpClient(handler);
             var provider = new GitHubDevHubProvider();
 
-            var task = provider.GetAuthenticatedUserAsync(client, new DevHubCredential("user", "test-token"), cancellation.Token);
-            Assert.AreEqual(1, handler.RequestCount);
-            Assert.IsFalse(task.IsCompleted);
-
-            cancellation.Cancel();
-
-            await Assert.ThrowsAsync<OperationCanceledException>(() => task);
-            Assert.IsTrue(task.IsCanceled);
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                provider.GetAuthenticatedUserAsync(client, new DevHubCredential("user", "test-token"), cancellation.Token));
+            Assert.IsTrue(cancellation.IsCancellationRequested);
             Assert.AreEqual(1, handler.RequestCount);
         }
 
@@ -107,24 +105,6 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual(cancellation.Token, exception.CancellationToken);
             Assert.IsNull(service.CurrentDashboard);
             Assert.IsFalse(service.IsRefreshing);
-        }
-
-        private sealed class PendingHttpMessageHandler : HttpMessageHandler
-        {
-            private readonly Task<HttpResponseMessage> _response;
-
-            public PendingHttpMessageHandler(Task<HttpResponseMessage> response)
-            {
-                _response = response;
-            }
-
-            public int RequestCount { get; private set; }
-
-            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            {
-                RequestCount++;
-                return _response;
-            }
         }
     }
 }

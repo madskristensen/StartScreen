@@ -278,7 +278,7 @@ namespace StartScreen.Helpers
         }
 
         internal static async Task<GitCommandResult> RunFetchProcessAsync(
-            ProcessStartInfo startInfo, CancellationToken cancellationToken = default)
+            ProcessStartInfo startInfo, CancellationToken cancellationToken = default, Action<int> processStarted = null)
         {
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
             cancellationToken.ThrowIfCancellationRequested();
@@ -294,6 +294,7 @@ namespace StartScreen.Helpers
                 Task completionTask = Task.WhenAll(process.WaitForExitAsync(timeout.Token), outputTask, errorTask);
                 try
                 {
+                    processStarted?.Invoke(process.Id);
                     Task completed = await Task.WhenAny(completionTask, Task.Delay(5000, timeout.Token));
                     cancellationToken.ThrowIfCancellationRequested();
                     if (completed != completionTask)

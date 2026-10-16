@@ -135,14 +135,16 @@ namespace StartScreen.Test
         [TestMethod]
         public async Task RunFetchProcess_CancellationTerminatesRunningProcessAsync()
         {
-            using var directory = new TemporaryDirectory();
             using var cancellation = new CancellationTokenSource();
-            var pidPath = directory.GetPath("pid.txt");
-            Task<GitCommandResult> fetch = GitHelper.RunFetchProcessAsync(CreateSleepingProcess(pidPath), cancellation.Token);
-            int pid = await ReadStartedProcessIdAsync(pidPath);
+            var started = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task<GitCommandResult> fetch = GitHelper.RunFetchProcessAsync(CreateSleepingProcess(), cancellation.Token, pid => started.SetResult(pid));
 
             try
             {
+                Task first = await Task.WhenAny(started.Task, fetch);
+                Assert.AreSame(started.Task, first, "The process must start before the fetch completes.");
+                int pid = await started.Task;
+
                 var stopwatch = Stopwatch.StartNew();
                 cancellation.Cancel();
                 Task completed = await Task.WhenAny(fetch, Task.Delay(3000));
@@ -154,19 +156,18 @@ namespace StartScreen.Test
             finally
             {
                 cancellation.Cancel();
-                StopTestProcess(pid);
+                if (started.Task.Status == TaskStatus.RanToCompletion)
+                    StopTestProcess(await started.Task);
             }
         }
 
         [TestMethod]
         public async Task RunFetchProcess_TimeoutTerminatesRunningProcessAsync()
         {
-            using var directory = new TemporaryDirectory();
             using var cancellation = new CancellationTokenSource();
-            var pidPath = directory.GetPath("pid.txt");
+            var started = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
             var stopwatch = Stopwatch.StartNew();
-            Task<GitCommandResult> fetch = GitHelper.RunFetchProcessAsync(CreateSleepingProcess(pidPath), cancellation.Token);
-            int pid = await ReadStartedProcessIdAsync(pidPath);
+            Task<GitCommandResult> fetch = GitHelper.RunFetchProcessAsync(CreateSleepingProcess(), cancellation.Token, pid => started.SetResult(pid));
 
             try
             {
@@ -174,41 +175,29 @@ namespace StartScreen.Test
                 Assert.IsFalse(result.Succeeded);
                 Assert.AreEqual("The background Git fetch timed out.", result.ErrorMessage);
                 Assert.IsLessThan(10000, stopwatch.ElapsedMilliseconds);
+                Assert.IsTrue(started.Task.IsCompleted, "The process must start before the fetch times out.");
+                int pid = await started.Task;
                 AssertProcessExited(pid);
             }
             finally
             {
                 cancellation.Cancel();
-                StopTestProcess(pid);
+                if (started.Task.Status == TaskStatus.RanToCompletion)
+                    StopTestProcess(await started.Task);
             }
         }
 
-        private static ProcessStartInfo CreateSleepingProcess(string pidPath)
+        private static ProcessStartInfo CreateSleepingProcess()
         {
             return new ProcessStartInfo
             {
                 FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe"),
-                Arguments = $"-NoProfile -NonInteractive -Command \"[System.IO.File]::WriteAllText('{pidPath}', $PID.ToString()); Start-Sleep -Seconds 30\"",
+                Arguments = "-NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 30\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
-        }
-
-        private static async Task<int> ReadStartedProcessIdAsync(string pidPath)
-        {
-            var stopwatch = Stopwatch.StartNew();
-            while (stopwatch.ElapsedMilliseconds < 4000)
-            {
-                if (File.Exists(pidPath) && int.TryParse(File.ReadAllText(pidPath), out int pid))
-                    return pid;
-
-                await Task.Delay(20);
-            }
-
-            Assert.Fail("The test process did not publish its PID before the fetch timeout.");
-            return 0;
         }
 
         private static void AssertProcessExited(int pid)
