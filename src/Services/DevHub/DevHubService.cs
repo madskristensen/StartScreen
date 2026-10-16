@@ -58,6 +58,8 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public async Task<DevHubDashboard> RefreshAsync(CancellationToken cancellationToken, IProgress<DevHubDashboard> progress = null)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (_isRefreshing)
                 return _currentDashboard;
 
@@ -79,6 +81,7 @@ namespace StartScreen.Services.DevHub
                 }).ToList();
 
                 var authResults = await Task.WhenAll(authTasks);
+                cancellationToken.ThrowIfCancellationRequested();
                 var authenticated = new List<IDevHubProvider>();
 
                 foreach (var (provider, users) in authResults)
@@ -130,6 +133,7 @@ namespace StartScreen.Services.DevHub
                 while (remaining.Count > 0)
                 {
                     var completed = await Task.WhenAny(remaining);
+                    cancellationToken.ThrowIfCancellationRequested();
                     remaining.Remove(completed);
 
                     if (completed == issueTask)
@@ -164,6 +168,7 @@ namespace StartScreen.Services.DevHub
                 }
 
                 // Cache the final result
+                cancellationToken.ThrowIfCancellationRequested();
                 _cache.WriteDashboard(dashboard);
 
                 return dashboard;
@@ -219,6 +224,7 @@ namespace StartScreen.Services.DevHub
                 return _currentDashboard;
 
             var detail = await FetchRepoDetailFromProviderAsync(repo, ScopedRepoItemCount, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (detail == null)
                 return _currentDashboard;
 

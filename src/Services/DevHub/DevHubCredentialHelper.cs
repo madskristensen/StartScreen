@@ -34,6 +34,8 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public static async Task<DevHubCredential> GetCredentialAsync(string host, string username, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (string.IsNullOrWhiteSpace(host))
                 return null;
 
@@ -47,6 +49,7 @@ namespace StartScreen.Services.DevHub
 
             // Try Git Credential Manager
             var gcmResult = await TryGitCredentialManagerAsync(host, normalizedUsername, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (gcmResult != null)
             {
                 CacheCredential(cacheKey, gcmResult);

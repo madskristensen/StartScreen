@@ -218,7 +218,7 @@ namespace StartScreen.Services.DevHub.Providers
                     };
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
                 return null;
@@ -378,7 +378,7 @@ namespace StartScreen.Services.DevHub.Providers
 
                 return detail;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
                 return null;

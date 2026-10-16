@@ -107,7 +107,7 @@ namespace StartScreen.Services.DevHub.Providers
                     };
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
                 return null;
@@ -163,7 +163,7 @@ namespace StartScreen.Services.DevHub.Providers
                 var json = await response.Content.ReadAsStringAsync();
                 return ParsePullRequests(json, username);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
                 return Array.Empty<DevHubPullRequest>();
@@ -243,7 +243,7 @@ namespace StartScreen.Services.DevHub.Providers
 
                 return detail;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
                 return null;

@@ -119,6 +119,10 @@ recent builds from GitHub and Azure DevOps - right next to your project
 list. Data loads in the background and is cached locally so the UI stays
 responsive.
 
+Closing the Start Screen cancels pending Dev Hub requests without logging
+normal cancellation as an error or caching canceled requests as empty data.
+HTTP timeouts and other request failures are still logged for troubleshooting.
+
 ![Dev Hub](dev-hub.png)
 
 ### Scope to a repository
