@@ -26,6 +26,9 @@ namespace StartScreen.ToolWindows
 
         public override async Task<FrameworkElement> CreateAsync(int toolWindowId, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            StartScreenPackage.ShutdownToken.ThrowIfCancellationRequested();
+
             if (_control != null)
             {
                 return _control;
@@ -36,7 +39,7 @@ namespace StartScreen.ToolWindows
                 StartupDiagnostics.Start();
 
                 // Start loading data immediately (head start while window renders)
-                _viewModel = new StartScreenViewModel();
+                _viewModel = new StartScreenViewModel(StartScreenPackage.ShutdownToken);
                 CurrentViewModel = _viewModel;
                 JoinableTask loadTask =
                     StartScreenPackage.BackgroundTaskFactory.RunAsync(() => _viewModel.LoadMruAsync());

@@ -56,7 +56,8 @@ namespace StartScreen.ToolWindows
         private bool _hasNewBlogs;
         private bool _hasNewVideos;
         private readonly object _cancellationSync = new object();
-        private CancellationTokenSource _lifetimeCancellation = new CancellationTokenSource();
+        private readonly CancellationToken _shutdownToken;
+        private CancellationTokenSource _lifetimeCancellation;
         private CancellationTokenSource _newsRefreshCancellation;
         private CancellationTokenSource _youTubeRefreshCancellation;
         private CancellationTokenSource _mruMetadataCancellation;
@@ -445,7 +446,14 @@ namespace StartScreen.ToolWindows
         }
 
         public StartScreenViewModel()
+            : this(CancellationToken.None)
         {
+        }
+
+        internal StartScreenViewModel(CancellationToken shutdownToken)
+        {
+            _shutdownToken = shutdownToken;
+            _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             MruItems = new ObservableCollection<MruItem>();
             PinnedItems = new ObservableCollection<MruItem>();
             GroupedMruItems = new ObservableCollection<MruTimeGroup>();
@@ -472,10 +480,13 @@ namespace StartScreen.ToolWindows
         {
             lock (_cancellationSync)
             {
+                if (_shutdownToken.IsCancellationRequested)
+                    return;
+
                 if (_lifetimeCancellation.IsCancellationRequested)
                 {
                     _lifetimeCancellation.Dispose();
-                    _lifetimeCancellation = new CancellationTokenSource();
+                    _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
                     _autoRefreshTimer?.Change(_autoRefreshInterval, _autoRefreshInterval);
                 }
             }
@@ -503,7 +514,7 @@ namespace StartScreen.ToolWindows
 
             lock (_cancellationSync)
             {
-                if (_isDeferredContentInitialized || _isDeferredContentInitializing)
+                if (_lifetimeCancellation.IsCancellationRequested || _isDeferredContentInitialized || _isDeferredContentInitializing)
                     return;
 
                 _isDeferredContentInitializing = true;
@@ -538,7 +549,7 @@ namespace StartScreen.ToolWindows
             ForceRefreshNews();
         }
 
-        private CancellationToken GetBackgroundCancellationToken()
+        internal CancellationToken GetBackgroundCancellationToken()
         {
             lock (_cancellationSync)
             {
@@ -611,8 +622,8 @@ namespace StartScreen.ToolWindows
         {
             try
             {
-                await System.Windows.Threading.Dispatcher.Yield(
-                    System.Windows.Threading.DispatcherPriority.ContextIdle);
+                await StartScreenPackage.BackgroundTaskFactory.YieldAsync(
+                    System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
 
                 StartMruMetadataRefresh(mruItems);
@@ -712,7 +723,7 @@ namespace StartScreen.ToolWindows
             List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(mruItems, options, cancellationToken);
             var allItems = mruItems.Concat(extendedItems).ToList();
 
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             SetMruItems(allItems);
             StartupDiagnostics.Mark("MRU displayed");
@@ -768,8 +779,8 @@ namespace StartScreen.ToolWindows
 
                 StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
                 {
-                    await System.Windows.Threading.Dispatcher.Yield(
-                        System.Windows.Threading.DispatcherPriority.ContextIdle);
+                    await StartScreenPackage.BackgroundTaskFactory.YieldAsync(
+                        System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                     StartMruMetadataRefresh(allItems);
                 }).FileAndForget(nameof(StartScreenViewModel));

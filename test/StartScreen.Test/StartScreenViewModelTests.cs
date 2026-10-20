@@ -8,6 +8,53 @@ namespace StartScreen.Test
     public class StartScreenViewModelTests
     {
         [TestMethod]
+        public void Shutdown_CancelsBackgroundWorkWithoutUnloadingControl()
+        {
+            using var shutdown = new CancellationTokenSource();
+            var viewModel = new StartScreenViewModel(shutdown.Token);
+            Task pendingWork = Task.Delay(Timeout.Infinite, viewModel.GetBackgroundCancellationToken());
+            Assert.IsFalse(pendingWork.IsCompleted);
+
+            shutdown.Cancel();
+
+            Assert.IsTrue(pendingWork.IsCanceled);
+            viewModel.ForceRefreshNews();
+            viewModel.ForceRefreshYouTube();
+            Assert.IsFalse(viewModel.IsRefreshingAny);
+        }
+
+        [TestMethod]
+        public void ActivateBackgroundWork_CannotRestartAfterShutdown()
+        {
+            using var shutdown = new CancellationTokenSource();
+            var viewModel = new StartScreenViewModel(shutdown.Token);
+            viewModel.CancelBackgroundWork();
+            Assert.IsTrue(viewModel.GetBackgroundCancellationToken().IsCancellationRequested);
+            viewModel.ActivateBackgroundWork();
+            Assert.IsFalse(viewModel.GetBackgroundCancellationToken().IsCancellationRequested);
+
+            shutdown.Cancel();
+            viewModel.ActivateBackgroundWork();
+
+            Assert.IsTrue(viewModel.GetBackgroundCancellationToken().IsCancellationRequested);
+            viewModel.ForceRefreshNews();
+            viewModel.ForceRefreshYouTube();
+            Assert.IsFalse(viewModel.IsRefreshingAny);
+        }
+
+        [TestMethod]
+        public void ActivateBackgroundWork_PreCanceledShutdownRemainsCanceled()
+        {
+            using var shutdown = new CancellationTokenSource();
+            shutdown.Cancel();
+            var viewModel = new StartScreenViewModel(shutdown.Token);
+
+            viewModel.ActivateBackgroundWork();
+
+            Assert.IsTrue(viewModel.GetBackgroundCancellationToken().IsCancellationRequested);
+        }
+
+        [TestMethod]
         public void CancelBackgroundWork_SuppressesRefreshRequestsWhileHidden()
         {
             var item = CreateItem("Existing", @"C:\Code\Existing.sln");

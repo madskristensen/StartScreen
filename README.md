@@ -26,6 +26,8 @@ decoding run on background threads with bounded disk and network concurrency.
 Dev Hub does not read its cache or authenticate providers when disabled.
 
 Hiding the Start Screen cancels refreshes and pauses its automatic refresh timer.
+Visual Studio shutdown also cancels background work and pending dispatcher waits,
+without waiting for the Start Screen to unload or hiding it synchronously.
 Background Git fetches suppress credential prompts, honor cancellation, and time
 out after five seconds. Reopening the screen does not retry the same repository
 more than once every fifteen minutes, including failed fetch attempts.

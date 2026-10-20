@@ -40,9 +40,9 @@ namespace StartScreen.Services.DevHub
         /// Loads the dashboard from cache for immediate display.
         /// Returns null if no cache exists.
         /// </summary>
-        public async Task<DevHubDashboard> LoadFromCacheAsync()
+        public async Task<DevHubDashboard> LoadFromCacheAsync(CancellationToken cancellationToken = default)
         {
-            _currentDashboard = await _cache.ReadDashboardAsync();
+            _currentDashboard = await _cache.ReadDashboardAsync(cancellationToken);
             return _currentDashboard;
         }
 

@@ -26,11 +26,16 @@ namespace StartScreen
     [Guid(PackageGuids.StartScreenString)]
     public sealed class StartScreenPackage : ToolkitPackage
     {
+        private readonly CancellationTokenSource _shutdownCancellation;
         internal static JoinableTaskFactory BackgroundTaskFactory { get; private set; }
+        internal static CancellationToken ShutdownToken { get; private set; }
 
         public StartScreenPackage()
         {
             BackgroundTaskFactory = JoinableTaskFactory;
+            _shutdownCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                DisposalToken, VsShellUtilities.ShutdownToken);
+            ShutdownToken = _shutdownCancellation.Token;
         }
 
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
@@ -87,7 +92,10 @@ namespace StartScreen
 
         private void OnSolutionClosed(object sender, EventArgs e)
         {
-            ShowStartScreenAsync().FireAndForget();
+            if (!ShutdownToken.IsCancellationRequested)
+            {
+                ShowStartScreenAsync().FileAndForget(nameof(StartScreenPackage));
+            }
         }
 
         private async Task HideStartScreenAsync()
@@ -97,12 +105,20 @@ namespace StartScreen
 
         private async Task ShowStartScreenAsync(int delay = 500)
         {
-            await Task.Delay(delay);
-
-            if (!await VS.Solutions.IsOpeningAsync() && !await VS.Solutions.IsOpenAsync())
+            try
             {
-                // Show Start Screen when solution is closed
-                await StartScreenWindow.ShowAsync();
+                await Task.Delay(delay, ShutdownToken);
+
+                if (!await VS.Solutions.IsOpeningAsync() && !await VS.Solutions.IsOpenAsync())
+                {
+                    ShutdownToken.ThrowIfCancellationRequested();
+                    // Show Start Screen when solution is closed
+                    await StartScreenWindow.ShowAsync();
+                }
+            }
+            catch (OperationCanceledException ex) when (ShutdownToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
             }
         }
 
@@ -110,11 +126,16 @@ namespace StartScreen
         {
             if (disposing)
             {
-                JoinableTaskFactory.Run(async () => { await StartScreenWindow.HideAsync(); });
                 Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterCloseSolution -= OnSolutionClosed;
+                _shutdownCancellation.Cancel();
             }
 
             base.Dispose(disposing);
+
+            if (disposing)
+            {
+                _shutdownCancellation.Dispose();
+            }
         }
     }
 }

@@ -30,7 +30,8 @@ namespace StartScreen.ToolWindows
         private JoinableTask _controlLoadTask;
         private bool _isInitialized;
         private bool _isSynchronizingContentHorizontalScroll;
-        private CancellationTokenSource _lifetimeCancellation = new CancellationTokenSource();
+        private readonly CancellationToken _shutdownToken = StartScreenPackage.ShutdownToken;
+        private CancellationTokenSource _lifetimeCancellation;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -38,8 +39,9 @@ namespace StartScreen.ToolWindows
         {
             _viewModel = viewModel;
             _loadTask = loadTask;
+            _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             _devHubCacheTask = new AsyncLazy<DevHubDashboard>(
-                () => _devHubService.LoadFromCacheAsync(), StartScreenPackage.BackgroundTaskFactory);
+                () => _devHubService.LoadFromCacheAsync(_shutdownToken), StartScreenPackage.BackgroundTaskFactory);
             InitializeComponent();
 
             // Bind the ViewModel up front so the MRU list pops in as soon as
@@ -52,11 +54,14 @@ namespace StartScreen.ToolWindows
 
         private void UserControl_Loaded(object sender, RoutedEventArgs e)
         {
+            if (_shutdownToken.IsCancellationRequested)
+                return;
+
             StartupDiagnostics.Mark("control loaded");
             if (_lifetimeCancellation.IsCancellationRequested)
             {
                 _lifetimeCancellation.Dispose();
-                _lifetimeCancellation = new CancellationTokenSource();
+                _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             }
 
             _viewModel.ActivateBackgroundWork();
@@ -107,8 +112,8 @@ namespace StartScreen.ToolWindows
                     await _loadTask;
 
                 // Let rendering and pending user input run before secondary sections start.
-                await System.Windows.Threading.Dispatcher.Yield(
-                    System.Windows.Threading.DispatcherPriority.ContextIdle);
+                await StartScreenPackage.BackgroundTaskFactory.YieldAsync(
+                    System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 StartupDiagnostics.Mark("MRU render yielded to input");
 
@@ -302,7 +307,8 @@ namespace StartScreen.ToolWindows
                 if (hadFocus)
                 {
                     // Allow layout to rebuild after collection change
-                    await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Loaded);
+                    await StartScreenPackage.BackgroundTaskFactory.YieldAsync(
+                        System.Windows.Threading.DispatcherPriority.Loaded, _lifetimeCancellation.Token);
                     FocusMruItemByPath(item.Path);
                 }
             }).FileAndForget(nameof(StartScreenControl));

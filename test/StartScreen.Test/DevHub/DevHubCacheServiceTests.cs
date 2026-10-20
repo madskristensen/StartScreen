@@ -31,6 +31,20 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public async Task LoadFromCache_ShutdownPropagatesCancellationAsync()
+        {
+            using var shutdown = new CancellationTokenSource();
+            var service = new DevHubService(_cache);
+            shutdown.Cancel();
+
+            var exception = await Assert.ThrowsAsync<OperationCanceledException>(
+                () => service.LoadFromCacheAsync(shutdown.Token));
+
+            Assert.AreEqual(shutdown.Token, exception.CancellationToken);
+            Assert.IsNull(service.CurrentDashboard);
+        }
+
+        [TestMethod]
         public void IsCacheStale_NoCacheFile_ReturnsTrue()
         {
             Assert.IsTrue(_cache.IsCacheStale());
