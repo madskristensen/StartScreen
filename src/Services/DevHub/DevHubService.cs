@@ -66,9 +66,11 @@ namespace StartScreen.Services.DevHub
         /// Categories and per-repository activity are published independently as they complete.
         /// A forced refresh waits for an active refresh and then fetches fresh authentication and data.
         /// </summary>
-        public async Task<DevHubDashboard> RefreshAsync(CancellationToken cancellationToken, IProgress<DevHubDashboard> progress = null, bool forceRefresh = false)
+        public async Task<DevHubDashboard> RefreshAsync(CancellationToken cancellationToken, IProgress<DevHubDashboard> progress = null,
+            bool forceRefresh = false, DevHubActivityOptions options = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            options = options ?? new DevHubActivityOptions();
 
             if (!await _refreshGate.WaitAsync(forceRefresh ? Timeout.Infinite : 0, cancellationToken))
                 return _currentDashboard;
@@ -78,7 +80,12 @@ namespace StartScreen.Services.DevHub
             try
             {
                 var previousDashboard = _currentDashboard;
-                var dashboard = new DevHubDashboard { FetchedAt = DateTime.UtcNow };
+                var dashboard = new DevHubDashboard
+                {
+                    FetchedAt = DateTime.UtcNow,
+                    ActivityLimit = options.MaxItems,
+                    IncludesCompleted = options.IncludeCompleted,
+                };
 
                 // Phase 1: Authenticate all providers in parallel. A single provider may
                 // surface multiple authenticated users when it spans multiple hosts (e.g.
@@ -125,13 +132,13 @@ namespace StartScreen.Services.DevHub
                 DevHubSortOrder sortOrder = _getSortOrder();
 
                 // Repository-wide feeds supplement personal activity without replacing older authored items.
-                var perRepoActivityTask = FetchPerRepoActivityAsync(authenticated, cancellationToken);
+                var perRepoActivityTask = FetchPerRepoActivityAsync(authenticated, options, cancellationToken);
                 var issueTask = Task.WhenAll(authenticated.Select(
-                    p => p.GetUserIssuesAsync(cancellationToken)));
+                    p => p is IDevHubActivityProvider activity ? activity.GetUserIssuesAsync(options, cancellationToken) : p.GetUserIssuesAsync(cancellationToken)));
                 var prTask = Task.WhenAll(authenticated.Select(
-                    p => p.GetUserPullRequestsAsync(cancellationToken)));
+                    p => p is IDevHubActivityProvider activity ? activity.GetUserPullRequestsAsync(options, cancellationToken) : p.GetUserPullRequestsAsync(cancellationToken)));
                 var ciTask = Task.WhenAll(authenticated.Select(
-                    p => p.GetUserCiRunsAsync(cancellationToken)));
+                    p => p is IDevHubActivityProvider activity ? activity.GetUserCiRunsAsync(options, cancellationToken) : p.GetUserCiRunsAsync(cancellationToken)));
 
                 IReadOnlyList<DevHubRepoDetail> perRepo = Array.Empty<DevHubRepoDetail>();
                 IEnumerable<DevHubIssue> issues = dashboard.Issues;
@@ -169,7 +176,8 @@ namespace StartScreen.Services.DevHub
                         MergeIssues(issues.Where(item => !replacedRepos.Contains(item.RepoIdentifier)), perRepo.SelectMany(detail => detail.Issues)),
                         sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
                     dashboard.PullRequests = DevHubItemSorter.Sort(
-                        MergePullRequests(pullRequests.Where(item => item.IsAuthoredByCurrentUser || !replacedRepos.Contains(item.RepoIdentifier)),
+                        MergePullRequests(pullRequests.Where(item => item.IsAuthoredByCurrentUser || item.IsReviewRequestedForCurrentUser
+                                || item.IsMentioned || !replacedRepos.Contains(item.RepoIdentifier)),
                             perRepo.SelectMany(detail => detail.PullRequests)),
                         sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
                     dashboard.CiRuns = ciRuns.Where(item => !replacedRepos.Contains(item.RepoIdentifier))
@@ -229,12 +237,13 @@ namespace StartScreen.Services.DevHub
         /// its cache. This prevents overlapping MRU selections and global refreshes from
         /// overwriting each other's results.
         /// </summary>
-        public async Task<DevHubDashboard> ScopeToRepoAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        public async Task<DevHubDashboard> ScopeToRepoAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken,
+            DevHubActivityOptions options = null)
         {
             if (repo == null)
                 return _currentDashboard;
 
-            var detail = await FetchRepoDetailFromProviderAsync(repo, ScopedRepoItemCount, cancellationToken);
+            var detail = await FetchRepoDetailFromProviderAsync(repo, ScopedRepoItemCount, cancellationToken, options);
             cancellationToken.ThrowIfCancellationRequested();
             if (detail == null)
                 return null;
@@ -243,6 +252,8 @@ namespace StartScreen.Services.DevHub
             {
                 Users = _currentDashboard?.Users.ToList() ?? new List<DevHubUser>(),
                 FetchedAt = detail.FetchedAt,
+                ActivityLimit = options?.MaxItems ?? ScopedRepoItemCount,
+                IncludesCompleted = options?.IncludeCompleted ?? false,
             };
             MergeRepoDetail(dashboard, repo, detail);
             return dashboard;
@@ -253,17 +264,20 @@ namespace StartScreen.Services.DevHub
         /// the "/_git/" segment for ADO so on-prem servers route to the Azure DevOps provider) and
         /// fetches repo detail from the matching provider.
         /// </summary>
-        private static async Task<DevHubRepoDetail> FetchRepoDetailFromProviderAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
+        private async Task<DevHubRepoDetail> FetchRepoDetailFromProviderAsync(RemoteRepoIdentifier repo, int maxItems,
+            CancellationToken cancellationToken, DevHubActivityOptions options = null)
         {
             var lookupUrl = !string.IsNullOrEmpty(repo.Project) && !string.IsNullOrEmpty(repo.BaseUrl)
                 ? $"{repo.BaseUrl}/{repo.Project}/_git/{repo.Repo}"
                 : $"https://{repo.Host}/{repo.Owner}/{repo.Repo}";
 
-            var provider = DevHubProviderRegistry.GetProvider(lookupUrl);
+            var provider = _providers.FirstOrDefault(candidate => candidate.CanHandle(lookupUrl));
             if (provider == null)
                 return null;
 
-            return await provider.GetRepoDetailAsync(repo, maxItems, cancellationToken);
+            return options != null && provider is IDevHubActivityProvider activity
+                ? await activity.GetRepoDetailAsync(repo, options, cancellationToken)
+                : await provider.GetRepoDetailAsync(repo, maxItems, cancellationToken);
         }
 
         /// <summary>
@@ -272,7 +286,8 @@ namespace StartScreen.Services.DevHub
         internal static void MergeRepoDetail(DevHubDashboard dashboard, RemoteRepoIdentifier repo, DevHubRepoDetail detail)
         {
             dashboard.PullRequests = MergePullRequests(dashboard.PullRequests
-                .Where(pr => pr.IsAuthoredByCurrentUser || !repo.Equals(pr.RepoIdentifier)), detail.PullRequests).ToList();
+                .Where(pr => pr.IsAuthoredByCurrentUser || pr.IsReviewRequestedForCurrentUser || pr.IsMentioned
+                    || !repo.Equals(pr.RepoIdentifier)), detail.PullRequests).ToList();
             dashboard.Issues = MergeIssues(dashboard.Issues.Where(i => !repo.Equals(i.RepoIdentifier)), detail.Issues).ToList();
             dashboard.CiRuns = dashboard.CiRuns
                 .Where(c => !repo.Equals(c.RepoIdentifier))
@@ -288,11 +303,28 @@ namespace StartScreen.Services.DevHub
         internal static IEnumerable<DevHubPullRequest> MergePullRequests(IEnumerable<DevHubPullRequest> pullRequests,
             IEnumerable<DevHubPullRequest> repositoryPullRequests)
         {
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seen = new Dictionary<string, DevHubPullRequest>(StringComparer.OrdinalIgnoreCase);
             foreach (var pr in repositoryPullRequests.Concat(pullRequests))
             {
-                if (string.IsNullOrEmpty(pr.WebUrl) || seen.Add(pr.WebUrl))
+                if (string.IsNullOrEmpty(pr.WebUrl))
+                {
                     yield return pr;
+                    continue;
+                }
+                if (seen.TryGetValue(pr.WebUrl, out var existing))
+                {
+                    existing.IsAuthoredByCurrentUser |= pr.IsAuthoredByCurrentUser;
+                    existing.IsReviewRequestedForCurrentUser |= pr.IsReviewRequestedForCurrentUser;
+                    existing.IsMentioned |= pr.IsMentioned;
+                    existing.UnresolvedThreadCount = existing.UnresolvedThreadCount ?? pr.UnresolvedThreadCount;
+                    existing.CanMerge = existing.CanMerge ?? pr.CanMerge;
+                    existing.MergeBlockReason = existing.MergeBlockReason ?? pr.MergeBlockReason;
+                    existing.ChecksSummary = existing.ChecksSummary ?? pr.ChecksSummary;
+                    existing.ChecksUrl = existing.ChecksUrl ?? pr.ChecksUrl;
+                    continue;
+                }
+                seen.Add(pr.WebUrl, pr);
+                yield return pr;
             }
         }
 
@@ -313,7 +345,7 @@ namespace StartScreen.Services.DevHub
         /// number of requests stays proportional to what the user is actually working on.
         /// </summary>
         private async Task<IReadOnlyList<DevHubRepoDetail>> FetchPerRepoActivityAsync(
-            IReadOnlyList<IDevHubProvider> providers, CancellationToken cancellationToken)
+            IReadOnlyList<IDevHubProvider> providers, DevHubActivityOptions options, CancellationToken cancellationToken)
         {
             try
             {
@@ -330,7 +362,11 @@ namespace StartScreen.Services.DevHub
 
                     foreach (var repo in repos)
                     {
-                        detailTasks.Add(provider.GetRepoDetailAsync(repo, _dashboardRepoItemCount, cancellationToken));
+                        var repoOptions = new DevHubActivityOptions(options.MaxItems == DevHubActivityOptions.DefaultLimit
+                            ? _dashboardRepoItemCount : options.MaxItems, options.IncludeCompleted);
+                        detailTasks.Add(provider is IDevHubActivityProvider activity
+                            ? activity.GetRepoDetailAsync(repo, repoOptions, cancellationToken)
+                            : provider.GetRepoDetailAsync(repo, _dashboardRepoItemCount, cancellationToken));
                     }
                 }
 

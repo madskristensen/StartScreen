@@ -106,9 +106,9 @@ namespace StartScreen.Test
             }.Contains(setter.Attribute("Property")?.Value)));
             Assert.IsFalse(style.Elements(p + "Style.Triggers").Any());
 
-            var allRepositories = document.Descendants(p + "Button")
+            var allRepositories = ReadLayoutXaml("DevHubPanel.xaml").Descendants(p + "Button")
                 .Single(element => element.Attribute("Content")?.Value == "All repositories");
-            Assert.AreEqual("{StaticResource ActionButtonStyle}", allRepositories.Attribute("Style")!.Value);
+            Assert.AreEqual("{DynamicResource ActionButtonStyle}", allRepositories.Attribute("Style")!.Value);
 
             var attach = document.Descendants(p + "Button")
                 .Single(element => element.Attribute(x + "Name")?.Value == "AttachToProcessButton");
@@ -532,90 +532,70 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        [DataRow(1200d, false)]
-        [DataRow(700d, true)]
-        public void ActivitySections_AlignTabsAndReserveSpaceForWorkFilters(double width, bool stacked)
+        [DataRow(700d)]
+        [DataRow(1200d)]
+        [DataRow(2400d)]
+        public void ActivitySections_KeepBothWorkBladesBesideNews(double width)
         {
             var screen = ReadLayoutXaml("StartScreenControl.xaml");
             var work = ReadLayoutXaml("DevHubPanel.xaml");
-            var news = ReadLayoutXaml("NewsItemControl.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
             var content = screen.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "ContentLayout");
             var layout = StartScreenControl.CalculateContentLayout(width, true);
-            Assert.AreEqual(stacked, layout.Stacked);
+            Assert.IsFalse(layout.Stacked);
             var grid = new Grid();
-            Grid.SetIsSharedSizeScope(grid, bool.Parse(content.Attribute("Grid.IsSharedSizeScope")!.Value));
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(layout.WorkWidth) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            foreach (var row in content.Element(p + "Grid.RowDefinitions")!.Elements())
-                grid.RowDefinitions.Add((RowDefinition)XamlReader.Parse(row.ToString()));
-
-            var headerDefinition = new XElement(content.Elements(p + "StackPanel").Single());
-            headerDefinition.Attribute("Visibility")!.Remove();
-            headerDefinition.Descendants(p + "Button").Remove();
-            headerDefinition.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding WorkSectionTitle}")
-                .SetAttributeValue("Text", "Your work");
-            var status = headerDefinition.Descendants(p + "Run").Single();
-            status.SetAttributeValue("Text", string.Empty);
-            status.SetAttributeValue("FontSize", "12");
-            status.Element(p + "Run.Foreground")!.Remove();
-            var workHeader = (StackPanel)XamlReader.Parse(headerDefinition.ToString());
-            var workHeading = workHeader.Children.OfType<DockPanel>().Single().Children.OfType<TextBlock>().Single();
-            grid.Children.Add(workHeader);
-
+            var bladesDefinition = work.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "WorkBlades");
+            var blades = new Grid { Margin = new Thickness(0, 0, 24, 0) };
+            foreach (var column in bladesDefinition.Element(p + "Grid.ColumnDefinitions")!.Elements())
+                blades.ColumnDefinitions.Add((ColumnDefinition)XamlReader.Parse(column.ToString()));
+            grid.Children.Add(blades);
+            var headings = new List<TextBlock>();
+            foreach (var definition in bladesDefinition.Elements(p + "StackPanel"))
+            {
+                var blade = new StackPanel();
+                if (definition.Attribute("Margin") != null)
+                    blade.Margin = ReadThickness(definition, "Margin");
+                Grid.SetColumn(blade, int.Parse(definition.Attribute("Grid.Column")!.Value));
+                var heading = new XElement(definition.Elements(p + "TextBlock").First());
+                heading.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+                heading.Descendants(p + "Run.Foreground").Remove();
+                foreach (var run in heading.Descendants(p + "Run"))
+                {
+                    run.SetAttributeValue("Text", string.Empty);
+                    run.SetAttributeValue("FontSize", "11");
+                }
+                var text = (TextBlock)XamlReader.Parse(heading.ToString());
+                headings.Add(text);
+                blade.Children.Add(text);
+                blade.Children.Add(CreateActivityFilters(work, definition));
+                blade.Children.Add(new TextBlock { Text = "Example activity", TextWrapping = TextWrapping.Wrap });
+                blades.Children.Add(blade);
+            }
             var newsDefinition = content.Elements(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "NewsColumnPanel");
-            var newsPanel = new Grid { VerticalAlignment = VerticalAlignment.Top, Margin = stacked ? new Thickness(0, 24, 0, 0) : new Thickness(0) };
-            foreach (var row in newsDefinition.Element(p + "Grid.RowDefinitions")!.Elements())
-                newsPanel.RowDefinitions.Add((RowDefinition)XamlReader.Parse(row.ToString()));
-            Grid.SetRow(newsPanel, stacked ? 2 : 0);
-            Grid.SetRowSpan(newsPanel, stacked ? 1 : 2);
-            Grid.SetColumn(newsPanel, stacked ? 0 : 1);
-            Grid.SetColumnSpan(newsPanel, stacked ? 2 : 1);
+            var newsPanel = new StackPanel();
+            Grid.SetColumn(newsPanel, 1);
             grid.Children.Add(newsPanel);
             var newsHeaderDefinition = new XElement(newsDefinition.Element(p + "DockPanel")!);
             newsHeaderDefinition.Elements(p + "TextBlock").Where(element => element.Attribute("DockPanel.Dock")?.Value == "Right").Remove();
             var newsHeader = (DockPanel)XamlReader.Parse(newsHeaderDefinition.ToString());
             var newsHeading = newsHeader.Children.OfType<TextBlock>().Single();
             newsPanel.Children.Add(newsHeader);
-
-            var workTitle = CreateWorkItemTitle(Models.DevHub.DevHubWorkItem.GetCopilotItems(
-                [new Models.CopilotActivitySession { Id = "session", Title = "Example" }], false).Single());
-            var workTemplate = work.Descendants(p + "DataTemplate").Single(element => element.Attribute(x + "Key")?.Value == "WorkItemTemplate");
-            var workCard = new Border { Padding = ReadThickness(workTemplate.Element(p + "Border")!, "Padding"), Child = workTitle };
-            var newsTitleDefinition = new XElement(news.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding Title}"));
-            newsTitleDefinition.SetAttributeValue("Text", "Example");
-            newsTitleDefinition.Attribute("Foreground")!.Remove();
-            var newsTitle = (TextBlock)XamlReader.Parse(newsTitleDefinition.ToString());
-            var newsCard = new Border { Padding = ReadThickness(news.Root!.Element(p + "Border")!, "Padding"), Child = newsTitle };
-            var myWork = work.Descendants(p + "TabItem").Single(element => element.Attribute(x + "Name")?.Value == "MyWorkTab");
-            var blogs = screen.Descendants(p + "TabItem").Single(element => element.Attribute(x + "Name")?.Value == "BlogsTab");
-            var workBody = new StackPanel { Margin = ReadThickness(myWork.Element(p + "StackPanel")!, "Margin") };
-            var newsBody = new StackPanel { Margin = ReadThickness(blogs.Element(p + "StackPanel")!, "Margin") };
-            var filters = CreateActivityFilters(work, myWork);
-            workBody.Children.Add(filters);
-            workBody.Children.Add(new TextBlock { Text = "Copilot sessions", FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 12, 0, 6) });
-            workBody.Children.Add(workCard);
-            newsBody.Children.Add(newsCard);
-            var workTabs = CreateLayoutTabs(work, "DevHubTabItemStyle", workBody);
-            var newsTabs = CreateLayoutTabs(screen, "NewsTabItemStyle", newsBody);
-            Grid.SetRow(workTabs, 1);
-            Grid.SetRow(newsTabs, 1);
-            grid.Children.Add(workTabs);
-            newsPanel.Children.Add(newsTabs);
-            grid.Measure(new Size(width, double.PositiveInfinity));
-            grid.Arrange(new Rect(0, 0, width, grid.DesiredSize.Height));
+            var contentWidth = Math.Max(1240, width);
+            grid.Measure(new Size(contentWidth, double.PositiveInfinity));
+            grid.Arrange(new Rect(0, 0, contentWidth, grid.DesiredSize.Height));
             grid.UpdateLayout();
 
-            double Top(FrameworkElement element) => element.TranslatePoint(new Point(), grid).Y;
-            Assert.AreEqual(Top(workTabs) - Top(workHeading), Top(newsTabs) - Top(newsHeading), 0.01, "Heading-to-tab distance must match.");
-            Assert.IsGreaterThanOrEqualTo(Top(filters) + filters.ActualHeight, Top(workCard), "Work cards must follow the filter controls.");
-            Assert.IsGreaterThan(Top(newsCard) - Top(newsTabs), Top(workCard) - Top(workTabs), "Work reserves extra space for filtering and group headers.");
-            if (!stacked)
-            {
-                Assert.AreEqual(Top(workTabs), Top(newsTabs), 0.01);
-                Assert.IsGreaterThan(Top(newsTitle), Top(workTitle));
-            }
+            Assert.HasCount(2, headings);
+            Assert.AreEqual(headings[0].TranslatePoint(new Point(), grid).Y, headings[1].TranslatePoint(new Point(), grid).Y, 0.01);
+            Assert.AreEqual(headings[0].TranslatePoint(new Point(), grid).Y, newsHeading.TranslatePoint(new Point(), grid).Y, 0.01);
+            Assert.IsGreaterThan(headings[0].TranslatePoint(new Point(), grid).X + headings[0].ActualWidth, headings[1].TranslatePoint(new Point(), grid).X);
+            Assert.IsGreaterThan(headings[1].TranslatePoint(new Point(), grid).X + headings[1].ActualWidth, newsHeading.TranslatePoint(new Point(), grid).X);
+            Assert.IsGreaterThanOrEqualTo(400d, headings[0].ActualWidth);
+            var scroll = screen.Descendants(p + "ScrollViewer").Single(element => element.Attribute(x + "Name")?.Value == "ContentScroll");
+            Assert.AreEqual("Hidden", scroll.Attribute("HorizontalScrollBarVisibility")?.Value);
         }
 
         private static XDocument ReadLayoutXaml(string resource)
@@ -665,7 +645,7 @@ namespace StartScreen.Test
         [STATestMethod]
         public void CopilotStatus_CollapsesEmptyGapButPreservesErrorMessages()
         {
-            using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
+            using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
             var document = XDocument.Load(stream);
             XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -696,7 +676,7 @@ namespace StartScreen.Test
         [TestMethod]
         public void CopilotStatus_IsBesideWorkHeadingAtOriginalFontSize()
         {
-            using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
+            using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
             var document = XDocument.Load(stream);
             XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -704,20 +684,20 @@ namespace StartScreen.Test
             var status = document.Descendants(presentation + "Run")
                 .Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotActivityStatusText");
             var heading = document.Descendants(presentation + "TextBlock")
-                .Single(element => element.Attribute("Text")?.Value == "{Binding WorkSectionTitle}");
+                .Single(element => element.Attribute("Text")?.Value == "My work");
 
             Assert.AreSame(heading.Parent!.Parent, status.Parent);
             Assert.AreEqual(presentation + "TextBlock", status.Parent!.Name);
             Assert.AreEqual("Baseline", heading.Parent.Attribute("BaselineAlignment")?.Value);
             Assert.AreEqual("Baseline", status.Attribute("BaselineAlignment")?.Value);
-            Assert.AreEqual("{Binding FontSize, ElementName=DevHubPanelControl, Mode=OneWay}", status.Attribute("FontSize")?.Value);
-            Assert.AreEqual("{Binding CopilotActivityStatus, ElementName=DevHubPanelControl, Mode=OneWay}", status.Attribute("Text")?.Value);
+            Assert.AreEqual("{Binding FontSize, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}", status.Attribute("FontSize")?.Value);
+            Assert.AreEqual("{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}", status.Attribute("Text")?.Value);
         }
 
         [STATestMethod]
         public void CopilotStatus_SharesTheMeasuredHeadingBaseline()
         {
-            using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
+            using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
             var document = XDocument.Load(stream);
             XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -725,7 +705,7 @@ namespace StartScreen.Test
             var line = new XElement(document.Descendants(presentation + "TextBlock")
                 .Single(element => element.Attribute(xaml + "Name")?.Value == "WorkHeadingLine"));
             line.Descendants(presentation + "TextBlock").Single().SetAttributeValue("Text", "Your work");
-            var status = line.Element(presentation + "Run")!;
+            var status = line.Elements(presentation + "Run").Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotActivityStatusText");
             status.SetAttributeValue("Text", "Discovering local Copilot sessions...");
             status.SetAttributeValue("FontSize", "12");
             status.Element(presentation + "Run.Foreground")!.Remove();
@@ -763,18 +743,19 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void WorkViews_HaveTwoTabsWithIndependentAttentionAndTypeFilters()
+        public void WorkViews_HaveTwoBladesWithIndependentAttentionAndTypeFilters()
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var tabs = document.Descendants(p + "TabControl").Single(element => element.Attribute(x + "Name")?.Value == "DevHubSubTabs")
-                .Elements(p + "TabItem").ToArray();
+            var tabs = document.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "WorkBlades")
+                .Elements(p + "StackPanel").ToArray();
 
-            CollectionAssert.AreEqual(new[] { "MyWorkTab", "IncomingTab" }, tabs.Select(tab => tab.Attribute(x + "Name")?.Value).ToArray());
+            CollectionAssert.AreEqual(new[] { "MyWorkBlade", "IncomingBlade" }, tabs.Select(tab => tab.Attribute(x + "Name")?.Value).ToArray());
+            Assert.IsEmpty(document.Descendants(p + "TabControl"));
             foreach (var tab in tabs)
             {
-                var attention = tab.Descendants(p + "CheckBox").Single();
+                var attention = tab.Descendants(p + "CheckBox").Single(element => element.Attribute("Content")?.Value == "Needs attention");
                 Assert.AreEqual("Needs attention", attention.Attribute("Content")?.Value);
                 Assert.AreEqual("ActivityFilter_Changed", attention.Attribute("Checked")?.Value);
                 Assert.AreEqual("ActivityFilter_Changed", attention.Attribute("Unchecked")?.Value);
@@ -782,7 +763,7 @@ namespace StartScreen.Test
                 Assert.AreEqual("{StaticResource WorkItemTemplate}", list.Attribute("ItemTemplate")?.Value);
                 Assert.AreEqual("WorkItemGroupStyle", list.Descendants(p + "StaticResource").Single().Attribute("ResourceKey")?.Value);
             }
-            CollectionAssert.AreEqual(new[] { "All", "PRs", "Issues", "Copilot" }, tabs[0].Descendants(p + "RadioButton")
+            CollectionAssert.AreEqual(new[] { "All", "PRs", "Issues", "Copilot", "Builds" }, tabs[0].Descendants(p + "RadioButton")
                 .Select(button => button.Attribute("Content")?.Value).ToArray());
             CollectionAssert.AreEqual(new[] { "All", "PRs", "Issues", "Builds" }, tabs[1].Descendants(p + "RadioButton")
                 .Select(button => button.Attribute("Content")?.Value).ToArray());
@@ -813,7 +794,9 @@ namespace StartScreen.Test
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-            var tabs = document.Descendants(p + "TabItem").ToArray();
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var tabs = document.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "WorkBlades")
+                .Elements(p + "StackPanel").ToArray();
             var own = CreateActivityFilters(document, tabs[0]);
             var incoming = CreateActivityFilters(document, tabs[1]);
             var root = new StackPanel();
@@ -914,19 +897,68 @@ namespace StartScreen.Test
                 && element.Attribute("Value")?.Value == "10"));
             Assert.IsTrue(style.Elements(p + "Setter").Any(element => element.Attribute("Property")?.Value == "FontWeight"
                 && element.Attribute("Value")?.Value == "Bold"));
-            foreach (var status in new[] { "Review requested", "Checks pending", "Checks failing", "Conflicts", "Waiting for review", "Draft" })
+            var colors = new Dictionary<string, string>
             {
-                var trigger = style.Descendants(p + "DataTrigger").Single(element => element.Attribute("Value")?.Value == status);
-                Assert.AreEqual("{Binding StatusText}", trigger.Attribute("Binding")?.Value);
-                Assert.IsTrue(trigger.Elements(p + "Setter").Any(element => element.Attribute("Property")?.Value == "Foreground"
-                    && element.Attribute("Value")!.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)));
+                ["Error"] = "ProgressBarColors.IndicatorFillCriticalBrushKey",
+                ["Success"] = "CommonDocumentColors.StatusBannerSuccessBorderTextBrushKey",
+                ["Warning"] = "ProgressBarColors.IndicatorFillWarningBrushKey",
+                ["Muted"] = "EnvironmentColors.ToolWindowTextBrushKey",
+            };
+            foreach (var color in colors)
+            {
+                var trigger = style.Descendants(p + "DataTrigger").Single(element => element.Attribute("Value")?.Value == color.Key);
+                Assert.AreEqual("{Binding StatusCategory}", trigger.Attribute("Binding")?.Value);
+                Assert.AreEqual($"{{DynamicResource {{x:Static platformui:{color.Value}}}}}",
+                    trigger.Elements(p + "Setter").Single(element => element.Attribute("Property")?.Value == "Foreground").Attribute("Value")?.Value);
             }
+            Assert.IsFalse(style.Descendants(p + "DataTrigger").Any(element => element.Attribute("Binding")?.Value == "{Binding NeedsAttention}"));
         }
 
         [STATestMethod]
-        [DataRow(200d)]
-        [DataRow(400d)]
-        public void PullRequestMetadata_PillsAndDatesFitAndRespondToThemeChanges(double width)
+        [DataRow("failure", "Error")]
+        [DataRow("success", "Success")]
+        [DataRow("pending", "Information")]
+        [DataRow("cancelled", "Muted")]
+        public void BuildBadges_UseSemanticColorsAndRespondToThemeChanges(string status, string category)
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var definition = new XElement(document.Descendants(p + "Style").Single(element => element.Attribute(x + "Key")?.Value == "PullRequestStatusStyle"));
+            definition.Attribute(x + "Key")!.Remove();
+            definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            foreach (var setter in definition.Descendants(p + "Setter").Where(element => element.Attribute("Property")?.Value == "Foreground"))
+            {
+                var tone = setter.Parent!.Name == p + "DataTrigger" ? setter.Parent.Attribute("Value")!.Value : "Information";
+                setter.SetAttributeValue("Value", $"{{DynamicResource Test{tone}Brush}}");
+            }
+            var badge = new TextBlock { Style = (Style)XamlReader.Parse(definition.ToString()) };
+            badge.Resources["TestErrorBrush"] = SystemColors.ControlTextBrush;
+            badge.Resources["TestSuccessBrush"] = SystemColors.HighlightBrush;
+            badge.Resources["TestWarningBrush"] = SystemColors.HotTrackBrush;
+            badge.Resources["TestMutedBrush"] = SystemColors.GrayTextBrush;
+            badge.Resources["TestInformationBrush"] = SystemColors.WindowTextBrush;
+            var build = new Models.DevHub.DevHubCiRun { Status = status, WebUrl = "https://example.com/build/1", IsTriggeredByCurrentUser = true };
+            var item = Models.DevHub.DevHubWorkItem.GetMyWork([], [], [], builds: [build]).Single();
+            badge.DataContext = item;
+            badge.Measure(new Size(400, double.PositiveInfinity));
+            badge.Arrange(new Rect(0, 0, 400, badge.DesiredSize.Height));
+            badge.UpdateLayout();
+            Assert.AreEqual(category, item.StatusCategory);
+            Assert.AreSame(badge.Resources[$"Test{category}Brush"], badge.Foreground);
+            badge.Resources[$"Test{category}Brush"] = SystemColors.HighlightTextBrush;
+            Assert.AreSame(SystemColors.HighlightTextBrush, badge.Foreground);
+        }
+
+        [STATestMethod]
+        [DataRow(200d, null)]
+        [DataRow(400d, null)]
+        [DataRow(200d, "madskristensen")]
+        [DataRow(400d, "madskristensen")]
+        [DataRow(520d, "madskristensen")]
+        [DataRow(200d, "A very long author display name that must fit within the available card width")]
+        [DataRow(520d, "A very long author display name that must fit within the available card width")]
+        public void PullRequestMetadata_PillsAndDatesFitAndRespondToThemeChanges(double width, string? authorName)
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -948,7 +980,7 @@ namespace StartScreen.Test
                 new XElement(p + "StackPanel.Resources", style), metadata).ToString());
             root.Resources["TestStatusBrush"] = SystemColors.HighlightBrush;
             root.Resources["TestPillBackground"] = SystemColors.ControlBrush;
-            root.DataContext = new Models.DevHub.DevHubPullRequest { UpdatedAt = DateTime.UtcNow };
+            root.DataContext = new Models.DevHub.DevHubPullRequest { Author = authorName, UpdatedAt = DateTime.UtcNow };
             root.Measure(new Size(width, double.PositiveInfinity));
             root.Arrange(new Rect(0, 0, width, root.DesiredSize.Height));
             root.UpdateLayout();
@@ -957,12 +989,25 @@ namespace StartScreen.Test
             var content = (WrapPanel)row.Children[1];
             var pill = (Border)content.Children[0];
             var badge = (TextBlock)pill.Child;
-            var date = (TextBlock)content.Children[1];
+            var author = (TextBlock)content.Children[1];
+            var date = (TextBlock)content.Children[2];
             Assert.AreEqual(new CornerRadius(9), pill.CornerRadius);
             Assert.AreEqual(new Thickness(7, 2, 7, 2), pill.Padding);
             Assert.AreEqual(new Thickness(1), pill.BorderThickness);
             Assert.AreEqual("Waiting for review", badge.Text);
-            Assert.AreEqual("Updated today", date.Text);
+            Assert.AreEqual("today", date.Text);
+            Assert.AreEqual(authorName == null ? Visibility.Collapsed : Visibility.Visible, author.Visibility);
+            if (authorName != null)
+            {
+                Assert.AreEqual($"by {authorName}", author.Text);
+                Assert.AreEqual(author.Text, author.ToolTip);
+                Assert.IsLessThanOrEqualTo(width - 60 + 0.1, author.TranslatePoint(new Point(), root).X + author.ActualWidth);
+                if (width == 520 && authorName == "madskristensen")
+                {
+                    Assert.AreEqual(author.TranslatePoint(new Point(), root).Y, date.TranslatePoint(new Point(), root).Y);
+                    Assert.IsLessThanOrEqualTo(date.TranslatePoint(new Point(), root).X, author.TranslatePoint(new Point(), root).X + author.ActualWidth);
+                }
+            }
             Assert.IsNotNull(date.ToolTip);
             Assert.IsTrue(date.TranslatePoint(new Point(), root).X + date.ActualWidth <= width - 60 + 0.1);
             Assert.IsTrue(pill.ActualWidth > badge.ActualWidth);

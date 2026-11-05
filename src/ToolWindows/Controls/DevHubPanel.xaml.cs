@@ -59,6 +59,11 @@ namespace StartScreen.ToolWindows.Controls
 
         public void SetWorkspaceFilter(RemoteRepoIdentifier repo)
         {
+            if (!Equals(_scopedRepo, repo))
+            {
+                _loadMoreStartingItemCount = null;
+                ActivityLoadStatus.Visibility = Visibility.Collapsed;
+            }
             _scopedRepo = repo;
         }
 
@@ -76,7 +81,7 @@ namespace StartScreen.ToolWindows.Controls
             _defaultTabApplied = true;
             IncomingNeedsAttention.IsChecked = true;
             IncomingPrFilter.IsChecked = true;
-            DevHubSubTabs.SelectedItem = IncomingTab;
+            SelectDefaultTab(DevHubDefaultTab.Incoming);
         }
 
         /// <summary>
@@ -132,6 +137,7 @@ namespace StartScreen.ToolWindows.Controls
             }
 
             ActivityWarningText.Visibility = string.IsNullOrEmpty(ActivityWarningText.Text) ? Visibility.Collapsed : Visibility.Visible;
+            UpdateActivityCoverage(dashboard);
             UpdateSettingsAccountStatus(hasGitHub, hasAdo);
             UpdateWorkspaceActivity(prs, issues, ciRuns);
             UpdateLastRefresh(dashboard.FetchedAt);
@@ -161,6 +167,12 @@ namespace StartScreen.ToolWindows.Controls
             ClearRepositoryActivity();
         }
 
+        internal void ShowActivityError(string message)
+        {
+            ActivityWarningText.Text = message;
+            ActivityWarningText.Visibility = Visibility.Visible;
+        }
+
         public void ShowLocalWorkspace()
         {
             _scopedRepo = null;
@@ -186,6 +198,7 @@ namespace StartScreen.ToolWindows.Controls
         {
             ActivityWarningText.Text = null;
             ActivityWarningText.Visibility = Visibility.Collapsed;
+            ActivityCoveragePanel.Visibility = Visibility.Collapsed;
             UpdateWorkspaceActivity(Array.Empty<DevHubPullRequest>(), Array.Empty<DevHubIssue>(), Array.Empty<DevHubCiRun>());
         }
 
@@ -262,8 +275,7 @@ namespace StartScreen.ToolWindows.Controls
             error.Visibility = Visibility.Collapsed;
         }
 
-        // Selects the user's preferred default sub-tab the first time the dashboard
-        // is shown. Subsequent refreshes leave the user's current tab untouched.
+        // Keeps the stored preference as the initial keyboard focus destination.
         private void ApplyDefaultTab()
         {
             if (_defaultTabApplied)
@@ -274,18 +286,6 @@ namespace StartScreen.ToolWindows.Controls
             _defaultTabApplied = true;
 
             SelectDefaultTab(Options.Instance.DevHubDefaultTab);
-        }
-
-        private void DevHubSubTabs_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        {
-            // Only react to selection changes that originated from the TabControl itself,
-            // not from inner ListBox / ItemsControl bubbling up.
-            if (!ReferenceEquals(e.OriginalSource, DevHubSubTabs))
-            {
-                return;
-            }
-
-            InvalidateBorderCache();
         }
 
         private static async Task SaveOptionsAsync()
@@ -328,11 +328,6 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ClearFilter_Click(object sender, RoutedEventArgs e)
         {
-            if (_scopedRepo == null)
-            {
-                return;
-            }
-
             _scopedRepo = null;
             ScopeToRepoRequested?.Invoke(this, null);
 
@@ -1072,6 +1067,8 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public event EventHandler RefreshRequested;
 
+        public event EventHandler ActivityOptionsChanged;
+
         /// <summary>
         /// Raised when the "last updated" display text changes.
         /// </summary>
@@ -1145,15 +1142,12 @@ namespace StartScreen.ToolWindows.Controls
         }
 
         /// <summary>
-        /// Focuses the first item in the currently visible tab.
+        /// Focuses the first item in the active work blade.
         /// Returns true if focus was set successfully.
         /// </summary>
-        private void FocusSelectedTab()
+        private void FocusActiveBladeHeader()
         {
-            if (DevHubSubTabs.SelectedItem is TabItem tab)
-            {
-                tab.Focus();
-            }
+            (_activeWorkView == DevHubDefaultTab.Incoming ? IncomingHeading : WorkHeadingLine).Focus();
         }
 
         internal bool FocusFirstItem()
@@ -1161,27 +1155,19 @@ namespace StartScreen.ToolWindows.Controls
             if (DashboardPanel.Visibility != Visibility.Visible)
                 return false;
 
-            var list = GetActiveItemsList();
-            if (list == null)
-            {
-                FocusSelectedTab();
-                return true;
-            }
-
-            var borders = GetCachedBorders(list);
-            if (borders.Count > 0)
-            {
-                borders[0].Focus();
-                return true;
-            }
-
-            FocusSelectedTab();
+            GetActiveItemsList();
+            FocusFirstItemInActiveBlade();
             return true;
         }
 
         private DependencyObject GetActiveItemsList()
         {
-            return ReferenceEquals(DevHubSubTabs.SelectedItem, IncomingTab) ? IncomingList : MyWorkList;
+            var focused = Keyboard.FocusedElement as DependencyObject;
+            if (IsInsideBlade(focused, IncomingBlade))
+                _activeWorkView = DevHubDefaultTab.Incoming;
+            else if (IsInsideBlade(focused, MyWorkBlade))
+                _activeWorkView = DevHubDefaultTab.MyWork;
+            return _activeWorkView == DevHubDefaultTab.Incoming ? IncomingList : MyWorkList;
         }
 
         private void DevHubPanel_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -1219,22 +1205,18 @@ namespace StartScreen.ToolWindows.Controls
                         }
                         else
                         {
-                            // Focus the selected tab header
-                            if (DevHubSubTabs.SelectedItem is TabItem tab)
-                            {
-                                tab.Focus();
-                            }
+                            FocusActiveBladeHeader();
                         }
                         e.Handled = true;
                     }
                     else if (e.Key == Key.Left)
                     {
-                        FocusMruRequested?.Invoke(this, EventArgs.Empty);
+                        MoveBetweenBlades(false);
                         e.Handled = true;
                     }
                     else if (e.Key == Key.Right)
                     {
-                        FocusNewsRequested?.Invoke(this, EventArgs.Empty);
+                        MoveBetweenBlades(true);
                         e.Handled = true;
                     }
                     else if (e.Key == Key.Enter)
@@ -1258,34 +1240,61 @@ namespace StartScreen.ToolWindows.Controls
                 }
             }
 
-            // Check if focused on a tab header
-            if (IsInsideTabHeader(focused))
+            if (ReferenceEquals(focused, WorkHeadingLine) || ReferenceEquals(focused, IncomingHeading))
             {
                 if (e.Key == Key.Down)
                 {
                     FocusFirstItem();
                     e.Handled = true;
                 }
-                else if (e.Key == Key.Left && DevHubSubTabs.SelectedIndex == 0)
+                else if (e.Key == Key.Left)
                 {
-                    FocusMruRequested?.Invoke(this, EventArgs.Empty);
+                    MoveBetweenBlades(false);
                     e.Handled = true;
                 }
-                else if (e.Key == Key.Right && DevHubSubTabs.SelectedIndex == DevHubSubTabs.Items.Count - 1)
+                else if (e.Key == Key.Right)
                 {
-                    FocusNewsRequested?.Invoke(this, EventArgs.Empty);
+                    MoveBetweenBlades(true);
                     e.Handled = true;
                 }
             }
         }
 
-        private bool IsInsideTabHeader(DependencyObject element)
+        private void MoveBetweenBlades(bool right)
         {
-            while (element != null && element != DevHubSubTabs)
+            if (right && _activeWorkView == DevHubDefaultTab.MyWork)
             {
-                if (element is TabItem)
+                SelectDefaultTab(DevHubDefaultTab.Incoming);
+                FocusFirstItemInActiveBlade();
+            }
+            else if (!right && _activeWorkView == DevHubDefaultTab.Incoming)
+            {
+                SelectDefaultTab(DevHubDefaultTab.MyWork);
+                FocusFirstItemInActiveBlade();
+            }
+            else if (right)
+                FocusNewsRequested?.Invoke(this, EventArgs.Empty);
+            else
+                FocusMruRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void FocusFirstItemInActiveBlade()
+        {
+            var list = _activeWorkView == DevHubDefaultTab.Incoming ? IncomingList : MyWorkList;
+            var borders = GetCachedBorders(list);
+            if (borders.Count > 0)
+                borders[0].Focus();
+            else
+                FocusActiveBladeHeader();
+        }
+
+        private static bool IsInsideBlade(DependencyObject element, DependencyObject blade)
+        {
+            while (element != null)
+            {
+                if (ReferenceEquals(element, blade))
                     return true;
-                element = VisualTreeHelper.GetParent(element);
+                element = element is FrameworkContentElement content ? content.Parent : VisualTreeHelper.GetParent(element);
             }
 
             return false;

@@ -66,18 +66,40 @@ namespace StartScreen.Models.DevHub
 
         public bool IsClosed { get; set; }
 
+        public string WorkItemType { get; set; }
+        public string AssignedTo { get; set; }
+        public string Iteration { get; set; }
+        public bool IsBlocked { get; set; }
+        public bool IsMentioned { get; set; }
+
         [JsonIgnore]
         public string AttentionReason => !IsClosed && !string.IsNullOrWhiteSpace(State)
             && !string.Equals(State, "closed", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(State, "done", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(State, "removed", StringComparison.OrdinalIgnoreCase)
-            && IsAssignedToCurrentUser ? "Assigned to you" : null;
+            && IsAssignedToCurrentUser ? (IsBlocked ? "Blocked" : "Assigned to you") : null;
 
         [JsonIgnore]
         public bool NeedsAttention => AttentionReason != null;
 
         [JsonIgnore]
-        public string StatusText => AttentionReason ?? State;
+        public string StatusText => IsBlocked && !IsClosed ? "Blocked" : State;
+
+        [JsonIgnore]
+        public string MetadataText => string.Join(" / ", new[] { WorkItemType, Priority }
+            .Where(value => !string.IsNullOrWhiteSpace(value)));
+
+        [JsonIgnore]
+        public string StatusDetails => string.Join(Environment.NewLine, new[]
+        {
+            string.IsNullOrEmpty(Author) ? null : $"Created by: {Author}",
+            string.IsNullOrEmpty(AssignedTo) ? null : $"Assigned to: {AssignedTo}",
+            State,
+            MetadataText,
+            string.IsNullOrEmpty(Iteration) ? null : $"Iteration: {Iteration}",
+            IsBlocked ? "Blocked" : null,
+            IsMentioned ? "You were mentioned (not an unread indicator)" : null,
+        }.Where(value => !string.IsNullOrWhiteSpace(value)));
 
         /// <summary>
         /// Priority level if available (e.g., "P1", "Critical"), or null.

@@ -106,7 +106,7 @@ namespace StartScreen
         public string DevHubSearchQuery { get; set; } = "";
 
         /// <summary>
-        /// The Dev Hub sub-tab selected by default when the Start Screen opens.
+        /// The initial keyboard navigation destination among the work blades.
         /// </summary>
         [Browsable(false)]
         [DefaultValue(DevHubDefaultTab.MyWork)]

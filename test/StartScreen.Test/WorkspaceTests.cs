@@ -318,13 +318,13 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        [DataRow(780d, true, 460d, false, 1, 1)]
-        [DataRow(900d, true, 560d, false, 1, 1)]
-        [DataRow(1600d, true, 560d, false, 3, 3)]
-        [DataRow(2200d, true, 560d, false, 4, 5)]
-        [DataRow(779d, true, 560d, true, 2, 2)]
+        [DataRow(780d, true, 920d, false, 1, 1)]
+        [DataRow(900d, true, 920d, false, 1, 1)]
+        [DataRow(1600d, true, 920d, false, 2, 2)]
+        [DataRow(2200d, true, 920d, false, 3, 4)]
+        [DataRow(779d, true, 920d, false, 1, 1)]
         [DataRow(1200d, false, 0d, false, 3, 4)]
-        public void ContentLayout_CapsWorkAndGivesExtraWidthToNews(double width, bool showWork,
+        public void ContentLayout_KeepsWorkBladesReadableAndNewsOnTheRight(double width, bool showWork,
             double expectedWorkWidth, bool expectedStacked, int expectedNewsColumns, int expectedVideoColumns)
         {
             var layout = StartScreenControl.CalculateContentLayout(width, showWork);
@@ -333,7 +333,7 @@ namespace StartScreen.Test
             Assert.AreEqual(expectedStacked, layout.Stacked);
             Assert.AreEqual(expectedNewsColumns, layout.NewsColumns);
             Assert.AreEqual(expectedVideoColumns, layout.VideoColumns);
-            Assert.IsLessThanOrEqualTo(560d, layout.WorkWidth);
+            Assert.IsLessThanOrEqualTo(920d, layout.WorkWidth);
         }
 
         [TestMethod]

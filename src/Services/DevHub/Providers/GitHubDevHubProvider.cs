@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -14,7 +15,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// GitHub provider for the Dev Hub.
     /// Fetches PRs, issues, and CI status from the GitHub REST API.
     /// </summary>
-    internal sealed class GitHubDevHubProvider : IDevHubProvider
+    internal sealed class GitHubDevHubProvider : IDevHubProvider, IDevHubActivityProvider
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -188,7 +189,12 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
-        public async Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken)
+        public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken)
+        {
+            return GetUserPullRequestsAsync(new DevHubActivityOptions(), cancellationToken);
+        }
+
+        public async Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(DevHubActivityOptions options, CancellationToken cancellationToken)
         {
             try
             {
@@ -196,49 +202,8 @@ namespace StartScreen.Services.DevHub.Providers
                 if (credential == null || string.IsNullOrEmpty(login))
                     return Array.Empty<DevHubPullRequest>();
 
-                var query = Uri.EscapeDataString(BuildSearchQuery("is:pr", login, Options.Instance.DevHubSearchQuery));
-                var results = new List<DevHubPullRequest>();
-                try
-                {
-                    using var response = await SendGetAsync(credential,
-                        $"https://api.github.com/search/issues?q={query}&advanced_search=true&sort=updated&order=desc&per_page=30", cancellationToken);
-                    response.EnsureSuccessStatusCode();
-                    results = ParsePullRequests(await response.Content.ReadAsStringAsync(), login);
-                }
-                catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
-                {
-                    await ex.LogAsync();
-                }
-                // Search items do not contain requested_reviewers. Only the dedicated
-                // authenticated review-requested query establishes this flag reliably.
-                var reviewQuery = Uri.EscapeDataString($"is:pr is:open review-requested:{login}");
-                try
-                {
-                    using (var reviewsResponse = await SendGetAsync(credential,
-                        $"https://api.github.com/search/issues?q={reviewQuery}&per_page=30", cancellationToken))
-                    {
-                        reviewsResponse.EnsureSuccessStatusCode();
-                        if (reviewsResponse.IsSuccessStatusCode)
-                        {
-                            var reviews = ParsePullRequests(await reviewsResponse.Content.ReadAsStringAsync(), login, true);
-                            foreach (var review in reviews)
-                            {
-                                var existing = results.Find(pr => pr.NumericId == review.NumericId && Equals(pr.RepoIdentifier, review.RepoIdentifier));
-                                if (existing != null)
-                                    existing.IsReviewRequestedForCurrentUser = true;
-                                else
-                                    results.Add(review);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
-                {
-                    await ex.LogAsync();
-                }
-                await PopulateOwnPullRequestsAsync(_httpClient, credential, results, login, cancellationToken);
-                await TryPopulateActionMetadataAsync(credential, results, cancellationToken);
-                return results;
+                return await GetUserPullRequestsAsync(_httpClient, credential, login, options, cancellationToken,
+                    customQuery: Options.Instance.DevHubSearchQuery);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
@@ -247,7 +212,12 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
-        public async Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken)
+        public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken)
+        {
+            return GetUserIssuesAsync(new DevHubActivityOptions(), cancellationToken);
+        }
+
+        public async Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(DevHubActivityOptions options, CancellationToken cancellationToken)
         {
             try
             {
@@ -255,21 +225,8 @@ namespace StartScreen.Services.DevHub.Providers
                 if (credential == null || string.IsNullOrEmpty(login))
                     return Array.Empty<DevHubIssue>();
 
-                var query = Uri.EscapeDataString(BuildSearchQuery("is:issue", login, Options.Instance.DevHubSearchQuery));
-                var results = new List<DevHubIssue>();
-                try
-                {
-                    using var response = await SendGetAsync(credential,
-                        $"https://api.github.com/search/issues?q={query}&advanced_search=true&sort=updated&order=desc&per_page=20", cancellationToken);
-                    response.EnsureSuccessStatusCode();
-                    results = ParseIssues(await response.Content.ReadAsStringAsync(), login);
-                }
-                catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
-                {
-                    await ex.LogAsync();
-                }
-                await PopulateOwnIssuesAsync(_httpClient, credential, results, login, 20, cancellationToken);
-                return results;
+                return await GetUserIssuesAsync(_httpClient, credential, login, options, cancellationToken,
+                    customQuery: Options.Instance.DevHubSearchQuery);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
@@ -278,7 +235,12 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
-        public async Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken)
+        public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken)
+        {
+            return GetUserCiRunsAsync(new DevHubActivityOptions(), cancellationToken);
+        }
+
+        public async Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(DevHubActivityOptions options, CancellationToken cancellationToken)
         {
             try
             {
@@ -286,7 +248,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (credential == null || string.IsNullOrEmpty(login))
                     return Array.Empty<DevHubCiRun>();
 
-                return await GetUserCiRunsAsync(_httpClient, credential, cancellationToken);
+                return await GetUserCiRunsAsync(_httpClient, credential, login, options, cancellationToken);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
@@ -352,67 +314,259 @@ namespace StartScreen.Services.DevHub.Providers
             return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(Array.Empty<RemoteRepoIdentifier>());
         }
 
-        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
+        public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
         {
+            return GetRepoDetailAsync(repo, new DevHubActivityOptions(Math.Max(1, Math.Min(DevHubActivityOptions.MaximumLimit, maxItems))), cancellationToken);
+        }
+
+        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             if (repo == null)
                 return null;
-
-            var perPage = NormalizeMaxItems(maxItems);
-
             var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
             if (credential == null)
                 return null;
+            var login = await _identityCache.GetAsync(credential, "https://api.github.com/user",
+                (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken);
+            return await GetRepoDetailAsync(_httpClient, credential, login, repo, options, cancellationToken);
+        }
 
-            try
+        internal static async Task<DevHubRepoDetail> GetRepoDetailAsync(HttpClient client, DevHubCredential credential,
+            string login, RemoteRepoIdentifier repo, DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var detail = new DevHubRepoDetail { RepoIdentifier = repo, FetchedAt = DateTime.UtcNow };
+            var root = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}";
+            var prs = await ReadPagesAsync(client, credential, root + "/pulls?state=open&sort=updated&direction=desc",
+                null, options.MaxItems, item => ParseRepoPullRequests("[" + item.GetRawText() + "]", repo, login), cancellationToken);
+            detail.PullRequests = prs;
+            if (!string.IsNullOrEmpty(login))
             {
-                var detail = new DevHubRepoDetail
-                {
-                    RepoIdentifier = repo,
-                    FetchedAt = DateTime.UtcNow,
-                };
-                var login = await _identityCache.GetAsync(credential, "https://api.github.com/user",
-                    (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken);
-
-                // Fetch PRs for this repo
-                var prUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/pulls?state=open&sort=updated&direction=desc&per_page={perPage}";
-                var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
-                if (prResponse.IsSuccessStatusCode)
-                {
-                    var prJson = await prResponse.Content.ReadAsStringAsync();
-                    detail.PullRequests = ParseRepoPullRequests(prJson, repo, login);
-                }
-                if (!string.IsNullOrEmpty(login))
-                    await PopulateOwnPullRequestsAsync(_httpClient, credential, detail.PullRequests, login, cancellationToken, repo);
-                await TryPopulateActionMetadataAsync(credential, detail.PullRequests, cancellationToken);
-
-                // Fetch issues for this repo
-                var issueUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/issues?state=open&sort=updated&direction=desc&per_page={perPage}";
-                var issueResponse = await SendGetAsync(credential, issueUrl, cancellationToken);
-                if (issueResponse.IsSuccessStatusCode)
-                {
-                    var issueJson = await issueResponse.Content.ReadAsStringAsync();
-                    detail.Issues = ParseRepoIssues(issueJson, repo, login);
-                    if (!string.IsNullOrEmpty(login))
-                        detail.ActivityWarning = await PopulateOwnIssuesAsync(_httpClient, credential, detail.Issues,
-                            login, perPage, cancellationToken, repo);
-                }
-
-                // Fetch latest CI runs
-                var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page={perPage}";
-                var runsResponse = await SendGetAsync(credential, runsUrl, cancellationToken);
-                if (runsResponse.IsSuccessStatusCode)
-                {
-                    var runsJson = await runsResponse.Content.ReadAsStringAsync();
-                    detail.CiRuns = ParseCiRuns(runsJson, repo);
-                }
-
-                return detail;
+                var personal = await GetUserPullRequestsAsync(client, credential, login, options, cancellationToken, repo, populateMetadata: false);
+                MergePullRequests(prs, personal);
             }
-            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+            await PopulateActivityMetadataAsync(client, credential, prs, cancellationToken);
+            detail.Issues = await ReadPagesAsync(client, credential, root + "/issues?state=open&sort=updated&direction=desc",
+                null, options.MaxItems, item => ParseRepoIssues("[" + item.GetRawText() + "]", repo, login), cancellationToken);
+            if (!string.IsNullOrEmpty(login))
             {
-                await ex.LogAsync();
-                return null;
+                var personal = await GetUserIssuesAsync(client, credential, login, options, cancellationToken, repo);
+                MergeIssues(detail.Issues, personal);
             }
+            detail.CiRuns = await ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken);
+            return detail;
+        }
+
+        // The limit applies independently to each activity lane. A busy incoming lane must
+        // not crowd out authored/assigned work, or the separately bounded completed lane.
+        internal static async Task<List<DevHubPullRequest>> GetUserPullRequestsAsync(HttpClient client,
+            DevHubCredential credential, string login, DevHubActivityOptions options, CancellationToken cancellationToken,
+            RemoteRepoIdentifier repo = null, string customQuery = null, bool populateMetadata = true)
+        {
+            var results = new List<DevHubPullRequest>();
+            var scope = repo == null ? string.Empty : $" AND repo:{repo.Owner}/{repo.Repo}";
+            var incoming = repo == null ? BuildSearchQuery("is:pr", login, customQuery) : $"is:pr is:open involves:{login}";
+            var queries = new[] { incoming + scope, BuildPersonalSearchQuery("is:pr", login, "author", repo),
+                $"is:pr is:open review-requested:{login}{scope}", $"is:pr is:open mentions:{login}{scope}" };
+            for (var index = 0; index < queries.Length; index++)
+            {
+                var page = await SearchPullRequestsAsync(client, credential, queries[index], login, options.MaxItems, cancellationToken);
+                foreach (var pr in page)
+                {
+                    pr.IsReviewRequestedForCurrentUser = index == 2 && pr.IsOpen;
+                    pr.IsMentioned = index == 3;
+                }
+                MergePullRequests(results, page.Where(pr => pr.IsOpen));
+            }
+            if (options.IncludeCompleted)
+            {
+                var cutoff = DateTime.UtcNow.AddDays(-14);
+                var query = $"is:pr is:merged author:{login} merged:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}";
+                var completed = await SearchPullRequestsAsync(client, credential, query, login, options.MaxItems, cancellationToken, cutoff);
+                MergePullRequests(results, completed.Where(pr => pr.IsMerged && pr.IsAuthoredByCurrentUser && pr.UpdatedAt >= cutoff));
+            }
+            if (populateMetadata)
+                await PopulateActivityMetadataAsync(client, credential, results, cancellationToken);
+            return results;
+        }
+
+        internal static async Task<List<DevHubIssue>> GetUserIssuesAsync(HttpClient client,
+            DevHubCredential credential, string login, DevHubActivityOptions options, CancellationToken cancellationToken,
+            RemoteRepoIdentifier repo = null, string customQuery = null)
+        {
+            var results = new List<DevHubIssue>();
+            var scope = repo == null ? string.Empty : $" AND repo:{repo.Owner}/{repo.Repo}";
+            var incoming = repo == null ? BuildSearchQuery("is:issue", login, customQuery) : $"is:issue is:open involves:{login}";
+            var queries = new[] { incoming + scope, BuildPersonalSearchQuery("is:issue", login, "author", repo),
+                BuildPersonalSearchQuery("is:issue", login, "assignee", repo), $"is:issue is:open mentions:{login}{scope}" };
+            for (var index = 0; index < queries.Length; index++)
+            {
+                var page = await SearchIssuesAsync(client, credential, queries[index], login, options.MaxItems, cancellationToken);
+                foreach (var issue in page)
+                    issue.IsMentioned = index == 3;
+                MergeIssues(results, page.Where(issue => !issue.IsClosed));
+            }
+            if (options.IncludeCompleted)
+            {
+                var cutoff = DateTime.UtcNow.AddDays(-14);
+                foreach (var qualifier in new[] { "author", "assignee" })
+                {
+                    var query = $"is:issue is:closed {qualifier}:{login} closed:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}";
+                    var completed = await SearchIssuesAsync(client, credential, query, login, options.MaxItems, cancellationToken, cutoff);
+                    MergeIssues(results, completed.Where(issue => issue.IsClosed && issue.UpdatedAt >= cutoff
+                        && (issue.IsAuthoredByCurrentUser || issue.IsAssignedToCurrentUser)));
+                }
+            }
+            return results;
+        }
+
+        private static void MergePullRequests(List<DevHubPullRequest> results, IEnumerable<DevHubPullRequest> additions)
+        {
+            foreach (var pr in additions)
+            {
+                var existing = results.Find(item => item.NumericId == pr.NumericId && Equals(item.RepoIdentifier, pr.RepoIdentifier));
+                if (existing == null)
+                    results.Add(pr);
+                else
+                {
+                    existing.IsAuthoredByCurrentUser |= pr.IsAuthoredByCurrentUser;
+                    existing.IsReviewRequestedForCurrentUser |= pr.IsReviewRequestedForCurrentUser;
+                    existing.IsMentioned |= pr.IsMentioned;
+                }
+            }
+        }
+
+        private static void MergeIssues(List<DevHubIssue> results, IEnumerable<DevHubIssue> additions)
+        {
+            foreach (var issue in additions)
+            {
+                var existing = results.Find(item => item.NumericId == issue.NumericId && Equals(item.RepoIdentifier, issue.RepoIdentifier));
+                if (existing == null)
+                    results.Add(issue);
+                else
+                {
+                    existing.IsAuthoredByCurrentUser |= issue.IsAuthoredByCurrentUser;
+                    existing.IsAssignedToCurrentUser |= issue.IsAssignedToCurrentUser;
+                    existing.IsMentioned |= issue.IsMentioned;
+                }
+            }
+        }
+
+        private static Task<List<DevHubPullRequest>> SearchPullRequestsAsync(HttpClient client, DevHubCredential credential,
+            string query, string login, int maxItems, CancellationToken cancellationToken, DateTime? completedSince = null)
+        {
+            return ReadPagesAsync(client, credential, SearchUrl(query), "items", maxItems,
+                item => completedSince.HasValue && !HasRecentOutcome(item, "merged_at", completedSince.Value)
+                    ? new List<DevHubPullRequest>() : ParsePullRequests("{\"items\":[" + item.GetRawText() + "]}", login), cancellationToken);
+        }
+
+        private static Task<List<DevHubIssue>> SearchIssuesAsync(HttpClient client, DevHubCredential credential,
+            string query, string login, int maxItems, CancellationToken cancellationToken, DateTime? completedSince = null)
+        {
+            return ReadPagesAsync(client, credential, SearchUrl(query), "items", maxItems,
+                item => completedSince.HasValue && !HasRecentOutcome(item, "closed_at", completedSince.Value)
+                    ? new List<DevHubIssue>() : ParseIssues("{\"items\":[" + item.GetRawText() + "]}", login), cancellationToken);
+        }
+
+        private static bool HasRecentOutcome(JsonElement item, string property, DateTime cutoff)
+        {
+            if (property == "merged_at" && item.TryGetProperty("pull_request", out var pullRequest)
+                && pullRequest.ValueKind == JsonValueKind.Object)
+                item = pullRequest;
+            return item.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+                && value.TryGetDateTime(out var date) && date.ToUniversalTime() >= cutoff;
+        }
+
+        private static string SearchUrl(string query) =>
+            $"https://api.github.com/search/issues?q={Uri.EscapeDataString(query)}&advanced_search=true&sort=updated&order=desc";
+
+        private static async Task<List<T>> ReadPagesAsync<T>(HttpClient client, DevHubCredential credential,
+            string url, string collection, int maxItems, Func<JsonElement, IEnumerable<T>> parse, CancellationToken cancellationToken)
+        {
+            var results = new List<T>();
+            var pageSize = Math.Min(100, maxItems);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            // Count source records, not just accepted records (the issues endpoint also returns PRs).
+            for (var page = 1; page <= (maxItems + pageSize - 1) / pageSize; page++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    using var response = await SendGetAsync(credential, $"{url}&per_page={pageSize}&page={page}", cancellationToken, client);
+                    response.EnsureSuccessStatusCode();
+                    using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var items = collection == null ? doc.RootElement : doc.RootElement.GetProperty(collection);
+                    var added = false;
+                    foreach (var item in items.EnumerateArray().Take(Math.Min(pageSize, maxItems - (page - 1) * pageSize)))
+                    {
+                        if (!seen.Add(item.GetRawText()))
+                            continue;
+                        results.AddRange(parse(item));
+                        added = true;
+                    }
+                    var hasNextLink = response.Headers.TryGetValues("Link", out var links)
+                        && links.Any(link => link.IndexOf("rel=\"next\"", StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (!added || items.GetArrayLength() < pageSize && !hasNextLink)
+                        break;
+                }
+                catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+                {
+                    await ex.LogAsync();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    break;
+                }
+            }
+            return results;
+        }
+
+        internal static async Task<List<DevHubCiRun>> GetUserCiRunsAsync(HttpClient client, DevHubCredential credential,
+            string login, DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            var repos = await ReadPagesAsync(client, credential,
+                "https://api.github.com/user/repos?sort=pushed&affiliation=owner,collaborator,organization_member", null,
+                Math.Min(5, options.MaxItems), item => ParseRepoList("[" + item.GetRawText() + "]"), cancellationToken);
+            using var semaphore = new SemaphoreSlim(3, 3);
+            var pages = await Task.WhenAll(repos.Select(async repo =>
+            {
+                await semaphore.WaitAsync(cancellationToken);
+                try
+                {
+                    return await ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }));
+            return pages.SelectMany(page => page).OrderByDescending(run => run.Timestamp).Take(options.MaxItems).ToList();
+        }
+
+        private static async Task<List<DevHubCiRun>> ReadCiRunsAsync(HttpClient client, DevHubCredential credential,
+            RemoteRepoIdentifier repo, string login, int maxItems, CancellationToken cancellationToken)
+        {
+            var root = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs";
+            var ids = new Dictionary<DevHubCiRun, long>();
+            var runs = await ReadPagesAsync(client, credential, root + "?exclude_pull_requests=false", "workflow_runs", maxItems, item =>
+            {
+                var run = ParseCiRuns("{\"workflow_runs\":[" + item.GetRawText() + "]}", repo, login).Single();
+                if (item.TryGetProperty("id", out var id) && id.TryGetInt64(out var number))
+                    ids[run] = number;
+                return new[] { run };
+            }, cancellationToken);
+            foreach (var run in runs.Where(run => run.Status == "failure" && ids.ContainsKey(run)).Take(5))
+            {
+                var jobs = await ReadPagesAsync(client, credential, $"{root}/{ids[run]}/jobs?filter=latest", "jobs", 100,
+                    item => new[] { item.Clone() }, cancellationToken);
+                var failed = jobs.Where(job => GetString(job, "conclusion") == "failure" || GetString(job, "conclusion") == "timed_out").ToList();
+                if (failed.Count > 0)
+                {
+                    run.FailureSummary = string.Join(", ", failed.Select(job => GetString(job, "name")));
+                    run.FailureUrl = failed.Select(job => GetString(job, "html_url")).FirstOrDefault(url => !string.IsNullOrEmpty(url));
+                }
+            }
+            return runs;
         }
 
         public string GetRepoWebUrl(RemoteRepoIdentifier repo) =>
@@ -486,26 +640,30 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
-        private static async Task TryPopulateActionMetadataAsync(DevHubCredential credential,
+        private static async Task PopulateActivityMetadataAsync(HttpClient client, DevHubCredential credential,
             IReadOnlyList<DevHubPullRequest> pullRequests, CancellationToken cancellationToken)
         {
-            try
+            var active = pullRequests.Where(pr => pr.IsOpen && pr.RepoIdentifier != null).ToList();
+            for (var offset = 0; offset < active.Count; offset += 25)
             {
-                await PopulateActionMetadataAsync(_httpClient, credential, pullRequests, cancellationToken);
-            }
-            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
-            {
-                // Optional rollups must not hide otherwise accessible PRs (for example with REST-only tokens).
-                await ex.LogAsync();
+                try
+                {
+                    await PopulateActionMetadataAsync(client, credential, active.Skip(offset).Take(25).ToList(), cancellationToken, true);
+                }
+                catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+                {
+                    await ex.LogAsync();
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
             }
         }
 
         internal static async Task PopulateActionMetadataAsync(HttpClient client, DevHubCredential credential,
-            IReadOnlyList<DevHubPullRequest> pullRequests, CancellationToken cancellationToken)
+            IReadOnlyList<DevHubPullRequest> pullRequests, CancellationToken cancellationToken, bool includeIncoming = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var authored = pullRequests.Where(pr => pr.IsAuthoredByCurrentUser && pr.IsOpen
-                && !pr.IsDraft && pr.RepoIdentifier != null).Take(100).ToList();
+            var authored = pullRequests.Where(pr => (includeIncoming || pr.IsAuthoredByCurrentUser && !pr.IsDraft)
+                && pr.IsOpen && pr.RepoIdentifier != null).Take(100).ToList();
             if (authored.Count == 0)
                 return;
 
@@ -514,7 +672,10 @@ namespace StartScreen.Services.DevHub.Providers
             for (var i = 0; i < authored.Count; i++)
             {
                 var pr = authored[i];
-                query.Append($"r{i}: repository(owner:{JsonSerializer.Serialize(pr.RepoIdentifier.Owner)}, name:{JsonSerializer.Serialize(pr.RepoIdentifier.Repo)}) {{ pullRequest(number:{pr.NumericId}) {{ state isDraft mergeable reviewDecision commits(last:1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }} }} }}");
+                pr.CanMerge = null;
+                pr.UnresolvedThreadCount = null;
+                pr.MergeBlockReason = "Merge readiness could not be verified.";
+                query.Append($"r{i}: repository(owner:{JsonSerializer.Serialize(pr.RepoIdentifier.Owner)}, name:{JsonSerializer.Serialize(pr.RepoIdentifier.Repo)}) {{ pullRequest(number:{pr.NumericId}) {{ state isDraft merged mergeable mergeStateStatus reviewDecision reviewThreads(first:100) {{ nodes {{ isResolved }} pageInfo {{ hasNextPage }} }} commits(last:1) {{ nodes {{ commit {{ statusCheckRollup {{ state contexts(first:100) {{ nodes {{ ... on CheckRun {{ name status conclusion detailsUrl }} ... on StatusContext {{ context state targetUrl }} }} pageInfo {{ hasNextPage }} }} }} }} }} }} }} }}");
             }
             query.Append('}');
             using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.github.com/graphql");
@@ -524,24 +685,45 @@ namespace StartScreen.Services.DevHub.Providers
             response.EnsureSuccessStatusCode();
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             cancellationToken.ThrowIfCancellationRequested();
-            if (doc.RootElement.TryGetProperty("errors", out var errors) && errors.GetArrayLength() > 0)
-                throw new JsonException("GitHub could not retrieve pull request action metadata.");
-            var data = doc.RootElement.GetProperty("data");
-            for (var i = 0; i < authored.Count; i++)
+            var hasErrors = doc.RootElement.TryGetProperty("errors", out var errors) && errors.GetArrayLength() > 0;
+            if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
             {
-                if (data.TryGetProperty($"r{i}", out var repository) && repository.ValueKind == JsonValueKind.Object
-                    && repository.TryGetProperty("pullRequest", out var pr) && pr.ValueKind == JsonValueKind.Object)
-                    ApplyActionMetadata(authored[i], pr);
+                for (var i = 0; i < authored.Count; i++)
+                {
+                    if (data.TryGetProperty($"r{i}", out var repository) && repository.ValueKind == JsonValueKind.Object
+                        && repository.TryGetProperty("pullRequest", out var pr) && pr.ValueKind == JsonValueKind.Object)
+                    {
+                        ApplyActionMetadata(authored[i], pr);
+                        if (hasErrors)
+                        {
+                            authored[i].CanMerge = null;
+                            authored[i].MergeBlockReason = "Merge readiness could not be verified because some GitHub metadata was unavailable.";
+                        }
+                    }
+                }
             }
+            if (hasErrors)
+                throw new JsonException("GitHub could not retrieve all pull request action metadata.");
         }
 
         internal static void ApplyActionMetadata(DevHubPullRequest pr, JsonElement metadata)
         {
             pr.CiStatus = null;
+            pr.CanMerge = null;
+            pr.UnresolvedThreadCount = null;
+            pr.MergeBlockReason = "Merge readiness could not be verified.";
+            pr.ChecksSummary = null;
+            pr.ChecksUrl = null;
             if (metadata.TryGetProperty("state", out var state) && state.ValueKind == JsonValueKind.String)
-                pr.Status = state.GetString() == "OPEN" ? "open" : state.GetString().ToLowerInvariant();
+                pr.Status = state.GetString() == "OPEN"
+                    ? pr.IsDraft && (!metadata.TryGetProperty("isDraft", out var explicitDraft) || explicitDraft.ValueKind != JsonValueKind.False) ? "draft" : "open"
+                    : state.GetString().ToLowerInvariant();
             if (pr.IsOpen && metadata.TryGetProperty("isDraft", out var draft) && draft.ValueKind == JsonValueKind.True)
                 pr.Status = "draft";
+            pr.IsMerged = GetString(metadata, "state") == "MERGED"
+                || metadata.TryGetProperty("merged", out var merged) && merged.ValueKind == JsonValueKind.True;
+            if (pr.IsMerged)
+                pr.Status = "merged";
             if (pr.Status == "open" && metadata.TryGetProperty("mergeable", out var mergeable)
                 && mergeable.ValueKind == JsonValueKind.String
                 && mergeable.GetString() == "CONFLICTING")
@@ -551,6 +733,7 @@ namespace StartScreen.Services.DevHub.Providers
                 ? decision.GetString() : null;
             pr.HasChangesRequested = pr.IsOpen && reviewDecision == "CHANGES_REQUESTED";
             pr.IsApproved = pr.IsOpen && !pr.IsDraft && reviewDecision == "APPROVED";
+            var checksComplete = false;
             if (metadata.TryGetProperty("commits", out var commits) && commits.ValueKind == JsonValueKind.Object
                 && commits.TryGetProperty("nodes", out var nodes) && nodes.ValueKind == JsonValueKind.Array
                 && nodes.GetArrayLength() == 1
@@ -565,17 +748,94 @@ namespace StartScreen.Services.DevHub.Providers
                     "SUCCESS" => "success",
                     _ => null,
                 };
+                if (rollup.TryGetProperty("contexts", out var contexts) && contexts.ValueKind == JsonValueKind.Object
+                    && contexts.TryGetProperty("nodes", out var checks) && checks.ValueKind == JsonValueKind.Array)
+                {
+                    var summaries = new List<string>();
+                    foreach (var check in checks.EnumerateArray().Where(check => check.ValueKind == JsonValueKind.Object))
+                    {
+                        var name = GetString(check, "name") ?? GetString(check, "context");
+                        var status = GetString(check, "conclusion") ?? GetString(check, "state") ?? GetString(check, "status");
+                        summaries.Add($"{name}: {status}");
+                        var url = GetString(check, "detailsUrl") ?? GetString(check, "targetUrl");
+                        // Prefer a failing check's direct link over a successful check's link.
+                        if (pr.ChecksUrl == null || status == "FAILURE" || status == "ERROR" || status == "TIMED_OUT")
+                            pr.ChecksUrl = url ?? pr.ChecksUrl;
+                    }
+                    pr.ChecksSummary = string.Join(", ", summaries);
+                    checksComplete = IsCompleteConnection(contexts);
+                    if (!checksComplete)
+                        pr.ChecksSummary += " (partial check list)";
+                }
+            }
+            if (metadata.TryGetProperty("reviewThreads", out var threads) && threads.ValueKind == JsonValueKind.Object
+                && threads.TryGetProperty("nodes", out var threadNodes) && threadNodes.ValueKind == JsonValueKind.Array
+                && IsCompleteConnection(threads)
+                && threadNodes.EnumerateArray().All(thread => thread.ValueKind == JsonValueKind.Object
+                    && thread.TryGetProperty("isResolved", out var resolved)
+                    && (resolved.ValueKind == JsonValueKind.True || resolved.ValueKind == JsonValueKind.False)))
+                pr.UnresolvedThreadCount = threadNodes.EnumerateArray().Count(thread => thread.GetProperty("isResolved").ValueKind == JsonValueKind.False);
+
+            var mergeState = GetString(metadata, "mergeStateStatus");
+            var mergeability = GetString(metadata, "mergeable");
+            if (!pr.IsOpen || pr.IsDraft || mergeability == "CONFLICTING" || pr.HasChangesRequested
+                || pr.UnresolvedThreadCount > 0 || pr.CiStatus == "failure" || pr.CiStatus == "pending"
+                || mergeState == "BLOCKED" || mergeState == "BEHIND" || mergeState == "DIRTY"
+                || mergeState == "UNSTABLE" || mergeState == "DRAFT" || reviewDecision == "REVIEW_REQUIRED")
+            {
+                pr.CanMerge = false;
+                pr.MergeBlockReason = !pr.IsOpen ? "Pull request is closed."
+                    : pr.IsDraft ? "Pull request is a draft."
+                    : mergeability == "CONFLICTING" ? "Merge conflicts must be resolved."
+                    : pr.HasChangesRequested ? "Changes requested."
+                    : pr.UnresolvedThreadCount > 0 ? "Unresolved review discussions."
+                    : pr.CiStatus == "failure" ? "Checks failing."
+                    : pr.CiStatus == "pending" ? "Checks pending."
+                    : reviewDecision == "REVIEW_REQUIRED" ? "Required review pending."
+                    : $"GitHub merge state: {mergeState}.";
+            }
+            else if (mergeState == "CLEAN" && mergeability == "MERGEABLE" && reviewDecision == "APPROVED"
+                && GetString(metadata, "state") == "OPEN" && metadata.TryGetProperty("isDraft", out var isDraft)
+                && isDraft.ValueKind == JsonValueKind.False && checksComplete
+                && pr.CiStatus == "success" && pr.UnresolvedThreadCount == 0)
+            {
+                // CLEAN is GitHub's policy-aware state. Approval or green CI alone is not
+                // proof of readiness; missing or paginated discussion data remains unknown.
+                pr.CanMerge = true;
+                pr.MergeBlockReason = null;
             }
             if (!pr.IsOpen)
                 pr.IsReviewRequestedForCurrentUser = false;
         }
 
+        private static string GetString(JsonElement element, string property)
+        {
+            return element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
+                && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        }
+
+        private static bool IsCompleteConnection(JsonElement connection)
+        {
+            return connection.TryGetProperty("pageInfo", out var info) && info.ValueKind == JsonValueKind.Object
+                && info.TryGetProperty("hasNextPage", out var next) && next.ValueKind == JsonValueKind.False;
+        }
+
         private static string GetPrStatus(JsonElement item)
         {
+            if (IsMergedPullRequest(item))
+                return "merged";
             if (item.TryGetProperty("state", out var state) && state.ValueKind == JsonValueKind.String
                 && !string.Equals(state.GetString(), "open", StringComparison.OrdinalIgnoreCase))
                 return state.GetString();
             return item.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True ? "draft" : "open";
+        }
+
+        private static bool IsMergedPullRequest(JsonElement item)
+        {
+            return item.TryGetProperty("merged_at", out var mergedAt) && mergedAt.ValueKind == JsonValueKind.String
+                || item.TryGetProperty("merged", out var merged) && merged.ValueKind == JsonValueKind.True
+                || item.TryGetProperty("pull_request", out var pullRequest) && pullRequest.ValueKind == JsonValueKind.Object
+                    && pullRequest.TryGetProperty("merged_at", out var searchMergedAt) && searchMergedAt.ValueKind == JsonValueKind.String;
         }
 
         private static bool IsClosedIssue(JsonElement item)
@@ -646,6 +906,7 @@ namespace StartScreen.Services.DevHub.Providers
                 NumericId = number,
                 Author = author,
                 Status = GetPrStatus(item),
+                IsMerged = IsMergedPullRequest(item),
                 UpdatedAt = item.GetProperty("updated_at").GetDateTime().ToUniversalTime(),
                 CreatedAt = item.GetProperty("created_at").GetDateTime().ToUniversalTime(),
                 WebUrl = item.GetProperty("html_url").GetString(),
@@ -677,12 +938,13 @@ namespace StartScreen.Services.DevHub.Providers
                         TargetBranch = item.GetProperty("base").GetProperty("ref").GetString(),
                         SourceBranch = item.GetProperty("head").GetProperty("ref").GetString(),
                         Status = GetPrStatus(item),
+                        IsMerged = IsMergedPullRequest(item),
                         UpdatedAt = item.GetProperty("updated_at").GetDateTime().ToUniversalTime(),
                         CreatedAt = item.GetProperty("created_at").GetDateTime().ToUniversalTime(),
                         WebUrl = item.GetProperty("html_url").GetString(),
                         IsAuthoredByCurrentUser = !string.IsNullOrEmpty(currentUser)
                             && string.Equals(author, currentUser, StringComparison.OrdinalIgnoreCase),
-                        IsReviewRequestedForCurrentUser = GetPrStatus(item) != "closed"
+                        IsReviewRequestedForCurrentUser = (GetPrStatus(item) == "open" || GetPrStatus(item) == "draft")
                             && DevHubRepoSummaryFetcher.IsRequested(item, currentUser, true) == true,
                     });
                 }
@@ -748,7 +1010,12 @@ namespace StartScreen.Services.DevHub.Providers
                 State = item.TryGetProperty("state", out var state) ? state.GetString() : "open",
                 IsClosed = IsClosedIssue(item),
                 IsAuthoredByCurrentUser = IsIssueAuthor(item, currentUser),
-                IsAssignedToCurrentUser = IsOpenIssue(item) && IsIssueAssignee(item, currentUser),
+                IsAssignedToCurrentUser = (IsOpenIssue(item) || IsClosedIssue(item)) && IsIssueAssignee(item, currentUser),
+                WorkItemType = GetIssueType(item),
+                AssignedTo = GetAssignees(item),
+                Iteration = GetMilestone(item),
+                IsBlocked = labels.Any(label => string.Equals(label.Name, "blocked", StringComparison.OrdinalIgnoreCase)),
+                Priority = GetPriority(labels),
                 UpdatedAt = item.GetProperty("updated_at").GetDateTime().ToUniversalTime(),
                 CreatedAt = item.GetProperty("created_at").GetDateTime().ToUniversalTime(),
                 WebUrl = item.GetProperty("html_url").GetString(),
@@ -795,7 +1062,12 @@ namespace StartScreen.Services.DevHub.Providers
                         State = item.TryGetProperty("state", out var state) ? state.GetString() : "open",
                         IsClosed = IsClosedIssue(item),
                         IsAuthoredByCurrentUser = IsIssueAuthor(item, currentUser),
-                        IsAssignedToCurrentUser = IsOpenIssue(item) && IsIssueAssignee(item, currentUser),
+                        IsAssignedToCurrentUser = (IsOpenIssue(item) || IsClosedIssue(item)) && IsIssueAssignee(item, currentUser),
+                        WorkItemType = GetIssueType(item),
+                        AssignedTo = GetAssignees(item),
+                        Iteration = GetMilestone(item),
+                        IsBlocked = labels.Any(label => string.Equals(label.Name, "blocked", StringComparison.OrdinalIgnoreCase)),
+                        Priority = GetPriority(labels),
                         UpdatedAt = item.GetProperty("updated_at").GetDateTime().ToUniversalTime(),
                         CreatedAt = item.GetProperty("created_at").GetDateTime().ToUniversalTime(),
                         WebUrl = item.GetProperty("html_url").GetString(),
@@ -806,7 +1078,32 @@ namespace StartScreen.Services.DevHub.Providers
             return results;
         }
 
-        internal static List<DevHubCiRun> ParseCiRuns(string json, RemoteRepoIdentifier repo)
+        private static string GetIssueType(JsonElement item)
+        {
+            return item.TryGetProperty("type", out var type) ? GetString(type, "name") : null;
+        }
+
+        private static string GetAssignees(JsonElement item)
+        {
+            return item.TryGetProperty("assignees", out var assignees) && assignees.ValueKind == JsonValueKind.Array
+                ? string.Join(", ", assignees.EnumerateArray().Select(assignee => GetString(assignee, "login")).Where(login => login != null)) : null;
+        }
+
+        private static string GetMilestone(JsonElement item)
+        {
+            return item.TryGetProperty("milestone", out var milestone) ? GetString(milestone, "title") : null;
+        }
+
+        private static string GetPriority(List<DevHubLabel> labels)
+        {
+            var priorities = labels.Select(label => label.Name).Where(name => name != null
+                && (name.StartsWith("priority:", StringComparison.OrdinalIgnoreCase)
+                    || name.Length == 2 && (name[0] == 'P' || name[0] == 'p') && name[1] >= '0' && name[1] <= '4'))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return priorities.Count == 1 ? priorities[0] : null;
+        }
+
+        internal static List<DevHubCiRun> ParseCiRuns(string json, RemoteRepoIdentifier repo, string currentUser = null)
         {
             var results = new List<DevHubCiRun>();
 
@@ -833,11 +1130,19 @@ namespace StartScreen.Services.DevHub.Providers
                         Status = MapGitHubCiStatus(status, conclusion),
                         Timestamp = run.GetProperty("updated_at").GetDateTime().ToUniversalTime(),
                         WebUrl = run.GetProperty("html_url").GetString(),
+                        IsTriggeredByCurrentUser = !string.IsNullOrEmpty(currentUser)
+                            && string.Equals(GetRunActor(run), currentUser, StringComparison.OrdinalIgnoreCase),
                     });
                 }
             }
 
             return results;
+        }
+
+        private static string GetRunActor(JsonElement run)
+        {
+            var triggeringLogin = run.TryGetProperty("triggering_actor", out var triggeringActor) ? GetString(triggeringActor, "login") : null;
+            return triggeringLogin ?? (run.TryGetProperty("actor", out var actor) ? GetString(actor, "login") : null);
         }
 
         private static string MapGitHubCiStatus(string status, string conclusion)

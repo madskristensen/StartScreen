@@ -57,6 +57,13 @@ namespace StartScreen.Models.DevHub
                 && left.ApprovalCount == right.ApprovalCount
                 && left.HasChangesRequested == right.HasChangesRequested
                 && left.IsApproved == right.IsApproved
+                && left.IsMerged == right.IsMerged
+                && left.IsMentioned == right.IsMentioned
+                && left.UnresolvedThreadCount == right.UnresolvedThreadCount
+                && left.CanMerge == right.CanMerge
+                && StringEquals(left.MergeBlockReason, right.MergeBlockReason)
+                && StringEquals(left.ChecksSummary, right.ChecksSummary)
+                && StringEquals(left.ChecksUrl, right.ChecksUrl)
                 && left.UpdatedAt == right.UpdatedAt
                 && left.CreatedAt == right.CreatedAt
                 && StringEquals(left.WebUrl, right.WebUrl)
@@ -83,6 +90,11 @@ namespace StartScreen.Models.DevHub
                 && left.IsAuthoredByCurrentUser == right.IsAuthoredByCurrentUser
                 && left.IsAssignedToCurrentUser == right.IsAssignedToCurrentUser
                 && left.IsClosed == right.IsClosed
+                && left.IsBlocked == right.IsBlocked
+                && left.IsMentioned == right.IsMentioned
+                && StringEquals(left.WorkItemType, right.WorkItemType)
+                && StringEquals(left.AssignedTo, right.AssignedTo)
+                && StringEquals(left.Iteration, right.Iteration)
                 && StringEquals(left.Priority, right.Priority)
                 && left.UpdatedAt == right.UpdatedAt
                 && left.CreatedAt == right.CreatedAt
@@ -102,6 +114,9 @@ namespace StartScreen.Models.DevHub
                 && StringEquals(left.Name, right.Name)
                 && StringEquals(left.Branch, right.Branch)
                 && StringEquals(left.Status, right.Status)
+                && left.IsTriggeredByCurrentUser == right.IsTriggeredByCurrentUser
+                && StringEquals(left.FailureSummary, right.FailureSummary)
+                && StringEquals(left.FailureUrl, right.FailureUrl)
                 && left.Timestamp == right.Timestamp
                 && StringEquals(left.WebUrl, right.WebUrl);
         }

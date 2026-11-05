@@ -16,17 +16,17 @@ namespace StartScreen.Models.DevHub
         public List<DevHubUser> Users { get; set; } = new List<DevHubUser>();
 
         /// <summary>
-        /// All open pull requests across all providers.
+        /// Loaded pull requests, optionally including recent personal completions.
         /// </summary>
         public List<DevHubPullRequest> PullRequests { get; set; } = new List<DevHubPullRequest>();
 
         /// <summary>
-        /// All assigned issues across all providers.
+        /// Loaded personal and incoming issues across all providers.
         /// </summary>
         public List<DevHubIssue> Issues { get; set; } = new List<DevHubIssue>();
 
         /// <summary>
-        /// Recent CI failures across all providers.
+        /// Recent CI runs across all providers.
         /// </summary>
         public List<DevHubCiRun> CiRuns { get; set; } = new List<DevHubCiRun>();
 
@@ -34,6 +34,9 @@ namespace StartScreen.Models.DevHub
         /// When this dashboard data was last fetched.
         /// </summary>
         public DateTime FetchedAt { get; set; }
+
+        public int ActivityLimit { get; set; } = 30;
+        public bool IncludesCompleted { get; set; }
 
         public Dictionary<string, string> ActivityWarnings { get; set; } = new Dictionary<string, string>();
 

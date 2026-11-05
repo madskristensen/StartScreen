@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace StartScreen.Models.DevHub
@@ -106,16 +108,26 @@ namespace StartScreen.Models.DevHub
 
         public bool IsApproved { get; set; }
 
+        public bool IsMerged { get; set; }
+        public bool IsMentioned { get; set; }
+        public int? UnresolvedThreadCount { get; set; }
+        public bool? CanMerge { get; set; }
+        public string MergeBlockReason { get; set; }
+        public string ChecksSummary { get; set; }
+        public string ChecksUrl { get; set; }
+
         [JsonIgnore]
-        public bool IsOpen => string.Equals(Status, "open", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(Status, "conflicts", StringComparison.OrdinalIgnoreCase) || IsDraft;
+        public bool IsOpen => !IsMerged && (string.Equals(Status, "open", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Status, "conflicts", StringComparison.OrdinalIgnoreCase) || IsDraft);
 
         [JsonIgnore]
         public string AttentionReason => !IsOpen || IsDraft ? null
             : !IsAuthoredByCurrentUser ? (IsReviewRequestedForCurrentUser ? "Review requested" : null)
             : string.Equals(Status, "conflicts", StringComparison.OrdinalIgnoreCase) ? "Conflicts"
             : HasChangesRequested ? "Changes requested"
-            : CiStatus == "failure" ? "Checks failing" : null;
+            : CiStatus == "failure" ? "Checks failing"
+            : UnresolvedThreadCount > 0 ? "Unresolved discussions"
+            : CanMerge == true && CiStatus != "pending" ? "Ready to merge" : null;
 
         [JsonIgnore]
         public bool NeedsAttention => AttentionReason != null;
@@ -126,15 +138,63 @@ namespace StartScreen.Models.DevHub
         public bool IsDraft => string.Equals(Status, "draft", StringComparison.OrdinalIgnoreCase);
 
         [JsonIgnore]
-        public string StatusText => Status == "conflicts" ? "Conflicts"
+        public string StatusText => IsMerged ? "Merged"
+            : Status == "closed" || Status == "completed" || Status == "abandoned" ? "Closed"
+            : Status == "conflicts" ? "Conflicts"
+            : IsDraft ? "Draft"
             : HasChangesRequested && IsOpen && !IsDraft ? "Changes requested"
             : CiStatus == "failure" ? "Checks failing"
-            : IsDraft ? "Draft"
             : IsReviewRequestedForCurrentUser ? "Review requested"
+            : UnresolvedThreadCount > 0 ? "Unresolved discussions"
             : CiStatus == "pending" ? "Checks pending"
+            : CanMerge == true ? "Ready to merge"
             : ApprovalCount == 1 ? "1 approval"
             : ApprovalCount > 1 ? $"{ApprovalCount} approvals"
             : IsApproved && IsOpen && !IsDraft ? "Approved" : "Waiting for review";
+
+        [JsonIgnore]
+        public string StatusCategory => GetStatusCategory(StatusText);
+
+        [JsonIgnore]
+        public string NextActionText => !IsOpen ? null
+            : IsDraft ? "Publish when ready"
+            : !IsAuthoredByCurrentUser ? (IsReviewRequestedForCurrentUser ? "Review this PR" : null)
+            : Status == "conflicts" ? "Resolve merge conflicts"
+            : HasChangesRequested ? "Address review feedback"
+            : CiStatus == "failure" ? "Inspect failing checks"
+            : UnresolvedThreadCount > 0 ? "Resolve review discussions"
+            : CiStatus == "pending" ? "Waiting on checks"
+            : CanMerge == true ? "Merge when ready"
+            : !string.IsNullOrEmpty(MergeBlockReason) ? MergeBlockReason
+            : IsApproved || ApprovalCount > 0 ? "Check remaining merge requirements" : null;
+
+        [JsonIgnore]
+        public string AuthorText => string.IsNullOrWhiteSpace(Author) ? null : $"by {Author}";
+
+        [JsonIgnore]
+        public string StatusDetails
+        {
+            get
+            {
+                var details = new List<string>();
+                if (!string.IsNullOrEmpty(Author))
+                    details.Add($"Author: {Author}");
+                details.Add(StatusText);
+                if (HasChangesRequested && StatusText != "Changes requested")
+                    details.Add("Changes requested");
+                if (IsApproved || ApprovalCount > 0)
+                    details.Add(ApprovalCount > 0 ? $"Approvals: {ApprovalCount}" : "Approved");
+                if (!string.IsNullOrEmpty(CiStatus))
+                    details.Add($"Checks: {CiStatus}");
+                if (UnresolvedThreadCount.HasValue)
+                    details.Add($"Unresolved discussions: {UnresolvedThreadCount.Value}");
+                if (IsMentioned)
+                    details.Add("You were mentioned (not an unread indicator)");
+                details.Add(ChecksSummary);
+                details.Add(MergeBlockReason);
+                return string.Join(Environment.NewLine, details.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct());
+            }
+        }
 
         [JsonIgnore]
         public string ActivityDateText => FormatActivityDate(UpdatedAt, DateTime.Now);
@@ -151,11 +211,29 @@ namespace StartScreen.Models.DevHub
             var localNow = now.ToLocalTime();
             var daysAgo = (localNow.Date - localDate.Date).Days;
             if (daysAgo == 0)
-                return "Updated today";
+                return "today";
             if (daysAgo == 1)
-                return "Updated yesterday";
+                return "yesterday";
 
-            return $"Updated {localDate.ToString(localDate.Year == localNow.Year ? "MMM d" : "MMM d, yyyy")}";
+            return localDate.ToString(localDate.Year == localNow.Year ? "MMM d" : "MMM d, yyyy");
+        }
+
+        internal static string GetStatusCategory(string status)
+        {
+            var value = status?.Trim().ToLowerInvariant();
+            return value switch
+            {
+                "conflicts" or "checks failing" or "changes requested" or "blocked" or "failed" or "failure"
+                    or "build failure" or "build failed" => "Error",
+                "approved" or "ready to merge" or "merged" or "resolved" or "done" or "completed"
+                    or "build success" or "build succeeded" => "Success",
+                "review requested" or "unresolved discussions" or "build partially succeeded" => "Warning",
+                null or "" or "draft" or "closed" or "removed" or "cancelled" or "canceled" or "skipped"
+                    or "build cancelled" or "build canceled" or "build skipped" => "Muted",
+                _ when (value.EndsWith(" approval", StringComparison.Ordinal) || value.EndsWith(" approvals", StringComparison.Ordinal))
+                    && int.TryParse(value.Substring(0, value.IndexOf(' ')), out var count) && count > 0 => "Success",
+                _ => "Information",
+            };
         }
 
         /// <summary>

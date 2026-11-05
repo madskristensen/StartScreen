@@ -75,7 +75,7 @@ namespace StartScreen.Test.DevHub
             var result = await provider.GetRepoDetailAsync(Repo(), 10, CancellationToken.None);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(6, handler.RequestCount);
+            Assert.AreEqual(9, handler.RequestCount);
         }
 
         [TestMethod]
@@ -207,13 +207,21 @@ namespace StartScreen.Test.DevHub
             {
                 var path = request.RequestUri!.AbsolutePath;
                 return path.Contains("/build/builds") ? new HttpResponseMessage(HttpStatusCode.Forbidden)
-                    : Json(path.EndsWith("/pullrequests") ? "{\"value\":[]}"
-                    : path.Contains("connectionData") ? Identity : $"{{\"id\":\"{RepositoryId}\"}}");
+                    : Json(path.EndsWith("/pullrequests") ? "{\"value\":[{\"pullRequestId\":9,\"title\":\"Accessible PR\",\"status\":\"active\",\"isDraft\":false,"
+                        + "\"createdBy\":{\"id\":\"other\",\"displayName\":\"Other\"},\"reviewers\":[],"
+                        + "\"sourceRefName\":\"refs/heads/feature\",\"targetRefName\":\"refs/heads/main\",\"creationDate\":\"2026-11-04T19:00:00Z\"}]}"
+                    : path.Contains("connectionData") ? Identity
+                    : path.EndsWith("/wiql") ? "{\"workItems\":[]}"
+                    : path.Contains("/workitemtypes") ? "{\"value\":[]}"
+                    : $"{{\"id\":\"{RepositoryId}\"}}");
             }));
 
             var result = await Provider(client, Credential(true)).GetRepoDetailAsync(Repo(), 10, CancellationToken.None);
 
-            Assert.IsNull(result);
+            Assert.IsNotNull(result);
+            Assert.AreEqual("Accessible PR", result.PullRequests.Single().Title);
+            Assert.IsEmpty(result.CiRuns);
+            Assert.AreEqual("Build activity could not be loaded. Check Build read access and refresh to retry.", result.ActivityWarning);
         }
 
         [TestMethod]

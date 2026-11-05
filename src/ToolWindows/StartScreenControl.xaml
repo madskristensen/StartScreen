@@ -136,7 +136,7 @@
                                 <Setter TargetName="TabBorder" Property="BorderBrush"
                                         Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                             </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
+                            <Trigger SourceName="TabBorder" Property="IsMouseOver" Value="True">
                                 <Setter TargetName="TabBorder" Property="Background"
                                         Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
                             </Trigger>
@@ -472,11 +472,11 @@
                     </ScrollViewer.Resources>
                 <Border x:Name="RightPaneBorder" SizeChanged="RightPaneBorder_SizeChanged">
                     <DockPanel x:Name="NewsPanel" Margin="24 0 24 24" Focusable="False">
-                        <ScrollViewer x:Name="ContentScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled"
+                        <ScrollViewer x:Name="ContentScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
                                       Focusable="False" Style="{x:Null}" PreviewMouseWheel="ContentScroll_PreviewMouseWheel" ScrollChanged="ContentScroll_ScrollChanged">
-                            <Grid x:Name="ContentLayout" Width="{Binding ActualWidth, ElementName=ContentScroll}" HorizontalAlignment="Left" Grid.IsSharedSizeScope="True">
+                            <Grid x:Name="ContentLayout" HorizontalAlignment="Left" Grid.IsSharedSizeScope="True">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition x:Name="DevHubColumn" Width="560" MaxWidth="560"/>
+                                    <ColumnDefinition x:Name="DevHubColumn" Width="920"/>
                                     <ColumnDefinition x:Name="NewsColumn" Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
@@ -484,48 +484,13 @@
                                     <RowDefinition Height="*"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
-                                <StackPanel x:Name="WorkSectionHeader" Grid.Row="0" Grid.Column="0" Margin="0 0 24 12"
-                                            Visibility="{Binding Visibility, ElementName=DevHubPanelControl}">
-                                    <DockPanel>
-                                        <Button DockPanel.Dock="Right" Content="All repositories" Click="ClearWorkspaceSelection_Click"
-                                                Style="{StaticResource ActionButtonStyle}" MinWidth="0" MinHeight="24" Padding="6 2"
-                                                Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                                        <TextBlock x:Name="WorkHeadingLine" FontSize="20" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
-                                            <InlineUIContainer BaselineAlignment="Baseline">
-                                                <TextBlock Text="{Binding WorkSectionTitle}" MaxWidth="240"
-                                                           FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                            </InlineUIContainer>
-                                            <InlineUIContainer BaselineAlignment="Baseline">
-                                                <Border x:Name="CopilotActivityStatusGap" Width="12" Height="0"
-                                                        Tag="{Binding CopilotActivityStatus, ElementName=DevHubPanelControl, Mode=OneWay}">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Style.Triggers>
-                                                                <Trigger Property="Tag" Value="">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </Trigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                </Border>
-                                            </InlineUIContainer>
-                                            <Run x:Name="CopilotActivityStatusText" BaselineAlignment="Baseline" FontWeight="Normal"
-                                                 Text="{Binding CopilotActivityStatus, ElementName=DevHubPanelControl, Mode=OneWay}"
-                                                 FontSize="{Binding FontSize, ElementName=DevHubPanelControl, Mode=OneWay}"
-                                                 ToolTip="{Binding CopilotActivityStatus, ElementName=DevHubPanelControl, Mode=OneWay}">
-                                                <Run.Foreground>
-                                                    <SolidColorBrush Color="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextColorKey}}" Opacity="0.7"/>
-                                                </Run.Foreground>
-                                            </Run>
-                                        </TextBlock>
-                                    </DockPanel>
-                                </StackPanel>
                                 <ProgressBar Grid.Row="0" Grid.ColumnSpan="2" Height="2" VerticalAlignment="Top" IsIndeterminate="True"
                                              BorderThickness="0" Background="Transparent" Margin="0 -8 0 0"
                                              Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
                                              Visibility="{Binding IsRefreshingAny, Converter={StaticResource BoolToHiddenVisibilityConverter}}"/>
-                                <controls:DevHubPanel x:Name="DevHubPanelControl" Grid.Row="1" Grid.Column="0" Margin="0 0 24 0" VerticalAlignment="Top"
+                                <controls:DevHubPanel x:Name="DevHubPanelControl" Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Margin="0 0 24 0" VerticalAlignment="Top"
                                                       RefreshRequested="DevHubPanel_RefreshRequested" LastRefreshChanged="DevHubPanel_LastRefreshChanged"
+                                                      ActivityOptionsChanged="DevHubPanel_ActivityOptionsChanged"
                                                       ConnectAccountRequested="DevHubPanel_ConnectAccountRequested" ScopeToRepoRequested="DevHubPanel_ScopeToRepoRequested"
                                                       FocusMruRequested="DevHubPanel_FocusMruRequested" FocusNewsRequested="DevHubPanel_FocusNewsRequested"/>
                                 <Grid x:Name="NewsColumnPanel" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" VerticalAlignment="Top">

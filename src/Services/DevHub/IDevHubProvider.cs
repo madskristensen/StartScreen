@@ -52,7 +52,7 @@ namespace StartScreen.Services.DevHub
         Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken);
 
         /// <summary>
-        /// Fetches issues or work items assigned to the authenticated user.
+        /// Fetches personal and incoming issues or work items for the authenticated user.
         /// Returns an empty list if the user is not authenticated or on error.
         /// </summary>
         Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken);

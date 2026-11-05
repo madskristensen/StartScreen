@@ -172,25 +172,19 @@ namespace StartScreen.ToolWindows
             bool showWork = DevHubPanelControl.Visibility == Visibility.Visible;
             double contentWidth = Math.Max(0, RightPaneBorder.ActualWidth - NewsPanel.Margin.Left - NewsPanel.Margin.Right);
             var layout = CalculateContentLayout(contentWidth, showWork);
-            bool stacked = layout.Stacked;
-            bool sideBySide = showWork && !stacked;
+            ContentLayout.Width = Math.Max(contentWidth, showWork ? 1240 : 0);
             DevHubColumn.Width = new GridLength(layout.WorkWidth);
             NewsColumn.Width = new GridLength(1, GridUnitType.Star);
-            Grid.SetRow(NewsColumnPanel, stacked ? 2 : 0);
-            Grid.SetRowSpan(NewsColumnPanel, stacked ? 1 : 2);
-            Grid.SetColumn(NewsColumnPanel, sideBySide ? 1 : 0);
-            Grid.SetColumnSpan(NewsColumnPanel, sideBySide ? 1 : 2);
-            NewsColumnPanel.Margin = stacked ? new Thickness(0, 24, 0, 0) : new Thickness(0);
-            DevHubPanelControl.Margin = stacked ? new Thickness(0) : new Thickness(0, 0, 24, 0);
+            Grid.SetColumn(NewsColumnPanel, showWork ? 1 : 0);
+            Grid.SetColumnSpan(NewsColumnPanel, showWork ? 1 : 2);
             ViewModel.UpdateColumnCounts(layout.NewsColumns, layout.VideoColumns);
         }
 
         internal static (double WorkWidth, bool Stacked, int NewsColumns, int VideoColumns) CalculateContentLayout(double width, bool showWork)
         {
-            bool stacked = showWork && width < 780;
-            double workWidth = !showWork ? 0 : stacked ? Math.Min(560, width) : Math.Min(560, width - 320);
-            double newsWidth = stacked ? width : width - workWidth;
-            return (workWidth, stacked, Math.Max(1, (int)(newsWidth / 332)), Math.Max(1, (int)(newsWidth / 292)));
+            double workWidth = showWork ? 920 : 0;
+            double newsWidth = Math.Max(width, showWork ? 1240 : 0) - workWidth;
+            return (workWidth, false, Math.Max(1, (int)(newsWidth / 332)), Math.Max(1, (int)(newsWidth / 292)));
         }
 
         private void NewProjectButton_Click(object sender, RoutedEventArgs e)
@@ -379,6 +373,17 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        private void DevHubPanel_ActivityOptionsChanged(object sender, EventArgs e)
+        {
+            if (!Options.Instance.DevHubEnabled)
+                return;
+
+            if (ViewModel.SelectedRepository != null)
+                RefreshWorkspaceScope();
+            else
+                DevHubPanel_RefreshRequested(sender, e);
+        }
+
         private void DevHubPanel_RefreshRequested(object sender, EventArgs e)
         {
             DevHubPanelControl.RefreshCopilotActivity();
@@ -518,6 +523,8 @@ namespace StartScreen.ToolWindows
             if (repo == null || !Options.Instance.DevHubEnabled)
                 return;
 
+            var activityOptions = DevHubPanelControl.ActivityOptions;
+            DevHubPanelControl.SetActivityLoading(true);
             ViewModel.RefreshSelectedRepositorySummaryAsync(ViewModel.SelectedMruItem, cancellationToken)
                 .FileAndForget(nameof(StartScreenControl));
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
@@ -525,7 +532,7 @@ namespace StartScreen.ToolWindows
                 try
                 {
                     await TaskScheduler.Default;
-                    var dashboard = await _devHubService.ScopeToRepoAsync(repo, cancellationToken);
+                    var dashboard = await _devHubService.ScopeToRepoAsync(repo, cancellationToken, activityOptions);
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                     cancellationToken.ThrowIfCancellationRequested();
                     if (Equals(repo, ViewModel.SelectedRepository))
@@ -554,6 +561,11 @@ namespace StartScreen.ToolWindows
                         _workspaceError = "Could not load repository activity. Refresh to try again.";
                         UpdateDevHubPanel();
                     }
+                }
+                finally
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    DevHubPanelControl.SetActivityLoading(false);
                 }
             }).FileAndForget(nameof(StartScreenControl));
         }
@@ -599,12 +611,6 @@ namespace StartScreen.ToolWindows
         {
             ViewModel.SelectedMruItem = item;
             DevHubPanelControl.ShowRequestedReviews();
-        }
-
-        private void ClearWorkspaceSelection_Click(object sender, RoutedEventArgs e)
-        {
-            ViewModel.SelectedMruItem = null;
-            ViewModel.SetRepositoryScope(null);
         }
 
         private void ServiceStatusLink_Click(object sender, RoutedEventArgs e)
@@ -677,6 +683,9 @@ namespace StartScreen.ToolWindows
 
         private async Task RefreshDevHubInBackgroundAsync(CancellationToken cancellationToken, bool forceRefresh = false)
         {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var activityOptions = DevHubPanelControl.ActivityOptions;
+            DevHubPanelControl.SetActivityLoading(true);
             try
             {
                 // Construct Progress<T> while still on the UI thread so it captures
@@ -696,7 +705,7 @@ namespace StartScreen.ToolWindows
                 // we stayed on the captured UI SynchronizationContext.
                 await TaskScheduler.Default;
 
-                await _devHubService.RefreshAsync(cancellationToken, progress, forceRefresh);
+                await _devHubService.RefreshAsync(cancellationToken, progress, forceRefresh, activityOptions);
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 cancellationToken.ThrowIfCancellationRequested();
@@ -717,6 +726,15 @@ namespace StartScreen.ToolWindows
                 {
                     UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
                 }
+                else
+                {
+                    DevHubPanelControl.ShowActivityError("Activity could not be refreshed. Showing loaded items. Refresh to retry.");
+                }
+            }
+            finally
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                DevHubPanelControl.SetActivityLoading(false);
             }
         }
 

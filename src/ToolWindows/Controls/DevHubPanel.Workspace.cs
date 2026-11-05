@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using StartScreen.Models.DevHub;
+using StartScreen.Services.DevHub;
 
 namespace StartScreen.ToolWindows.Controls
 {
@@ -16,6 +17,71 @@ namespace StartScreen.ToolWindows.Controls
         private IReadOnlyList<DevHubPullRequest> _activityPullRequests = Array.Empty<DevHubPullRequest>();
         private IReadOnlyList<DevHubIssue> _activityIssues = Array.Empty<DevHubIssue>();
         private IReadOnlyList<DevHubCiRun> _activityBuilds = Array.Empty<DevHubCiRun>();
+        private int _activityLoadCount;
+        private int? _loadMoreStartingItemCount;
+        private DevHubDefaultTab _activeWorkView = DevHubDefaultTab.MyWork;
+
+        internal DevHubActivityOptions ActivityOptions { get; private set; } = new DevHubActivityOptions();
+
+        internal void SetActivityLoading(bool loading)
+        {
+            _activityLoadCount = Math.Max(0, _activityLoadCount + (loading ? 1 : -1));
+            if (_activityLoadCount == 0 && _loadMoreStartingItemCount.HasValue)
+            {
+                ActivityLoadStatus.Text = (_currentDashboard?.ActivityLimit ?? 0) < ActivityOptions.MaxItems
+                    ? "Could not load more. Refresh to retry."
+                    : GetLoadedActivityCount() > _loadMoreStartingItemCount.Value ? "More activity loaded." : "No additional items found.";
+                ActivityLoadStatus.Visibility = Visibility.Visible;
+                _loadMoreStartingItemCount = null;
+            }
+            UpdateActivityLoadingState();
+        }
+
+        private int GetLoadedActivityCount() => _activityPullRequests.Count + _activityIssues.Count + _activityBuilds.Count;
+
+        private void UpdateActivityLoadingState()
+        {
+            var loading = _activityLoadCount > 0 || _loadMoreStartingItemCount.HasValue;
+            LoadMoreLink.IsEnabled = !loading;
+            IncludeCompletedItems.IsEnabled = !loading;
+            LoadMoreLabel.Text = loading ? (_loadMoreStartingItemCount.HasValue ? "Loading..." : "Updating...") : "Load more";
+            LoadMoreText.Visibility = loading || Math.Max(ActivityOptions.MaxItems, _currentDashboard?.ActivityLimit ?? 0) < DevHubActivityOptions.MaximumLimit
+                ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void LoadMoreActivity_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            var loadedLimit = Math.Max(ActivityOptions.MaxItems, _currentDashboard?.ActivityLimit ?? 0);
+            if (_activityLoadCount > 0 || _loadMoreStartingItemCount.HasValue || loadedLimit >= DevHubActivityOptions.MaximumLimit)
+                return;
+            _loadMoreStartingItemCount = GetLoadedActivityCount();
+            ActivityLoadStatus.Visibility = Visibility.Collapsed;
+            ActivityOptions = new DevHubActivityOptions(Math.Min(DevHubActivityOptions.MaximumLimit,
+                loadedLimit + DevHubActivityOptions.DefaultLimit), ActivityOptions.IncludeCompleted);
+            UpdateActivityLoadingState();
+            ActivityOptionsChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void IncludeCompletedItems_Changed(object sender, RoutedEventArgs e)
+        {
+            if (CoverageText == null || MyWorkList == null || IncomingList == null)
+                return;
+            ActivityOptions = new DevHubActivityOptions(ActivityOptions.MaxItems, IncludeCompletedItems.IsChecked == true);
+            ActivityLoadStatus.Visibility = Visibility.Collapsed;
+            UpdateWorkspaceActivity(_activityPullRequests, _activityIssues, _activityBuilds);
+            ActivityOptionsChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void UpdateActivityCoverage(DevHubDashboard dashboard)
+        {
+            ActivityCoveragePanel.Visibility = Visibility.Visible;
+            CoverageText.Text = $"Recent activity - up to {dashboard.ActivityLimit} per query";
+            CoverageText.ToolTip = "Lists are bounded, not complete inventories. Load more expands each query up to 300 items. "
+                + "Azure DevOps covers projects discovered from recent workspaces; repository scopes require explicit work-item links. "
+                + "Permissions and provider availability can limit results. Recent completion history covers the last 14 days.";
+            UpdateActivityLoadingState();
+        }
 
         private void BeginWorkspaceVisit(object sender, RoutedEventArgs e)
         {
@@ -30,7 +96,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private void SelectDefaultTab(DevHubDefaultTab tab)
         {
-            DevHubSubTabs.SelectedItem = tab == DevHubDefaultTab.Incoming ? IncomingTab : MyWorkTab;
+            _activeWorkView = tab == DevHubDefaultTab.Incoming ? DevHubDefaultTab.Incoming : DevHubDefaultTab.MyWork;
         }
 
         private void UpdateWorkspaceActivity(IReadOnlyList<DevHubPullRequest> prs,
@@ -40,10 +106,11 @@ namespace StartScreen.ToolWindows.Controls
             _activityIssues = issues;
             _activityBuilds = builds;
             var sessions = GetVisibleCopilotSessions();
-            var myWork = DevHubWorkItem.GetMyWork(prs, issues, sessions, Options.Instance.DevHubSortOrder);
+            var myWork = DevHubWorkItem.GetMyWork(prs, issues, sessions, Options.Instance.DevHubSortOrder,
+                ActivityOptions.IncludeCompleted, builds);
             var incoming = DevHubWorkItem.GetIncoming(prs, issues, builds, Options.Instance.DevHubSortOrder);
             string signature = string.Join("\n", myWork.Concat(incoming)
-                .Select(item => $"{item.Section}|{item.CopilotSessionId}|{item.WebUrl}|{item.Title}|{item.Detail}|{item.StatusText}|{item.AttentionReason}|{item.CopilotStatus}|{item.CopilotStatusDetails}|{item.UpdatedAt.Ticks}|{item.BranchDisplayText}|{string.Join(",", item.Labels.Select(label => label.Name + ":" + label.Color))}"));
+                .Select(item => $"{item.Section}|{item.CopilotSessionId}|{item.WebUrl}|{item.Title}|{item.Detail}|{item.StatusText}|{item.AttentionReason}|{item.NextActionText}|{item.AuthorText}|{item.IsAssignedToCurrentUser}|{item.StatusDetails}|{item.CopilotStatus}|{item.CopilotStatusDetails}|{item.UpdatedAt.Ticks}|{item.BranchDisplayText}|{string.Join(",", item.Labels.Select(label => label.Name + ":" + label.Color))}"));
             if (_workspaceActivitySignature != signature)
             {
                 _workspaceActivitySignature = signature;
@@ -64,7 +131,8 @@ namespace StartScreen.ToolWindows.Controls
             InvalidateBorderCache();
             var myWorkKind = MyWorkPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
                 : MyWorkIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
-                : MyWorkCopilotFilter.IsChecked == true ? DevHubWorkItemKind.Copilot : DevHubWorkItemKind.All;
+                : MyWorkCopilotFilter.IsChecked == true ? DevHubWorkItemKind.Copilot
+                : MyWorkBuildFilter.IsChecked == true ? DevHubWorkItemKind.Build : DevHubWorkItemKind.All;
             var incomingKind = IncomingPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
                 : IncomingIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
                 : IncomingBuildFilter.IsChecked == true ? DevHubWorkItemKind.Build : DevHubWorkItemKind.All;
@@ -82,8 +150,8 @@ namespace StartScreen.ToolWindows.Controls
                 ? "No items need your attention in this view." : "No matching personal work in the loaded activity.";
             IncomingEmpty.Text = IncomingNeedsAttention.IsChecked == true
                 ? "No items need your attention in this view." : "No matching incoming activity.";
-            MyWorkTab.Header = _myWorkItems.Count == 0 ? "My work" : $"My work {_myWorkItems.Count}";
-            IncomingTab.Header = _incomingItems.Count == 0 ? "Incoming" : $"Incoming {_incomingItems.Count}";
+            MyWorkCount.Text = _myWorkItems.Count == 0 ? string.Empty : $" {_myWorkItems.Count}";
+            IncomingCount.Text = _incomingItems.Count == 0 ? string.Empty : $" {_incomingItems.Count}";
         }
 
         internal static ListCollectionView CreateWorkItemView(IReadOnlyList<DevHubWorkItem> items)

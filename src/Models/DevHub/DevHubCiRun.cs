@@ -53,6 +53,10 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public string WebUrl { get; set; }
 
+        public bool IsTriggeredByCurrentUser { get; set; }
+        public string FailureSummary { get; set; }
+        public string FailureUrl { get; set; }
+
         /// <summary>
         /// Whether this item has been updated since the user last viewed the CI tab.
         /// Runtime-only flag set by the UI; not persisted to the cache.

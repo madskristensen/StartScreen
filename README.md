@@ -100,15 +100,31 @@ select the workspace to view its repository activity. Select a personal review
 count to open Incoming with Needs attention enabled.
 
 **My work** tracks your loaded open PRs, including drafts, created or assigned
-issues and tasks, and local Copilot sessions. **Incoming** shows other people's
+issues and tasks, personally triggered builds, and local Copilot sessions. **Incoming** shows other people's
 PRs and issues, with requested reviews above general repository and build
 activity. Each view has type filters and an independent **Needs attention**
 filter. Items stay in their ownership view rather than appearing in a duplicate
-action tab. Both views show colored review/check
+action tab. The two work blades sit side by side, with News to their right.
+Smaller windows use horizontal scrolling rather than hiding a work blade or
+moving News below it. Both views show colored review/check
 status pills and a friendly update date, with the exact local date and
 time on hover, plus background-free globe and pull request icons to open a PR in
 your browser or Visual Studio.
+PR authors appear beside the status, before the date; PRs have no separate
+action-text line or check-details link. Issues and tasks assigned to you have a
+prominent themed **Assigned to you** banner. Labels use lightweight text rather
+than a second pill style. All labels, including priority and type labels, appear
+together in one row, wrapping only when needed; there is no separate priority/type row.
+Open issues omit the redundant open-status pill. Meaningful workflow states remain
+visible. Status colors distinguish failures/conflicts (red), success/approval
+(green), review/discussion attention (amber), in-progress states (blue), and
+drafts or cancelled activity (muted), using Visual Studio theme resources.
 Selecting a workspace scopes these lists to that repository.
+
+**Load more** shows loading feedback and reports when no additional activity is
+found. With a workspace selected, it refreshes that repository directly.
+**Include completed work (14 days)** optionally shows your recently merged PRs
+and completed issues and tasks, separately from your active work.
 
 **See your Git status at a glance.** Every repo shows its current branch,
 ahead/behind counts, uncommitted changes, and the last commit time - all
@@ -192,16 +208,38 @@ Verified identities are shared across repository summaries for up to five minute
 scoped by credentials and identity endpoint, and invalidated when authentication
 changes. Failed identity lookups are retried rather than cached as signed-in users.
 
-**My work** opens by default. Existing Overview/Needs you preferences migrate
+Both work blades are always visible. Keyboard navigation initially targets
+**My work** by default. Existing Overview/Needs you preferences migrate
 to My work, and existing Issues/Pull requests/Builds preferences migrate to
-Incoming. The default remains configurable. Work stays visible after viewing it;
+Incoming. The initial keyboard destination remains configurable. Work stays visible after viewing it;
 activity timestamps do not determine ownership or whether action is required.
 **Needs attention** uses explicit signals: requested reviews, changes requested
 on your PRs, known failing checks or merge conflicts on your PRs, assigned open
-issues/tasks, and live Copilot questions or permission requests. Pending checks,
-approvals, idle sessions, and generic updates do not imply an action. Unknown
-provider metadata is not treated as an action signal. Lists are bounded and are
-not complete repository inventories. Developer Community feedback is not included.
+issues/tasks, your failed builds, unresolved discussions on your PRs, verified
+merge readiness, and live Copilot questions or permission requests. Pending checks,
+approvals alone, mentions, idle sessions, and generic updates do not imply an action.
+Unknown provider metadata is not treated as an action signal. A mention is not an
+unread indicator, and an unresolved discussion is not proof of an unanswered question.
+Developer Community feedback is not included.
+
+Cards keep one primary status without a separate PR action-text line. Hover for simultaneous
+review/check blockers, approvals, discussion counts, and authorship. Issue labels stay
+together in one row; task type, priority, assignment, and iteration details are on hover.
+The workflow state remains visible even when the item is assigned to you.
+A PR is only called
+**Ready to merge** when the provider supplies verified readiness; approval or a
+passing build by itself is not enough. Missing or incomplete policy/discussion
+information never becomes a ready signal.
+
+The footer states the current per-query limit. **Load more** expands it in steps
+of 30, up to 300, for the current page visit, including repository-scoped views.
+Providers page their queries rather than requesting an unsupported page size.
+These are recent, bounded activity lists, not complete repository inventories;
+permissions, discovered projects, and provider availability still limit coverage.
+**Recently completed** optionally adds a separate My work group for your merged
+PRs and completed created/assigned issues or tasks from the last 14 days. It does
+not replace the active-work queries or add completed work to Needs attention.
+Cloud-agent sessions and sessions in other VS/CLI processes are not included.
 
 PRs open in Visual Studio's native review experience when the installed Git
 tooling supports it. **Open in Browser** remains available from the PR context
@@ -263,15 +301,23 @@ Azure DevOps activity appears alongside GitHub in **My work** and **Incoming**.
 The dashboard discovers Azure DevOps repositories from your recent workspaces,
 not every repository accessible to your account. Open a checkout in Visual Studio
 so it appears in the recent list, then refresh Start Screen. Recent builds include
-failed PR validation runs; the combined dashboard loads up to 10 items per repository,
-and scoping to a repository loads up to 25. Signing in alone does not enumerate all
+failed PR validation runs; the combined dashboard initially loads up to 10 items per repository,
+and scoping to a repository loads up to 30. Load more expands the query limits.
+Signing in alone does not enumerate all
 organizations or projects.
 Personal PRs and created or assigned work items are queried independently across
 projects discovered from recent workspaces, with up to three project requests
 in flight per source. Personal PR queries include repositories in those projects
 even when the individual repository is not in the recent list. They load up to
-30 authored open PRs per project, separately from the repository-wide feed;
-repository scopes also query up to 30 authored open PRs independently.
+30 authored open PRs per project initially, separately from the repository-wide feed;
+repository scopes also query authored open PRs independently.
+Personal review requests are queried at project level as well, so they are not
+limited to the latest PRs in individual recent repositories. Incoming work items
+use a separate query from your created/assigned work. Available workflow categories
+identify completed custom states; custom workflow coverage depends on the state
+metadata exposed by the project. Recent ADO completion history requires a reliable
+closure date. GitHub mentions are informational; Azure DevOps mentions are
+not currently collected.
 Project-level work items remain in the combined view; repository scopes include
 only work items with an explicit link to that repository. Work Items (read)
 access is required. If that optional lookup fails, accessible PRs and builds
@@ -366,8 +412,8 @@ not affected by the query.
 Click the gear icon next to the Dev Hub header to open its settings, where
 the **Display** section lets you tailor the layout:
 
-- **Default tab** - choose whether My work or Incoming is
-  selected when the Start Screen opens.
+- **Initial keyboard focus** - choose whether keyboard navigation initially
+  targets My work or Incoming. Both blades remain visible.
 - **Sort issues and pull requests by** - order the lists by **Most recent
   first** (the default), **GitHub first**, or **Azure DevOps first**. The
   provider options group items by source, then fall back to most recent

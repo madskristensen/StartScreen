@@ -71,11 +71,13 @@ namespace StartScreen.Test.DevHub
                     StringAssert.Contains(uri.Query, "$top=30");
                     if (!issues)
                     {
-                        StringAssert.Contains(uri.Query, "searchCriteria.creatorId=me");
+                        Assert.IsTrue(uri.Query.Contains("searchCriteria.creatorId=me") || uri.Query.Contains("searchCriteria.reviewerId=me"));
                         StringAssert.Contains(uri.Query, "searchCriteria.status=active");
                     }
                     if (denied && path.Contains("/project1/"))
                         return new HttpResponseMessage(HttpStatusCode.Forbidden);
+                    if (!issues && uri.Query.Contains("searchCriteria.reviewerId=me"))
+                        return Json("{\"value\":[]}");
                     return Json(issues ? "{\"workItems\":[{\"id\":1}]}"
                         : AdoPrJson("active", false, 0).Replace("\"pullRequestId\":9", "\"repository\":{\"name\":\"not-in-mru\"},\"pullRequestId\":9"));
                 }
@@ -89,7 +91,7 @@ namespace StartScreen.Test.DevHub
             var tasks = issues ? await provider.GetUserIssuesAsync(CancellationToken.None) : Array.Empty<DevHubIssue>();
             var work = DevHubWorkItem.GetMyWork(prs, tasks, []);
 
-            Assert.AreEqual(6, queries);
+            Assert.AreEqual(issues ? 6 : 12, queries);
             Assert.HasCount(denied ? 5 : 6, work);
             Assert.IsTrue(work.All(item => !string.IsNullOrEmpty(item.WebUrl)));
             Assert.IsTrue(prs.All(pr => pr.RepoIdentifier.Repo == "not-in-mru" && pr.IsAuthoredByCurrentUser));
@@ -176,7 +178,7 @@ namespace StartScreen.Test.DevHub
         [DataRow("open", null, 1, "1 approval")]
         [DataRow("open", null, 2, "2 approvals")]
         [DataRow("draft", null, 0, "Draft")]
-        [DataRow("closed", null, 0, "Waiting for review")]
+        [DataRow("closed", null, 0, "Closed")]
         [DataRow("unknown", null, 0, "Waiting for review")]
         public void ApprovalStatus_DoesNotInventCountsOrOverrideChecksDraftsAndRealCounts(string status, string? ci, int count, string expected)
         {
@@ -364,7 +366,7 @@ namespace StartScreen.Test.DevHub
 
         [TestMethod]
         [DataRow("open", "ME", "me", true, true, false)]
-        [DataRow("closed", "me", "me", true, false, true)]
+        [DataRow("closed", "me", "me", true, true, true)]
         [DataRow("open", "other", "me", false, true, false)]
         [DataRow("open", "me", "other", true, false, false)]
         [DataRow("open", "other", "other", false, false, false)]
@@ -383,8 +385,8 @@ namespace StartScreen.Test.DevHub
                 Assert.AreEqual(authored, issue.IsAuthoredByCurrentUser);
                 Assert.AreEqual(assigned, issue.IsAssignedToCurrentUser);
                 Assert.AreEqual(closed, issue.IsClosed);
-                Assert.AreEqual(assigned ? "Assigned to you" : null, issue.AttentionReason);
-                Assert.AreEqual(assigned ? "Assigned to you" : state, issue.StatusText);
+                Assert.AreEqual(assigned && !closed ? "Assigned to you" : null, issue.AttentionReason);
+                Assert.AreEqual(state, issue.StatusText);
             }
         }
 
@@ -453,7 +455,7 @@ namespace StartScreen.Test.DevHub
             var issue = AzureDevOpsDevHubProvider.ParseAdoIssues(json, _ado, "me", RepositoryId).Single();
             Assert.IsTrue(issue.IsAuthoredByCurrentUser);
             Assert.IsTrue(issue.IsAssignedToCurrentUser);
-            Assert.AreEqual("Assigned to you", issue.StatusText);
+            Assert.AreEqual("Active", issue.StatusText);
             Assert.AreEqual(_ado, issue.RepoIdentifier);
             Assert.IsEmpty(AzureDevOpsDevHubProvider.ParseAdoIssues(json, _ado, "display-name", RepositoryId));
             Assert.IsEmpty(AzureDevOpsDevHubProvider.ParseAdoIssues(AdoIssueJson("Active", "me", "me", false), _ado, "me", RepositoryId));
@@ -467,7 +469,7 @@ namespace StartScreen.Test.DevHub
         {
             var issue = AzureDevOpsDevHubProvider.ParseAdoIssues(AdoIssueJson("Closed", "other", "me", true), _ado, "me").Single();
             Assert.IsTrue(issue.IsClosed);
-            Assert.IsFalse(issue.IsAssignedToCurrentUser);
+            Assert.IsTrue(issue.IsAssignedToCurrentUser);
             Assert.IsFalse(issue.NeedsAttention);
             Assert.AreEqual("Closed", issue.StatusText);
             var own = AzureDevOpsDevHubProvider.ParseAdoIssues(AdoIssueJson("Active", "me", "other", true), _ado, "me").Single();
@@ -481,7 +483,7 @@ namespace StartScreen.Test.DevHub
         public async Task AzureRepoDetail_QueriesOwnIssuesInBoundedBulkAndPreservesCloudServerAuthAsync(bool server)
         {
             var repo = server ? RemoteRepoIdentifier.TryParse("https://tfs.contoso.com/tfs/Collection/project/_git/repo")! : _ado;
-            Task<string>? queryTask = null;
+            var queryTasks = new List<Task<string>>();
             var handler = new TestHttpMessageHandler((request, _) =>
             {
                 Assert.AreEqual("Basic", request.Headers.Authorization!.Scheme);
@@ -492,7 +494,7 @@ namespace StartScreen.Test.DevHub
                 if (path.EndsWith("/wiql"))
                 {
                     Assert.AreEqual(HttpMethod.Post, request.Method);
-                    queryTask = request.Content!.ReadAsStringAsync();
+                    queryTasks.Add(request.Content!.ReadAsStringAsync());
                     StringAssert.Contains(uri.Query, "$top=10");
                     StringAssert.Contains(uri.Query, server ? "api-version=5.0" : "api-version=7.1");
                     return Json("{\"workItems\":[{\"id\":1}]}");
@@ -509,15 +511,17 @@ namespace StartScreen.Test.DevHub
 
             var detail = await provider.GetRepoDetailAsync(repo, 10, CancellationToken.None);
 
-            Assert.IsNotNull(queryTask);
-            var query = await queryTask;
+            var queryBodies = await Task.WhenAll(queryTasks);
+            Assert.HasCount(2, queryBodies);
+            var query = queryBodies.Single(body => body.Contains("System.CreatedBy"));
             StringAssert.Contains(query, "System.CreatedBy");
             StringAssert.Contains(query, "System.AssignedTo");
             StringAssert.Contains(query, "@Me");
+            Assert.HasCount(1, queryBodies.Where(body => !body.Contains("System.CreatedBy")));
             Assert.IsNotNull(detail);
             Assert.HasCount(1, detail.Issues);
             Assert.IsTrue(detail.Issues.Single().NeedsAttention);
-            Assert.AreEqual(7, handler.RequestCount);
+            Assert.AreEqual(11, handler.RequestCount);
         }
 
         [TestMethod]
@@ -553,7 +557,7 @@ namespace StartScreen.Test.DevHub
 
             var detail = await provider.GetRepoDetailAsync(_ado, 10, CancellationToken.None);
 
-            Assert.AreEqual(forbidden ? 1 : 2, attempts);
+            Assert.AreEqual(forbidden ? 2 : 3, attempts);
             Assert.AreEqual(forbidden ? 0 : 1, invalidations);
             Assert.IsNotNull(detail);
             Assert.HasCount(1, detail.PullRequests);

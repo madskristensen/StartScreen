@@ -56,11 +56,11 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        [DataRow(0, "Updated today")]
-        [DataRow(1, "Updated yesterday")]
-        [DataRow(4, "Updated Nov 1")]
-        [DataRow(365, "Updated Nov 5, 2025")]
-        [DataRow(-1, "Updated Nov 6")]
+        [DataRow(0, "today")]
+        [DataRow(1, "yesterday")]
+        [DataRow(4, "Nov 1")]
+        [DataRow(365, "Nov 5, 2025")]
+        [DataRow(-1, "Nov 6")]
         public void ActivityDate_UsesFriendlyLocalCalendarDates(int daysAgo, string expected)
         {
             var now = new DateTime(2026, 11, 5, 0, 15, 0, DateTimeKind.Local);
@@ -85,7 +85,7 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual(pr.ActivityDateText, item.ActivityDateText);
             Assert.AreEqual(pr.UpdatedAt.ToLocalTime().ToString("f"), pr.ActivityDateToolTip);
             Assert.AreEqual(pr.ActivityDateToolTip, item.ActivityDateToolTip);
-            Assert.AreEqual("Updated today", new DevHubPullRequest { UpdatedAt = DateTime.UtcNow }.ActivityDateText);
+            Assert.AreEqual("today", new DevHubPullRequest { UpdatedAt = DateTime.UtcNow }.ActivityDateText);
         }
 
         [TestMethod]

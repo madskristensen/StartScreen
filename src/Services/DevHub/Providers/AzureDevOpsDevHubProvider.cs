@@ -17,7 +17,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// Azure DevOps provider for the Dev Hub.
     /// Fetches PRs, work items, and build status from the ADO REST API.
     /// </summary>
-    internal sealed class AzureDevOpsDevHubProvider : IDevHubProvider
+    internal sealed class AzureDevOpsDevHubProvider : IDevHubProvider, IDevHubActivityProvider
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -290,29 +290,44 @@ namespace StartScreen.Services.DevHub.Providers
                 var remoteUrls = await MruService.GetRepositoryRemoteUrlsAsync(cancellationToken);
                 return GetCloudProfileBaseUrls(remoteUrls);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
                 return Array.Empty<string>();
             }
         }
 
-        public async Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken)
+        public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken)
         {
-            var results = await GetPersonalProjectActivityAsync(
-                (repo, credential, identity, token) => GetPersonalPullRequestsAsync(repo, credential, identity, token), cancellationToken);
-            return results.OrderByDescending(pr => pr.UpdatedAt).ToList();
+            return GetUserPullRequestsAsync(new DevHubActivityOptions(), cancellationToken);
         }
 
-        public async Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken)
+        public async Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(DevHubActivityOptions options, CancellationToken cancellationToken)
         {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
             var results = await GetPersonalProjectActivityAsync(
-                (repo, credential, identity, token) => GetIssuesAsync(repo, credential, identity, 30, null, token), cancellationToken);
-            return results.OrderByDescending(issue => issue.UpdatedAt).ToList();
+                async (repo, credential, identity, token) =>
+                {
+                    var items = await GetPersonalPullRequestsAsync(repo, credential, identity, options, token);
+                    await EnrichPullRequestsAsync(items, credential, token);
+                    return items;
+                }, cancellationToken);
+            return results.OrderByDescending(pr => pr.IsOpen).ThenByDescending(pr => pr.UpdatedAt).ToList();
+        }
+
+        public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken)
+        {
+            return GetUserIssuesAsync(new DevHubActivityOptions(), cancellationToken);
+        }
+
+        public async Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+            var results = await GetPersonalProjectActivityAsync(
+                (repo, credential, identity, token) => GetIssuesAsync(repo, credential, identity, options, null, token), cancellationToken);
+            return results.OrderBy(issue => issue.IsClosed).ThenByDescending(issue => issue.UpdatedAt).ToList();
         }
 
         private async Task<IReadOnlyList<T>> GetPersonalProjectActivityAsync<T>(
@@ -344,8 +359,8 @@ namespace StartScreen.Services.DevHub.Providers
                     }
                     catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
                         await ex.LogAsync();
+                        cancellationToken.ThrowIfCancellationRequested();
                         return new List<T>();
                     }
                     finally
@@ -363,22 +378,53 @@ namespace StartScreen.Services.DevHub.Providers
         }
 
         private async Task<List<DevHubPullRequest>> GetPersonalPullRequestsAsync(RemoteRepoIdentifier project,
-            DevHubCredential credential, string identity, CancellationToken cancellationToken, bool repositoryScoped = false)
+            DevHubCredential credential, string identity, DevHubActivityOptions options, CancellationToken cancellationToken, bool repositoryScoped = false)
         {
-            var version = project.IsAzureDevOpsServer ? "5.0" : "7.1";
-            var projectUrl = $"{GetBaseUrl(project).TrimEnd('/')}/{Uri.EscapeDataString(project.Project)}";
             var repositoryPath = repositoryScoped ? $"repositories/{Uri.EscapeDataString(project.Repo)}/" : string.Empty;
-            using var response = await SendAuthenticatedGetAsync(GetCredentialHost(project), credential,
-                $"{projectUrl}/_apis/git/{repositoryPath}pullrequests?searchCriteria.status=active&searchCriteria.creatorId={Uri.EscapeDataString(identity)}&$top=30&api-version={version}", cancellationToken);
-            response.EnsureSuccessStatusCode();
-            return ParseAdoPullRequests(await response.Content.ReadAsStringAsync(), project, identity, projectWide: !repositoryScoped)
-                .Where(pr => pr.IsOpen && pr.IsAuthoredByCurrentUser).ToList();
+            var url = $"{GetProjectUrl(project)}/_apis/git/{repositoryPath}pullrequests";
+            var authored = await OptionalAsync(() => GetPullRequestFeedAsync(project, credential, identity, url,
+                $"searchCriteria.status=active&searchCriteria.creatorId={Uri.EscapeDataString(identity)}", options.MaxItems, !repositoryScoped, cancellationToken), cancellationToken);
+            var reviewed = await OptionalAsync(() => GetPullRequestFeedAsync(project, credential, identity, url,
+                $"searchCriteria.status=active&searchCriteria.reviewerId={Uri.EscapeDataString(identity)}", options.MaxItems, !repositoryScoped, cancellationToken), cancellationToken);
+            var results = (authored ?? new List<DevHubPullRequest>()).Concat(reviewed ?? new List<DevHubPullRequest>())
+                .Where(pr => pr.IsOpen && (pr.IsAuthoredByCurrentUser || pr.IsReviewRequestedForCurrentUser))
+                .GroupBy(pr => pr.WebUrl, StringComparer.OrdinalIgnoreCase).Select(group =>
+                {
+                    var pr = group.First();
+                    pr.IsAuthoredByCurrentUser = group.Any(item => item.IsAuthoredByCurrentUser);
+                    pr.IsReviewRequestedForCurrentUser = group.Any(item => item.IsReviewRequestedForCurrentUser);
+                    return pr;
+                }).ToList();
+            if (options.IncludeCompleted)
+            {
+                var completed = await OptionalAsync(() => GetPullRequestFeedAsync(project, credential, identity, url,
+                    $"searchCriteria.status=completed&searchCriteria.creatorId={Uri.EscapeDataString(identity)}&searchCriteria.queryTimeRangeType=closed&searchCriteria.minTime={Uri.EscapeDataString(DateTime.UtcNow.AddDays(-14).ToString("o"))}",
+                    options.MaxItems, !repositoryScoped, cancellationToken), cancellationToken);
+                results.AddRange((completed ?? new List<DevHubPullRequest>()).Where(pr => pr.IsMerged && pr.IsAuthoredByCurrentUser
+                    && pr.UpdatedAt >= DateTime.UtcNow.AddDays(-14)));
+            }
+            return results.OrderByDescending(pr => pr.IsOpen).ThenByDescending(pr => pr.UpdatedAt).ToList();
         }
 
-        public async Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken)
+        public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken)
         {
-            await Task.CompletedTask;
-            return Array.Empty<DevHubCiRun>();
+            return GetUserCiRunsAsync(new DevHubActivityOptions(), cancellationToken);
+        }
+
+        public async Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+            var results = await GetPersonalProjectActivityAsync(async (repo, credential, identity, token) =>
+            {
+                var json = await GetPagedValuesAsync(repo, credential,
+                    $"{GetProjectUrl(repo)}/_apis/build/builds?requestedFor={Uri.EscapeDataString(identity)}&queryOrder=queueTimeDescending",
+                    options.MaxItems, true, token);
+                var runs = ParseAdoBuilds(json, repo, identity, projectWide: true).Where(run => run.IsTriggeredByCurrentUser).ToList();
+                await EnrichBuildFailuresAsync(runs, repo, credential, json, token);
+                return runs;
+            }, cancellationToken);
+            return results.OrderByDescending(run => run.Timestamp).ToList();
         }
 
         public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> candidateRemoteUrls, CancellationToken cancellationToken)
@@ -402,8 +448,9 @@ namespace StartScreen.Services.DevHub.Providers
                     {
                         repo = ParseRemoteUrl(url);
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        ex.LogAsync().FireAndForget();
                         continue;
                     }
 
@@ -419,12 +466,19 @@ namespace StartScreen.Services.DevHub.Providers
             return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(repos);
         }
 
-        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
+        public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
         {
+            return GetRepoDetailAsync(repo, new DevHubActivityOptions(NormalizeMaxItems(maxItems)), cancellationToken);
+        }
+
+        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
             if (repo == null || string.IsNullOrEmpty(repo.Project))
                 return null;
 
-            var top = NormalizeMaxItems(maxItems);
+            var top = options.MaxItems;
 
             var credentialHost = GetCredentialHost(repo);
             try
@@ -439,7 +493,7 @@ namespace StartScreen.Services.DevHub.Providers
                     FetchedAt = DateTime.UtcNow,
                 };
 
-                var projectUrl = $"{GetBaseUrl(repo)}/{repo.Project}";
+                var projectUrl = GetProjectUrl(repo);
 
                 // api-version=5.0 is GA on Azure DevOps Server 2018+ (where modern Git PRs and
                 // YAML builds actually exist) and is still accepted by Azure DevOps Services.
@@ -451,28 +505,21 @@ namespace StartScreen.Services.DevHub.Providers
                 string prJson = null;
 
                 // Fetch PRs
-                var prUrl = $"{projectUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top={top}&api-version={apiVersion}";
-                using var prResponse = await SendAuthenticatedGetAsync(credentialHost, credential, prUrl, cancellationToken);
-                if (prResponse.StatusCode == HttpStatusCode.Unauthorized)
-                    return null;
-                prResponse.EnsureSuccessStatusCode();
-                if (prResponse.IsSuccessStatusCode)
-                {
-                    prJson = await prResponse.Content.ReadAsStringAsync();
-                    detail.PullRequests = ParseAdoPullRequests(prJson, repo, identity);
-                }
+                var prUrl = $"{projectUrl}/_apis/git/repositories/{Uri.EscapeDataString(repo.Repo)}/pullrequests?searchCriteria.status=active";
+                prJson = await GetPagedValuesAsync(repo, credential, prUrl, top, false, cancellationToken);
+                detail.PullRequests = ParseAdoPullRequests(prJson, repo, identity);
 
                 if (!string.IsNullOrEmpty(identity))
                 {
                     try
                     {
-                        var ownPullRequests = await GetPersonalPullRequestsAsync(repo, credential, identity, cancellationToken, repositoryScoped: true);
+                        var ownPullRequests = await GetPersonalPullRequestsAsync(repo, credential, identity, options, cancellationToken, repositoryScoped: true);
                         detail.PullRequests = DevHubService.MergePullRequests(ownPullRequests, detail.PullRequests).ToList();
                     }
                     catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
                         await ex.LogAsync();
+                        cancellationToken.ThrowIfCancellationRequested();
                         detail.ActivityWarning = "Personal pull requests could not be loaded. Refresh to retry.";
                     }
                 }
@@ -487,23 +534,33 @@ namespace StartScreen.Services.DevHub.Providers
                     || !Guid.TryParse(repositoryId.GetString(), out var id) || id == Guid.Empty)
                     throw new JsonException("Azure DevOps did not return a valid repository ID for the build query.");
 
-                var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={id:D}&repositoryType=TfsGit&$top={top}&api-version={apiVersion}";
-                using var buildResponse = await SendAuthenticatedGetAsync(credentialHost, credential, buildUrl, cancellationToken);
-                if (buildResponse.StatusCode == HttpStatusCode.Unauthorized)
-                    return null;
-                buildResponse.EnsureSuccessStatusCode();
-                var buildJson = await buildResponse.Content.ReadAsStringAsync();
-                detail.CiRuns = ParseAdoBuilds(buildJson, repo);
-                if (prJson != null)
-                    ApplyBuildStatuses(detail.PullRequests, prJson, buildJson);
+                var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={id:D}&repositoryType=TfsGit&queryOrder=queueTimeDescending";
+                var buildJson = await OptionalAsync(() => GetPagedValuesAsync(repo, credential, buildUrl, top, true, cancellationToken), cancellationToken);
+                DevHubRepoDetail buildActivity = null;
+                if (buildJson != null)
+                {
+                    buildActivity = await OptionalAsync(async () =>
+                    {
+                        detail.CiRuns = ParseAdoBuilds(buildJson, repo, identity);
+                        ApplyBuildStatuses(detail.PullRequests, prJson, buildJson);
+                        await EnrichBuildFailuresAsync(detail.CiRuns, repo, credential, buildJson, cancellationToken);
+                        return detail;
+                    }, cancellationToken);
+                }
+                if (buildActivity == null)
+                {
+                    detail.ActivityWarning = string.Join(" ", new[] { detail.ActivityWarning,
+                        "Build activity could not be loaded. Check Build read access and refresh to retry." }.Where(message => !string.IsNullOrEmpty(message)));
+                }
+                await EnrichPullRequestsAsync(detail.PullRequests, credential, cancellationToken);
                 try
                 {
-                    detail.Issues = await GetIssuesAsync(repo, credential, identity, top, id.ToString("D"), cancellationToken);
+                    detail.Issues = await GetIssuesAsync(repo, credential, identity, options, id.ToString("D"), cancellationToken);
                 }
                 catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
                     await ex.LogAsync();
+                    cancellationToken.ThrowIfCancellationRequested();
                     detail.ActivityWarning = string.Join(" ", new[] { detail.ActivityWarning,
                         "Issue activity could not be loaded. Check Work Items read access and refresh to retry." }.Where(message => !string.IsNullOrEmpty(message)));
                 }
@@ -581,34 +638,191 @@ namespace StartScreen.Services.DevHub.Providers
 
         private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);
 
-        private async Task<List<DevHubIssue>> GetIssuesAsync(RemoteRepoIdentifier repo, DevHubCredential credential,
-            string identity, int top, string repositoryId, CancellationToken cancellationToken)
+        private static string GetProjectUrl(RemoteRepoIdentifier repo) =>
+            $"{GetBaseUrl(repo).TrimEnd('/')}/{Uri.EscapeDataString(repo.Project)}";
+
+        private static async Task<T> OptionalAsync<T>(Func<Task<T>> fetch, CancellationToken cancellationToken) where T : class
         {
-            if (string.IsNullOrEmpty(identity))
-                return new List<DevHubIssue>();
-            var host = GetCredentialHost(repo);
-            var projectUrl = $"{GetBaseUrl(repo).TrimEnd('/')}/{Uri.EscapeDataString(repo.Project)}";
+            try
+            {
+                return await fetch();
+            }
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                cancellationToken.ThrowIfCancellationRequested();
+                return null;
+            }
+        }
+
+        private async Task<string> GetPagedValuesAsync(RemoteRepoIdentifier repo, DevHubCredential credential,
+            string url, int maxItems, bool continuationPaging, CancellationToken cancellationToken, string apiVersion = null)
+        {
+            var items = new List<JsonElement>();
+            var continuation = string.Empty;
+            var seenTokens = new HashSet<string>(StringComparer.Ordinal);
+            var version = apiVersion ?? (repo.IsAzureDevOpsServer ? "5.0" : "7.1");
+            while (items.Count < maxItems)
+            {
+                var pageSize = Math.Min(100, maxItems - items.Count);
+                var pageUrl = url + (url.Contains("?") ? "&" : "?") + $"$top={pageSize}&api-version={version}"
+                    + (continuationPaging ? (string.IsNullOrEmpty(continuation) ? string.Empty : "&continuationToken=" + Uri.EscapeDataString(continuation))
+                        : $"&$skip={items.Count}");
+                using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential, pageUrl, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                var page = doc.RootElement.GetProperty("value").EnumerateArray().ToList();
+                items.AddRange(page.Take(pageSize).Select(item => item.Clone()));
+                if (continuationPaging)
+                {
+                    continuation = response.Headers.TryGetValues("x-ms-continuationtoken", out var tokens) ? tokens.FirstOrDefault() : null;
+                    if (page.Count == 0 || string.IsNullOrEmpty(continuation) || !seenTokens.Add(continuation))
+                        break;
+                }
+                else if (page.Count < pageSize)
+                {
+                    break;
+                }
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return JsonSerializer.Serialize(new { value = items });
+        }
+
+        private async Task<List<DevHubPullRequest>> GetPullRequestFeedAsync(RemoteRepoIdentifier repo, DevHubCredential credential,
+            string identity, string url, string criteria, int maxItems, bool projectWide, CancellationToken cancellationToken)
+        {
+            var json = await GetPagedValuesAsync(repo, credential, url + "?" + criteria, maxItems, false, cancellationToken);
+            return ParseAdoPullRequests(json, repo, identity, projectWide);
+        }
+
+        private async Task<List<DevHubIssue>> GetIssuesAsync(RemoteRepoIdentifier repo, DevHubCredential credential,
+            string identity, DevHubActivityOptions options, string repositoryId, CancellationToken cancellationToken)
+        {
+            var completedStates = await OptionalAsync(() => GetCompletedStatesAsync(repo, credential, cancellationToken), cancellationToken);
+            var activeCondition = BuildStateCondition(completedStates, false);
+            var personalCondition = "([System.CreatedBy] = @Me OR [System.AssignedTo] = @Me)";
+            var results = new List<DevHubIssue>();
+            var querySucceeded = false;
+            if (!string.IsNullOrEmpty(identity))
+            {
+                var personal = await OptionalAsync(() => GetIssueFeedAsync(repo, credential, identity, options.MaxItems, repositoryId,
+                    personalCondition + " AND " + activeCondition, completedStates, cancellationToken), cancellationToken);
+                querySucceeded = personal != null;
+                results.AddRange(personal ?? new List<DevHubIssue>());
+            }
+            if (repositoryId != null)
+            {
+                // Project incoming work is independent of the current user's created/assigned work.
+                var incoming = await OptionalAsync(() => GetIssueFeedAsync(repo, credential, identity, options.MaxItems, repositoryId,
+                    activeCondition, completedStates, cancellationToken), cancellationToken);
+                querySucceeded |= incoming != null;
+                results.AddRange(incoming ?? new List<DevHubIssue>());
+            }
+            if (options.IncludeCompleted && !string.IsNullOrEmpty(identity))
+            {
+                var completed = await OptionalAsync(() => GetIssueFeedAsync(repo, credential, identity, options.MaxItems, repositoryId,
+                    personalCondition + " AND " + BuildStateCondition(completedStates, true)
+                    + " AND [Microsoft.VSTS.Common.ClosedDate] >= @Today - 14", completedStates, cancellationToken,
+                    completedSince: DateTime.UtcNow.AddDays(-14)), cancellationToken);
+                querySucceeded |= completed != null;
+                results.AddRange(completed ?? new List<DevHubIssue>());
+            }
+            if (!querySucceeded)
+                throw new HttpRequestException("Azure DevOps work item activity could not be loaded.");
+            return results.GroupBy(issue => issue.WebUrl, StringComparer.OrdinalIgnoreCase).Select(group => group.First())
+                .OrderBy(issue => issue.IsClosed).ThenByDescending(issue => issue.UpdatedAt).ToList();
+        }
+
+        private async Task<Dictionary<string, HashSet<string>>> GetCompletedStatesAsync(RemoteRepoIdentifier repo,
+            DevHubCredential credential, CancellationToken cancellationToken)
+        {
             var version = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
-            var query = "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project "
-                + "AND ([System.CreatedBy] = @Me OR [System.AssignedTo] = @Me) "
-                + "AND [System.State] NOT IN ('Closed', 'Done', 'Removed') ORDER BY [System.ChangedDate] DESC";
-            using var queryResponse = await SendAuthenticatedAsync(host, credential,
-                $"{projectUrl}/_apis/wit/wiql?$top={top}&api-version={version}",
-                JsonSerializer.Serialize(new { query }), cancellationToken);
-            queryResponse.EnsureSuccessStatusCode();
-            using var queryDoc = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
-            var ids = queryDoc.RootElement.GetProperty("workItems").EnumerateArray()
-                .Take(top).Select(item => item.GetProperty("id").GetInt32()).ToList();
-            if (ids.Count == 0)
-                return new List<DevHubIssue>();
-            using var itemsResponse = await SendAuthenticatedGetAsync(host, credential,
-                $"{projectUrl}/_apis/wit/workitems?ids={string.Join(",", ids)}&$expand=all&api-version={version}", cancellationToken);
-            itemsResponse.EnsureSuccessStatusCode();
-            return ParseAdoIssues(await itemsResponse.Content.ReadAsStringAsync(), repo, identity, repositoryId);
+            using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
+                $"{GetProjectUrl(repo)}/_apis/wit/workitemtypes?api-version={version}", cancellationToken);
+            response.EnsureSuccessStatusCode();
+            using var types = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var result = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var type in types.RootElement.GetProperty("value").EnumerateArray())
+            {
+                var name = type.GetProperty("name").GetString();
+                using var statesResponse = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
+                    $"{GetProjectUrl(repo)}/_apis/wit/workitemtypes/{Uri.EscapeDataString(name)}/states?api-version={version}", cancellationToken);
+                statesResponse.EnsureSuccessStatusCode();
+                using var states = JsonDocument.Parse(await statesResponse.Content.ReadAsStringAsync());
+                result[name] = new HashSet<string>(states.RootElement.GetProperty("value").EnumerateArray()
+                    .Where(state => string.Equals(ReadString(state, "category"), "Completed", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(ReadString(state, "category"), "Removed", StringComparison.OrdinalIgnoreCase))
+                    .Select(state => state.GetProperty("name").GetString()), StringComparer.OrdinalIgnoreCase);
+            }
+            return result.Count == 0 ? null : result;
+        }
+
+        private static string BuildStateCondition(Dictionary<string, HashSet<string>> completedStates, bool completed)
+        {
+            var comparison = completed ? "IN" : "NOT IN";
+            if (completedStates == null)
+                return $"[System.State] {comparison} ('Closed', 'Done', 'Removed')";
+            var clauses = completedStates.Where(pair => !completed || pair.Value.Count > 0).Select(pair =>
+                pair.Value.Count == 0 ? $"[System.WorkItemType] = '{EscapeWiql(pair.Key)}'"
+                : $"([System.WorkItemType] = '{EscapeWiql(pair.Key)}' AND [System.State] {comparison} ({string.Join(",", pair.Value.Select(state => "'" + EscapeWiql(state) + "'"))}))").ToList();
+            if (clauses.Count == 0)
+                return completed ? "[System.Id] = 0" : "[System.Id] > 0";
+            return "(" + string.Join(" OR ", clauses) + ")";
+        }
+
+        private static string EscapeWiql(string value) => value.Replace("'", "''");
+
+        private async Task<List<DevHubIssue>> GetIssueFeedAsync(RemoteRepoIdentifier repo, DevHubCredential credential,
+            string identity, int top, string repositoryId, string condition, Dictionary<string, HashSet<string>> completedStates,
+            CancellationToken cancellationToken, DateTime? completedSince = null)
+        {
+            var results = new List<DevHubIssue>();
+            var remaining = top;
+            var beforeId = int.MaxValue;
+            var version = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
+            while (remaining > 0)
+            {
+                var pageSize = Math.Min(100, remaining);
+                // WIQL has no skip/continuation support. A stable ID cursor avoids repeating page one.
+                var query = "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND "
+                    + condition + (beforeId == int.MaxValue ? string.Empty : $" AND [System.Id] < {beforeId}")
+                    + " ORDER BY [System.Id] DESC";
+                using var queryResponse = await SendAuthenticatedAsync(GetCredentialHost(repo), credential,
+                    $"{GetProjectUrl(repo)}/_apis/wit/wiql?$top={pageSize}&api-version={version}", JsonSerializer.Serialize(new { query }), cancellationToken);
+                queryResponse.EnsureSuccessStatusCode();
+                using var queryDoc = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
+                var ids = queryDoc.RootElement.GetProperty("workItems").EnumerateArray().Select(item => item.GetProperty("id").GetInt32())
+                    .Where(id => id < beforeId).Distinct().Take(pageSize).ToList();
+                if (ids.Count == 0)
+                    break;
+                using var itemsResponse = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
+                    $"{GetProjectUrl(repo)}/_apis/wit/workitems?ids={string.Join(",", ids)}&$expand=all&api-version={version}", cancellationToken);
+                itemsResponse.EnsureSuccessStatusCode();
+                var itemsJson = await itemsResponse.Content.ReadAsStringAsync();
+                if (completedSince.HasValue)
+                {
+                    using var items = JsonDocument.Parse(itemsJson);
+                    var recentlyClosed = items.RootElement.GetProperty("value").EnumerateArray().Where(item =>
+                        item.GetProperty("fields").TryGetProperty("Microsoft.VSTS.Common.ClosedDate", out var closed)
+                        && closed.ValueKind == JsonValueKind.String && closed.TryGetDateTime(out var closedDate)
+                        && closedDate.ToUniversalTime() >= completedSince.Value);
+                    itemsJson = JsonSerializer.Serialize(new { value = recentlyClosed.ToList() });
+                }
+                results.AddRange(ParseAdoIssues(itemsJson, repo, identity, repositoryId,
+                    includeIncoming: repositoryId != null, completedStates: completedStates)
+                    .Where(issue => !completedSince.HasValue || issue.IsClosed));
+                beforeId = ids.Min();
+                remaining -= ids.Count;
+                if (ids.Count < pageSize)
+                    break;
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return results;
         }
 
         internal static List<DevHubIssue> ParseAdoIssues(string json, RemoteRepoIdentifier repo,
-            string currentUserId, string repositoryId = null)
+            string currentUserId, string repositoryId = null, bool includeIncoming = false,
+            Dictionary<string, HashSet<string>> completedStates = null)
         {
             using var doc = JsonDocument.Parse(json);
             var results = new List<DevHubIssue>();
@@ -619,14 +833,14 @@ namespace StartScreen.Services.DevHub.Providers
                     continue;
                 var fields = item.GetProperty("fields");
                 var state = fields.GetProperty("System.State").GetString();
-                var closed = string.Equals(state, "Closed", StringComparison.OrdinalIgnoreCase)
+                var type = ReadString(fields, "System.WorkItemType");
+                var closed = completedStates != null && type != null && completedStates.TryGetValue(type, out var terminalStates)
+                    ? terminalStates.Contains(state) : string.Equals(state, "Closed", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(state, "Done", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(state, "Removed", StringComparison.OrdinalIgnoreCase)
-                    || (fields.TryGetProperty("Microsoft.VSTS.Common.ClosedDate", out var closedDate)
-                        && closedDate.ValueKind == JsonValueKind.String && closedDate.TryGetDateTime(out var date) && date != DateTime.MinValue);
+                    || string.Equals(state, "Removed", StringComparison.OrdinalIgnoreCase);
                 var authored = HasIdentity(fields, "System.CreatedBy", currentUserId);
                 var assigned = HasIdentity(fields, "System.AssignedTo", currentUserId);
-                if (!authored && !assigned)
+                if (!includeIncoming && !authored && !assigned)
                     continue;
                 var id = item.GetProperty("id").GetInt32();
                 results.Add(new DevHubIssue
@@ -640,15 +854,191 @@ namespace StartScreen.Services.DevHub.Providers
                     Author = fields.TryGetProperty("System.CreatedBy", out var creator) && creator.ValueKind == JsonValueKind.Object
                         && creator.TryGetProperty("displayName", out var name) ? name.GetString() : null,
                     State = state,
+                    WorkItemType = type,
+                    AssignedTo = fields.TryGetProperty("System.AssignedTo", out var assignee) && assignee.ValueKind == JsonValueKind.Object
+                        ? ReadString(assignee, "displayName") : ReadString(fields, "System.AssignedTo"),
+                    Priority = fields.TryGetProperty("Microsoft.VSTS.Common.Priority", out var priority) ? priority.ToString() : null,
+                    Iteration = ReadString(fields, "System.IterationPath"),
+                    IsBlocked = string.Equals(ReadString(fields, "Microsoft.VSTS.CMMI.Blocked"), "Yes", StringComparison.OrdinalIgnoreCase)
+                        || (fields.TryGetProperty("Microsoft.VSTS.CMMI.Blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True)
+                        || (ReadString(fields, "System.Tags") ?? string.Empty).Split(';').Any(tag => string.Equals(tag.Trim(), "Blocked", StringComparison.OrdinalIgnoreCase)),
                     IsClosed = closed,
                     IsAuthoredByCurrentUser = authored,
-                    IsAssignedToCurrentUser = !closed && assigned,
+                    IsAssignedToCurrentUser = assigned,
                     CreatedAt = fields.GetProperty("System.CreatedDate").GetDateTime().ToUniversalTime(),
                     UpdatedAt = fields.GetProperty("System.ChangedDate").GetDateTime().ToUniversalTime(),
                     WebUrl = $"{GetBaseUrl(repo)}/{Uri.EscapeDataString(repo.Project)}/_workitems/edit/{id}",
                 });
             }
             return results;
+        }
+
+        private static string ReadString(JsonElement element, string property) =>
+            element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString() : null;
+
+        private async Task EnrichPullRequestsAsync(IReadOnlyList<DevHubPullRequest> pullRequests, DevHubCredential credential,
+            CancellationToken cancellationToken)
+        {
+            using var semaphore = new SemaphoreSlim(3, 3);
+            await Task.WhenAll(pullRequests.Where(pr => pr.IsOpen).Select(async pr =>
+            {
+                await semaphore.WaitAsync(cancellationToken);
+                try
+                {
+                    var repo = pr.RepoIdentifier;
+                    var version = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
+                    var prUrl = $"{GetProjectUrl(repo)}/_apis/git/repositories/{Uri.EscapeDataString(repo.Repo)}/pullRequests/{pr.NumericId}";
+                    await OptionalAsync(async () =>
+                    {
+                        using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
+                            $"{prUrl}/threads?api-version={version}", cancellationToken);
+                        response.EnsureSuccessStatusCode();
+                        using var threads = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                        var discussions = threads.RootElement.GetProperty("value").EnumerateArray()
+                            .Where(thread => !(thread.TryGetProperty("isDeleted", out var deleted) && deleted.ValueKind == JsonValueKind.True)).ToList();
+                        var knownStates = new[] { "active", "pending", "fixed", "wontFix", "closed", "byDesign" };
+                        if (!response.Headers.Contains("x-ms-continuationtoken")
+                            && discussions.All(thread => knownStates.Contains(ReadString(thread, "status"))))
+                            pr.UnresolvedThreadCount = discussions.Count(thread => ReadString(thread, "status") == "active"
+                                || ReadString(thread, "status") == "pending");
+                        return pr;
+                    }, cancellationToken);
+
+                    if (!pr.IsAuthoredByCurrentUser || pr.IsDraft)
+                        return;
+                    pr.MergeBlockReason = "Merge readiness could not be verified. Refresh to retry.";
+                    await OptionalAsync(async () =>
+                    {
+                        using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
+                            $"{prUrl}?api-version={version}", cancellationToken);
+                        response.EnsureSuccessStatusCode();
+                        using var metadata = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                        var root = metadata.RootElement;
+                        if (!string.Equals(ReadString(root, "status"), "active", StringComparison.OrdinalIgnoreCase)
+                            || (root.TryGetProperty("isDraft", out var draft) && draft.ValueKind == JsonValueKind.True))
+                            return pr;
+                        var mergeStatus = ReadString(root, "mergeStatus");
+                        var rejected = root.TryGetProperty("reviewers", out var reviewers) && reviewers.ValueKind == JsonValueKind.Array
+                            && reviewers.EnumerateArray().Any(reviewer => reviewer.TryGetProperty("vote", out var vote)
+                                && vote.ValueKind == JsonValueKind.Number && vote.GetInt32() < 0);
+                        if (rejected || mergeStatus == "conflicts" || pr.UnresolvedThreadCount > 0)
+                        {
+                            pr.CanMerge = false;
+                            pr.MergeBlockReason = rejected ? "Reviewer changes requested" : mergeStatus == "conflicts"
+                                ? "Merge conflicts" : "Unresolved review threads";
+                        }
+
+                        // Only statuses explicitly associated with the current source iteration establish green checks.
+                        using var iterationResponse = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
+                            $"{prUrl}/iterations?api-version={version}", cancellationToken);
+                        iterationResponse.EnsureSuccessStatusCode();
+                        using var iterations = JsonDocument.Parse(await iterationResponse.Content.ReadAsStringAsync());
+                        var iteration = iterations.RootElement.GetProperty("value").EnumerateArray()
+                            .OrderByDescending(item => item.GetProperty("id").GetInt32()).FirstOrDefault();
+                        if (iteration.ValueKind != JsonValueKind.Object || !iteration.TryGetProperty("sourceRefCommit", out var source)
+                            || !root.TryGetProperty("lastMergeSourceCommit", out var currentSource)
+                            || string.IsNullOrEmpty(ReadString(source, "commitId"))
+                            || ReadString(source, "commitId") != ReadString(currentSource, "commitId"))
+                            return pr;
+                        var iterationId = iteration.GetProperty("id").GetInt32();
+                        using var statusesResponse = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
+                            $"{prUrl}/statuses?api-version={version}", cancellationToken);
+                        statusesResponse.EnsureSuccessStatusCode();
+                        using var statuses = JsonDocument.Parse(await statusesResponse.Content.ReadAsStringAsync());
+                        if (statusesResponse.Headers.Contains("x-ms-continuationtoken"))
+                            return pr;
+                        var latest = statuses.RootElement.GetProperty("value").EnumerateArray()
+                            .Where(status => status.TryGetProperty("iterationId", out var statusIteration)
+                                && statusIteration.ValueKind == JsonValueKind.Number && statusIteration.GetInt32() == iterationId)
+                            .GroupBy(status => status.TryGetProperty("context", out var context)
+                                ? ReadString(context, "genre") + "/" + ReadString(context, "name") : string.Empty)
+                            .Select(group => group.OrderByDescending(status => status.GetProperty("id").GetInt32()).First()).ToList();
+                        if (latest.Count > 0)
+                        {
+                            var failed = latest.Any(status => ReadString(status, "state") == "failed" || ReadString(status, "state") == "error");
+                            pr.CiStatus = failed ? "failure" : latest.All(status => ReadString(status, "state") == "succeeded") ? "success" : "pending";
+                            pr.ChecksSummary = $"{latest.Count(status => ReadString(status, "state") == "succeeded")}/{latest.Count} checks passed";
+                            pr.ChecksUrl = latest.Select(status => ReadString(status, "targetUrl")).FirstOrDefault(url => !string.IsNullOrEmpty(url)) ?? pr.WebUrl;
+                        }
+                        if (!root.TryGetProperty("repository", out var repository) || !repository.TryGetProperty("project", out var project)
+                            || !Guid.TryParse(ReadString(project, "id"), out var projectId))
+                            return pr;
+                        var artifact = Uri.EscapeDataString($"vstfs:///CodeReview/CodeReviewId/{projectId:D}/{pr.NumericId}");
+                        var policyJson = await GetPagedValuesAsync(repo, credential,
+                            $"{GetProjectUrl(repo)}/_apis/policy/evaluations?artifactId={artifact}&includeNotApplicable=true",
+                            300, false, cancellationToken, repo.IsAzureDevOpsServer ? "5.0-preview.1" : "7.1-preview.1");
+                        using var policies = JsonDocument.Parse(policyJson);
+                        var evaluations = policies.RootElement.GetProperty("value").EnumerateArray().ToList();
+                        // A truncated list or missing policy configuration cannot prove readiness.
+                        if (evaluations.Count == 300 || evaluations.Any(policy => !policy.TryGetProperty("configuration", out var config)
+                            || !config.TryGetProperty("isBlocking", out var blocking) || (blocking.ValueKind != JsonValueKind.True && blocking.ValueKind != JsonValueKind.False)
+                            || !config.TryGetProperty("isEnabled", out var enabled) || (enabled.ValueKind != JsonValueKind.True && enabled.ValueKind != JsonValueKind.False)))
+                            return pr;
+                        var required = evaluations.Where(policy => policy.GetProperty("configuration").GetProperty("isBlocking").GetBoolean()
+                            && policy.GetProperty("configuration").GetProperty("isEnabled").GetBoolean()).ToList();
+                        var knownStates = new[] { "approved", "queued", "running", "rejected", "notApplicable", "broken" };
+                        if (required.Any(policy => !knownStates.Contains(ReadString(policy, "status"))))
+                            return pr;
+                        if (required.Any(policy => ReadString(policy, "status") != "approved"))
+                        {
+                            pr.CanMerge = false;
+                            pr.MergeBlockReason = "Required policies have not all been approved";
+                        }
+                        else if (required.Count > 0 && !rejected && reviewers.ValueKind == JsonValueKind.Array
+                            && root.TryGetProperty("isDraft", out var currentDraft) && currentDraft.ValueKind == JsonValueKind.False && mergeStatus == "succeeded"
+                            && pr.UnresolvedThreadCount == 0 && latest.Count > 0 && pr.CiStatus == "success")
+                        {
+                            pr.CanMerge = true;
+                            pr.MergeBlockReason = null;
+                        }
+                        return pr;
+                    }, cancellationToken);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }));
+        }
+
+        private async Task EnrichBuildFailuresAsync(IReadOnlyList<DevHubCiRun> runs, RemoteRepoIdentifier repo,
+            DevHubCredential credential, string buildJson, CancellationToken cancellationToken)
+        {
+            using var builds = JsonDocument.Parse(buildJson);
+            var metadata = builds.RootElement.GetProperty("value").EnumerateArray().ToList();
+            foreach (var run in runs.Where(item => item.Status == "failure").Take(10))
+            {
+                await OptionalAsync(async () =>
+                {
+                    var build = metadata.FirstOrDefault(item => item.TryGetProperty("_links", out var links)
+                        && links.TryGetProperty("web", out var web) && ReadString(web, "href") == run.WebUrl);
+                    if (build.ValueKind != JsonValueKind.Object || !build.TryGetProperty("id", out var id))
+                        return run;
+                    var version = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
+                    using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
+                        $"{GetProjectUrl(repo)}/_apis/build/builds/{id.GetInt32()}/timeline?api-version={version}", cancellationToken);
+                    response.EnsureSuccessStatusCode();
+                    using var timeline = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    var failed = timeline.RootElement.GetProperty("records").EnumerateArray()
+                        .FirstOrDefault(record => ReadString(record, "result") == "failed");
+                    if (failed.ValueKind != JsonValueKind.Object)
+                        return run;
+                    run.FailureSummary = ReadString(failed, "name");
+                    if (failed.TryGetProperty("issues", out var issues) && issues.ValueKind == JsonValueKind.Array)
+                    {
+                        var message = issues.EnumerateArray().Where(issue => ReadString(issue, "type") == "error")
+                            .Select(issue => ReadString(issue, "message")).FirstOrDefault(text => !string.IsNullOrEmpty(text));
+                        run.FailureSummary = message ?? run.FailureSummary;
+                    }
+                    if (run.FailureSummary?.Length > 500)
+                        run.FailureSummary = run.FailureSummary.Substring(0, 500);
+                    run.FailureUrl = run.WebUrl;
+                    if (failed.TryGetProperty("log", out var log) && log.TryGetProperty("id", out var logId) && logId.TryGetInt32(out var number))
+                        run.FailureUrl = $"{GetProjectUrl(repo)}/_apis/build/builds/{id.GetInt32()}/logs/{number}?api-version={version}";
+                    return run;
+                }, cancellationToken);
+            }
         }
 
         private static bool HasIdentity(JsonElement fields, string field, string identity)
@@ -759,6 +1149,7 @@ namespace StartScreen.Services.DevHub.Providers
                         TargetBranch = StripRefsPrefix(pr.GetProperty("targetRefName").GetString()),
                         SourceBranch = StripRefsPrefix(pr.GetProperty("sourceRefName").GetString()),
                         Status = status,
+                        IsMerged = status == "merged",
                         UpdatedAt = pr.TryGetProperty("closedDate", out var closed) && closed.ValueKind != JsonValueKind.Null
                             && closed.GetDateTime() != DateTime.MinValue
                             ? closed.GetDateTime().ToUniversalTime()
@@ -783,7 +1174,7 @@ namespace StartScreen.Services.DevHub.Providers
             return results;
         }
 
-        internal static List<DevHubCiRun> ParseAdoBuilds(string json, RemoteRepoIdentifier repo)
+        internal static List<DevHubCiRun> ParseAdoBuilds(string json, RemoteRepoIdentifier repo, string currentUserId = null, bool projectWide = false)
         {
             var results = new List<DevHubCiRun>();
 
@@ -794,6 +1185,13 @@ namespace StartScreen.Services.DevHub.Providers
 
                 foreach (var build in builds.EnumerateArray())
                 {
+                    var buildRepo = repo;
+                    if (projectWide)
+                    {
+                        if (!build.TryGetProperty("repository", out var repository) || string.IsNullOrEmpty(ReadString(repository, "name")))
+                            continue;
+                        buildRepo = new RemoteRepoIdentifier(repo.Host, repo.Owner, ReadString(repository, "name"), repo.Project, repo.BaseUrl, repo.IsAzureDevOpsServer);
+                    }
                     var definition = build.TryGetProperty("definition", out var def) && def.ValueKind == JsonValueKind.Object
                         && def.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String
                         ? name.GetString()
@@ -818,8 +1216,9 @@ namespace StartScreen.Services.DevHub.Providers
                     results.Add(new DevHubCiRun
                     {
                         ProviderName = "Azure DevOps",
-                        RepoIdentifier = repo,
-                        RepoDisplayName = repo.DisplayName,
+                        RepoIdentifier = buildRepo,
+                        RepoDisplayName = buildRepo.DisplayName,
+                        IsTriggeredByCurrentUser = HasIdentity(build, "requestedFor", currentUserId) || HasIdentity(build, "requestedBy", currentUserId),
                         Name = definition,
                         Branch = build.TryGetProperty("sourceBranch", out var branch)
                             ? StripRefsPrefix(branch.GetString())
