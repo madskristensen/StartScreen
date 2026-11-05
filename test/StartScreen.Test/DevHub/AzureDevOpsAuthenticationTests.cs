@@ -117,6 +117,33 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task RepoDetail_QueuedBuildDoesNotDiscardPullRequestsAsync(bool nullExecutionTimes)
+        {
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                if (path.Contains("/build/builds"))
+                    return Json("{\"value\":[{" + (nullExecutionTimes ? "\"startTime\":null,\"finishTime\":null," : "") +
+                        "\"status\":\"notStarted\",\"queueTime\":\"2026-11-04T20:00:00Z\",\"definition\":{\"name\":\"CI\"}}]}");
+                return Json(path.EndsWith("/pullrequests")
+                    ? "{\"value\":[{\"pullRequestId\":9,\"title\":\"Change\",\"status\":\"active\",\"sourceRefName\":\"refs/heads/feature\",\"targetRefName\":\"refs/heads/main\",\"creationDate\":\"2026-11-04T19:00:00Z\"}]}"
+                    : path.Contains("connectionData") ? Identity : $"{{\"id\":\"{RepositoryId}\"}}");
+            }));
+
+            var result = await Provider(client, Credential(true)).GetRepoDetailAsync(Repo(), 10, CancellationToken.None);
+
+            Assert.IsNotNull(result);
+            Assert.HasCount(1, result.PullRequests);
+            Assert.AreEqual("Change", result.PullRequests[0].Title);
+            Assert.HasCount(1, result.CiRuns);
+            Assert.AreEqual("CI", result.CiRuns[0].Name);
+            Assert.AreEqual("pending", result.CiRuns[0].Status);
+            Assert.AreEqual(new DateTime(2026, 11, 4, 20, 0, 0, DateTimeKind.Utc), result.CiRuns[0].Timestamp);
+        }
+
+        [TestMethod]
         [DataRow("{}")]
         [DataRow("{\"id\":\"repo\"}")]
         [DataRow("{\"id\":\"00000000-0000-0000-0000-000000000000\"}")]

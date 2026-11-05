@@ -671,7 +671,7 @@ namespace StartScreen.ToolWindows
             {
                 await ex.LogAsync();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                DevHubPanelControl.ShowError("Could not load Dev Hub data.");
+                UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
             }
         }
 
@@ -715,7 +715,7 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
                 {
-                    DevHubPanelControl.ShowError("Could not load Dev Hub data.");
+                    UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
                 }
             }
         }
@@ -726,18 +726,18 @@ namespace StartScreen.ToolWindows
             UpdateDevHubPanel(dashboard);
         }
 
-        private void UpdateDevHubPanel(DevHubDashboard dashboard)
+        private void UpdateDevHubPanel(DevHubDashboard dashboard, string error = null)
         {
             DevHubPanelControl.SetCopilotWorkspace(ViewModel.GetCopilotWorkspaceRoots(),
                 ViewModel.SelectedMruItem != null || ViewModel.SelectedRepository != null);
-            if (_workspaceError != null)
-            {
-                DevHubPanelControl.ShowError(_workspaceError);
-                return;
-            }
             if (ViewModel.HasSelectedMruItem && ViewModel.SelectedRepository == null)
             {
-                DevHubPanelControl.ShowError("No supported remote repository was found for this workspace. Local work can still be opened from Recent.");
+                DevHubPanelControl.ShowLocalWorkspace();
+                return;
+            }
+            if (_workspaceError != null || error != null)
+            {
+                DevHubPanelControl.ShowError(_workspaceError ?? error);
                 return;
             }
             DevHubPanelControl.UpdateView(_workspaceDashboard ?? dashboard, ViewModel.SelectedRepository);
@@ -846,13 +846,6 @@ namespace StartScreen.ToolWindows
 
         private void PageScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (FindAncestor<ListBox>(e.OriginalSource as DependencyObject) == MruPanel)
-            {
-                PageScroll.ScrollToVerticalOffset(PageScroll.VerticalOffset - e.Delta);
-                e.Handled = true;
-                return;
-            }
-
             if (Keyboard.Modifiers == ModifierKeys.Shift && ContentScroll != null && ContentScroll.ScrollableWidth > 0)
             {
                 ContentScroll.ScrollToHorizontalOffset(ContentScroll.HorizontalOffset - e.Delta);

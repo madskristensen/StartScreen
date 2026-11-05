@@ -11,6 +11,85 @@ namespace StartScreen.Test
     [TestClass]
     public class StartScreenInlineBindingTests
     {
+        [STATestMethod]
+        public void NewsPin_StaysAtCardRightEdgeDespiteNativeButtonMinimums()
+        {
+            var document = ReadLayoutXaml("NewsItemControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var pinDefinition = new XElement(document.Descendants(p + "Button")
+                .Single(element => element.Attribute(x + "Name")?.Value == "PinButton"));
+            pinDefinition.Attribute("Click")!.Remove();
+            pinDefinition.SetAttributeValue("Visibility", "Visible");
+            pinDefinition.Elements().Single().ReplaceWith(new XElement(p + "Border", new XAttribute("Width", "16"), new XAttribute("Height", "16")));
+            var cardDefinition = new XElement(document.Descendants(p + "Border")
+                .Single(element => element.Attribute(x + "Name")?.Value == "RootBorder"));
+            cardDefinition.RemoveNodes();
+            cardDefinition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            var events = new[] { "MouseEnter", "MouseLeave", "MouseLeftButtonDown", "MouseUp", "PreviewKeyDown", "GotKeyboardFocus", "LostKeyboardFocus" };
+            cardDefinition.Attributes().Where(attribute => events.Contains(attribute.Name.LocalName)).Remove();
+            cardDefinition.Add(new XElement(p + "Border.Resources",
+                new XElement(p + "Style", new XAttribute("TargetType", "Button"),
+                    new XElement(p + "Setter", new XAttribute("Property", "MinWidth"), new XAttribute("Value", "80")),
+                    new XElement(p + "Setter", new XAttribute("Property", "MinHeight"), new XAttribute("Value", "34")))),
+                new XElement(p + "Grid", pinDefinition));
+            var card = (Border)XamlReader.Parse(cardDefinition.ToString());
+
+            card.Measure(new Size(330, 130));
+            card.Arrange(new Rect(0, 0, 330, 130));
+            card.UpdateLayout();
+
+            var pin = (Button)((Grid)card.Child).Children[0];
+            var icon = (Border)pin.Content;
+            Assert.AreEqual(24d, pin.ActualWidth, 0.01);
+            Assert.AreEqual(24d, pin.ActualHeight, 0.01);
+            Assert.AreEqual(8d, card.ActualWidth - icon.TranslatePoint(new Point(icon.ActualWidth, 0), card).X, 0.01);
+        }
+
+        [STATestMethod]
+        [DataRow(12d, false)]
+        [DataRow(20d, false)]
+        [DataRow(12d, true)]
+        [DataRow(20d, true)]
+        public void HeaderButtons_HaveMatchingHeightsAndSettingsRemainsSquare(double fontSize, bool refreshing)
+        {
+            var document = ReadLayoutXaml("StartScreenControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var refresh = document.Descendants(p + "Button")
+                .Single(element => element.Attribute(x + "Name")?.Value == "UnifiedRefreshButton");
+            var panelDefinition = new XElement(refresh.Parent!);
+            panelDefinition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            panelDefinition.Elements(p + "TextBlock").Remove();
+            panelDefinition.Descendants(p + "Button").Attributes("Click").Remove();
+            foreach (var image in panelDefinition.Descendants().Where(element => element.Name.LocalName == "CrispImage").ToArray())
+                image.ReplaceWith(new XElement(p + "Border", new XAttribute("Width", "16"), new XAttribute("Height", "16")));
+            var styles = document.Root!.Element(p + "UserControl.Resources")!.Elements(p + "Style")
+                .Where(element => new[] { "ActionButtonStyle", "IconButtonStyle" }.Contains(element.Attribute(x + "Key")?.Value))
+                .Select(element => new XElement(element)).ToArray();
+            styles.Single(element => element.Attribute(x + "Key")?.Value == "ActionButtonStyle").Attribute("BasedOn")!.Remove();
+            panelDefinition.AddFirst(new XElement(p + "StackPanel.Resources", styles));
+            var panel = (StackPanel)XamlReader.Parse(panelDefinition.ToString());
+            panel.DataContext = new { IsRefreshingAny = refreshing };
+            var buttons = panel.Children.OfType<Button>().ToArray();
+            buttons[0].FontSize = fontSize;
+
+            for (var pass = 0; pass < 2; pass++)
+            {
+                panel.Measure(new Size(400, 100));
+                panel.Arrange(new Rect(0, 0, 400, panel.DesiredSize.Height));
+                panel.UpdateLayout();
+            }
+
+            Assert.HasCount(2, buttons);
+            Assert.IsGreaterThan(24d, buttons[0].ActualHeight);
+            Assert.AreEqual(buttons[0].ActualHeight, buttons[1].ActualHeight, 0.01);
+            Assert.AreEqual(buttons[1].ActualHeight, buttons[1].ActualWidth, 0.01);
+            Assert.AreEqual(buttons[0].TranslatePoint(new Point(), panel).Y, buttons[1].TranslatePoint(new Point(), panel).Y, 0.01);
+            Assert.AreEqual(!refreshing, buttons[0].IsEnabled);
+            Assert.IsTrue(buttons[1].IsEnabled);
+        }
+
         [TestMethod]
         public void ActionButtons_InheritNativeVsThemingAndAttachGlyphFollowsButtonState()
         {
@@ -94,7 +173,7 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        public void RepositoryCounts_ShowInlinePositiveBadgeAndHideZeroStatusRow()
+        public void RepositoryCounts_ShowOnlyPositiveCountsAndHidePlaceholderAndUnavailableRows()
         {
             var document = ReadLayoutXaml("MruItemControl.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -124,14 +203,13 @@ namespace StartScreen.Test
             var badge = (Button)grid.Children[0];
             var row = (Grid)grid.Children[1];
             var reviews = (Button)row.Children[0];
-            var status = (Button)row.Children[1];
+            Assert.AreEqual(1, row.Children.Count);
             var item = new Models.MruItem { RemoteUrl = "https://github.com/o/r.git" };
             grid.DataContext = item;
             void UpdateBindings() => grid.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
             UpdateBindings();
             Assert.AreEqual(Visibility.Collapsed, badge.Visibility);
-            Assert.AreEqual(Visibility.Visible, row.Visibility);
-            Assert.AreEqual("View repository activity", status.Content);
+            Assert.AreEqual(Visibility.Collapsed, row.Visibility);
 
             item.ApplyRepositorySummary("No open PRs", "Loaded", 0, 0);
             UpdateBindings();
@@ -153,14 +231,16 @@ namespace StartScreen.Test
             Assert.AreEqual(Visibility.Visible, row.Visibility);
             Assert.AreEqual(Visibility.Visible, reviews.Visibility);
             Assert.AreEqual("2 reviews", reviews.Content);
-            Assert.AreEqual(Visibility.Collapsed, status.Visibility);
 
             item.ApplyRepositorySummary("Sign in to see repository activity", "Sign in");
             UpdateBindings();
             Assert.AreEqual(Visibility.Collapsed, badge.Visibility);
-            Assert.AreEqual(Visibility.Visible, row.Visibility);
-            Assert.AreEqual(Visibility.Visible, status.Visibility);
-            Assert.AreEqual("Sign in to see repository activity", status.Content);
+            Assert.AreEqual(Visibility.Collapsed, row.Visibility);
+
+            item.ApplyRepositorySummary("Repository activity unavailable", "Refresh to try again");
+            UpdateBindings();
+            Assert.AreEqual(Visibility.Collapsed, badge.Visibility);
+            Assert.AreEqual(Visibility.Collapsed, row.Visibility);
         }
 
         [STATestMethod]
@@ -182,7 +262,7 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        public void RecentItems_ExpandWithGroupedContentAndUseOnlyThePageScrollbar()
+        public void RecentItems_UseIndependentBoundedScrollbarsWithoutMovingRepositoryDetails()
         {
             var document = ReadLayoutXaml("StartScreenControl.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -190,14 +270,39 @@ namespace StartScreen.Test
             var definition = new XElement(document.Descendants(p + "ListBox")
                 .Single(element => element.Attribute(x + "Name")?.Value == "MruPanel"));
             Assert.IsNull(definition.Attribute("MaxHeight"));
-            Assert.AreEqual("Disabled", definition.Attribute("ScrollViewer.VerticalScrollBarVisibility")!.Value);
+            Assert.AreEqual("Auto", definition.Attribute("ScrollViewer.VerticalScrollBarVisibility")!.Value);
+            var actualPage = document.Descendants(p + "ScrollViewer")
+                .Single(element => element.Attribute(x + "Name")?.Value == "PageScroll");
+            Assert.IsFalse(actualPage.Descendants(p + "ListBox").Any());
+            Assert.AreEqual("2", actualPage.Attribute("Grid.Column")!.Value);
+            Assert.AreEqual("1", actualPage.Parent!.Attribute("Grid.Row")!.Value);
             definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
             definition.Attribute("ItemsSource")!.Remove();
             foreach (var attribute in definition.Attributes().Where(attribute => attribute.Value.Contains("_", StringComparison.Ordinal)).ToArray())
                 attribute.Remove();
             definition.Element(p + "ListBox.ItemTemplate")!.ReplaceWith(new XElement(p + "ListBox.ItemTemplate",
                 new XElement(p + "DataTemplate", new XElement(p + "Border", new XAttribute("Height", "32")))));
-            var list = (ListBox)XamlReader.Parse(definition.ToString());
+            var styles = document.Root!.Element(p + "UserControl.Resources")!.Elements(p + "Style")
+                .Where(element => new[] { "ScrollTrackButtonStyle", "DiscreetVerticalScrollBarStyle" }.Contains(element.Attribute(x + "Key")?.Value))
+                .Select(element => new XElement(element)).ToArray();
+            foreach (var attribute in styles.SelectMany(element => element.DescendantsAndSelf().Attributes())
+                .Where(attribute => attribute.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)).ToArray())
+                attribute.Remove();
+            var pageDefinition = new XElement(actualPage);
+            pageDefinition.RemoveNodes();
+            pageDefinition.Add(new XElement(actualPage.Element(p + "ScrollViewer.Resources")!));
+            pageDefinition.Add(new XElement(p + "Border", new XAttribute("Height", "2000")));
+            pageDefinition.Attribute("PreviewMouseWheel")!.Remove();
+            pageDefinition.SetAttributeValue("Grid.Column", "1");
+            var gridDefinition = new XElement(p + "Grid", new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
+                new XElement(p + "Grid.Resources", styles),
+                new XElement(p + "Grid.ColumnDefinitions",
+                    new XElement(p + "ColumnDefinition", new XAttribute("Width", "360")),
+                    new XElement(p + "ColumnDefinition", new XAttribute("Width", "*"))),
+                definition, pageDefinition);
+            var grid = (Grid)XamlReader.Parse(gridDefinition.ToString());
+            var list = (ListBox)grid.Children[0];
+            var page = (ScrollViewer)grid.Children[1];
             var items = Enumerable.Range(0, 60).Select(index => new Models.MruItem
             {
                 Name = "Project" + index,
@@ -208,29 +313,41 @@ namespace StartScreen.Test
             var view = CollectionViewSource.GetDefaultView(items);
             view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(Models.MruItem.DisplayGroup)));
             list.ItemsSource = view;
-            var pageDefinition = new XElement(document.Descendants(p + "ScrollViewer")
-                .Single(element => element.Attribute(x + "Name")?.Value == "PageScroll"));
-            pageDefinition.RemoveNodes();
-            pageDefinition.Attribute("PreviewMouseWheel")!.Remove();
-            pageDefinition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
-            var page = (ScrollViewer)XamlReader.Parse(pageDefinition.ToString());
-            page.Content = list;
             void Layout()
             {
-                page.Measure(new Size(360, 300));
-                page.Arrange(new Rect(0, 0, 360, 300));
-                page.UpdateLayout();
+                grid.Measure(new Size(900, 300));
+                grid.Arrange(new Rect(0, 0, 900, 300));
+                grid.UpdateLayout();
             }
 
             Layout();
 
-            Assert.IsGreaterThan(60 * 32d, list.ActualHeight);
+            Assert.AreEqual(300d, list.ActualHeight, 0.01);
             Assert.IsGreaterThan(0d, page.ScrollableHeight);
             var inner = System.Windows.Media.VisualTreeHelper.GetChild(list, 0) as Border;
             Assert.IsNotNull(inner);
             Assert.IsInstanceOfType<ScrollViewer>(inner.Child);
             var innerScroll = (ScrollViewer)inner.Child;
-            Assert.AreEqual(0d, innerScroll.ScrollableHeight);
+            Assert.IsGreaterThan(0d, innerScroll.ScrollableHeight);
+            var mruBar = (System.Windows.Controls.Primitives.ScrollBar)innerScroll.Template.FindName("PART_VerticalScrollBar", innerScroll);
+            var pageBar = (System.Windows.Controls.Primitives.ScrollBar)page.Template.FindName("PART_VerticalScrollBar", page);
+            Assert.AreEqual(8d, mruBar.ActualWidth, 0.01);
+            Assert.AreEqual(10d, pageBar.ActualWidth, 0.01);
+            var track = (System.Windows.Controls.Primitives.Track)mruBar.Template.FindName("PART_Track", mruBar);
+            Assert.AreEqual(mruBar.Maximum, track.Maximum, 0.01);
+            Assert.AreEqual(mruBar.ViewportSize, track.ViewportSize, 0.01);
+            System.Windows.Controls.Primitives.ScrollBar.PageDownCommand.Execute(null, mruBar);
+            Layout();
+            Assert.IsGreaterThan(0d, innerScroll.VerticalOffset);
+            Assert.AreEqual(0d, page.VerticalOffset, 0.01);
+
+            innerScroll.ScrollToEnd();
+            Layout();
+
+            Assert.AreEqual(innerScroll.ScrollableHeight, innerScroll.VerticalOffset, 0.01);
+            Assert.AreEqual(0d, page.VerticalOffset, 0.01);
+            innerScroll.ScrollToHome();
+            Layout();
 
             page.ScrollToEnd();
             Layout();
@@ -274,11 +391,25 @@ namespace StartScreen.Test
             foreach (var attribute in definition.DescendantsAndSelf().Attributes()
                 .Where(attribute => events.Contains(attribute.Name.LocalName)
                     || attribute.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)).ToArray())
-                attribute.Remove();
+            {
+                if (attribute.Value.Contains("CommandBarTextActiveBrushKey", StringComparison.Ordinal))
+                    attribute.Value = "{DynamicResource SettingsForeground}";
+                else if (attribute.Value.Contains("CommandBarMouseOverBackgroundBeginBrushKey", StringComparison.Ordinal))
+                    attribute.Value = "{DynamicResource SettingsHover}";
+                else if (attribute.Value.Contains("ControlLinkTextBrushKey", StringComparison.Ordinal))
+                    attribute.Value = "{DynamicResource SettingsFocus}";
+                else if (attribute.Parent?.Name == p + "Setter")
+                    attribute.Parent.Remove();
+                else
+                    attribute.Remove();
+            }
             foreach (var image in definition.Descendants().Where(element => element.Name.LocalName == "CrispImage").ToArray())
                 image.ReplaceWith(new XElement(p + "Border", new XAttribute("Width", "12"), new XAttribute("Height", "12")));
 
             var panel = (Border)XamlReader.Parse(definition.ToString());
+            panel.Resources["SettingsForeground"] = System.Windows.Media.Brushes.White;
+            panel.Resources["SettingsHover"] = System.Windows.Media.Brushes.DimGray;
+            panel.Resources["SettingsFocus"] = System.Windows.Media.Brushes.SkyBlue;
             var connections = (Expander)panel.FindName("AdoConnectionOptions");
             var search = (Expander)panel.FindName("SearchQueryOptions");
             var query = (TextBox)panel.FindName("SearchQueryTextBox");
@@ -299,6 +430,15 @@ namespace StartScreen.Test
             Assert.IsFalse(connections.IsExpanded);
             Assert.IsFalse(search.IsExpanded);
             Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)search.Template.FindName("ExpandSite", search)).Visibility);
+            foreach (var expander in new[] { connections, search })
+            {
+                var header = (System.Windows.Controls.Primitives.ToggleButton)expander.Template.FindName("HeaderToggle", expander);
+                var chevron = (System.Windows.Shapes.Path)header.Template.FindName("Chevron", header);
+                Assert.AreEqual(System.Windows.Media.Brushes.White, expander.Foreground);
+                Assert.AreEqual(expander.Foreground, header.Foreground);
+                Assert.AreEqual(header.Foreground, chevron.Stroke);
+                Assert.AreEqual(expander.Header, header.Content);
+            }
             Assert.AreEqual(Visibility.Visible, servers.Visibility);
             Assert.AreSame(connections.Parent, servers.Parent, "Connection status must remain outside the collapsed controls.");
             Assert.AreEqual(Visibility.Visible, defaultTab.Visibility);
@@ -311,13 +451,26 @@ namespace StartScreen.Test
             Assert.IsGreaterThan(100d, defaultTab.ActualWidth, "Preference controls must remain usable in the narrow pane.");
             var collapsedHeight = panel.DesiredSize.Height;
 
-            connections.IsExpanded = true;
-            search.IsExpanded = true;
+            ((System.Windows.Controls.Primitives.ToggleButton)connections.Template.FindName("HeaderToggle", connections)).IsChecked = true;
+            ((System.Windows.Controls.Primitives.ToggleButton)search.Template.FindName("HeaderToggle", search)).IsChecked = true;
             Layout();
 
+            Assert.IsTrue(connections.IsExpanded);
+            Assert.IsTrue(search.IsExpanded);
             Assert.AreEqual(Visibility.Visible, ((FrameworkElement)search.Template.FindName("ExpandSite", search)).Visibility);
             Assert.AreEqual(Visibility.Visible, ((TextBlock)panel.FindName("AddAdoServerLink")).Visibility);
             Assert.IsGreaterThan(collapsedHeight, panel.DesiredSize.Height);
+
+            panel.Resources["SettingsForeground"] = System.Windows.Media.Brushes.Black;
+            Layout();
+            foreach (var expander in new[] { connections, search })
+            {
+                var header = (System.Windows.Controls.Primitives.ToggleButton)expander.Template.FindName("HeaderToggle", expander);
+                var chevron = (System.Windows.Shapes.Path)header.Template.FindName("Chevron", header);
+                Assert.AreEqual(System.Windows.Media.Brushes.Black, expander.Foreground);
+                Assert.AreEqual(expander.Foreground, header.Foreground);
+                Assert.AreEqual(header.Foreground, chevron.Stroke);
+            }
         }
 
         [STATestMethod]
@@ -729,8 +882,8 @@ namespace StartScreen.Test
             var pageScroll = document.Descendants(presentation + "ScrollViewer")
                 .Single(element => element.Attribute(xaml + "Name")?.Value == "PageScroll");
 
-            Assert.AreSame(pageScroll.Parent, filter.Parent);
-            Assert.AreEqual("1", pageScroll.Attribute("Grid.Row")?.Value);
+            Assert.AreSame(pageScroll.Parent!.Parent, filter.Parent);
+            Assert.AreEqual("1", pageScroll.Parent.Attribute("Grid.Row")?.Value);
             Assert.AreEqual("2", filter.Attribute("Grid.Row")?.Value);
             Assert.AreEqual("Left", filter.Attribute("HorizontalAlignment")?.Value);
             Assert.AreEqual("{Binding ShowSolutionsOnly, Mode=TwoWay}", filter.Attribute("IsChecked")?.Value);

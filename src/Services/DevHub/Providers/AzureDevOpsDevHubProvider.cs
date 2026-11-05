@@ -540,14 +540,26 @@ namespace StartScreen.Services.DevHub.Providers
 
                 foreach (var build in builds.EnumerateArray())
                 {
-                    var definition = build.TryGetProperty("definition", out var def)
-                        ? def.GetProperty("name").GetString()
+                    var definition = build.TryGetProperty("definition", out var def) && def.ValueKind == JsonValueKind.Object
+                        && def.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String
+                        ? name.GetString()
                         : "Build";
 
                     var result = build.TryGetProperty("result", out var r) && r.ValueKind != JsonValueKind.Null
                         ? r.GetString()
                         : null;
-                    var status = build.GetProperty("status").GetString();
+                    if (!build.TryGetProperty("status", out var statusElement) || statusElement.ValueKind != JsonValueKind.String
+                        || string.IsNullOrWhiteSpace(statusElement.GetString()))
+                        throw new JsonException("Azure DevOps did not return a valid status for a build.");
+                    var status = statusElement.GetString();
+                    // Queued builds have not started yet, so both execution timestamps can be absent.
+                    var timestamp = build.TryGetProperty("finishTime", out var finish) && finish.ValueKind != JsonValueKind.Null
+                        ? finish.GetDateTime().ToUniversalTime()
+                        : build.TryGetProperty("startTime", out var start) && start.ValueKind != JsonValueKind.Null
+                            ? start.GetDateTime().ToUniversalTime()
+                            : build.TryGetProperty("queueTime", out var queued) && queued.ValueKind != JsonValueKind.Null
+                                ? queued.GetDateTime().ToUniversalTime()
+                                : throw new JsonException("Azure DevOps did not return a finish, start, or queue time for a build.");
 
                     results.Add(new DevHubCiRun
                     {
@@ -559,11 +571,11 @@ namespace StartScreen.Services.DevHub.Providers
                             ? StripRefsPrefix(branch.GetString())
                             : null,
                         Status = MapAdoBuildStatus(status, result),
-                        Timestamp = build.TryGetProperty("finishTime", out var finish) && finish.ValueKind != JsonValueKind.Null
-                            ? finish.GetDateTime().ToUniversalTime()
-                            : build.GetProperty("startTime").GetDateTime().ToUniversalTime(),
-                        WebUrl = build.TryGetProperty("_links", out var links) && links.TryGetProperty("web", out var web)
-                            ? web.GetProperty("href").GetString()
+                        Timestamp = timestamp,
+                        WebUrl = build.TryGetProperty("_links", out var links) && links.ValueKind == JsonValueKind.Object
+                            && links.TryGetProperty("web", out var web) && web.ValueKind == JsonValueKind.Object
+                            && web.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String
+                            ? href.GetString()
                             : $"{GetBaseUrl(repo)}/{repo.Project}/_build",
                     });
                 }

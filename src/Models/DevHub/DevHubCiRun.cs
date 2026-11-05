@@ -44,7 +44,7 @@ namespace StartScreen.Models.DevHub
         public string Status { get; set; }
 
         /// <summary>
-        /// When this run completed (or started, if still running).
+        /// When this run completed, started, or was queued if it has not started yet.
         /// </summary>
         public DateTime Timestamp { get; set; }
 

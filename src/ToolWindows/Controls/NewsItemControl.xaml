@@ -69,6 +69,7 @@
             <!-- Pin Button (bottom right, visible on hover or when pinned) -->
             <Button x:Name="PinButton"
                     Width="24" Height="24"
+                    MinWidth="0" MinHeight="0" Padding="0"
                     Background="Transparent"
                     BorderThickness="0"
                     Cursor="Hand"

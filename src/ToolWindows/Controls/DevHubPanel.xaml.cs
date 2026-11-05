@@ -97,7 +97,7 @@ namespace StartScreen.ToolWindows.Controls
 
             if (dashboard == null)
             {
-                if (dashboardChanged || filterChanged)
+                if (dashboardChanged || filterChanged || ErrorPanel.Visibility == Visibility.Visible || LoadingPanel.Visibility == Visibility.Visible)
                 {
                     ShowNotConnected(hasGitHub: false, hasAdo: false);
                 }
@@ -182,9 +182,8 @@ namespace StartScreen.ToolWindows.Controls
         public void ShowLoading(string message = null)
         {
             LoadingText.Text = message ?? "Loading your activity...";
-            NotConnectedPanel.Visibility = Visibility.Collapsed;
+            ResetStatusPanels(NotConnectedPanel, LoadingPanel, ErrorPanel);
             DashboardPanel.Visibility = Visibility.Visible;
-            ErrorPanel.Visibility = Visibility.Collapsed;
             LoadingPanel.Visibility = Visibility.Visible;
         }
 
@@ -193,19 +192,26 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public void ShowError(string message)
         {
-            NotConnectedPanel.Visibility = Visibility.Collapsed;
+            ResetStatusPanels(NotConnectedPanel, LoadingPanel, ErrorPanel);
             DashboardPanel.Visibility = Visibility.Visible;
-            LoadingPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Visible;
             ErrorMessageText.Text = message;
             ClearRepositoryActivity();
         }
 
+        public void ShowLocalWorkspace()
+        {
+            _scopedRepo = null;
+            _currentFilterRepo = null;
+            _currentDashboard = null;
+            ClearRepositoryActivity();
+            ShowDashboard();
+        }
+
         private void ShowNotConnected(bool hasGitHub, bool hasAdo)
         {
+            ResetStatusPanels(NotConnectedPanel, LoadingPanel, ErrorPanel);
             DashboardPanel.Visibility = Visibility.Visible;
-            LoadingPanel.Visibility = Visibility.Collapsed;
-            ErrorPanel.Visibility = Visibility.Collapsed;
             NotConnectedPanel.Visibility = Visibility.Visible;
 
             ConnectGitHubTextBlock.Visibility = hasGitHub ? Visibility.Collapsed : Visibility.Visible;
@@ -285,12 +291,17 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ShowDashboard()
         {
-            NotConnectedPanel.Visibility = Visibility.Collapsed;
-            LoadingPanel.Visibility = Visibility.Collapsed;
-            ErrorPanel.Visibility = Visibility.Collapsed;
+            ResetStatusPanels(NotConnectedPanel, LoadingPanel, ErrorPanel);
             DashboardPanel.Visibility = Visibility.Visible;
 
             ApplyDefaultTab();
+        }
+
+        internal static void ResetStatusPanels(UIElement notConnected, UIElement loading, UIElement error)
+        {
+            notConnected.Visibility = Visibility.Collapsed;
+            loading.Visibility = Visibility.Collapsed;
+            error.Visibility = Visibility.Collapsed;
         }
 
         // Selects the user's preferred default sub-tab the first time the dashboard

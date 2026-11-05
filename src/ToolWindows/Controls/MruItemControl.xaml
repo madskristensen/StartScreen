@@ -190,38 +190,12 @@
                         <imaging:CrispImage x:Name="PinIcon" Moniker="{x:Static catalog:KnownMonikers.Pin}" Width="16" Height="16"/>
                     </Button>
                 </Grid>
-                <Grid x:Name="RepositoryStatusRow" Grid.Row="1" Margin="0 3 0 0" ToolTip="{Binding RepositorySummaryTooltip}">
-                    <Grid.Style>
-                        <Style TargetType="Grid">
-                            <Style.Triggers>
-                                <MultiDataTrigger>
-                                    <MultiDataTrigger.Conditions>
-                                        <Condition Binding="{Binding HasRepositoryCounts}" Value="True"/>
-                                        <Condition Binding="{Binding HasRequestedReviews}" Value="False"/>
-                                    </MultiDataTrigger.Conditions>
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </MultiDataTrigger>
-                                <DataTrigger Binding="{Binding RepositorySummaryText}" Value="">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Grid.Style>
+                <Grid x:Name="RepositoryStatusRow" Grid.Row="1" Margin="0 3 0 0" ToolTip="{Binding RepositorySummaryTooltip}"
+                      Visibility="{Binding HasRequestedReviews, Converter={StaticResource BoolToVisibilityConverter}}">
                     <Button Content="{Binding RepositoryReviewsText}" Click="RepositoryReviews_Click"
                             ToolTip="Review requests for you" AutomationProperties.Name="Review requests for you"
                             Style="{StaticResource RepositoryLinkButtonStyle}"
                             Visibility="{Binding HasRequestedReviews, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                    <Button Content="{Binding RepositorySummaryText}" Click="RepositorySummary_Click">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource RepositoryLinkButtonStyle}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasRepositoryCounts}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
                 </Grid>
             </Grid>
         </Grid>

@@ -20,8 +20,10 @@ gets you into code immediately - no clicking through menus, no waiting.
 ### Startup and background work
 
 The action bar and search are available before secondary content loads. Recent
-projects load first; Git metadata, repository summaries, Dev Hub, and news start after the UI has
-yielded to rendering and user input. Cache reads, feed parsing, and thumbnail
+projects become clickable without waiting for filesystem timestamps, existence
+checks, Git metadata, or history writes. Those details are filled in afterward;
+Your Work can load independently. Repository summaries, dashboard refreshes, and
+news start after the UI has yielded to rendering and user input. Cache reads, feed parsing, and thumbnail
 decoding run on background threads with bounded disk and network concurrency.
 The saved recent-project column width is applied before the first render, so it
 does not shift when background content loads.
@@ -59,8 +61,9 @@ work:
 Recent projects and folders come from Visual Studio's current Recent Projects
 list, even when they are missing from the legacy MRU store. Removing or clearing
 entries also updates that list.
-Recent items expand with their content and share the page's right-edge scrollbar;
-there is no separate scrollbar inside the recent list.
+Recent items scroll independently of Your Work and news, with a thin, discreet
+scrollbar. The right pane has its own subdued scrollbar, so browsing recent items
+keeps the selected workspace's details in view.
 
 **Find anything instantly.** Type a few characters and the search filter
 narrows your list in real time. Pin the projects you care about most so
@@ -71,8 +74,12 @@ activity in the center pane. Double-click or press Enter to open it. Choose
 **All repositories** to return to your combined activity. **Solutions only**
 filters unpinned entries; pinned folders and projects remain visible, and
 search still applies to them.
+Selecting a workspace without a supported Git remote clears any previous
+repository error and shows its local work without treating it as a failure.
 The action buttons and **All repositories** use Visual Studio's native themed
 button style, including hover, pressed, disabled, and keyboard-focus states.
+Settings disclosure headers use theme-aware text and chevrons, including when
+the Visual Studio theme changes while settings are open.
 
 **See real repository activity.** A small PR icon and count beside the branch show
 repository-wide open pull requests for supported GitHub and Azure DevOps repositories.
@@ -80,10 +87,9 @@ Zero counts are hidden. Direct personal review requests appear on the second lin
 Counts are fetched for all visible recent workspaces, independently of the limited
 dashboard lists. Repository discovery uses each workspace's local Git remote, even
 when checkouts are outside Visual Studio's default projects location.
-Unsupported, signed-out, and unavailable states are shown
-explicitly rather than as zero. Select a summary to open the scoped PR list.
-Before a summary loads, **View repository activity** opens that same list;
-the tooltip explains that counts have not loaded yet.
+Only positive counts are shown; loading, unsupported, signed-out, and unavailable
+states add no placeholder links or status text to recent items. Select a PR count
+to open the scoped PR list, or select the workspace to view its repository activity.
 
 **See your Git status at a glance.** Every repo shows its current branch,
 ahead/behind counts, uncommitted changes, and the last commit time - all
@@ -223,6 +229,8 @@ so it appears in the recent list, then refresh Start Screen. Recent builds inclu
 failed PR validation runs; the combined dashboard loads up to 10 items per repository,
 and scoping to a repository loads up to 25. Signing in alone does not enumerate all
 organizations or projects.
+Queued Azure DevOps builds appear as pending using their queue time until they start;
+running and completed builds use their start and finish times respectively.
 Optimized Azure DevOps Git remotes (`/_git/_optimized/Repository`) are normalized
 to the underlying repository for activity and build queries.
 

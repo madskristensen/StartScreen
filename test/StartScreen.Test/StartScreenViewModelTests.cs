@@ -99,6 +99,8 @@ namespace StartScreen.Test
             {
                 var existingItem = new MruItem { Path = existingPath };
                 var missingItem = new MruItem { Path = existingPath + ".missing" };
+                existingItem.ApplyExists(existingItem.CalculateExists());
+                missingItem.ApplyExists(missingItem.CalculateExists());
 
                 Assert.IsFalse(StartScreenViewModel.ShouldClearMruItem(existingItem, MruClearMode.Missing));
                 Assert.IsTrue(StartScreenViewModel.ShouldClearMruItem(missingItem, MruClearMode.Missing));

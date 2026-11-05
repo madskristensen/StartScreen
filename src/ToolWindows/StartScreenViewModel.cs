@@ -63,6 +63,7 @@ namespace StartScreen.ToolWindows
         private CancellationTokenSource _mruMetadataCancellation;
         private bool _isDeferredContentInitializing;
         private bool _isDeferredContentInitialized;
+        private bool _initialMruOptionsNeedSave;
 
         public ObservableCollection<MruItem> MruItems { get; private set; }
         public ObservableCollection<MruItem> PinnedItems { get; private set; }
@@ -525,7 +526,6 @@ namespace StartScreen.ToolWindows
 
         internal void EnsureDeferredContentInitialized()
         {
-            IReadOnlyCollection<MruItem> mruItems;
             CancellationToken cancellationToken;
 
             lock (_cancellationSync)
@@ -534,12 +534,11 @@ namespace StartScreen.ToolWindows
                     return;
 
                 _isDeferredContentInitializing = true;
-                mruItems = _allMruItems.ToList();
                 cancellationToken = _lifetimeCancellation.Token;
             }
 
             StartScreenPackage.BackgroundTaskFactory.RunAsync(
-                () => InitializeDeferredContentAsync(mruItems, cancellationToken))
+                () => InitializeDeferredContentAsync(cancellationToken))
                 .FileAndForget(nameof(StartScreenViewModel));
         }
 
@@ -639,9 +638,7 @@ namespace StartScreen.ToolWindows
             }).FileAndForget(nameof(StartScreenViewModel));
         }
 
-        private async Task InitializeDeferredContentAsync(
-            IReadOnlyCollection<MruItem> mruItems,
-            CancellationToken cancellationToken)
+        private async Task InitializeDeferredContentAsync(CancellationToken cancellationToken)
         {
             try
             {
@@ -649,7 +646,15 @@ namespace StartScreen.ToolWindows
                     System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
 
-                StartMruMetadataRefresh(mruItems);
+                await RefreshMruAsync(cancellationToken);
+
+                if (_initialMruOptionsNeedSave)
+                {
+                    Options options = await Options.GetLiveInstanceAsync();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await options.SaveAsync();
+                    _initialMruOptionsNeedSave = false;
+                }
 
                 await TaskScheduler.Default;
 
@@ -728,8 +733,17 @@ namespace StartScreen.ToolWindows
             //    UI is updated. Options is just a settings-store read and is needed
             //    for pinned-item state.
             Options options = await Options.GetLiveInstanceAsync();
-            List<MruItem> mruItems = await MruService.GetMruItemsAsync(options, cancellationToken);
-            List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(mruItems, options, cancellationToken);
+            bool hadHistory = !string.IsNullOrEmpty(options.ExtendedMruItems) || !string.IsNullOrEmpty(options.PinnedItems);
+            List<MruItem> mruItems;
+            try
+            {
+                mruItems = await MruService.GetMruItemsAsync(options, cancellationToken, includeMetadata: false);
+            }
+            finally
+            {
+                _initialMruOptionsNeedSave |= hadHistory && string.IsNullOrEmpty(options.ExtendedMruItems) && string.IsNullOrEmpty(options.PinnedItems);
+            }
+            List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(mruItems, options, cancellationToken, persistChanges: false);
             var allItems = mruItems.Concat(extendedItems).ToList();
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);

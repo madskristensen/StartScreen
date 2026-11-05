@@ -69,7 +69,7 @@ namespace StartScreen.Models
                 if (_path != value)
                 {
                     _path = value;
-                    _exists = null; // Reset lazy existence check
+                    _exists = null; // Reset background existence state
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(Exists));
                 }
@@ -397,19 +397,9 @@ namespace StartScreen.Models
         public string FormattedDate => _lastAccessed.ToString("d");
 
         /// <summary>
-        /// Lazy-loaded file existence check. Cached after first access.
+        /// Unknown paths remain enabled until the background existence check completes.
         /// </summary>
-        public bool Exists
-        {
-            get
-            {
-                if (!_exists.HasValue)
-                {
-                    _exists = CalculateExists();
-                }
-                return _exists.Value;
-            }
-        }
+        public bool Exists => _exists ?? !string.IsNullOrWhiteSpace(_path);
 
         /// <summary>
         /// Calculates file existence without changing bound state.

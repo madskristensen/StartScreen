@@ -31,8 +31,9 @@ namespace StartScreen.Services
 
         /// <summary>
         /// Reads VS's MRU via IVsMRUItemsStore and applies pinned state from Options.
+        /// When metadata is deferred, the caller must persist any cleared history after publication.
         /// </summary>
-        public static async Task<List<MruItem>> GetMruItemsAsync(Options options = null, CancellationToken cancellationToken = default)
+        public static async Task<List<MruItem>> GetMruItemsAsync(Options options = null, CancellationToken cancellationToken = default, bool includeMetadata = true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             // CodeContainers.Offline drives Visual Studio's Recent Projects UI. The legacy
@@ -52,7 +53,7 @@ namespace StartScreen.Services
                 options = await Options.GetLiveInstanceAsync();
             }
 
-            if (ClearPersistedHistoryIfRecentProjectsEmpty(recentProjectPaths, options))
+            if (ClearPersistedHistoryIfRecentProjectsEmpty(recentProjectPaths, options) && includeMetadata)
             {
                 await options.SaveAsync();
             }
@@ -97,7 +98,7 @@ namespace StartScreen.Services
                 MaxDegreeOfParallelism = 2
             }, i =>
             {
-                parsed[i] = ParseMruEntry(rawEntries[i]);
+                parsed[i] = ParseMruEntry(rawEntries[i], includeMetadata);
             });
 
             var itemsByKey = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
@@ -126,7 +127,9 @@ namespace StartScreen.Services
                 }
             }
 
-            List<MruItem> vsItems = MergeCurrentRecentProjects(itemsByKey.Values, recentProjectPaths);
+            List<MruItem> vsItems = MergeCurrentRecentProjects(itemsByKey.Values, recentProjectPaths, includeMetadata);
+            if (!includeMetadata)
+                RestoreStoredAccessTimes(vsItems, options);
 
             // Apply pinned state from Options and build an ordered list for stable pin ordering
             var pinnedOrderList = (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries);
@@ -201,7 +204,7 @@ namespace StartScreen.Services
         }
 
         internal static List<MruItem> MergeCurrentRecentProjects(
-            IEnumerable<MruItem> items, IEnumerable<string> recentProjectPaths)
+            IEnumerable<MruItem> items, IEnumerable<string> recentProjectPaths, bool includeMetadata = true)
         {
             var itemList = items.ToList();
             if (recentProjectPaths == null)
@@ -229,7 +232,7 @@ namespace StartScreen.Services
                     Path = path,
                     Name = type == MruItemType.Folder ? Path.GetFileName(path.TrimEnd('\\', '/')) : Path.GetFileNameWithoutExtension(path),
                     Type = type,
-                    LastAccessed = GetLastAccessTime(path, type)
+                    LastAccessed = includeMetadata ? GetLastAccessTime(path, type) : DateTime.MinValue
                 };
                 if (item != null)
                     current.RawMruEntries.AddRange(item.RawMruEntries);
@@ -647,7 +650,7 @@ namespace StartScreen.Services
         /// The first segment is the path (may contain environment variables).
         /// The fourth segment is the display name.
         /// </remarks>
-        internal static MruItem ParseMruEntry(string raw)
+        internal static MruItem ParseMruEntry(string raw, bool includeMetadata = true)
         {
             if (string.IsNullOrWhiteSpace(raw))
                 return null;
@@ -675,7 +678,7 @@ namespace StartScreen.Services
                     Path = rawPath,
                     Name = displayName,
                     Type = type,
-                    LastAccessed = GetLastAccessTime(rawPath, type),
+                    LastAccessed = includeMetadata ? GetLastAccessTime(rawPath, type) : DateTime.MinValue,
                     IsPinned = false
                 };
 
@@ -890,8 +893,28 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                ex.Log();
+                LogHistoryReadFailure(ex);
                 return [];
+            }
+        }
+
+        // Keep the VS Shell logging dependency off the successful, host-independent read path.
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void LogHistoryReadFailure(Exception ex)
+        {
+            ex.LogAsync().FileAndForget(nameof(MruService));
+        }
+
+        internal static void RestoreStoredAccessTimes(IEnumerable<MruItem> items, Options options)
+        {
+            var storedTimes = LoadExtendedEntries(options)
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.Path))
+                .GroupBy(entry => GetDeduplicationKeyFromPath(entry.Path, (MruItemType)entry.Type), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.Max(entry => entry.LastAccessed), StringComparer.OrdinalIgnoreCase);
+            foreach (MruItem item in items)
+            {
+                if (storedTimes.TryGetValue(GetDeduplicationKey(item), out DateTime lastAccessed))
+                    item.LastAccessed = lastAccessed;
             }
         }
 
@@ -900,9 +923,10 @@ namespace StartScreen.Services
         /// <paramref name="vsItems"/>. Also merges <paramref name="vsItems"/> into the
         /// extended list and saves it so the history grows automatically.
         /// Must be called from a background thread.
+        /// Set persistChanges to false for initial publication; the deferred refresh persists the merge.
         /// </summary>
         internal static async Task<List<MruItem>> GetExtendedOnlyItemsAsync(
-            IEnumerable<MruItem> vsItems, Options options, CancellationToken cancellationToken = default)
+            IEnumerable<MruItem> vsItems, Options options, CancellationToken cancellationToken = default, bool persistChanges = true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var vsItemList = vsItems.ToList();
@@ -948,7 +972,7 @@ namespace StartScreen.Services
                 }
             }
 
-            if (changed)
+            if (changed && persistChanges)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 options.ExtendedMruItems = JsonSerializer.Serialize(byKey.Values.ToList(), _jsonOptions);

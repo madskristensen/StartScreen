@@ -171,6 +171,71 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow("completed", "\"result\":\"succeeded\",\"finishTime\":\"2026-09-12T10:00:00Z\",\"startTime\":\"2026-09-12T09:00:00Z\",", 10, "success")]
+        [DataRow("inProgress", "\"startTime\":\"2026-09-12T09:00:00Z\",", 9, "pending")]
+        [DataRow("inProgress", "\"finishTime\":null,\"startTime\":\"2026-09-12T09:00:00Z\",", 9, "pending")]
+        [DataRow("notStarted", "", 8, "pending")]
+        [DataRow("notStarted", "\"finishTime\":null,\"startTime\":null,", 8, "pending")]
+        [DataRow("completed", "\"result\":\"canceled\",", 8, "cancelled")]
+        public void AzureDevOpsBuilds_UsesLatestAvailableTimestamp(string status, string executionTimes, int expectedHour, string expectedStatus)
+        {
+            var json = "{\"value\":[{" + executionTimes +
+                $"\"status\":\"{status}\",\"queueTime\":\"2026-09-12T10:00:00+02:00\"}}]}}";
+
+            var result = AzureDevOpsDevHubProvider.ParseAdoBuilds(json, _azureDevOpsRepo);
+
+            Assert.HasCount(1, result);
+            Assert.AreEqual(new DateTime(2026, 9, 12, expectedHour, 0, 0, DateTimeKind.Utc), result[0].Timestamp);
+            Assert.AreEqual(DateTimeKind.Utc, result[0].Timestamp.Kind);
+            Assert.AreEqual(expectedStatus, result[0].Status);
+        }
+
+        [TestMethod]
+        [DataRow("")]
+        [DataRow("\"definition\":null,\"_links\":null,")]
+        [DataRow("\"definition\":{},\"_links\":{},")]
+        [DataRow("\"definition\":{\"name\":null},\"_links\":{\"web\":null},")]
+        [DataRow("\"_links\":{\"web\":{}},")]
+        [DataRow("\"_links\":{\"web\":{\"href\":null}},")]
+        public void AzureDevOpsBuilds_MissingOptionalMetadataUsesDefaults(string metadata)
+        {
+            var json = "{\"value\":[{" + metadata +
+                "\"status\":\"notStarted\",\"queueTime\":\"2026-09-12T08:00:00Z\"}]}";
+
+            var result = AzureDevOpsDevHubProvider.ParseAdoBuilds(json, _azureDevOpsRepo);
+
+            Assert.HasCount(1, result);
+            Assert.AreEqual("Build", result[0].Name);
+            Assert.AreEqual("https://dev.azure.com/organization/project/_build", result[0].WebUrl);
+            Assert.AreEqual("pending", result[0].Status);
+            Assert.IsNull(result[0].Branch);
+        }
+
+        [TestMethod]
+        [DataRow("{\"value\":[{\"status\":\"notStarted\"}]}")]
+        [DataRow("{\"value\":[{\"status\":\"notStarted\",\"finishTime\":null,\"startTime\":null,\"queueTime\":null}]}")]
+        public void AzureDevOpsBuilds_MissingAllTimestampsReportsInvalidPayload(string json)
+        {
+            Assert.ThrowsExactly<System.Text.Json.JsonException>(() =>
+                AzureDevOpsDevHubProvider.ParseAdoBuilds(json, _azureDevOpsRepo));
+        }
+
+        [TestMethod]
+        [DataRow("")]
+        [DataRow("\"status\":null,")]
+        [DataRow("\"status\":123,")]
+        [DataRow("\"status\":\"\",")]
+        public void AzureDevOpsBuilds_MissingOrInvalidStatusReportsInvalidPayload(string status)
+        {
+            var json = "{\"value\":[{" + status + "\"queueTime\":\"2026-09-12T08:00:00Z\"}]}";
+
+            var exception = Assert.ThrowsExactly<System.Text.Json.JsonException>(() =>
+                AzureDevOpsDevHubProvider.ParseAdoBuilds(json, _azureDevOpsRepo));
+
+            StringAssert.Contains(exception.Message, "status");
+        }
+
+        [TestMethod]
         public void ProviderParsers_WithMissingCollections_ReturnEmpty()
         {
             Assert.IsEmpty(GitHubDevHubProvider.ParsePullRequests("{}", "user"));
