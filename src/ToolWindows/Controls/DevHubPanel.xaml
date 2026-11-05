@@ -291,6 +291,20 @@
                 </StackPanel>
                 <!-- Azure DevOps section: cloud + on-prem servers -->
                 <TextBlock Text="Azure DevOps" FontSize="11" FontWeight="SemiBold" Margin="0 4 0 4"/>
+                <TextBlock FontSize="11" Margin="0 0 0 4" TextWrapping="Wrap">
+                    <Hyperlink Click="ConnectAdo_Click"
+                               ToolTip="Use the account selected in Visual Studio's Azure Service Authentication settings. No PAT is required."
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                        Use Visual Studio account (Entra ID)
+                    </Hyperlink>
+                    <Run Text=" or "/>
+                    <Hyperlink Click="ShowCloudAdoPatEntry_Click"
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                        use a PAT...
+                    </Hyperlink>
+                </TextBlock>
+                <TextBlock x:Name="AdoAuthenticationHelpText" Visibility="Collapsed"
+                           FontSize="11" Opacity="0.8" TextWrapping="Wrap" Margin="0 0 0 6"/>
                 <ItemsControl x:Name="AdoServersList" Focusable="False">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
@@ -316,7 +330,7 @@
                                                Visibility="{Binding SignInVisibility}">
                                         <Hyperlink Click="AdoServer_SignIn_Click" Tag="{Binding Host}"
                                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                                            Sign in
+                                            <Run Text="{Binding SignInText}"/>
                                         </Hyperlink>
                                     </TextBlock>
                                     <TextBlock FontSize="11" Margin="6 0 0 0"
@@ -375,7 +389,7 @@
                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                             Learn how to create a personal access token
                         </Hyperlink>
-                        <Run Text="with Code (read) and Work Items (read) scopes."/>
+                        <Run Text="with Code (read), Work Items (read), and Build (read) scopes."/>
                     </TextBlock>
                     <StackPanel Orientation="Horizontal" Margin="0 6 0 0" HorizontalAlignment="Left">
                         <Button Content="Save" Click="SaveAdoPat_Click"
@@ -585,7 +599,7 @@
             <TextBlock x:Name="ConnectAdoTextBlock" FontSize="13">
                 <Hyperlink x:Name="ConnectAdoLink" Click="ConnectAdo_Click"
                            Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                    Connect Azure DevOps account...
+                    Connect Azure DevOps with Visual Studio account...
                 </Hyperlink>
             </TextBlock>
         </StackPanel>

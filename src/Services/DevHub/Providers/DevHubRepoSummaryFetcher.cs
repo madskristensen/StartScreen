@@ -17,7 +17,7 @@ namespace StartScreen.Services.DevHub.Providers
         internal static async Task<DevHubRepoSummary> FetchAsync(RemoteRepoIdentifier repo,
             Func<CancellationToken, Task<DevHubCredential>> acquireCredential,
             Func<DevHubCredential, string, CancellationToken, Task<HttpResponseMessage>> send,
-            bool gitHub, CancellationToken cancellationToken)
+            bool gitHub, CancellationToken cancellationToken, string signInMessage = null)
         {
             if (repo == null)
                 throw new ArgumentNullException(nameof(repo));
@@ -31,7 +31,7 @@ namespace StartScreen.Services.DevHub.Providers
                 var credential = await acquireCredential(cancellationToken);
                 if (credential == null)
                     return new DevHubRepoSummary(repo, DevHubRepoSummaryStatus.Unauthorized,
-                        statusMessage: "Sign in to retrieve repository totals.");
+                        statusMessage: signInMessage ?? "Sign in to retrieve repository totals.");
 
                 var baseUrl = (repo.BaseUrl ?? $"https://dev.azure.com/{Uri.EscapeDataString(repo.Owner)}").TrimEnd('/');
                 var apiVersion = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
@@ -51,7 +51,7 @@ namespace StartScreen.Services.DevHub.Providers
                     using (var response = await send(credential, url, cancellationToken))
                     {
                         if (!response.IsSuccessStatusCode)
-                            return Failure(repo, response.StatusCode);
+                            return Failure(repo, response.StatusCode, signInMessage);
                         using (var stream = await response.Content.ReadAsStreamAsync())
                         using (var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken))
                         {
@@ -91,13 +91,13 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
-        private static DevHubRepoSummary Failure(RemoteRepoIdentifier repo, HttpStatusCode status)
+        private static DevHubRepoSummary Failure(RemoteRepoIdentifier repo, HttpStatusCode status, string signInMessage)
         {
             // A 403 can mean a rate limit, not a bad credential. A 404 may hide a private repo.
             var unauthorized = status == HttpStatusCode.Unauthorized;
             return new DevHubRepoSummary(repo,
                 unauthorized ? DevHubRepoSummaryStatus.Unauthorized : DevHubRepoSummaryStatus.Unavailable,
-                statusMessage: unauthorized ? "Repository access requires sign-in."
+                statusMessage: unauthorized ? signInMessage ?? "Repository access requires sign-in."
                     : $"Repository totals are unavailable (HTTP {(int)status}); check access or retry later.");
         }
 

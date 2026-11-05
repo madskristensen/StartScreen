@@ -208,6 +208,33 @@ Closing the Start Screen cancels pending Dev Hub requests without logging
 normal cancellation as an error or caching canceled requests as empty data.
 HTTP timeouts and other request failures are still logged for troubleshooting.
 
+### Azure DevOps sign-in
+
+Azure DevOps Services supports **Visual Studio account (Microsoft Entra ID)**
+authentication, including legacy `organization.visualstudio.com` URLs. No PAT,
+extension-specific app registration, client secret, or hosted website is required.
+In Dev Hub settings, choose **Use Visual Studio account (Entra ID)**. Sign in or
+reauthenticate in Visual Studio first, and select the intended account under
+**Tools > Options > Azure Service Authentication**. The extension reuses that
+selection; it does not provide a separate VS account picker.
+
+The organization's tenant is discovered before requesting a token, including
+guest-tenant access. VS sign-in, organization permissions, and tenant policies
+still apply. Short-lived access tokens are cached only in memory and renewed
+before expiry. A 401 invalidates the credential and is retried once; background
+refresh never opens a sign-in prompt. Failed authentication is shown as requiring
+sign-in, not as zero repository activity.
+
+**Use a PAT...** remains available where organization policy allows it. Existing
+stored PATs remain in use until you explicitly select VS authentication. PATs
+need Code (read), Work Items (read), and Build (read) permissions for the respective
+features. Azure DevOps Server (on-premises) retains its existing credential/PAT
+flow; cloud Entra tokens are never sent to these servers.
+
+The selected cloud authentication method persists across VS restarts. Choosing
+**Disconnect** stops Start Screen from reacquiring a cloud credential; it does
+not sign you out of Visual Studio or affect other extensions.
+
 ![Dev Hub](dev-hub.png)
 
 ### Scope to a repository

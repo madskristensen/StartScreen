@@ -114,7 +114,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public void GetLegacyProfileHosts_ReturnsLegacyVisualStudioBaseUrls()
+        public void GetCloudProfileBaseUrls_IncludesModernAndLegacyOrganizations()
         {
             var urls = new[]
             {
@@ -124,10 +124,9 @@ namespace StartScreen.Test.DevHub
                 "https://github.com/owner/repo",
             };
 
-            var results = AzureDevOpsDevHubProvider.GetLegacyProfileHosts(urls);
+            var results = AzureDevOpsDevHubProvider.GetCloudProfileBaseUrls(urls);
 
-            Assert.HasCount(1, results);
-            Assert.AreEqual("devdiv.visualstudio.com", results[0]);
+            CollectionAssert.AreEqual(new[] { "https://dev.azure.com/myorg", "https://devdiv.visualstudio.com" }, results.ToArray());
         }
     }
 }

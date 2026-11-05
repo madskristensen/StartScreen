@@ -247,6 +247,20 @@ namespace StartScreen.ToolWindows.Controls
             // hasAdo is preserved as a parameter so callers can decide initial visibility of the
             // top-level not-connected prompts via ShowNotConnected.
             _ = hasAdo;
+            if (SettingsPanel.Visibility == Visibility.Visible)
+                RefreshAdoServersList();
+        }
+
+        public void ShowAzureDevOpsSignInRequired()
+        {
+            if (_currentDashboard?.HasAuthentication == true)
+                UpdateView(_currentDashboard, _currentFilterRepo);
+            else
+                ShowNotConnected(hasGitHub: false, hasAdo: false);
+
+            OpenSettingsPanel();
+            AdoAuthenticationHelpText.Text = AzureDevOpsCredentialProvider.SignInMessage;
+            AdoAuthenticationHelpText.Visibility = Visibility.Visible;
         }
 
         public void ShowGitHubCredentialManagerUnavailable()
@@ -943,9 +957,12 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ConnectAdo_Click(object sender, RoutedEventArgs e)
         {
-            // Azure DevOps cannot be connected through Git Credential Manager, so prompt
-            // for a personal access token directly instead of firing the (always-failing)
-            // GCM-based connect flow used for GitHub.
+            AdoAuthenticationHelpText.Visibility = Visibility.Collapsed;
+            ConnectAccountRequested?.Invoke(this, AzureDevOpsServerHelper.CloudHost);
+        }
+
+        private void ShowCloudAdoPatEntry_Click(object sender, RoutedEventArgs e)
+        {
             ShowAdoPatEntry(AzureDevOpsServerHelper.CloudHost);
         }
 
@@ -980,7 +997,13 @@ namespace StartScreen.ToolWindows.Controls
             if (!string.IsNullOrEmpty(pat))
             {
                 Services.DevHub.DevHubCredentialHelper.StoreCredential(host, string.Empty, pat);
+                if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                {
+                    Options.Instance.DevHubAdoAuthentication = AzureDevOpsAuthenticationMode.PersonalAccessToken;
+                    Options.Instance.SaveAsync().FireAndForget();
+                }
                 Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
+                AdoAuthenticationHelpText.Visibility = Visibility.Collapsed;
                 AdoPatBox.Clear();
                 AdoPatEntryPanel.Visibility = Visibility.Collapsed;
                 _pendingAdoHost = null;
@@ -1033,6 +1056,9 @@ namespace StartScreen.ToolWindows.Controls
         {
             foreach (var host in AzureDevOpsServerHelper.GetAllKnownHosts())
             {
+                if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase)
+                    && Options.Instance.DevHubAdoAuthentication == AzureDevOpsAuthenticationMode.Disconnected)
+                    continue;
                 if (Services.DevHub.DevHubCredentialHelper.HasCredential(host))
                     return true;
             }
@@ -1057,16 +1083,22 @@ namespace StartScreen.ToolWindows.Controls
             DiscoverAndMergeServersAsync().FireAndForget();
         }
 
-        private static void AddAdoServerRow(List<AdoServerRow> rows, string host, bool isCloud, bool isConfigured)
+        private void AddAdoServerRow(List<AdoServerRow> rows, string host, bool isCloud, bool isConfigured)
         {
-            bool connected = Services.DevHub.DevHubCredentialHelper.HasCredential(host);
+            bool connected = isCloud
+                ? Options.Instance.DevHubAdoAuthentication != AzureDevOpsAuthenticationMode.Disconnected
+                    && _currentDashboard?.HasProvider(AzureDevOpsServerHelper.CloudHost) == true
+                : Services.DevHub.DevHubCredentialHelper.HasCredential(host);
+            var authentication = DevHubCredentialHelper.UsesVisualStudio(Options.Instance.DevHubAdoAuthentication,
+                isCloud && DevHubCredentialHelper.HasCredential(host)) ? "Visual Studio / Entra ID" : "PAT";
             rows.Add(new AdoServerRow
             {
                 Host = host,
-                DisplayText = isCloud ? "Azure DevOps (cloud)" : host,
+                DisplayText = isCloud ? $"Azure DevOps (cloud) - {(connected ? authentication : "not connected")}" : host,
                 StatusMoniker = connected ? KnownMonikers.StatusOK : KnownMonikers.StatusOffline,
+                SignInText = isCloud ? "Use VS account" : "Sign in",
                 SignInVisibility = connected ? Visibility.Collapsed : Visibility.Visible,
-                ChangeVisibility = connected ? Visibility.Visible : Visibility.Collapsed,
+                ChangeVisibility = connected && !isCloud ? Visibility.Visible : Visibility.Collapsed,
                 DisconnectVisibility = connected ? Visibility.Visible : Visibility.Collapsed,
                 // Allow removing user-configured (or auto-detected) on-prem hosts when no credential is stored.
                 RemoveVisibility = (!isCloud && !connected) ? Visibility.Visible : Visibility.Collapsed,
@@ -1114,7 +1146,10 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (sender is System.Windows.Documents.Hyperlink hl && hl.Tag is string host && !string.IsNullOrWhiteSpace(host))
             {
-                ShowAdoPatEntry(host);
+                if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                    ConnectAdo_Click(sender, e);
+                else
+                    ShowAdoPatEntry(host);
             }
         }
 
@@ -1146,6 +1181,11 @@ namespace StartScreen.ToolWindows.Controls
             if (sender is System.Windows.Documents.Hyperlink hl && hl.Tag is string host && !string.IsNullOrWhiteSpace(host))
             {
                 Services.DevHub.DevHubCredentialHelper.RemoveCredential(host);
+                if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                {
+                    Options.Instance.DevHubAdoAuthentication = AzureDevOpsAuthenticationMode.Disconnected;
+                    Options.Instance.SaveAsync().FireAndForget();
+                }
                 Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
 
                 if (string.Equals(_pendingAdoHost, host, StringComparison.OrdinalIgnoreCase))
@@ -1201,6 +1241,11 @@ namespace StartScreen.ToolWindows.Controls
             // Cloud is implicit; redirect to the cloud sign-in flow if the user typed dev.azure.com.
             AzureDevOpsServerHelper.AddConfiguredServerHost(host);
             Services.DevHub.DevHubCredentialHelper.StoreCredential(host, string.Empty, pat);
+            if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+            {
+                Options.Instance.DevHubAdoAuthentication = AzureDevOpsAuthenticationMode.PersonalAccessToken;
+                Options.Instance.SaveAsync().FireAndForget();
+            }
             Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
 
             AddAdoServerPanel.Visibility = Visibility.Collapsed;
@@ -1262,6 +1307,7 @@ namespace StartScreen.ToolWindows.Controls
             public string Host { get; set; }
             public string DisplayText { get; set; }
             public ImageMoniker StatusMoniker { get; set; }
+            public string SignInText { get; set; }
             public Visibility SignInVisibility { get; set; }
             public Visibility ChangeVisibility { get; set; }
             public Visibility DisconnectVisibility { get; set; }

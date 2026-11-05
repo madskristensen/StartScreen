@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -21,11 +23,34 @@ namespace StartScreen.Services.DevHub.Providers
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
         // The Authorization header is per-request because the credential token can change at runtime
         // and DefaultRequestHeaders is not safe to mutate while parallel requests are in flight.
-        private static readonly HttpClient _httpClient = CreateSharedHttpClient();
+        private static readonly HttpClient _sharedHttpClient = CreateSharedHttpClient();
+        private readonly HttpClient _httpClient;
+        private readonly Func<string, string, CancellationToken, Task<DevHubCredential>> _acquireCredential;
+        private readonly Action<string, DevHubCredential> _invalidateCredential;
+
+        public AzureDevOpsDevHubProvider() : this(_sharedHttpClient, DevHubCredentialHelper.GetAzureDevOpsCredentialAsync,
+            (host, credential) =>
+            {
+                if (credential.IsBearer)
+                    DevHubCredentialHelper.InvalidateAzureDevOpsCredential(credential);
+                else
+                    DevHubCredentialHelper.InvalidateCachedCredential(host);
+            })
+        {
+        }
+
+        internal AzureDevOpsDevHubProvider(HttpClient httpClient,
+            Func<string, string, CancellationToken, Task<DevHubCredential>> acquireCredential,
+            Action<string, DevHubCredential> invalidateCredential)
+        {
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _acquireCredential = acquireCredential ?? throw new ArgumentNullException(nameof(acquireCredential));
+            _invalidateCredential = invalidateCredential ?? throw new ArgumentNullException(nameof(invalidateCredential));
+        }
 
         private static HttpClient CreateSharedHttpClient()
         {
-            var client = new HttpClient
+            var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
             {
                 Timeout = TimeSpan.FromSeconds(15),
             };
@@ -37,16 +62,20 @@ namespace StartScreen.Services.DevHub.Providers
 
         public Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
+            if (repo == null)
+                throw new ArgumentNullException(nameof(repo));
+            var host = GetCredentialHost(repo);
             return DevHubRepoSummaryFetcher.FetchAsync(repo,
-                token => DevHubCredentialHelper.GetCredentialAsync(GetCredentialHost(repo), token),
-                (credential, url, token) => SendGetAsync(credential, url, token), false, cancellationToken);
+                token => _acquireCredential(host, GetBaseUrl(repo), token),
+                (credential, url, token) => SendAuthenticatedGetAsync(host, credential, url, token), false, cancellationToken,
+                host == AzureDevOpsServerHelper.CloudHost ? "Connect Azure DevOps in Dev Hub settings using your Visual Studio account or an optional PAT." : null);
         }
 
         internal Task<DevHubRepoSummary> GetRepoSummaryAsync(HttpClient client, DevHubCredential credential,
             RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
-            return DevHubRepoSummaryFetcher.FetchAsync(repo, _ => Task.FromResult(credential),
-                (auth, url, token) => SendGetAsync(auth, url, token, client), false, cancellationToken);
+            return new AzureDevOpsDevHubProvider(client, (_, _, _) => Task.FromResult(credential), (_, _) => { })
+                .GetRepoSummaryAsync(repo, cancellationToken);
         }
 
         public bool CanHandle(string remoteUrl)
@@ -120,70 +149,47 @@ namespace StartScreen.Services.DevHub.Providers
         {
             var results = new List<DevHubUser>();
             var credentialHosts = AzureDevOpsServerHelper.GetAllKnownHosts().ToList();
-            var profileTargets = new List<(string CredentialHost, string ProfileHost)>();
+            var profileTargets = new List<(string CredentialHost, string ProfileUrl)>();
 
             foreach (var host in credentialHosts)
             {
-                profileTargets.Add((host, null));
+                profileTargets.Add((host, host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase)
+                    ? "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"
+                    : $"https://{host.TrimEnd('/')}/_apis/connectionData?api-version=3.0"));
             }
 
-            var legacyProfileHosts = await GetLegacyProfileHostsAsync(cancellationToken);
-            foreach (var legacyProfileHost in legacyProfileHosts)
+            var organizationUrls = await GetCloudProfileBaseUrlsAsync(cancellationToken);
+            foreach (var organizationUrl in organizationUrls)
             {
-                var target = (AzureDevOpsServerHelper.CloudHost, legacyProfileHost);
+                var target = (AzureDevOpsServerHelper.CloudHost, $"{organizationUrl.TrimEnd('/')}/_apis/connectionData?api-version=3.0");
                 if (!profileTargets.Contains(target))
                     profileTargets.Add(target);
             }
 
-            foreach (var (credentialHost, profileHost) in profileTargets)
+            foreach (var (credentialHost, profileUrl) in profileTargets)
             {
-                var user = await GetUserForHostAsync(credentialHost, profileHost, cancellationToken);
-                if (user != null)
+                var user = await GetUserForHostAsync(credentialHost, profileUrl, cancellationToken);
+                if (user != null && !results.Any(existing => string.Equals(existing.Host, user.Host, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(existing.Username, user.Username, StringComparison.OrdinalIgnoreCase)))
                     results.Add(user);
             }
 
             return results;
         }
 
-        private async Task<DevHubUser> GetUserForHostAsync(string credentialHost, string profileHost, CancellationToken cancellationToken)
+        internal async Task<DevHubUser> GetUserForHostAsync(string credentialHost, string profileUrl, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(credentialHost))
                 return null;
 
-            var credential = await DevHubCredentialHelper.GetCredentialAsync(credentialHost, cancellationToken);
-            if (credential == null)
-                return null;
-
             try
             {
+                var credential = await _acquireCredential(credentialHost, profileUrl, cancellationToken);
+                if (credential == null)
+                    return null;
+
                 bool isCloud = credentialHost.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase);
-                string effectiveProfileHost = string.IsNullOrWhiteSpace(profileHost)
-                    ? credentialHost
-                    : profileHost;
-
-                // Cloud: SPS profile endpoint. Legacy *.visualstudio.com orgs can authenticate
-                // against their real org host, so prefer that profile endpoint over the generic
-                // app.vssps host when we can derive one from the user's MRU remotes.
-                // On-prem: connectionData on the server itself.
-                string profileUrl = isCloud
-                    ? (effectiveProfileHost.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase)
-                        ? "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"
-                        : $"https://{effectiveProfileHost.TrimEnd('/')}/_apis/profile/profiles/me?api-version=7.1")
-                    : $"https://{effectiveProfileHost.TrimEnd('/')}/_apis/connectionData?api-version=3.0";
-
-                var response = await SendGetAsync(credential, profileUrl, cancellationToken);
-
-                // Token expired - invalidate cache and retry once with a fresh credential.
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                {
-                    DevHubCredentialHelper.InvalidateCachedCredential(credentialHost);
-                    credential = await DevHubCredentialHelper.GetCredentialAsync(credentialHost, cancellationToken);
-                    if (credential == null)
-                        return null;
-
-                    response = await SendGetAsync(credential, profileUrl, cancellationToken);
-                }
-
+                using var response = await SendAuthenticatedGetAsync(credentialHost, credential, profileUrl, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                     return null;
 
@@ -192,43 +198,49 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     var root = doc.RootElement;
 
-                    if (isCloud)
+                    if (isCloud && profileUrl.Contains("/_apis/profile/profiles/me", StringComparison.OrdinalIgnoreCase))
                     {
+                        if (!root.TryGetProperty("id", out var profileId) || profileId.ValueKind != JsonValueKind.String
+                            || string.IsNullOrWhiteSpace(profileId.GetString()))
+                            throw new JsonException("Azure DevOps did not return an authenticated profile.");
+
                         return new DevHubUser
                         {
-                            Username = root.TryGetProperty("emailAddress", out var email) ? email.GetString() : credential.Username,
-                            DisplayName = root.TryGetProperty("displayName", out var name) ? name.GetString() : credential.Username,
+                            Username = root.TryGetProperty("emailAddress", out var email) ? email.GetString() : credential.Username ?? profileId.GetString(),
+                            DisplayName = root.TryGetProperty("displayName", out var name) ? name.GetString() : credential.Username ?? profileId.GetString(),
                             AvatarUrl = null,
                             ProviderName = DisplayName,
                             Host = AzureDevOpsServerHelper.CloudHost,
                         };
                     }
 
-                    // On-prem connectionData payload: { authenticatedUser: { providerDisplayName, customDisplayName, properties: { Account: { $value } } } }
-                    string username = credential.Username;
+                    // Organization-scoped connectionData works for guest tenants and on-premises servers.
+                    if (!root.TryGetProperty("authenticatedUser", out var authUser) || authUser.ValueKind != JsonValueKind.Object
+                        || !authUser.TryGetProperty("id", out var userId) || userId.ValueKind != JsonValueKind.String
+                        || string.IsNullOrWhiteSpace(userId.GetString()) || userId.GetString() == Guid.Empty.ToString())
+                        throw new JsonException("Azure DevOps did not return an authenticated identity.");
+
+                    string username = credential.Username ?? userId.GetString();
                     string displayName = credential.Username;
-                    if (root.TryGetProperty("authenticatedUser", out var authUser))
+                    if (authUser.TryGetProperty("providerDisplayName", out var pd) && pd.ValueKind == JsonValueKind.String)
+                        displayName = pd.GetString();
+                    if (authUser.TryGetProperty("customDisplayName", out var cd) && cd.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(cd.GetString()))
+                        displayName = cd.GetString();
+                    if (authUser.TryGetProperty("properties", out var props)
+                        && props.TryGetProperty("Account", out var acct)
+                        && acct.TryGetProperty("$value", out var acctVal)
+                        && acctVal.ValueKind == JsonValueKind.String)
                     {
-                        if (authUser.TryGetProperty("providerDisplayName", out var pd) && pd.ValueKind == JsonValueKind.String)
-                            displayName = pd.GetString();
-                        if (authUser.TryGetProperty("customDisplayName", out var cd) && cd.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(cd.GetString()))
-                            displayName = cd.GetString();
-                        if (authUser.TryGetProperty("properties", out var props)
-                            && props.TryGetProperty("Account", out var acct)
-                            && acct.TryGetProperty("$value", out var acctVal)
-                            && acctVal.ValueKind == JsonValueKind.String)
-                        {
-                            username = acctVal.GetString();
-                        }
+                        username = acctVal.GetString();
                     }
 
                     return new DevHubUser
                     {
                         Username = username,
-                        DisplayName = displayName,
+                        DisplayName = displayName ?? username,
                         AvatarUrl = null,
                         ProviderName = DisplayName,
-                        Host = effectiveProfileHost,
+                        Host = credentialHost,
                     };
                 }
             }
@@ -239,7 +251,7 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
-        internal static IReadOnlyList<string> GetLegacyProfileHosts(IEnumerable<string> remoteUrls)
+        internal static IReadOnlyList<string> GetCloudProfileBaseUrls(IEnumerable<string> remoteUrls)
         {
             var results = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -249,31 +261,28 @@ namespace StartScreen.Services.DevHub.Providers
                 try
                 {
                     var repo = RemoteRepoIdentifier.TryParse(url);
-                    if (repo == null || string.IsNullOrWhiteSpace(repo.BaseUrl))
+                    if (repo == null || repo.IsAzureDevOpsServer || string.IsNullOrWhiteSpace(repo.BaseUrl)
+                        || !AzureDevOpsCredentialProvider.IsCloudUrl(new Uri(repo.BaseUrl)))
                         continue;
 
-                    if (!repo.BaseUrl.Contains(".visualstudio.com", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    var legacyHost = new Uri(repo.BaseUrl).Host;
-                    if (seen.Add(legacyHost))
-                        results.Add(legacyHost);
+                    if (seen.Add(repo.BaseUrl))
+                        results.Add(repo.BaseUrl);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore malformed MRU entries.
+                    ex.LogAsync().FireAndForget();
                 }
             }
 
             return results;
         }
 
-        private static async Task<IReadOnlyList<string>> GetLegacyProfileHostsAsync(CancellationToken cancellationToken)
+        private static async Task<IReadOnlyList<string>> GetCloudProfileBaseUrlsAsync(CancellationToken cancellationToken)
         {
             try
             {
                 var items = await MruService.GetMruItemsAsync(cancellationToken: cancellationToken);
-                return GetLegacyProfileHosts(items.Select(i => i.RemoteUrl).Where(u => !string.IsNullOrWhiteSpace(u)));
+                return GetCloudProfileBaseUrls(items.Select(i => i.RemoteUrl).Where(u => !string.IsNullOrWhiteSpace(u)));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -353,12 +362,12 @@ namespace StartScreen.Services.DevHub.Providers
             var top = NormalizeMaxItems(maxItems);
 
             var credentialHost = GetCredentialHost(repo);
-            var credential = await DevHubCredentialHelper.GetCredentialAsync(credentialHost, cancellationToken);
-            if (credential == null)
-                return null;
-
             try
             {
+                var credential = await _acquireCredential(credentialHost, GetBaseUrl(repo), cancellationToken);
+                if (credential == null)
+                    return null;
+
                 var detail = new DevHubRepoDetail
                 {
                     RepoIdentifier = repo,
@@ -374,19 +383,23 @@ namespace StartScreen.Services.DevHub.Providers
 
                 // Fetch PRs
                 var prUrl = $"{projectUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top={top}&api-version={apiVersion}";
-                var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
+                using var prResponse = await SendAuthenticatedGetAsync(credentialHost, credential, prUrl, cancellationToken);
+                if (prResponse.StatusCode == HttpStatusCode.Unauthorized)
+                    return null;
                 if (prResponse.IsSuccessStatusCode)
                 {
                     var prJson = await prResponse.Content.ReadAsStringAsync();
                     var identity = await DevHubRepoSummaryFetcher.GetIdentityAsync(credential,
                         $"{GetBaseUrl(repo).TrimEnd('/')}/_apis/connectionData?api-version=3.0",
-                        (auth, url, token) => SendGetAsync(auth, url, token), false, cancellationToken);
+                        (auth, url, token) => SendAuthenticatedGetAsync(credentialHost, auth, url, token), false, cancellationToken);
                     detail.PullRequests = ParseAdoPullRequests(prJson, repo, identity);
                 }
 
                 // Fetch recent builds
                 var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top={top}&api-version={apiVersion}";
-                var buildResponse = await SendGetAsync(credential, buildUrl, cancellationToken);
+                using var buildResponse = await SendAuthenticatedGetAsync(credentialHost, credential, buildUrl, cancellationToken);
+                if (buildResponse.StatusCode == HttpStatusCode.Unauthorized)
+                    return null;
                 if (buildResponse.IsSuccessStatusCode)
                 {
                     var buildJson = await buildResponse.Content.ReadAsStringAsync();
@@ -411,15 +424,49 @@ namespace StartScreen.Services.DevHub.Providers
         public string GetIssuesWebUrl(RemoteRepoIdentifier repo) =>
             $"{GetBaseUrl(repo)}/{repo.Project}/_workitems";
 
-        private static Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken, HttpClient httpClient = null)
+        private async Task<HttpResponseMessage> SendAuthenticatedGetAsync(string host, DevHubCredential credential, string url, CancellationToken cancellationToken)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            if (credential.IsBearer)
+            {
+                credential = await _acquireCredential(host, url, cancellationToken);
+                if (credential == null)
+                    return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
 
-            // ADO uses Basic auth with PAT: base64("":{token}) or base64({user}:{token})
-            var authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($":{credential.Token}"));
-            request.Headers.TryAddWithoutValidation("Authorization", $"Basic {authValue}");
+            var response = await SendGetAsync(credential, url, cancellationToken);
+            if (response.StatusCode != HttpStatusCode.Unauthorized)
+                return response;
 
-            return (httpClient ?? _httpClient).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            DevHubCredential fresh;
+            try
+            {
+                _invalidateCredential(host, credential);
+                fresh = await _acquireCredential(host, url, cancellationToken);
+            }
+            finally
+            {
+                response.Dispose();
+            }
+            if (fresh == null)
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+
+            var retried = await SendGetAsync(fresh, url, cancellationToken);
+            if (retried.StatusCode == HttpStatusCode.Unauthorized)
+                _invalidateCredential(host, fresh);
+            return retried;
+        }
+
+        private async Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken)
+        {
+            if (credential.IsBearer && (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !AzureDevOpsCredentialProvider.IsCloudUrl(uri)))
+                throw new InvalidOperationException("Azure DevOps Entra tokens can only be sent to Azure DevOps Services over HTTPS.");
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization = credential.IsBearer
+                ? new AuthenticationHeaderValue("Bearer", credential.Token)
+                : new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.ASCII.GetBytes($":{credential.Token}")));
+
+            return await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
 
         private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);

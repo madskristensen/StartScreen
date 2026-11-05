@@ -134,6 +134,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.17.2" />
     <PackageReference Include="Community.VisualStudio.VSCT" Version="16.0.29.14" PrivateAssets="all" />
     <PackageReference Include="Community.VisualStudio.Toolkit.17" Version="17.0.551" ExcludeAssets="Runtime">
       <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -145,7 +146,14 @@
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.5.40034">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="System.Text.Json" Version="4.7.2" />
+    <PackageReference Include="System.Text.Json" Version="8.0.6" />
   </ItemGroup>
+
+  <!-- Older VS 2022 hosts may not provide the runtime versions required by Azure Identity. -->
+  <Target Name="IncludeAzureIdentityRuntimeDependencies" BeforeTargets="GetVsixSourceItems">
+    <ItemGroup>
+      <SuppressFromVsix Remove="Microsoft.Bcl.AsyncInterfaces.dll;System.Diagnostics.DiagnosticSource.dll;System.Memory.dll;System.Runtime.CompilerServices.Unsafe.dll;System.Security.AccessControl.dll;System.Security.Principal.Windows.dll;System.Text.Json.dll;System.Threading.Tasks.Extensions.dll" />
+    </ItemGroup>
+  </Target>
 
 </Project>

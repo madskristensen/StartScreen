@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,6 +17,45 @@ namespace StartScreen.Services.DevHub
     {
         private static readonly Dictionary<string, DevHubCredential> _credentialCache = new Dictionary<string, DevHubCredential>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _cacheLock = new object();
+        private static readonly Lazy<AzureDevOpsCredentialProvider> _azureDevOpsCredentials = new Lazy<AzureDevOpsCredentialProvider>(() =>
+            new AzureDevOpsCredentialProvider(new Azure.Identity.VisualStudioCredential(new Azure.Identity.VisualStudioCredentialOptions
+            {
+                ProcessTimeout = TimeSpan.FromSeconds(15),
+            }), new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(15) }));
+
+        internal static async Task<DevHubCredential> GetAzureDevOpsCredentialAsync(string host, string requestUrl, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                return await GetCredentialAsync(host, cancellationToken);
+
+            var mode = Options.Instance.DevHubAdoAuthentication;
+            if (mode == AzureDevOpsAuthenticationMode.Disconnected)
+                return null;
+
+            var stored = mode == AzureDevOpsAuthenticationMode.VisualStudio ? null : TryWindowsCredentialManager(host);
+            if (!UsesVisualStudio(mode, stored != null))
+                return stored ?? await GetCredentialAsync(host, cancellationToken);
+
+            return await _azureDevOpsCredentials.Value.GetCredentialAsync(requestUrl, cancellationToken);
+        }
+
+        internal static bool UsesVisualStudio(AzureDevOpsAuthenticationMode mode, bool hasStoredPat) =>
+            mode == AzureDevOpsAuthenticationMode.VisualStudio
+            || (mode == AzureDevOpsAuthenticationMode.Automatic && !hasStoredPat);
+
+        internal static void InvalidateAzureDevOpsCredential(DevHubCredential credential)
+        {
+            if (credential.IsBearer)
+            {
+                if (_azureDevOpsCredentials.IsValueCreated)
+                    _azureDevOpsCredentials.Value.Invalidate(credential);
+            }
+            else
+            {
+                InvalidateCachedCredential(AzureDevOpsServerHelper.CloudHost);
+            }
+        }
 
         /// <summary>
         /// Attempts to acquire a credential (username + token) for the given host.
@@ -78,6 +118,8 @@ namespace StartScreen.Services.DevHub
             {
                 _credentialCache.Clear();
             }
+            if (_azureDevOpsCredentials.IsValueCreated)
+                _azureDevOpsCredentials.Value.Invalidate();
         }
 
         /// <summary>
@@ -111,7 +153,7 @@ namespace StartScreen.Services.DevHub
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
             }
         }
 
@@ -129,7 +171,7 @@ namespace StartScreen.Services.DevHub
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
             }
         }
 
@@ -505,7 +547,7 @@ namespace StartScreen.Services.DevHub
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
             }
 
             return null;
@@ -532,11 +574,19 @@ namespace StartScreen.Services.DevHub
     {
         public string Username { get; }
         public string Token { get; }
+        public bool IsBearer { get; }
+        public DateTimeOffset ExpiresOn { get; } = DateTimeOffset.MaxValue;
 
         public DevHubCredential(string username, string token)
         {
             Username = username;
             Token = token ?? throw new ArgumentNullException(nameof(token));
+        }
+
+        public DevHubCredential(string token, DateTimeOffset expiresOn) : this(null, token)
+        {
+            IsBearer = true;
+            ExpiresOn = expiresOn;
         }
     }
 }

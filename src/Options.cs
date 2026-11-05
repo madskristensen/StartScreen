@@ -143,6 +143,10 @@ namespace StartScreen
         [DefaultValue("")]
         public string DevHubGitHubAccount { get; set; } = "";
 
+        [Browsable(false)]
+        [DefaultValue(AzureDevOpsAuthenticationMode.Automatic)]
+        public AzureDevOpsAuthenticationMode DevHubAdoAuthentication { get; set; } = AzureDevOpsAuthenticationMode.Automatic;
+
         /// <summary>
         /// Semicolon-delimited list of Azure DevOps Server (on-premises) hosts that the
         /// user has manually added through the Dev Hub settings panel. Each entry is the
@@ -177,5 +181,13 @@ namespace StartScreen
         [Browsable(false)]
         [DefaultValue("")]
         public string ExtendedMruItems { get; set; } = "";
+    }
+
+    internal enum AzureDevOpsAuthenticationMode
+    {
+        Automatic,
+        VisualStudio,
+        PersonalAccessToken,
+        Disconnected,
     }
 }

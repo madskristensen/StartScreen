@@ -406,7 +406,8 @@ namespace StartScreen.ToolWindows
                         DevHubPanelControl.ShowLoading();
                     }
 
-                    await RefreshDevHubInBackgroundAsync(cancellationToken);
+                    await RefreshDevHubInBackgroundAsync(cancellationToken, forceRefresh: true);
+                    RefreshWorkspaceSignalsAsync(true).FileAndForget(nameof(StartScreenControl));
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -444,6 +445,21 @@ namespace StartScreen.ToolWindows
                     DevHubPanelControl.ShowLoading($"Connecting to {host}...");
 
                     await TaskScheduler.Default;
+                    if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var options = await Options.GetLiveInstanceAsync();
+                        options.DevHubAdoAuthentication = AzureDevOpsAuthenticationMode.VisualStudio;
+                        await options.SaveAsync();
+                        Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
+                        await RefreshDevHubInBackgroundAsync(cancellationToken, forceRefresh: true);
+
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                        if (_devHubService.CurrentDashboard?.HasProvider(AzureDevOpsServerHelper.CloudHost) != true)
+                            DevHubPanelControl.ShowAzureDevOpsSignInRequired();
+                        RefreshWorkspaceSignalsAsync(true).FileAndForget(nameof(StartScreenControl));
+                        return;
+                    }
+
                     var connected = await Services.DevHub.DevHubCredentialHelper.ConnectInteractiveAsync(
                         host, cancellationToken);
 
@@ -454,7 +470,7 @@ namespace StartScreen.ToolWindows
                         // Note: do NOT call ClearCachedCredentials here. ConnectInteractiveAsync
                         // already stored the freshly acquired credential in both the in-memory
                         // cache and Windows Credential Manager.
-                        await RefreshDevHubInBackgroundAsync(cancellationToken);
+                        await RefreshDevHubInBackgroundAsync(cancellationToken, forceRefresh: true);
                     }
                     else if (host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
                     {
@@ -466,8 +482,18 @@ namespace StartScreen.ToolWindows
                         UpdateDevHubPanel();
                     }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                 {
+                    await ex.LogAsync();
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                    if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                        DevHubPanelControl.ShowAzureDevOpsSignInRequired();
+                    else
+                        DevHubPanelControl.ShowError("Could not connect the account. Check your sign-in and retry.");
                 }
             }).FileAndForget(nameof(StartScreenControl));
         }
@@ -649,7 +675,7 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async Task RefreshDevHubInBackgroundAsync(CancellationToken cancellationToken)
+        private async Task RefreshDevHubInBackgroundAsync(CancellationToken cancellationToken, bool forceRefresh = false)
         {
             try
             {
@@ -670,7 +696,7 @@ namespace StartScreen.ToolWindows
                 // we stayed on the captured UI SynchronizationContext.
                 await TaskScheduler.Default;
 
-                await _devHubService.RefreshAsync(cancellationToken, progress);
+                await _devHubService.RefreshAsync(cancellationToken, progress, forceRefresh);
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 cancellationToken.ThrowIfCancellationRequested();

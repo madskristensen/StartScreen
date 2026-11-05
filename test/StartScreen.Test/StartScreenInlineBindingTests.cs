@@ -153,6 +153,25 @@ namespace StartScreen.Test
             Assert.AreEqual(HorizontalAlignment.Stretch, item.HorizontalContentAlignment);
         }
 
+        [TestMethod]
+        public void AzureDevOpsSettings_OfferVsAuthenticationAndSeparateOptionalPatEntry()
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var links = document.Descendants(p + "Hyperlink").ToArray();
+            StringAssert.Contains(links.Single(link => link.Attribute("Click")?.Value == "ConnectAdo_Click"
+                && link.Attribute(x + "Name") == null).Value, "Visual Studio account (Entra ID)");
+            StringAssert.Contains(links.Single(link => link.Attribute("Click")?.Value == "ShowCloudAdoPatEntry_Click").Value, "PAT");
+            var entry = document.Descendants(p + "StackPanel").Single(element => element.Attribute(x + "Name")?.Value == "AdoPatEntryPanel");
+            Assert.AreEqual("Collapsed", entry.Attribute("Visibility")!.Value);
+            var input = entry.Descendants(p + "PasswordBox").Single();
+            Assert.AreEqual("AdoPatBox_KeyDown", input.Attribute("KeyDown")!.Value);
+            var help = document.Descendants(p + "TextBlock").Single(element => element.Attribute(x + "Name")?.Value == "AdoAuthenticationHelpText");
+            Assert.AreEqual("Collapsed", help.Attribute("Visibility")!.Value);
+            Assert.AreEqual("Wrap", help.Attribute("TextWrapping")!.Value);
+        }
+
         [STATestMethod]
         [DataRow(true)]
         [DataRow(false)]

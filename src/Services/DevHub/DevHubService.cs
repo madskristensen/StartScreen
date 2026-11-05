@@ -14,16 +14,19 @@ namespace StartScreen.Services.DevHub
     internal sealed class DevHubService
     {
         private readonly DevHubCacheService _cache;
+        private readonly IReadOnlyList<IDevHubProvider> _providers;
+        private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
         private DevHubDashboard _currentDashboard;
-        private bool _isRefreshing;
+        private volatile bool _isRefreshing;
 
         public DevHubService() : this(new DevHubCacheService())
         {
         }
 
-        public DevHubService(DevHubCacheService cache)
+        public DevHubService(DevHubCacheService cache, IReadOnlyList<IDevHubProvider> providers = null)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            _providers = providers ?? DevHubProviderRegistry.GetAllProviders();
         }
 
         /// <summary>
@@ -55,12 +58,13 @@ namespace StartScreen.Services.DevHub
         /// Fetches fresh data from all authenticated providers and updates the dashboard.
         /// Reports progress incrementally so the UI can render data as it arrives.
         /// Issues are fetched first (visible tab), then PRs, then CI runs.
+        /// A forced refresh waits for an active refresh and then fetches fresh authentication and data.
         /// </summary>
-        public async Task<DevHubDashboard> RefreshAsync(CancellationToken cancellationToken, IProgress<DevHubDashboard> progress = null)
+        public async Task<DevHubDashboard> RefreshAsync(CancellationToken cancellationToken, IProgress<DevHubDashboard> progress = null, bool forceRefresh = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (_isRefreshing)
+            if (!await _refreshGate.WaitAsync(forceRefresh ? Timeout.Infinite : 0, cancellationToken))
                 return _currentDashboard;
 
             _isRefreshing = true;
@@ -69,12 +73,11 @@ namespace StartScreen.Services.DevHub
             {
                 var previousDashboard = _currentDashboard;
                 var dashboard = new DevHubDashboard { FetchedAt = DateTime.UtcNow };
-                var allProviders = DevHubProviderRegistry.GetAllProviders();
 
                 // Phase 1: Authenticate all providers in parallel. A single provider may
                 // surface multiple authenticated users when it spans multiple hosts (e.g.
                 // Azure DevOps cloud + on-premises Server).
-                var authTasks = allProviders.Select(async provider =>
+                var authTasks = _providers.Select(async provider =>
                 {
                     var users = await provider.GetAuthenticatedUsersAsync(cancellationToken);
                     return (provider, users);
@@ -176,6 +179,7 @@ namespace StartScreen.Services.DevHub
             finally
             {
                 _isRefreshing = false;
+                _refreshGate.Release();
             }
         }
 
