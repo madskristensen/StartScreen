@@ -50,46 +50,79 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void FilterToCurrentRecentProjects_WhenSettingsUnavailable_PreservesLegacyItems()
+        public void MergeCurrentRecentProjects_WhenSettingsUnavailable_PreservesLegacyItems()
         {
             var item = new MruItem { Path = @"C:\Projects\App\App.sln", Type = MruItemType.Solution };
 
-            List<MruItem> result = MruService.FilterToCurrentRecentProjects([item], null);
+            List<MruItem> result = MruService.MergeCurrentRecentProjects([item], null);
 
             CollectionAssert.AreEqual(new[] { item }, result);
         }
 
         [TestMethod]
-        public void FilterToCurrentRecentProjects_WhenRecentListCleared_RemovesLegacyItems()
+        public void MergeCurrentRecentProjects_WhenRecentListCleared_RemovesLegacyItems()
         {
             var item = new MruItem { Path = @"C:\Projects\App\App.sln", Type = MruItemType.Solution };
 
-            List<MruItem> result = MruService.FilterToCurrentRecentProjects([item], []);
+            List<MruItem> result = MruService.MergeCurrentRecentProjects([item], []);
 
             Assert.IsEmpty(result);
         }
 
         [TestMethod]
-        public void FilterToCurrentRecentProjects_UsesSolutionDirectoryDeduplication()
+        public void MergeCurrentRecentProjects_UsesCurrentSolutionPathAndPreservesLegacyRemovalEntries()
         {
             var item = new MruItem { Path = @"C:\Projects\App\App.sln", Type = MruItemType.Solution };
+            item.RawMruEntries.Add(@"C:\Projects\App\App.sln|{guid}|False|App");
             string[] recentPaths = [@"C:\Projects\App\App.slnx"];
 
-            List<MruItem> result = MruService.FilterToCurrentRecentProjects([item], recentPaths);
+            List<MruItem> result = MruService.MergeCurrentRecentProjects([item], recentPaths);
 
-            CollectionAssert.AreEqual(new[] { item }, result);
+            Assert.HasCount(1, result);
+            Assert.AreEqual(recentPaths[0], result[0].Path);
+            Assert.AreEqual("App", result[0].Name);
+            CollectionAssert.AreEqual(item.RawMruEntries, result[0].RawMruEntries);
         }
 
         [TestMethod]
-        public void FilterToCurrentRecentProjects_RemovesEntriesMissingFromCurrentList()
+        public void MergeCurrentRecentProjects_RemovesEntriesMissingFromCurrentList()
         {
             var current = new MruItem { Path = @"C:\Projects\Current\Current.sln", Type = MruItemType.Solution };
             var stale = new MruItem { Path = @"C:\Projects\Stale\Stale.sln", Type = MruItemType.Solution };
             string[] recentPaths = [current.Path];
 
-            List<MruItem> result = MruService.FilterToCurrentRecentProjects([current, stale], recentPaths);
+            List<MruItem> result = MruService.MergeCurrentRecentProjects([current, stale], recentPaths);
 
             CollectionAssert.AreEqual(new[] { current }, result);
+        }
+
+        [TestMethod]
+        public void MergeCurrentRecentProjects_EmptyLegacyStoreLoadsSolutionsProjectsAndFolders()
+        {
+            string[] recentPaths = [@"C:\Projects\App\App.slnx", @"C:\Projects\Library\Library.csproj", @"C:\Projects\Folder"];
+
+            List<MruItem> result = MruService.MergeCurrentRecentProjects([], recentPaths);
+
+            CollectionAssert.AreEqual(recentPaths, result.Select(item => item.Path).ToArray());
+            CollectionAssert.AreEqual(new[] { "App", "Library", "Folder" }, result.Select(item => item.Name).ToArray());
+            CollectionAssert.AreEqual(new[] { MruItemType.Solution, MruItemType.Project, MruItemType.Folder }, result.Select(item => item.Type).ToArray());
+            Assert.IsTrue(result.All(item => !item.IsFromExtendedList));
+        }
+
+        [TestMethod]
+        public void MergeCurrentRecentProjects_PartialLegacyStoreKeepsMetadataAndAddsMissingItems()
+        {
+            var current = new MruItem { Path = @"C:\Projects\App\App.slnx", Name = "Custom name", Type = MruItemType.Solution, LastAccessed = DateTime.Now };
+            current.RawMruEntries.Add(@"C:\Projects\App\App.slnx|{guid}|False|Custom name");
+            string[] recentPaths = [current.Path, @"C:\Projects\Other\Other.sln", current.Path.ToUpperInvariant(), "", " "];
+
+            List<MruItem> result = MruService.MergeCurrentRecentProjects([current], recentPaths);
+
+            Assert.HasCount(2, result);
+            Assert.AreSame(current, result[0]);
+            Assert.AreEqual("Custom name", result[0].Name);
+            Assert.AreEqual(current.LastAccessed, result[0].LastAccessed);
+            Assert.AreEqual(recentPaths[1], result[1].Path);
         }
 
         [TestMethod]

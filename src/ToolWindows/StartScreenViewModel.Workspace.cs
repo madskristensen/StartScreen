@@ -18,6 +18,7 @@ namespace StartScreen.ToolWindows
         private string _serviceHealthText = "Service status not checked";
         private string _serviceHealthDetails = "Refresh to check Visual Studio service health.";
         private bool _isServiceHealthy;
+        private bool _hasServiceHealthStatus;
         private RemoteRepoIdentifier _repositoryScopeOverride;
         private readonly DevHubRepoSummaryService _repositorySummaries;
         private bool _isRefreshingWorkspaceSignals;
@@ -79,6 +80,8 @@ namespace StartScreen.ToolWindows
 
         public bool IsServiceHealthy => _isServiceHealthy;
 
+        public bool HasServiceHealthStatus => _hasServiceHealthStatus;
+
         internal async Task RefreshWorkspaceSignalsAsync(bool force, CancellationToken cancellationToken)
         {
             if (_isRefreshingWorkspaceSignals)
@@ -113,7 +116,7 @@ namespace StartScreen.ToolWindows
         private async Task RefreshServiceHealthAsync(CancellationToken cancellationToken)
         {
             _serviceHealthExpiryTimer?.Stop();
-            SetServiceHealth("Checking service status...", "Checking the public Visual Studio service status.", false);
+            SetServiceHealth("Checking service status...", "Checking the public Visual Studio service status.", false, isChecking: true);
             var status = await ServiceHealthService.GetStatusAsync(cancellationToken);
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             SetServiceHealth(status.StatusText, $"{status.Details}\nChecked {status.CheckedAtUtc.ToLocalTime():g}.",
@@ -213,14 +216,16 @@ namespace StartScreen.ToolWindows
                 : $"{prs} / Reviews unavailable";
         }
 
-        internal void SetServiceHealth(string text, string details, bool healthy)
+        internal void SetServiceHealth(string text, string details, bool healthy, bool isChecking = false)
         {
             _serviceHealthText = text;
             _serviceHealthDetails = details;
             _isServiceHealthy = healthy;
+            _hasServiceHealthStatus = !isChecking;
             OnPropertyChanged(nameof(ServiceHealthText));
             OnPropertyChanged(nameof(ServiceHealthDetails));
             OnPropertyChanged(nameof(IsServiceHealthy));
+            OnPropertyChanged(nameof(HasServiceHealthStatus));
         }
 
         private void SelectedMruItem_PropertyChanged(object sender, PropertyChangedEventArgs e)

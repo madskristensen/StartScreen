@@ -51,6 +51,10 @@ so you never have to dig through File or Debug menus again.
 Start Screen doesn't just list your recent files. It understands how you
 work:
 
+Recent projects and folders come from Visual Studio's current Recent Projects
+list, even when they are missing from the legacy MRU store. Removing or clearing
+entries also updates that list.
+
 **Find anything instantly.** Type a few characters and the search filter
 narrows your list in real time. Pin the projects you care about most so
 they always float to the top.
@@ -270,6 +274,7 @@ The header groups Refresh with its update timestamp. This single Refresh button
 updates repository activity, blog feeds, and videos; news tabs have no separate
 refresh link or timestamp. Visual Studio service
 health is shown below the action buttons and links to the public status page.
+It remains hidden until a check completes, including while a refresh is running.
 Unknown, stale, and failed checks are not displayed as healthy. Public service
 health does not describe your account sign-in or repository CI status.
 

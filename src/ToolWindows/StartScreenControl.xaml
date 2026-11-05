@@ -236,7 +236,8 @@
                     </Button>
                 </WrapPanel>
 
-                    <StackPanel Orientation="Horizontal" Margin="0 10 0 0" ToolTip="{Binding ServiceHealthDetails}">
+                    <StackPanel Orientation="Horizontal" Margin="0 10 0 0" ToolTip="{Binding ServiceHealthDetails}"
+                                Visibility="{Binding HasServiceHealthStatus, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Collapsed, TargetNullValue=Collapsed}">
                         <imaging:CrispImage Width="12" Height="12" Margin="0 0 6 0" VerticalAlignment="Center">
                             <imaging:CrispImage.Style>
                                 <Style TargetType="imaging:CrispImage">

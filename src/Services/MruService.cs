@@ -36,12 +36,13 @@ namespace StartScreen.Services
         {
             cancellationToken.ThrowIfCancellationRequested();
             // CodeContainers.Offline drives Visual Studio's Recent Projects UI. The legacy
-            // MRU store supplies richer entry metadata, but can retain entries after that
-            // list is cleared.
+            // store can omit current entries or retain entries after that list is cleared.
             ISettingsManager settingsManager = await VS.GetServiceAsync<SVsSettingsPersistenceManager, ISettingsManager>();
-            string[] recentProjectPaths = settingsManager?
-                .GetOrCreateList(_recentProjectsListName, isMachineLocal: true)
-                .Keys;
+            ISettingsList recentProjects = settingsManager?.GetOrCreateList(_recentProjectsListName, isMachineLocal: true);
+            if (recentProjects != null)
+                await recentProjects.RefreshContentFromStoreAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            string[] recentProjectPaths = recentProjects?.Keys;
 
             IVsMRUItemsStore store = await VS.GetServiceAsync<SVsMRUItemsStore, IVsMRUItemsStore>();
 
@@ -125,7 +126,7 @@ namespace StartScreen.Services
                 }
             }
 
-            List<MruItem> vsItems = FilterToCurrentRecentProjects(itemsByKey.Values, recentProjectPaths);
+            List<MruItem> vsItems = MergeCurrentRecentProjects(itemsByKey.Values, recentProjectPaths);
 
             // Apply pinned state from Options and build an ordered list for stable pin ordering
             var pinnedOrderList = (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries);
@@ -152,22 +153,42 @@ namespace StartScreen.Services
             return pinned;
         }
 
-        internal static List<MruItem> FilterToCurrentRecentProjects(
+        internal static List<MruItem> MergeCurrentRecentProjects(
             IEnumerable<MruItem> items, IEnumerable<string> recentProjectPaths)
         {
             var itemList = items.ToList();
             if (recentProjectPaths == null)
                 return itemList;
 
-            var recentKeys = new HashSet<string>(
-                recentProjectPaths
-                    .Where(path => !string.IsNullOrWhiteSpace(path))
-                    .Select(path => GetDeduplicationKeyFromPath(path, DetermineType(path))),
-                StringComparer.OrdinalIgnoreCase);
+            var itemsByKey = itemList.ToDictionary(GetDeduplicationKey, StringComparer.OrdinalIgnoreCase);
+            var result = new List<MruItem>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string path in recentProjectPaths.Where(path => !string.IsNullOrWhiteSpace(path)))
+            {
+                MruItemType type = DetermineType(path);
+                string key = GetDeduplicationKeyFromPath(path, type);
+                if (!seen.Add(key))
+                    continue;
 
-            return itemList
-                .Where(item => recentKeys.Contains(GetDeduplicationKey(item)))
-                .ToList();
+                if (itemsByKey.TryGetValue(key, out MruItem item)
+                    && string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Add(item);
+                    continue;
+                }
+
+                var current = new MruItem
+                {
+                    Path = path,
+                    Name = type == MruItemType.Folder ? Path.GetFileName(path.TrimEnd('\\', '/')) : Path.GetFileNameWithoutExtension(path),
+                    Type = type,
+                    LastAccessed = GetLastAccessTime(path, type)
+                };
+                if (item != null)
+                    current.RawMruEntries.AddRange(item.RawMruEntries);
+                result.Add(current);
+            }
+            return result;
         }
 
         internal static bool ClearPersistedHistoryIfRecentProjectsEmpty(
@@ -199,6 +220,19 @@ namespace StartScreen.Services
 
             try
             {
+                ISettingsManager settingsManager = await VS.GetServiceAsync<SVsSettingsPersistenceManager, ISettingsManager>();
+                ISettingsList recentProjects = settingsManager?.GetOrCreateList(_recentProjectsListName, isMachineLocal: true);
+                if (recentProjects != null)
+                {
+                    await recentProjects.RefreshContentFromStoreAsync();
+                    var recentKeysToRemove = new HashSet<string>(itemList.Select(GetDeduplicationKey), StringComparer.OrdinalIgnoreCase);
+                    foreach (string path in recentProjects.Keys)
+                    {
+                        if (recentKeysToRemove.Contains(GetDeduplicationKeyFromPath(path, DetermineType(path))))
+                            await recentProjects.RemoveAsync(path);
+                    }
+                }
+
                 IVsMRUItemsStore store = await VS.GetServiceAsync<SVsMRUItemsStore, IVsMRUItemsStore>();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 

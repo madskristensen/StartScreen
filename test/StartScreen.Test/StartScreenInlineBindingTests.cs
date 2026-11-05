@@ -12,6 +12,64 @@ namespace StartScreen.Test
     public class StartScreenInlineBindingTests
     {
         [STATestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public void ServiceHealth_HidesUncheckedAndCheckingStatusButShowsCompletedResults(bool healthy)
+        {
+            var document = ReadLayoutXaml("StartScreenControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var definition = new XElement(document.Descendants(p + "StackPanel")
+                .Single(element => element.Attribute("ToolTip")?.Value == "{Binding ServiceHealthDetails}"));
+            definition.RemoveNodes();
+            var root = new XElement(p + "Grid",
+                new XElement(p + "Grid.Resources",
+                    new XElement(p + "BooleanToVisibilityConverter", new XAttribute(x + "Key", "BoolToVisibilityConverter"))),
+                definition);
+            var grid = (Grid)XamlReader.Parse(root.ToString());
+            var panel = (StackPanel)grid.Children[0];
+            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+            var model = new StartScreenViewModel();
+            var changed = new List<string?>();
+            model.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+            var binding = BindingOperations.GetBinding(panel, UIElement.VisibilityProperty)!;
+            var expression = BindingOperations.SetBinding(panel, UIElement.VisibilityProperty, new Binding(binding.Path.Path)
+            {
+                Source = model,
+                Mode = BindingMode.OneWay,
+                Converter = binding.Converter,
+                FallbackValue = binding.FallbackValue,
+                TargetNullValue = binding.TargetNullValue,
+            });
+            expression.UpdateTarget();
+            Assert.IsFalse(model.HasServiceHealthStatus);
+            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+
+            model.SetServiceHealth("Checking service status...", "Checking", false, isChecking: true);
+            expression.UpdateTarget();
+            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+
+            model.SetServiceHealth("Completed", "Checked recently", healthy);
+            expression.UpdateTarget();
+            Assert.IsTrue(model.HasServiceHealthStatus);
+            CollectionAssert.Contains(changed, nameof(StartScreenViewModel.HasServiceHealthStatus));
+            Assert.AreEqual(healthy, model.IsServiceHealthy);
+            Assert.AreEqual(Visibility.Visible, panel.Visibility);
+
+            changed.Clear();
+            model.SetServiceHealth("Checking service status...", "Refreshing", false, isChecking: true);
+            expression.UpdateTarget();
+            Assert.IsFalse(model.HasServiceHealthStatus);
+            CollectionAssert.Contains(changed, nameof(StartScreenViewModel.HasServiceHealthStatus));
+            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+
+            model.SetServiceHealth("Service status unavailable", "Refresh to try again", false);
+            expression.UpdateTarget();
+            Assert.AreEqual(Visibility.Visible, panel.Visibility);
+            Assert.IsFalse(model.IsServiceHealthy);
+        }
+
+        [STATestMethod]
         [DataRow(1200d, false)]
         [DataRow(700d, true)]
         public void ActivitySections_AlignTabsAndFirstCardsAtWideAndStackedWidths(double width, bool stacked)
