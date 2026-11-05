@@ -60,15 +60,18 @@ namespace StartScreen.ToolWindows.Controls
             _overviewBaseline ??= Options.Instance.LastOverviewSeen;
             var sessions = GetVisibleCopilotSessions();
             var needsYou = DevHubWorkItem.GetCopilotItems(sessions, true).Concat(DevHubWorkItem.GetNeedsYou(prs)).ToArray();
+            var ownPullRequests = DevHubWorkItem.GetOwnPullRequests(prs);
             var changes = DevHubWorkItem.GetCopilotItems(sessions, false)
                 .Concat(DevHubWorkItem.GetChanges(prs, issues, builds, _overviewBaseline.Value)).ToArray();
-            string signature = string.Join("\n", needsYou.Concat(changes)
-                .Select(item => $"{item.CopilotSessionId}|{item.WebUrl}|{item.Title}|{item.Detail}|{item.CopilotStatus}|{item.CopilotStatusDetails}|{item.UpdatedAt.Ticks}"));
+            string signature = string.Join("\n", needsYou.Concat(ownPullRequests).Concat(changes)
+                .Select(item => $"{item.CopilotSessionId}|{item.WebUrl}|{item.Title}|{item.Detail}|{item.StatusText}|{item.CopilotStatus}|{item.CopilotStatusDetails}|{item.UpdatedAt.Ticks}"));
             if (_workspaceActivitySignature != signature)
             {
                 _workspaceActivitySignature = signature;
                 InvalidateBorderCache();
                 NeedsYouList.ItemsSource = needsYou;
+                OwnPullRequestsList.ItemsSource = ownPullRequests;
+                OwnPullRequestsSection.Visibility = ownPullRequests.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
                 ChangesList.ItemsSource = changes;
                 NeedsYouEmpty.Visibility = needsYou.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
                 ChangesEmpty.Visibility = changes.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -93,6 +96,24 @@ namespace StartScreen.ToolWindows.Controls
                     .FileAndForget(nameof(DevHubPanel));
             else
                 OpenUrl(item.WebUrl);
+        }
+
+        private void OpenPullRequestInBrowser_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is FrameworkElement element)
+                OpenUrl(GetWebUrlFromDataContext(element.DataContext));
+        }
+
+        private void OpenPullRequestInVisualStudio_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is FrameworkElement element)
+            {
+                var url = GetWebUrlFromDataContext(element.DataContext);
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => Services.PullRequestNavigationService.OpenAsync(url))
+                    .FileAndForget(nameof(DevHubPanel));
+            }
         }
 
     }

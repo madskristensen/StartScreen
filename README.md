@@ -97,6 +97,14 @@ Only positive counts are shown; loading, unsupported, signed-out, and unavailabl
 states add no placeholder links or status text to recent items. Select a PR count
 to open the scoped PR list, or select the workspace to view its repository activity.
 
+The **Pull requests** tab groups your loaded open PRs, including drafts, under
+**My open PRs**, with incoming PRs below. Both groups show colored review/check
+status pills and a friendly update date, with the exact local date and
+time on hover, plus background-free globe and pull request icons to open a PR in
+your browser or Visual Studio. PRs
+requiring action also remain in **Needs you**, with the same badges and actions.
+Selecting a workspace scopes these lists to that repository.
+
 **See your Git status at a glance.** Every repo shows its current branch,
 ahead/behind counts, uncommitted changes, and the last commit time - all
 loaded in the background so the UI stays snappy. Hover for the full
@@ -122,11 +130,12 @@ down.
 The Refresh button checks every enabled blog feed even when its local cache is
 less than four hours old. Unchanged feeds can be validated without downloading
 them again. Automatic refreshes continue to reuse fresh caches.
-Successful refreshes show a single "Updated just now" message for Dev Hub, news,
-and videos. If a blog source fails,
-available cached articles remain visible and the status identifies the failed
-sources and how to retry. Cached or partially refreshed news is not reported as
-fully updated. With no enabled blog feeds, the status says so explicitly.
+The footer stays brief: "Updating...", "Updated just now", or the known update
+age. Before a successful update is known, it says "Not updated yet". Hover over
+the status for per-section details, including cached content, unavailable sources,
+disabled feeds, and retry guidance. If a blog source fails, available cached
+articles remain visible. Cached or partially refreshed news is not reported as
+fully updated.
 
 Want different sources? Drop your own RSS or Atom feeds into a simple JSON
 file and Start Screen picks them up automatically - no restart needed.

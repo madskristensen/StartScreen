@@ -12,11 +12,13 @@ namespace StartScreen.Models.DevHub
             ? string.Join(" ", (Title ?? string.Empty).Split((char[])null, StringSplitOptions.RemoveEmptyEntries))
             : Title;
         public string Detail { get; private set; }
+        public string StatusText { get; private set; }
         public string CopilotStatus { get; private set; }
         public string CopilotStatusDetails { get; private set; }
         public string ActivityText => IsCopilot ? $"{UpdatedAt.ToLocalTime():MMM d} in {Detail}" : string.Empty;
-        public string ActivityDateToolTip => UpdatedAt.ToLocalTime().ToString("f");
-        public string ActionText => CopilotSessionId != null ? "Open in Copilot" : IsPullRequest ? "Review in VS" : "Open in browser";
+        public string ActivityDateText => IsPullRequest ? DevHubPullRequest.FormatActivityDate(UpdatedAt, DateTime.Now) : string.Empty;
+        public string ActivityDateToolTip => UpdatedAt == default ? string.Empty : UpdatedAt.ToLocalTime().ToString("f");
+        public string ActionText => CopilotSessionId != null ? "Open in Copilot" : IsPullRequest ? "Open pull request" : "Open in browser";
         public string CopilotSessionId { get; private set; }
         public string WebUrl { get; private set; }
         public bool IsPullRequest { get; private set; }
@@ -48,8 +50,7 @@ namespace StartScreen.Models.DevHub
                     || (pr.IsAuthoredByCurrentUser && (pr.CiStatus == "failure" || pr.Status == "conflicts"))))
                 .OrderByDescending(pr => pr.IsReviewRequestedForCurrentUser)
                 .ThenByDescending(pr => pr.UpdatedAt)
-                .Select(pr => FromPullRequest(pr, pr.IsReviewRequestedForCurrentUser
-                    ? "Review requested" : pr.Status == "conflicts" ? "Your PR has conflicts" : "Your PR has failing checks"))
+                .Select(FromPullRequest)
                 .ToList();
         }
 
@@ -59,8 +60,8 @@ namespace StartScreen.Models.DevHub
         {
             var prs = (pullRequests ?? Enumerable.Empty<DevHubPullRequest>()).ToArray();
             var attentionUrls = new HashSet<string>(GetNeedsYou(prs).Select(item => item.WebUrl), StringComparer.OrdinalIgnoreCase);
-            return prs.Where(pr => !attentionUrls.Contains(pr.WebUrl))
-                .Select(pr => FromPullRequest(pr, "Pull request updated"))
+            return prs.Where(pr => !pr.IsAuthoredByCurrentUser && !attentionUrls.Contains(pr.WebUrl))
+                .Select(FromPullRequest)
                 .Concat((issues ?? Enumerable.Empty<DevHubIssue>()).Select(issue => new DevHubWorkItem
                 {
                     Title = issue.Title,
@@ -81,12 +82,23 @@ namespace StartScreen.Models.DevHub
                 .ToList();
         }
 
-        private static DevHubWorkItem FromPullRequest(DevHubPullRequest pr, string reason)
+        internal static IReadOnlyList<DevHubWorkItem> GetOwnPullRequests(IEnumerable<DevHubPullRequest> pullRequests)
+        {
+            return (pullRequests ?? Enumerable.Empty<DevHubPullRequest>())
+                .Where(pr => pr.IsAuthoredByCurrentUser && (pr.Status == "open" || pr.IsDraft || pr.Status == "conflicts")
+                    && !string.IsNullOrEmpty(pr.WebUrl))
+                .OrderByDescending(pr => pr.UpdatedAt)
+                .Select(FromPullRequest)
+                .ToArray();
+        }
+
+        private static DevHubWorkItem FromPullRequest(DevHubPullRequest pr)
         {
             return new DevHubWorkItem
             {
                 Title = pr.Title,
-                Detail = $"{reason} / {pr.RepoDisplayName} / {pr.Number}",
+                Detail = $"{pr.RepoDisplayName} / {pr.Number}",
+                StatusText = pr.StatusText,
                 WebUrl = pr.WebUrl,
                 IsPullRequest = true,
                 UpdatedAt = pr.UpdatedAt,

@@ -27,6 +27,94 @@
         <controls:HexColorToBrushConverter x:Key="HexColorToBrushConverter"/>
         <controls:HexColorToForegroundConverter x:Key="HexColorToForegroundConverter"/>
         <controls:CiStatusToMonikerConverter x:Key="CiStatusToMonikerConverter"/>
+        <Style x:Key="PullRequestStatusStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusText}" Value="Waiting for review">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="Draft">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="Review requested">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                    <Setter Property="Opacity" Value="1"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="Checks pending">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                    <Setter Property="Opacity" Value="1"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="Checks failing">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
+                    <Setter Property="Opacity" Value="1"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusText}" Value="Conflicts">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
+                    <Setter Property="Opacity" Value="1"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="PullRequestActionButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ActionBorder" Background="Transparent" BorderBrush="Transparent"
+                                BorderThickness="1" CornerRadius="2">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ActionBorder" Property="BorderBrush"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.7"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <DataTemplate x:Key="PullRequestActionsTemplate">
+            <StackPanel Orientation="Horizontal">
+                <Button Click="OpenPullRequestInBrowser_Click" Style="{StaticResource PullRequestActionButtonStyle}"
+                        Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
+                        ToolTip="Open in browser" AutomationProperties.Name="Open pull request in browser"
+                        AutomationProperties.HelpText="{Binding Title}">
+                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Web}" Width="16" Height="16"/>
+                </Button>
+                <Button Click="OpenPullRequestInVisualStudio_Click" Style="{StaticResource PullRequestActionButtonStyle}"
+                        Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0" Margin="4 0 0 0"
+                        ToolTip="Open in Visual Studio" AutomationProperties.Name="Open pull request in Visual Studio"
+                        AutomationProperties.HelpText="{Binding Title}">
+                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.PullRequest}" Width="16" Height="16"/>
+                </Button>
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="PullRequestMetadataTemplate">
+            <DockPanel>
+                <ContentControl DockPanel.Dock="Right" Content="{Binding}" Focusable="False" Margin="8 0 0 0"
+                                ContentTemplate="{StaticResource PullRequestActionsTemplate}"/>
+                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
+                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
+                            BorderBrush="{Binding Foreground, ElementName=PullRequestStatus}">
+                        <TextBlock x:Name="PullRequestStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
+                    </Border>
+                    <TextBlock Text="{Binding ActivityDateText}" FontSize="11" Opacity="0.65" Margin="0 2 0 2"
+                               VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
+                </WrapPanel>
+            </DockPanel>
+        </DataTemplate>
         <DataTemplate x:Key="WorkItemTemplate">
             <Border Padding="8" Margin="0 0 0 4" CornerRadius="4" Focusable="True"
                     Cursor="Hand" AutomationProperties.Name="{Binding Title}" AutomationProperties.HelpText="{Binding ActionText}"
@@ -102,12 +190,17 @@
                         <TextBlock Text="{Binding ActivityText}" FontSize="11" Opacity="0.5" VerticalAlignment="Center"
                                    ToolTip="{Binding ActivityDateToolTip}"/>
                     </StackPanel>
+                    <ContentControl Content="{Binding}" Focusable="False" ContentTemplate="{StaticResource PullRequestMetadataTemplate}"
+                                    Visibility="{Binding IsPullRequest, Converter={StaticResource BoolToVisibilityConverter}}"/>
                     <TextBlock Text="{Binding ActionText}"
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsCopilot}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsPullRequest}" Value="True">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -701,7 +794,7 @@
                         Padding="0"
                         SelectionChanged="DevHubSubTabs_SelectionChanged">
                 <TabItem x:Name="OverviewTab" Header="Overview" Style="{StaticResource DevHubTabItemStyle}">
-                    <StackPanel Margin="0 24 0 0">
+                    <StackPanel x:Name="OverviewActivityPanel" Margin="0 24 0 0">
                         <ItemsControl x:Name="ChangesList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
                         <TextBlock x:Name="ChangesEmpty" Text="No other changes in the loaded activity. Items requiring action are in Needs you."
                                    TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
@@ -816,7 +909,13 @@
                                      ToolTip="New activity since you last viewed this tab"/>
                         </StackPanel>
                     </TabItem.Header>
-                    <StackPanel Margin="0 24 0 0">
+                    <StackPanel x:Name="PullRequestActivityPanel" Margin="0 24 0 0">
+                        <StackPanel x:Name="OwnPullRequestsSection" Visibility="Collapsed" Margin="0 0 0 12">
+                            <TextBlock Text="My open PRs" FontWeight="SemiBold" Margin="8 0 0 6"/>
+                            <ItemsControl x:Name="OwnPullRequestsList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="IncomingPullRequestsHeading" Text="Incoming PRs" FontWeight="SemiBold"
+                                   Margin="4 0 0 6" Visibility="Collapsed"/>
                         <ItemsControl x:Name="PullRequestsList" Focusable="False">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -836,12 +935,6 @@
                                             </ContextMenu>
                                         </Border.ContextMenu>
                                         <DockPanel>
-                                            <TextBlock DockPanel.Dock="Right"
-                                                       Text="{Binding UpdatedAgoText}"
-                                                       FontSize="11"
-                                                       Opacity="0.5"
-                                                       VerticalAlignment="Top"
-                                                       Margin="8 0 0 0"/>
                                             <StackPanel>
                                                 <DockPanel>
                                                     <TextBlock DockPanel.Dock="Left"
@@ -871,13 +964,9 @@
                                                                Margin="6 0 0 0"
                                                                VerticalAlignment="Center"
                                                                Visibility="{Binding CiStatus, Converter={StaticResource NullToCollapsedConverter}}"/>
-                                                    <!-- Draft badge -->
-                                                    <Border CornerRadius="8" Padding="6 1" Margin="6 0 0 0"
-                                                            Background="#30848d97" BorderThickness="1" BorderBrush="#50848d97"
-                                                            Visibility="{Binding IsDraft, Converter={StaticResource BoolToVisibilityConverter}}">
-                                                        <TextBlock Text="Draft" FontSize="10" Opacity="0.7"/>
-                                                    </Border>
                                                 </StackPanel>
+                                                <ContentControl Content="{Binding}" Focusable="False" Margin="0 5 0 0"
+                                                                ContentTemplate="{StaticResource PullRequestMetadataTemplate}"/>
                                                 <!-- Branch info -->
                                                 <TextBlock Text="{Binding BranchDisplayText}"
                                                            FontSize="10.5"

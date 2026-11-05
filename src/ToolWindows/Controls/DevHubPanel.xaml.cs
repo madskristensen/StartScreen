@@ -25,7 +25,7 @@ namespace StartScreen.ToolWindows.Controls
         private IReadOnlyList<DevHubIssue> _lastBoundIssues;
         private IReadOnlyList<DevHubCiRun> _lastBoundCiRuns;
         private List<Border> _cachedBorders;
-        private ItemsControl _cachedBordersList;
+        private DependencyObject _cachedBordersList;
         private bool _suppressSaveOnLostFocus;
         private bool _showGitHubCredentialHelp;
         private bool _suppressGitHubAccountSelectionChanged;
@@ -331,12 +331,15 @@ namespace StartScreen.ToolWindows.Controls
                     item => item.WebUrl,
                     item => item.IsNew,
                     (item, isNew) => item.IsNew = isNew);
-                PullRequestsList.ItemsSource = pullRequests;
+                var incoming = pullRequests.Where(pr => !pr.IsAuthoredByCurrentUser).ToArray();
+                PullRequestsList.ItemsSource = incoming;
+                IncomingPullRequestsHeading.Visibility = incoming.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
                 NoPrsText.Visibility = Visibility.Collapsed;
             }
             else
             {
                 PullRequestsList.ItemsSource = null;
+                IncomingPullRequestsHeading.Visibility = Visibility.Collapsed;
                 NoPrsText.Visibility = Visibility.Visible;
             }
             UpdatePrNewIndicator();
@@ -535,9 +538,9 @@ namespace StartScreen.ToolWindows.Controls
                 if (ago.TotalMinutes < 1)
                     text = "Updated just now";
                 else if (ago.TotalMinutes < 60)
-                    text = $"Updated {(int)ago.TotalMinutes}m ago";
+                    text = $"Updated {(int)ago.TotalMinutes} minute{((int)ago.TotalMinutes == 1 ? "" : "s")} ago";
                 else
-                    text = $"Updated {(int)ago.TotalHours}h ago";
+                    text = $"Updated {(int)ago.TotalHours} hour{((int)ago.TotalHours == 1 ? "" : "s")} ago";
             }
             else
             {
@@ -1438,14 +1441,14 @@ namespace StartScreen.ToolWindows.Controls
             return true;
         }
 
-        private ItemsControl GetActiveItemsList()
+        private DependencyObject GetActiveItemsList()
         {
             if (ReferenceEquals(DevHubSubTabs.SelectedItem, OverviewTab))
-                return ChangesList;
+                return OverviewActivityPanel;
             if (ReferenceEquals(DevHubSubTabs.SelectedItem, NeedsYouTab))
                 return NeedsYouList;
             if (ReferenceEquals(DevHubSubTabs.SelectedItem, PrsTab))
-                return PullRequestsList;
+                return PullRequestActivityPanel;
             if (ReferenceEquals(DevHubSubTabs.SelectedItem, CiTab))
                 return CiRunsList;
             return IssuesList;
@@ -1558,13 +1561,15 @@ namespace StartScreen.ToolWindows.Controls
             return element == DevHubSubTabs;
         }
 
-        private List<Border> GetCachedBorders(ItemsControl list)
+        private List<Border> GetCachedBorders(DependencyObject list)
         {
             if (_cachedBorders != null && _cachedBordersList == list)
                 return _cachedBorders;
 
             _cachedBordersList = list;
             _cachedBorders = CollectFocusableBorders(list);
+            foreach (var border in _cachedBorders)
+                ApplyContextMenuTheme(border);
             return _cachedBorders;
         }
 
@@ -1574,7 +1579,7 @@ namespace StartScreen.ToolWindows.Controls
             _cachedBordersList = null;
         }
 
-        private static List<Border> CollectFocusableBorders(ItemsControl list)
+        internal static List<Border> CollectFocusableBorders(DependencyObject list)
         {
             var result = new List<Border>();
             if (list != null)
@@ -1592,7 +1597,6 @@ namespace StartScreen.ToolWindows.Controls
                 DependencyObject child = VisualTreeHelper.GetChild(parent, i);
                 if (child is Border b && b.Focusable)
                 {
-                    ApplyContextMenuTheme(b);
                     results.Add(b);
                 }
                 else

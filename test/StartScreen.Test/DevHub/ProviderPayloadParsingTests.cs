@@ -145,7 +145,28 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual("open", result[0].Status);
             Assert.AreEqual("feature", result[0].SourceBranch);
             Assert.AreEqual("main", result[0].TargetBranch);
-            Assert.AreEqual(2, result[0].ApprovalCount);
+            Assert.AreEqual(0, result[0].ApprovalCount);
+        }
+
+        [TestMethod]
+        [DataRow("active", true, "draft")]
+        [DataRow("active", false, "open")]
+        [DataRow("completed", true, "merged")]
+        public void AzureDevOpsPullRequests_MapsDraftAndActualApprovals(string status, bool draft, string expected)
+        {
+            var json = "{\"value\":[{\"pullRequestId\":9,\"title\":\"Change\",\"status\":\"" + status + "\","
+                + "\"isDraft\":" + (draft ? "true" : "false") + ","
+                + "\"createdBy\":{\"displayName\":\"Author\",\"id\":\"ME\"},"
+                + "\"reviewers\":[{\"vote\":0},{\"vote\":10},{\"vote\":5},{\"vote\":-5},{\"vote\":-10},{\"vote\":null},{}],"
+                + "\"sourceRefName\":\"refs/heads/feature\",\"targetRefName\":\"refs/heads/main\","
+                + "\"closedDate\":\"0001-01-01T00:00:00\",\"creationDate\":\"2026-09-11T10:00:00Z\"}]}";
+
+            var result = AzureDevOpsDevHubProvider.ParseAdoPullRequests(json, _azureDevOpsRepo, "me").Single();
+
+            Assert.AreEqual(expected, result.Status);
+            Assert.AreEqual(2, result.ApprovalCount);
+            Assert.IsTrue(result.IsAuthoredByCurrentUser);
+            Assert.AreEqual(new DateTime(2026, 9, 11, 10, 0, 0, DateTimeKind.Utc), result.UpdatedAt);
         }
 
         [TestMethod]

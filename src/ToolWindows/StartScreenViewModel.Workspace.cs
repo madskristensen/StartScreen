@@ -92,7 +92,7 @@ namespace StartScreen.ToolWindows
             int generation = ++_workspaceSignalsGeneration;
             _isRefreshingWorkspaceSignals = true;
             OnPropertyChanged(nameof(IsRefreshingAny));
-            OnPropertyChanged(nameof(UnifiedRefreshStatus));
+            NotifyRefreshStatusChanged();
             try
             {
                 if (force)
@@ -111,7 +111,7 @@ namespace StartScreen.ToolWindows
                 {
                     _isRefreshingWorkspaceSignals = false;
                     OnPropertyChanged(nameof(IsRefreshingAny));
-                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
+                    NotifyRefreshStatusChanged();
                 }
             }
         }

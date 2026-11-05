@@ -497,9 +497,14 @@ namespace StartScreen.Services.DevHub.Providers
                         ? createdBy.GetProperty("displayName").GetString()
                         : "Unknown";
 
-                    var reviewerCount = 0;
+                    var approvalCount = 0;
                     if (pr.TryGetProperty("reviewers", out var reviewers) && reviewers.ValueKind == JsonValueKind.Array)
-                        reviewerCount = reviewers.GetArrayLength();
+                        approvalCount = reviewers.EnumerateArray().Count(reviewer => reviewer.TryGetProperty("vote", out var vote)
+                            && vote.ValueKind == JsonValueKind.Number && vote.TryGetInt32(out var value) && value > 0);
+
+                    var status = MapAdoPrStatus(pr.GetProperty("status").GetString());
+                    if (status == "open" && pr.TryGetProperty("isDraft", out var draft) && draft.ValueKind == JsonValueKind.True)
+                        status = "draft";
 
                     results.Add(new DevHubPullRequest
                     {
@@ -512,13 +517,14 @@ namespace StartScreen.Services.DevHub.Providers
                         Author = author,
                         TargetBranch = StripRefsPrefix(pr.GetProperty("targetRefName").GetString()),
                         SourceBranch = StripRefsPrefix(pr.GetProperty("sourceRefName").GetString()),
-                        Status = MapAdoPrStatus(pr.GetProperty("status").GetString()),
+                        Status = status,
                         UpdatedAt = pr.TryGetProperty("closedDate", out var closed) && closed.ValueKind != JsonValueKind.Null
+                            && closed.GetDateTime() != DateTime.MinValue
                             ? closed.GetDateTime().ToUniversalTime()
                             : pr.GetProperty("creationDate").GetDateTime().ToUniversalTime(),
                         CreatedAt = pr.GetProperty("creationDate").GetDateTime().ToUniversalTime(),
                         WebUrl = $"{GetBaseUrl(repo)}/{repo.Project}/_git/{repo.Repo}/pullrequest/{id}",
-                        ApprovalCount = reviewerCount,
+                        ApprovalCount = approvalCount,
                         IsAuthoredByCurrentUser = !string.IsNullOrEmpty(currentUserId)
                             && createdBy.ValueKind == JsonValueKind.Object
                             && createdBy.TryGetProperty("id", out var authorId)

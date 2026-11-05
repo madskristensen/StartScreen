@@ -56,6 +56,51 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow(0, "Updated today")]
+        [DataRow(1, "Updated yesterday")]
+        [DataRow(4, "Updated Nov 1")]
+        [DataRow(365, "Updated Nov 5, 2025")]
+        [DataRow(-1, "Updated Nov 6")]
+        public void ActivityDate_UsesFriendlyLocalCalendarDates(int daysAgo, string expected)
+        {
+            var now = new DateTime(2026, 11, 5, 0, 15, 0, DateTimeKind.Local);
+            var updated = now.Date.AddDays(-daysAgo).AddHours(23);
+
+            Assert.AreEqual(expected, DevHubPullRequest.FormatActivityDate(updated, now));
+            Assert.AreEqual(expected, DevHubPullRequest.FormatActivityDate(updated.ToUniversalTime(), now.ToUniversalTime()));
+        }
+
+        [TestMethod]
+        public void ActivityDate_IsSharedByOwnAndIncomingPrsAndExposesExactTime()
+        {
+            var pr = new DevHubPullRequest
+            {
+                Status = "open",
+                IsAuthoredByCurrentUser = true,
+                UpdatedAt = new DateTime(2025, 11, 1, 18, 30, 0, DateTimeKind.Utc),
+                WebUrl = "https://github.com/o/r/pull/1",
+            };
+            var item = DevHubWorkItem.GetOwnPullRequests([pr]).Single();
+
+            Assert.AreEqual(pr.ActivityDateText, item.ActivityDateText);
+            Assert.AreEqual(pr.UpdatedAt.ToLocalTime().ToString("f"), pr.ActivityDateToolTip);
+            Assert.AreEqual(pr.ActivityDateToolTip, item.ActivityDateToolTip);
+            Assert.AreEqual("Updated today", new DevHubPullRequest { UpdatedAt = DateTime.UtcNow }.ActivityDateText);
+        }
+
+        [TestMethod]
+        public void ActivityDate_UnknownTimestampHasNoMisleadingDate()
+        {
+            var pr = new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, WebUrl = "https://github.com/o/r/pull/1" };
+            var item = DevHubWorkItem.GetOwnPullRequests([pr]).Single();
+
+            Assert.AreEqual(string.Empty, pr.ActivityDateText);
+            Assert.AreEqual(string.Empty, pr.ActivityDateToolTip);
+            Assert.AreEqual(string.Empty, item.ActivityDateText);
+            Assert.AreEqual(string.Empty, item.ActivityDateToolTip);
+        }
+
+        [TestMethod]
         public void CiStatusIcon_Success_ReturnsCheckmark()
         {
             var pr = new DevHubPullRequest { CiStatus = "success" };
@@ -117,6 +162,32 @@ namespace StartScreen.Test.DevHub
             var pr = new DevHubPullRequest { Status = "open" };
 
             Assert.IsFalse(pr.IsDraft);
+        }
+
+        [TestMethod]
+        [DataRow("open", null, 0, false, "Waiting for review")]
+        [DataRow("open", null, 1, false, "1 approval")]
+        [DataRow("open", "success", 2, false, "2 approvals")]
+        [DataRow("open", "pending", 1, false, "Checks pending")]
+        [DataRow("open", "failure", 1, false, "Checks failing")]
+        [DataRow("conflicts", "success", 1, false, "Conflicts")]
+        [DataRow("draft", null, 0, false, "Draft")]
+        [DataRow("draft", null, 0, true, "Draft")]
+        [DataRow("open", null, 0, true, "Review requested")]
+        public void StatusText_IsConsistentForOwnAndIncomingPullRequests(string status, string? ciStatus,
+            int approvals, bool reviewRequested, string expected)
+        {
+            var pr = new DevHubPullRequest
+            {
+                Status = status,
+                CiStatus = ciStatus,
+                ApprovalCount = approvals,
+                IsReviewRequestedForCurrentUser = reviewRequested,
+            };
+
+            Assert.AreEqual(expected, pr.StatusText);
+            pr.IsAuthoredByCurrentUser = true;
+            Assert.AreEqual(expected, pr.StatusText);
         }
 
         [TestMethod]

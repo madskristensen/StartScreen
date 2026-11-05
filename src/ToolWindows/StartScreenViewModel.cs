@@ -117,7 +117,7 @@ namespace StartScreen.ToolWindows
                     _isRefreshingNews = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
-                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
+                    NotifyRefreshStatusChanged();
                 }
             }
         }
@@ -145,7 +145,7 @@ namespace StartScreen.ToolWindows
                     _isRefreshingYouTube = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
-                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
+                    NotifyRefreshStatusChanged();
                 }
             }
         }
@@ -160,7 +160,7 @@ namespace StartScreen.ToolWindows
                     _isRefreshingDevHub = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
-                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
+                    NotifyRefreshStatusChanged();
                 }
             }
         }
@@ -189,7 +189,7 @@ namespace StartScreen.ToolWindows
                 {
                     _lastNewsRefreshText = value;
                     OnPropertyChanged();
-                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
+                    NotifyRefreshStatusChanged();
                 }
             }
         }
@@ -203,7 +203,7 @@ namespace StartScreen.ToolWindows
                 {
                     _lastYouTubeRefreshText = value;
                     OnPropertyChanged();
-                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
+                    NotifyRefreshStatusChanged();
                 }
             }
         }
@@ -217,12 +217,26 @@ namespace StartScreen.ToolWindows
                 {
                     _lastDevHubRefreshText = value;
                     OnPropertyChanged();
-                    OnPropertyChanged(nameof(UnifiedRefreshStatus));
+                    NotifyRefreshStatusChanged();
                 }
             }
         }
 
         public string UnifiedRefreshStatus
+        {
+            get
+            {
+                if (IsRefreshingAny)
+                    return "Updating...";
+
+                var statuses = new[] { LastDevHubRefreshText, LastNewsRefreshText, LastYouTubeRefreshText };
+                return statuses.FirstOrDefault(text => text == "Updated just now")
+                    ?? statuses.FirstOrDefault(text => text?.StartsWith("Updated ", StringComparison.Ordinal) == true)
+                    ?? (statuses.Any(text => !string.IsNullOrWhiteSpace(text)) ? "Not updated yet" : string.Empty);
+            }
+        }
+
+        public string UnifiedRefreshDetails
         {
             get
             {
@@ -240,18 +254,20 @@ namespace StartScreen.ToolWindows
                     return $"Refreshing {string.Join(", ", refreshing)}...";
 
                 var statuses = new List<string>();
-                if (!string.IsNullOrWhiteSpace(LastDevHubRefreshText) && !LastDevHubRefreshText.StartsWith("Updated ", StringComparison.Ordinal))
+                if (!string.IsNullOrWhiteSpace(LastDevHubRefreshText))
                     statuses.Add($"Dev Hub: {LastDevHubRefreshText}");
-                if (!string.IsNullOrWhiteSpace(LastNewsRefreshText) && !LastNewsRefreshText.StartsWith("Updated ", StringComparison.Ordinal))
+                if (!string.IsNullOrWhiteSpace(LastNewsRefreshText))
                     statuses.Add($"News: {LastNewsRefreshText}");
-                if (!string.IsNullOrWhiteSpace(LastYouTubeRefreshText) && !LastYouTubeRefreshText.StartsWith("Updated ", StringComparison.Ordinal))
+                if (!string.IsNullOrWhiteSpace(LastYouTubeRefreshText))
                     statuses.Add($"Videos: {LastYouTubeRefreshText}");
-                if (statuses.Count > 0)
-                    return string.Join("; ", statuses);
-
-                return new[] { LastDevHubRefreshText, LastNewsRefreshText, LastYouTubeRefreshText }
-                    .Any(text => !string.IsNullOrWhiteSpace(text)) ? "Updated just now" : string.Empty;
+                return string.Join("; ", statuses);
             }
+        }
+
+        private void NotifyRefreshStatusChanged()
+        {
+            OnPropertyChanged(nameof(UnifiedRefreshStatus));
+            OnPropertyChanged(nameof(UnifiedRefreshDetails));
         }
 
         /// <summary>
@@ -533,7 +549,7 @@ namespace StartScreen.ToolWindows
             if (wasRefreshingWorkspace)
             {
                 OnPropertyChanged(nameof(IsRefreshingAny));
-                OnPropertyChanged(nameof(UnifiedRefreshStatus));
+                NotifyRefreshStatusChanged();
             }
             IsRefreshingNews = false;
             IsRefreshingYouTube = false;

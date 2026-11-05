@@ -204,6 +204,71 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void OwnPullRequests_PersistAfterActivityIsSeenAndAreNotLimitedToRecentChanges()
+        {
+            var prs = Enumerable.Range(1, 12).Select(id => new DevHubPullRequest
+            {
+                Title = $"Your PR {id}",
+                WebUrl = $"https://github.com/o/r/pull/{id}",
+                IsAuthoredByCurrentUser = true,
+                Status = id == 1 ? "draft" : "open",
+                UpdatedAt = new DateTime(2026, 1, id, 0, 0, 0, DateTimeKind.Utc),
+            }).ToArray();
+
+            var own = DevHubWorkItem.GetOwnPullRequests(prs);
+
+            Assert.HasCount(12, own);
+            CollectionAssert.AreEqual(Enumerable.Reverse(prs).Select(pr => pr.Title).ToArray(), own.Select(item => item.Title).ToArray());
+            Assert.IsTrue(own.All(item => item.IsPullRequest));
+            Assert.IsEmpty(DevHubWorkItem.GetChanges(prs, [], [], DateTime.MinValue));
+            Assert.IsEmpty(DevHubWorkItem.GetChanges(prs, [], [], DateTime.UtcNow));
+            Assert.HasCount(12, DevHubWorkItem.GetOwnPullRequests(prs));
+        }
+
+        [TestMethod]
+        public void OwnPullRequests_ExcludeOtherAuthorsClosedPrsAndMissingLinks()
+        {
+            var prs = new[]
+            {
+                new DevHubPullRequest { Status = "open", WebUrl = "https://github.com/o/r/pull/1" },
+                new DevHubPullRequest { IsAuthoredByCurrentUser = true, Status = "completed", WebUrl = "https://example.com/2" },
+                new DevHubPullRequest { IsAuthoredByCurrentUser = true, Status = "abandoned", WebUrl = "https://example.com/3" },
+                new DevHubPullRequest { IsAuthoredByCurrentUser = true, Status = "open" },
+            };
+
+            Assert.IsEmpty(DevHubWorkItem.GetOwnPullRequests(prs));
+            Assert.IsEmpty(DevHubWorkItem.GetOwnPullRequests(null!));
+        }
+
+        [TestMethod]
+        [DataRow("open", null, 0, "Waiting for review")]
+        [DataRow("open", "success", 1, "1 approval")]
+        [DataRow("open", "success", 2, "2 approvals")]
+        [DataRow("open", "pending", 1, "Checks pending")]
+        [DataRow("open", "failure", 1, "Checks failing")]
+        [DataRow("conflicts", "success", 1, "Conflicts")]
+        [DataRow("draft", null, 0, "Draft")]
+        public void OwnPullRequests_ShowAvailableStatus(string status, string? ciStatus, int approvals, string expected)
+        {
+            var pr = new DevHubPullRequest
+            {
+                IsAuthoredByCurrentUser = true,
+                Status = status,
+                CiStatus = ciStatus,
+                ApprovalCount = approvals,
+                RepoDisplayName = "o/r",
+                Number = "#1",
+                WebUrl = "https://github.com/o/r/pull/1",
+            };
+
+            var item = DevHubWorkItem.GetOwnPullRequests([pr]).Single();
+
+            Assert.AreEqual(expected, item.StatusText);
+            Assert.AreEqual("o/r / #1", item.Detail);
+            Assert.AreEqual(pr.WebUrl, item.WebUrl);
+        }
+
+        [TestMethod]
         public void SummaryCounts_HaveSeparateDestinationsAndClearOnRemoteChange()
         {
             var item = new MruItem { RemoteUrl = "https://github.com/o/r.git" };

@@ -740,6 +740,182 @@ namespace StartScreen.Test
             Assert.IsFalse(item.DisplayTitle.Contains('\r'));
         }
 
+        [TestMethod]
+        public void PullRequestsTab_GroupsOwnAndIncomingPullRequestsOutsideOverview()
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var overview = document.Descendants(p + "StackPanel")
+                .Single(element => element.Attribute(x + "Name")?.Value == "OverviewActivityPanel");
+            var tab = document.Descendants(p + "TabItem")
+                .Single(element => element.Attribute(x + "Name")?.Value == "PrsTab");
+            var panel = tab.Element(p + "StackPanel")!;
+            var own = panel.Elements(p + "StackPanel").Single();
+            var incoming = panel.Elements(p + "ItemsControl").Single();
+
+            Assert.IsFalse(overview.Descendants().Any(element => element.Attribute(x + "Name")?.Value == "OwnPullRequestsList"));
+            Assert.AreEqual("PullRequestActivityPanel", panel.Attribute(x + "Name")?.Value);
+            Assert.AreEqual("OwnPullRequestsSection", own.Attribute(x + "Name")?.Value);
+            Assert.AreEqual("My open PRs", own.Element(p + "TextBlock")?.Attribute("Text")?.Value);
+            Assert.AreEqual("OwnPullRequestsList", own.Element(p + "ItemsControl")?.Attribute(x + "Name")?.Value);
+            Assert.AreEqual("PullRequestsList", incoming.Attribute(x + "Name")?.Value);
+            Assert.AreEqual("Incoming PRs", panel.Elements(p + "TextBlock").Single(element =>
+                element.Attribute(x + "Name")?.Value == "IncomingPullRequestsHeading").Attribute("Text")?.Value);
+            Assert.AreSame(own, panel.Elements().First());
+        }
+
+        [STATestMethod]
+        public void PullRequests_KeyboardNavigationIncludesOwnAndIncomingSections()
+        {
+            var root = new StackPanel();
+            var own = new StackPanel();
+            var first = new Border { Focusable = true };
+            var second = new Border { Focusable = true };
+            own.Children.Add(first);
+            root.Children.Add(own);
+            root.Children.Add(second);
+
+            var borders = ToolWindows.Controls.DevHubPanel.CollectFocusableBorders(root);
+
+            CollectionAssert.AreEqual(new[] { first, second }, borders);
+        }
+
+        [TestMethod]
+        public void PullRequestCards_ShareStatusBadgesAndExplicitIconActions()
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var badges = document.Descendants(p + "TextBlock")
+                .Where(element => element.Attribute("Text")?.Value == "{Binding StatusText}").ToArray();
+            var actions = document.Descendants(p + "ContentControl")
+                .Where(element => element.Attribute("ContentTemplate")?.Value == "{StaticResource PullRequestActionsTemplate}").ToArray();
+
+            Assert.HasCount(1, badges);
+            Assert.HasCount(1, actions);
+            Assert.IsTrue(badges.All(element => element.Attribute("Style")?.Value == "{StaticResource PullRequestStatusStyle}"));
+            Assert.IsTrue(actions.All(element => element.Attribute("Content")?.Value == "{Binding}"));
+            Assert.HasCount(2, document.Descendants(p + "ContentControl")
+                .Where(element => element.Attribute("ContentTemplate")?.Value == "{StaticResource PullRequestMetadataTemplate}"));
+            var template = document.Descendants(p + "DataTemplate")
+                .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestActionsTemplate");
+            var buttons = template.Descendants(p + "Button").ToArray();
+            Assert.HasCount(2, buttons);
+            CollectionAssert.AreEqual(new[] { "OpenPullRequestInBrowser_Click", "OpenPullRequestInVisualStudio_Click" },
+                buttons.Select(element => element.Attribute("Click")?.Value).ToArray());
+            CollectionAssert.AreEqual(new[] { "Open pull request in browser", "Open pull request in Visual Studio" },
+                buttons.Select(element => element.Attribute("AutomationProperties.Name")?.Value).ToArray());
+            CollectionAssert.AreEqual(new[] { "{x:Static catalog:KnownMonikers.Web}", "{x:Static catalog:KnownMonikers.PullRequest}" },
+                buttons.Select(element => element.Elements().Single().Attribute("Moniker")?.Value).ToArray());
+            Assert.IsTrue(buttons.All(element => element.Attribute("ToolTip") != null
+                && element.Attribute("Style")?.Value == "{StaticResource PullRequestActionButtonStyle}"
+                && element.Attribute("MinWidth")?.Value == "24" && element.Attribute("MinHeight")?.Value == "24"));
+            var actionText = document.Descendants(p + "TextBlock")
+                .Single(element => element.Attribute("Text")?.Value == "{Binding ActionText}");
+            Assert.IsTrue(actionText.Descendants(p + "DataTrigger").Any(element =>
+                element.Attribute("Binding")?.Value == "{Binding IsPullRequest}"
+                && element.Element(p + "Setter")?.Attribute("Value")?.Value == "Collapsed"));
+            Assert.IsFalse(document.Descendants().Any(element => element.Attribute("Text")?.Value == "Review in VS"));
+        }
+
+        [STATestMethod]
+        public void PullRequestActions_HaveNoButtonBackgroundAndRetainKeyboardFocusFeedback()
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var definition = new XElement(document.Descendants(p + "Style")
+                .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestActionButtonStyle"));
+            definition.Attribute(x + "Key")!.Remove();
+            definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            var focus = definition.Descendants(p + "Trigger").Single(element => element.Attribute("Property")?.Value == "IsKeyboardFocused");
+            Assert.AreEqual("BorderBrush", focus.Element(p + "Setter")?.Attribute("Property")?.Value);
+            Assert.IsTrue(focus.Element(p + "Setter")!.Attribute("Value")!.Value.StartsWith("{DynamicResource", StringComparison.Ordinal));
+            Assert.IsFalse(definition.Descendants(p + "Trigger").Descendants(p + "Setter")
+                .Any(element => element.Attribute("Property")?.Value == "Background"));
+            focus.Element(p + "Setter")!.SetAttributeValue("Value", "{DynamicResource TestFocusBrush}");
+            var button = new Button { Style = (Style)XamlReader.Parse(definition.ToString()), Width = 24, Height = 24 };
+            button.ApplyTemplate();
+            var border = (Border)button.Template.FindName("ActionBorder", button);
+
+            Assert.AreEqual((byte)0, ((System.Windows.Media.SolidColorBrush)border.Background).Color.A);
+            button.IsEnabled = false;
+            Assert.AreEqual((byte)0, ((System.Windows.Media.SolidColorBrush)border.Background).Color.A);
+        }
+
+        [TestMethod]
+        public void PullRequestBadges_UseCopilotLikeTypographyAndThemeAwareStatusColors()
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var style = document.Descendants(p + "Style")
+                .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestStatusStyle");
+
+            Assert.IsTrue(style.Elements(p + "Setter").Any(element => element.Attribute("Property")?.Value == "FontSize"
+                && element.Attribute("Value")?.Value == "10"));
+            Assert.IsTrue(style.Elements(p + "Setter").Any(element => element.Attribute("Property")?.Value == "FontWeight"
+                && element.Attribute("Value")?.Value == "Bold"));
+            foreach (var status in new[] { "Review requested", "Checks pending", "Checks failing", "Conflicts", "Waiting for review", "Draft" })
+            {
+                var trigger = style.Descendants(p + "DataTrigger").Single(element => element.Attribute("Value")?.Value == status);
+                Assert.AreEqual("{Binding StatusText}", trigger.Attribute("Binding")?.Value);
+                Assert.IsTrue(trigger.Elements(p + "Setter").Any(element => element.Attribute("Property")?.Value == "Foreground"
+                    && element.Attribute("Value")!.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)));
+            }
+        }
+
+        [STATestMethod]
+        [DataRow(200d)]
+        [DataRow(400d)]
+        public void PullRequestMetadata_PillsAndDatesFitAndRespondToThemeChanges(double width)
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var style = new XElement(document.Descendants(p + "Style")
+                .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestStatusStyle"));
+            foreach (var setter in style.Descendants(p + "Setter").Where(element => element.Attribute("Property")?.Value == "Foreground"))
+                setter.SetAttributeValue("Value", "{DynamicResource TestStatusBrush}");
+            var metadata = new XElement(document.Descendants(p + "DataTemplate")
+                .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestMetadataTemplate").Elements().Single());
+            metadata.Element(p + "ContentControl")!.ReplaceWith(new XElement(p + "Border",
+                new XAttribute("DockPanel.Dock", "Right"), new XAttribute("Width", "52"),
+                new XAttribute("Height", "24"), new XAttribute("Margin", "8 0 0 0")));
+            var pillDefinition = metadata.Descendants(p + "Border").Single(element => element.Attribute("CornerRadius") != null);
+            Assert.IsTrue(pillDefinition.Attribute("Background")!.Value.StartsWith("{DynamicResource", StringComparison.Ordinal));
+            pillDefinition.SetAttributeValue("Background", "{DynamicResource TestPillBackground}");
+            var root = (StackPanel)XamlReader.Parse(new XElement(p + "StackPanel",
+                new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
+                new XElement(p + "StackPanel.Resources", style), metadata).ToString());
+            root.Resources["TestStatusBrush"] = SystemColors.HighlightBrush;
+            root.Resources["TestPillBackground"] = SystemColors.ControlBrush;
+            root.DataContext = new Models.DevHub.DevHubPullRequest { UpdatedAt = DateTime.UtcNow };
+            root.Measure(new Size(width, double.PositiveInfinity));
+            root.Arrange(new Rect(0, 0, width, root.DesiredSize.Height));
+            root.UpdateLayout();
+
+            var row = (DockPanel)root.Children[0];
+            var content = (WrapPanel)row.Children[1];
+            var pill = (Border)content.Children[0];
+            var badge = (TextBlock)pill.Child;
+            var date = (TextBlock)content.Children[1];
+            Assert.AreEqual(new CornerRadius(9), pill.CornerRadius);
+            Assert.AreEqual(new Thickness(7, 2, 7, 2), pill.Padding);
+            Assert.AreEqual(new Thickness(1), pill.BorderThickness);
+            Assert.AreEqual("Waiting for review", badge.Text);
+            Assert.AreEqual("Updated today", date.Text);
+            Assert.IsNotNull(date.ToolTip);
+            Assert.IsTrue(date.TranslatePoint(new Point(), root).X + date.ActualWidth <= width - 60 + 0.1);
+            Assert.IsTrue(pill.ActualWidth > badge.ActualWidth);
+            Assert.AreSame(badge.Foreground, pill.BorderBrush);
+            root.Resources["TestStatusBrush"] = SystemColors.WindowTextBrush;
+            root.UpdateLayout();
+            Assert.AreSame(SystemColors.WindowTextBrush, badge.Foreground);
+            Assert.AreSame(badge.Foreground, pill.BorderBrush);
+        }
+
         [STATestMethod]
         public void RepositoryWorkItemTitles_KeepWrapping()
         {
@@ -786,7 +962,8 @@ namespace StartScreen.Test
             }
             var action = document.Descendants(presentation + "TextBlock")
                 .Single(element => element.Attribute("Text")?.Value == "{Binding ActionText}");
-            var hideAction = action.Descendants(presentation + "DataTrigger").Single();
+            var hideAction = action.Descendants(presentation + "DataTrigger")
+                .Single(element => element.Attribute("Binding")?.Value == "{Binding IsCopilot}");
             Assert.AreEqual("{Binding IsCopilot}", hideAction.Attribute("Binding")?.Value);
             Assert.AreEqual("True", hideAction.Attribute("Value")?.Value);
             Assert.AreEqual("Collapsed", hideAction.Element(presentation + "Setter")?.Attribute("Value")?.Value);
@@ -912,7 +1089,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void UnifiedRefreshStatus_WrapsAndExposesFullDetailsInTooltip()
+        public void UnifiedRefreshStatus_StaysOnOneLineAndExposesSeparateDetailsInTooltip()
         {
             using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
             Assert.IsNotNull(stream);
@@ -923,8 +1100,8 @@ namespace StartScreen.Test
                 .Single(element => element.Attribute(xaml + "Name")?.Value == "LastRefreshText");
 
             Assert.AreEqual("{Binding UnifiedRefreshStatus}", status.Attribute("Text")?.Value);
-            Assert.AreEqual("{Binding UnifiedRefreshStatus}", status.Attribute("ToolTip")?.Value);
-            Assert.AreEqual("Wrap", status.Attribute("TextWrapping")?.Value);
+            Assert.AreEqual("{Binding UnifiedRefreshDetails}", status.Attribute("ToolTip")?.Value);
+            Assert.AreEqual("NoWrap", status.Attribute("TextWrapping")?.Value);
             Assert.AreEqual("420", status.Attribute("MaxWidth")?.Value);
         }
 

@@ -78,6 +78,40 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public async Task RepoDetail_RecognizesOwnPrUsingVerifiedIdentityAndKeepsItVisibleAsync(bool legacy)
+        {
+            var repo = RemoteRepoIdentifier.TryParse(legacy
+                ? "https://devdiv.visualstudio.com/DevDiv/_git/_optimized/VSEditor"
+                : "https://dev.azure.com/devdiv/DevDiv/_git/VSEditor")!;
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                return Json(path.EndsWith("/pullrequests")
+                    ? "{\"value\":[{\"pullRequestId\":9,\"title\":\"Your change\",\"status\":\"active\",\"isDraft\":false,"
+                        + "\"createdBy\":{\"displayName\":\"User\",\"id\":\"user-id\"},\"reviewers\":[{\"vote\":0}],"
+                        + "\"sourceRefName\":\"refs/heads/feature\",\"targetRefName\":\"refs/heads/main\","
+                        + "\"creationDate\":\"2026-10-30T23:25:02Z\",\"closedDate\":\"0001-01-01T00:00:00\"}]}"
+                    : path.Contains("connectionData") ? Identity
+                    : path.Contains("/build/builds") ? "{\"value\":[]}"
+                    : $"{{\"id\":\"{RepositoryId}\"}}");
+            }));
+
+            var detail = await Provider(client, Credential(true)).GetRepoDetailAsync(repo, 25, CancellationToken.None);
+
+            Assert.IsNotNull(detail);
+            var pr = detail.PullRequests.Single();
+            Assert.IsTrue(pr.IsAuthoredByCurrentUser);
+            Assert.AreEqual(0, pr.ApprovalCount);
+            var own = DevHubWorkItem.GetOwnPullRequests(detail.PullRequests).Single();
+            Assert.AreEqual(pr.WebUrl, own.WebUrl);
+            Assert.AreEqual("Waiting for review", own.StatusText);
+            Assert.AreEqual("devdiv/DevDiv/VSEditor / !9", own.Detail);
+            Assert.IsEmpty(DevHubWorkItem.GetChanges(detail.PullRequests, [], [], DateTime.UtcNow));
+        }
+
+        [TestMethod]
         [DataRow(true, false)]
         [DataRow(false, false)]
         [DataRow(false, true)]

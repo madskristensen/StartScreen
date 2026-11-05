@@ -107,6 +107,37 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public bool IsDraft => string.Equals(Status, "draft", StringComparison.OrdinalIgnoreCase);
 
+        [JsonIgnore]
+        public string StatusText => Status == "conflicts" ? "Conflicts"
+            : CiStatus == "failure" ? "Checks failing"
+            : IsDraft ? "Draft"
+            : IsReviewRequestedForCurrentUser ? "Review requested"
+            : CiStatus == "pending" ? "Checks pending"
+            : ApprovalCount == 1 ? "1 approval"
+            : ApprovalCount > 1 ? $"{ApprovalCount} approvals" : "Waiting for review";
+
+        [JsonIgnore]
+        public string ActivityDateText => FormatActivityDate(UpdatedAt, DateTime.Now);
+
+        [JsonIgnore]
+        public string ActivityDateToolTip => UpdatedAt == default ? string.Empty : UpdatedAt.ToLocalTime().ToString("f");
+
+        internal static string FormatActivityDate(DateTime updatedAt, DateTime now)
+        {
+            if (updatedAt == default)
+                return string.Empty;
+
+            var localDate = updatedAt.ToLocalTime();
+            var localNow = now.ToLocalTime();
+            var daysAgo = (localNow.Date - localDate.Date).Days;
+            if (daysAgo == 0)
+                return "Updated today";
+            if (daysAgo == 1)
+                return "Updated yesterday";
+
+            return $"Updated {localDate.ToString(localDate.Year == localNow.Year ? "MMM d" : "MMM d, yyyy")}";
+        }
+
         /// <summary>
         /// Returns the source branch display text (e.g., "feature/my-branch -> main"), or null if unavailable.
         /// </summary>
