@@ -95,10 +95,11 @@ namespace StartScreen
         public bool DevHubEnabled { get; set; } = true;
 
         /// <summary>
-        /// Custom GitHub search query for the Dev Hub.
+        /// Custom GitHub search query for incoming Dev Hub activity.
         /// When set, this replaces the default "involves:{login}" query.
         /// The extension prepends "is:issue" or "is:pr" automatically.
         /// Use {login} as a placeholder for the authenticated username.
+        /// Personal authored/assigned activity is fetched independently.
         /// </summary>
         [Browsable(false)]
         [DefaultValue("")]
@@ -108,19 +109,20 @@ namespace StartScreen
         /// The Dev Hub sub-tab selected by default when the Start Screen opens.
         /// </summary>
         [Browsable(false)]
-        [DefaultValue(DevHubDefaultTab.Overview)]
-        public DevHubDefaultTab DevHubDefaultTab { get; set; } = DevHubDefaultTab.Overview;
+        [DefaultValue(DevHubDefaultTab.MyWork)]
+        public DevHubDefaultTab DevHubDefaultTab { get; set; } = DevHubDefaultTab.MyWork;
 
         [Browsable(false)]
         [DefaultValue(false)]
         public bool HasAppliedOverviewDefault { get; set; }
 
-        internal bool ApplyOverviewDefault()
+        internal bool ApplyWorkViewsDefault()
         {
-            if (HasAppliedOverviewDefault)
+            if (DevHubDefaultTab == DevHubDefaultTab.MyWork || DevHubDefaultTab == DevHubDefaultTab.Incoming)
                 return false;
-            DevHubDefaultTab = DevHubDefaultTab.Overview;
-            HasAppliedOverviewDefault = true;
+            DevHubDefaultTab = DevHubDefaultTab == DevHubDefaultTab.Issues
+                || DevHubDefaultTab == DevHubDefaultTab.PullRequests || DevHubDefaultTab == DevHubDefaultTab.Builds
+                ? DevHubDefaultTab.Incoming : DevHubDefaultTab.MyWork;
             return true;
         }
 

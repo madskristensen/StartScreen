@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub.Providers;
 
 namespace StartScreen.Test.DevHub
@@ -6,6 +7,26 @@ namespace StartScreen.Test.DevHub
     [TestClass]
     public class BuildSearchQueryTests
     {
+        [TestMethod]
+        [DataRow("is:pr", "author", "is:pr is:open author:me")]
+        [DataRow("is:issue", "author", "is:issue is:open author:me")]
+        [DataRow("is:issue", "assignee", "is:issue is:open assignee:me")]
+        public void PersonalQuery_UsesOnlyVerifiedOwnershipAndOpenState(string type, string qualifier, string expected)
+        {
+            Assert.AreEqual(expected, GitHubDevHubProvider.BuildPersonalSearchQuery(type, "me", qualifier));
+        }
+
+        [TestMethod]
+        [DataRow("is:pr", "author")]
+        [DataRow("is:issue", "author")]
+        [DataRow("is:issue", "assignee")]
+        public void PersonalQuery_RestrictsOnlyAnExplicitRepositorySelection(string type, string qualifier)
+        {
+            var repo = new RemoteRepoIdentifier("github.com", "another-owner", "repo");
+            Assert.AreEqual($"{type} is:open {qualifier}:me AND repo:another-owner/repo",
+                GitHubDevHubProvider.BuildPersonalSearchQuery(type, "me", qualifier, repo));
+        }
+
         [TestMethod]
         public void BuildSearchQuery_NoCustomQuery_ReturnsDefaultIssueQuery()
         {

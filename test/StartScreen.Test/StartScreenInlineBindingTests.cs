@@ -534,7 +534,7 @@ namespace StartScreen.Test
         [STATestMethod]
         [DataRow(1200d, false)]
         [DataRow(700d, true)]
-        public void ActivitySections_AlignTabsAndFirstCardsAtWideAndStackedWidths(double width, bool stacked)
+        public void ActivitySections_AlignTabsAndReserveSpaceForWorkFilters(double width, bool stacked)
         {
             var screen = ReadLayoutXaml("StartScreenControl.xaml");
             var work = ReadLayoutXaml("DevHubPanel.xaml");
@@ -588,10 +588,13 @@ namespace StartScreen.Test
             newsTitleDefinition.Attribute("Foreground")!.Remove();
             var newsTitle = (TextBlock)XamlReader.Parse(newsTitleDefinition.ToString());
             var newsCard = new Border { Padding = ReadThickness(news.Root!.Element(p + "Border")!, "Padding"), Child = newsTitle };
-            var overview = work.Descendants(p + "TabItem").Single(element => element.Attribute(x + "Name")?.Value == "OverviewTab");
+            var myWork = work.Descendants(p + "TabItem").Single(element => element.Attribute(x + "Name")?.Value == "MyWorkTab");
             var blogs = screen.Descendants(p + "TabItem").Single(element => element.Attribute(x + "Name")?.Value == "BlogsTab");
-            var workBody = new StackPanel { Margin = ReadThickness(overview.Element(p + "StackPanel")!, "Margin") };
+            var workBody = new StackPanel { Margin = ReadThickness(myWork.Element(p + "StackPanel")!, "Margin") };
             var newsBody = new StackPanel { Margin = ReadThickness(blogs.Element(p + "StackPanel")!, "Margin") };
+            var filters = CreateActivityFilters(work, myWork);
+            workBody.Children.Add(filters);
+            workBody.Children.Add(new TextBlock { Text = "Copilot sessions", FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 12, 0, 6) });
             workBody.Children.Add(workCard);
             newsBody.Children.Add(newsCard);
             var workTabs = CreateLayoutTabs(work, "DevHubTabItemStyle", workBody);
@@ -606,12 +609,12 @@ namespace StartScreen.Test
 
             double Top(FrameworkElement element) => element.TranslatePoint(new Point(), grid).Y;
             Assert.AreEqual(Top(workTabs) - Top(workHeading), Top(newsTabs) - Top(newsHeading), 0.01, "Heading-to-tab distance must match.");
-            Assert.AreEqual(Top(workCard) - Top(workTabs), Top(newsCard) - Top(newsTabs), 0.01, "Tab-to-card distance must match.");
-            Assert.AreEqual(Top(workTitle) - Top(workTabs), Top(newsTitle) - Top(newsTabs), 0.01, "First card titles must align too.");
+            Assert.IsGreaterThanOrEqualTo(Top(filters) + filters.ActualHeight, Top(workCard), "Work cards must follow the filter controls.");
+            Assert.IsGreaterThan(Top(newsCard) - Top(newsTabs), Top(workCard) - Top(workTabs), "Work reserves extra space for filtering and group headers.");
             if (!stacked)
             {
                 Assert.AreEqual(Top(workTabs), Top(newsTabs), 0.01);
-                Assert.AreEqual(Top(workTitle), Top(newsTitle), 0.01);
+                Assert.IsGreaterThan(Top(newsTitle), Top(workTitle));
             }
         }
 
@@ -625,6 +628,25 @@ namespace StartScreen.Test
         private static Thickness ReadThickness(XElement element, string property)
         {
             return (Thickness)new ThicknessConverter().ConvertFromInvariantString(element.Attribute(property)!.Value)!;
+        }
+
+        private static StackPanel CreateActivityFilters(XDocument document, XElement tab)
+        {
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var definition = new XElement(tab.Descendants(p + "WrapPanel").Single());
+            foreach (var element in definition.Descendants())
+            {
+                element.Attribute("Checked")?.Remove();
+                element.Attribute("Unchecked")?.Remove();
+            }
+            var style = new XElement(document.Descendants(p + "Style")
+                .Single(element => element.Attribute(x + "Key")?.Value == "ActivityFilterStyle"));
+            style.Descendants(p + "Setter").Where(element =>
+                element.Attribute("Value")?.Value.StartsWith("{DynamicResource", StringComparison.Ordinal) == true).Remove();
+            return (StackPanel)XamlReader.Parse(new XElement(p + "StackPanel",
+                new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
+                new XElement(p + "StackPanel.Resources", style), definition).ToString());
         }
 
         private static TabControl CreateLayoutTabs(XDocument document, string styleName, FrameworkElement content)
@@ -741,28 +763,31 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void PullRequestsTab_GroupsOwnAndIncomingPullRequestsOutsideOverview()
+        public void WorkViews_HaveTwoTabsWithIndependentAttentionAndTypeFilters()
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var overview = document.Descendants(p + "StackPanel")
-                .Single(element => element.Attribute(x + "Name")?.Value == "OverviewActivityPanel");
-            var tab = document.Descendants(p + "TabItem")
-                .Single(element => element.Attribute(x + "Name")?.Value == "PrsTab");
-            var panel = tab.Element(p + "StackPanel")!;
-            var own = panel.Elements(p + "StackPanel").Single();
-            var incoming = panel.Elements(p + "ItemsControl").Single();
+            var tabs = document.Descendants(p + "TabControl").Single(element => element.Attribute(x + "Name")?.Value == "DevHubSubTabs")
+                .Elements(p + "TabItem").ToArray();
 
-            Assert.IsFalse(overview.Descendants().Any(element => element.Attribute(x + "Name")?.Value == "OwnPullRequestsList"));
-            Assert.AreEqual("PullRequestActivityPanel", panel.Attribute(x + "Name")?.Value);
-            Assert.AreEqual("OwnPullRequestsSection", own.Attribute(x + "Name")?.Value);
-            Assert.AreEqual("My open PRs", own.Element(p + "TextBlock")?.Attribute("Text")?.Value);
-            Assert.AreEqual("OwnPullRequestsList", own.Element(p + "ItemsControl")?.Attribute(x + "Name")?.Value);
-            Assert.AreEqual("PullRequestsList", incoming.Attribute(x + "Name")?.Value);
-            Assert.AreEqual("Incoming PRs", panel.Elements(p + "TextBlock").Single(element =>
-                element.Attribute(x + "Name")?.Value == "IncomingPullRequestsHeading").Attribute("Text")?.Value);
-            Assert.AreSame(own, panel.Elements().First());
+            CollectionAssert.AreEqual(new[] { "MyWorkTab", "IncomingTab" }, tabs.Select(tab => tab.Attribute(x + "Name")?.Value).ToArray());
+            foreach (var tab in tabs)
+            {
+                var attention = tab.Descendants(p + "CheckBox").Single();
+                Assert.AreEqual("Needs attention", attention.Attribute("Content")?.Value);
+                Assert.AreEqual("ActivityFilter_Changed", attention.Attribute("Checked")?.Value);
+                Assert.AreEqual("ActivityFilter_Changed", attention.Attribute("Unchecked")?.Value);
+                var list = tab.Descendants(p + "ItemsControl").Single();
+                Assert.AreEqual("{StaticResource WorkItemTemplate}", list.Attribute("ItemTemplate")?.Value);
+                Assert.AreEqual("WorkItemGroupStyle", list.Descendants(p + "StaticResource").Single().Attribute("ResourceKey")?.Value);
+            }
+            CollectionAssert.AreEqual(new[] { "All", "PRs", "Issues", "Copilot" }, tabs[0].Descendants(p + "RadioButton")
+                .Select(button => button.Attribute("Content")?.Value).ToArray());
+            CollectionAssert.AreEqual(new[] { "All", "PRs", "Issues", "Builds" }, tabs[1].Descendants(p + "RadioButton")
+                .Select(button => button.Attribute("Content")?.Value).ToArray());
+            Assert.AreNotEqual(tabs[0].Descendants(p + "RadioButton").First().Attribute("GroupName")?.Value,
+                tabs[1].Descendants(p + "RadioButton").First().Attribute("GroupName")?.Value);
         }
 
         [STATestMethod]
@@ -781,6 +806,40 @@ namespace StartScreen.Test
             CollectionAssert.AreEqual(new[] { first, second }, borders);
         }
 
+        [STATestMethod]
+        [DataRow(260d)]
+        [DataRow(460d)]
+        public void ActivityFilters_WrapWithoutClippingAndKeepSelectionsIndependent(double width)
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            var tabs = document.Descendants(p + "TabItem").ToArray();
+            var own = CreateActivityFilters(document, tabs[0]);
+            var incoming = CreateActivityFilters(document, tabs[1]);
+            var root = new StackPanel();
+            root.Children.Add(own);
+            root.Children.Add(incoming);
+            var ownButtons = ((WrapPanel)own.Children[0]).Children.OfType<RadioButton>().ToArray();
+            var incomingButtons = ((WrapPanel)incoming.Children[0]).Children.OfType<RadioButton>().ToArray();
+
+            ownButtons[1].IsChecked = true;
+            incomingButtons[2].IsChecked = true;
+            root.Measure(new Size(width, double.PositiveInfinity));
+            root.Arrange(new Rect(0, 0, width, root.DesiredSize.Height));
+            root.UpdateLayout();
+
+            Assert.IsTrue(ownButtons[1].IsChecked);
+            Assert.IsTrue(incomingButtons[2].IsChecked);
+            Assert.IsFalse(ownButtons[0].IsChecked);
+            Assert.IsFalse(incomingButtons[0].IsChecked);
+            foreach (var view in new[] { own, incoming })
+            {
+                var panel = (WrapPanel)view.Children[0];
+                foreach (FrameworkElement filter in panel.Children)
+                    Assert.IsLessThanOrEqualTo(width + 0.1, filter.TranslatePoint(new Point(), root).X + filter.ActualWidth);
+            }
+        }
+
         [TestMethod]
         public void PullRequestCards_ShareStatusBadgesAndExplicitIconActions()
         {
@@ -792,12 +851,13 @@ namespace StartScreen.Test
             var actions = document.Descendants(p + "ContentControl")
                 .Where(element => element.Attribute("ContentTemplate")?.Value == "{StaticResource PullRequestActionsTemplate}").ToArray();
 
-            Assert.HasCount(1, badges);
+            Assert.HasCount(2, badges);
             Assert.HasCount(1, actions);
             Assert.IsTrue(badges.All(element => element.Attribute("Style")?.Value == "{StaticResource PullRequestStatusStyle}"));
             Assert.IsTrue(actions.All(element => element.Attribute("Content")?.Value == "{Binding}"));
-            Assert.HasCount(2, document.Descendants(p + "ContentControl")
-                .Where(element => element.Attribute("ContentTemplate")?.Value == "{StaticResource PullRequestMetadataTemplate}"));
+            Assert.HasCount(1, document.Descendants(p + "Setter")
+                .Where(element => element.Attribute("Property")?.Value == "ContentTemplate"
+                    && element.Attribute("Value")?.Value == "{StaticResource PullRequestMetadataTemplate}"));
             var template = document.Descendants(p + "DataTemplate")
                 .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestActionsTemplate");
             var buttons = template.Descendants(p + "Button").ToArray();
@@ -811,11 +871,8 @@ namespace StartScreen.Test
             Assert.IsTrue(buttons.All(element => element.Attribute("ToolTip") != null
                 && element.Attribute("Style")?.Value == "{StaticResource PullRequestActionButtonStyle}"
                 && element.Attribute("MinWidth")?.Value == "24" && element.Attribute("MinHeight")?.Value == "24"));
-            var actionText = document.Descendants(p + "TextBlock")
-                .Single(element => element.Attribute("Text")?.Value == "{Binding ActionText}");
-            Assert.IsTrue(actionText.Descendants(p + "DataTrigger").Any(element =>
-                element.Attribute("Binding")?.Value == "{Binding IsPullRequest}"
-                && element.Element(p + "Setter")?.Attribute("Value")?.Value == "Collapsed"));
+            Assert.IsFalse(document.Descendants(p + "TextBlock").Any(element =>
+                element.Attribute("Text")?.Value == "{Binding ActionText}"));
             Assert.IsFalse(document.Descendants().Any(element => element.Attribute("Text")?.Value == "Review in VS"));
         }
 
@@ -921,7 +978,7 @@ namespace StartScreen.Test
         {
             var title = "Pull request title\r\nwith another line";
             var item = Models.DevHub.DevHubWorkItem.GetNeedsYou(
-                [new Models.DevHub.DevHubPullRequest { Title = title, IsReviewRequestedForCurrentUser = true }]).Single();
+                [new Models.DevHub.DevHubPullRequest { Title = title, Status = "open", IsReviewRequestedForCurrentUser = true }]).Single();
 
             var textBlock = CreateWorkItemTitle(item);
 
@@ -960,13 +1017,8 @@ namespace StartScreen.Test
                 Assert.IsTrue(trigger.Elements(presentation + "Setter").Any(setter => setter.Attribute("Property")?.Value == "Foreground"
                     && setter.Attribute("Value")!.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)));
             }
-            var action = document.Descendants(presentation + "TextBlock")
-                .Single(element => element.Attribute("Text")?.Value == "{Binding ActionText}");
-            var hideAction = action.Descendants(presentation + "DataTrigger")
-                .Single(element => element.Attribute("Binding")?.Value == "{Binding IsCopilot}");
-            Assert.AreEqual("{Binding IsCopilot}", hideAction.Attribute("Binding")?.Value);
-            Assert.AreEqual("True", hideAction.Attribute("Value")?.Value);
-            Assert.AreEqual("Collapsed", hideAction.Element(presentation + "Setter")?.Attribute("Value")?.Value);
+            Assert.IsFalse(document.Descendants(presentation + "TextBlock")
+                .Any(element => element.Attribute("Text")?.Value == "{Binding ActionText}"));
             var card = title.Ancestors(presentation + "Border").First();
             Assert.AreEqual("WorkItem_MouseUp", card.Attribute("MouseUp")?.Value);
             Assert.AreEqual("4", card.Attribute("CornerRadius")?.Value);

@@ -120,5 +120,38 @@ namespace StartScreen.Test.DevHub
             Assert.IsTrue(dashboard.PullRequests.Any(p => _otherRepo.Equals(p.RepoIdentifier)));
         }
 
+        [TestMethod]
+        public void MergeIssues_PrefersRepositoryMetadataWithoutCollapsingUnknownUrls()
+        {
+            var aggregate = new DevHubIssue { WebUrl = "https://dev.azure.com/org/project/_workitems/edit/1" };
+            var linked = new DevHubIssue { WebUrl = aggregate.WebUrl.ToUpperInvariant(), RepoIdentifier = _scopedRepo };
+            var firstUnknown = new DevHubIssue { Title = "First unknown" };
+            var secondUnknown = new DevHubIssue { Title = "Second unknown" };
+
+            var merged = DevHubService.MergeIssues([aggregate, firstUnknown, secondUnknown], [linked]).ToList();
+
+            Assert.HasCount(3, merged);
+            Assert.AreSame(linked, merged[0]);
+            CollectionAssert.Contains(merged, firstUnknown);
+            CollectionAssert.Contains(merged, secondUnknown);
+        }
+
+        [TestMethod]
+        public void MergeRepoDetail_WarningsRemainScopedAndClearAfterRecovery()
+        {
+            var dashboard = new DevHubDashboard();
+            var detail = new DevHubRepoDetail { RepoIdentifier = _scopedRepo, ActivityWarning = "Issue access unavailable." };
+            DevHubService.MergeRepoDetail(dashboard, _scopedRepo, detail);
+
+            Assert.AreEqual(detail.ActivityWarning, dashboard.FilterByRepo(_scopedRepo).ActivityWarning);
+            Assert.IsNull(dashboard.FilterByRepo(_otherRepo).ActivityWarning);
+            var equivalentRepo = new RemoteRepoIdentifier("GITHUB.COM", "MADSKRISTENSEN", "STARTSCREEN");
+            Assert.AreEqual(detail.ActivityWarning, dashboard.FilterByRepo(equivalentRepo).ActivityWarning);
+
+            DevHubService.MergeRepoDetail(dashboard, equivalentRepo, new DevHubRepoDetail { RepoIdentifier = equivalentRepo });
+
+            Assert.IsEmpty(dashboard.ActivityWarnings);
+            Assert.IsNull(dashboard.FilterByRepo(_scopedRepo).ActivityWarning);
+        }
     }
 }

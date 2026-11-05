@@ -66,6 +66,7 @@ namespace StartScreen.Test.DevHub
                 Assert.AreEqual(entra ? "Bearer" : "Basic", request.Headers.Authorization!.Scheme);
                 var path = request.RequestUri!.AbsolutePath;
                 return Json(path.EndsWith("/repositories/repo") ? $"{{\"id\":\"{RepositoryId}\"}}"
+                    : path.EndsWith("/wiql") ? "{\"workItems\":[]}"
                     : path.Contains("connectionData") ? Identity : "{\"value\":[]}");
             });
             using var client = new HttpClient(handler);
@@ -74,7 +75,7 @@ namespace StartScreen.Test.DevHub
             var result = await provider.GetRepoDetailAsync(Repo(), 10, CancellationToken.None);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(4, handler.RequestCount);
+            Assert.AreEqual(6, handler.RequestCount);
         }
 
         [TestMethod]
@@ -94,6 +95,7 @@ namespace StartScreen.Test.DevHub
                         + "\"sourceRefName\":\"refs/heads/feature\",\"targetRefName\":\"refs/heads/main\","
                         + "\"creationDate\":\"2026-10-30T23:25:02Z\",\"closedDate\":\"0001-01-01T00:00:00\"}]}"
                     : path.Contains("connectionData") ? Identity
+                    : path.EndsWith("/wiql") ? "{\"workItems\":[]}"
                     : path.Contains("/build/builds") ? "{\"value\":[]}"
                     : $"{{\"id\":\"{RepositoryId}\"}}");
             }));
@@ -108,7 +110,7 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual(pr.WebUrl, own.WebUrl);
             Assert.AreEqual("Waiting for review", own.StatusText);
             Assert.AreEqual("devdiv/DevDiv/VSEditor / !9", own.Detail);
-            Assert.IsEmpty(DevHubWorkItem.GetChanges(detail.PullRequests, [], [], DateTime.UtcNow));
+            Assert.IsEmpty(DevHubWorkItem.GetIncoming(detail.PullRequests, [], []));
         }
 
         [TestMethod]
@@ -135,6 +137,7 @@ namespace StartScreen.Test.DevHub
                     return Json("{\"value\":[{\"id\":71,\"buildNumber\":\"PR validation\",\"status\":\"completed\",\"result\":\"failed\",\"sourceBranch\":\"refs/pull/71/merge\",\"finishTime\":\"2026-11-04T20:00:00Z\",\"_links\":{\"web\":{\"href\":\"https://dev.azure.com/org/project/_build/results?buildId=71\"}}}]}");
                 }
                 return Json(uri.AbsolutePath.Contains("connectionData") ? Identity
+                    : uri.AbsolutePath.EndsWith("/wiql") ? "{\"workItems\":[]}"
                     : uri.AbsolutePath.EndsWith("/pullrequests") ? "{\"value\":[]}"
                     : $"{{\"id\":\"{RepositoryId}\"}}");
             }));
@@ -163,6 +166,7 @@ namespace StartScreen.Test.DevHub
                         "\"status\":\"notStarted\",\"queueTime\":\"2026-11-04T20:00:00Z\",\"definition\":{\"name\":\"CI\"}}]}");
                 return Json(path.EndsWith("/pullrequests")
                     ? "{\"value\":[{\"pullRequestId\":9,\"title\":\"Change\",\"status\":\"active\",\"sourceRefName\":\"refs/heads/feature\",\"targetRefName\":\"refs/heads/main\",\"creationDate\":\"2026-11-04T19:00:00Z\"}]}"
+                    : path.EndsWith("/wiql") ? "{\"workItems\":[]}"
                     : path.Contains("connectionData") ? Identity : $"{{\"id\":\"{RepositoryId}\"}}");
             }));
 

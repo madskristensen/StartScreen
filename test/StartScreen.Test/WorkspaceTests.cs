@@ -8,29 +8,31 @@ namespace StartScreen.Test
     public class WorkspaceTests
     {
         [TestMethod]
-        [DataRow(DevHubDefaultTab.Issues)]
-        [DataRow(DevHubDefaultTab.PullRequests)]
-        [DataRow(DevHubDefaultTab.Builds)]
-        [DataRow(DevHubDefaultTab.Overview)]
-        [DataRow(DevHubDefaultTab.NeedsYou)]
-        public void OverviewDefault_ReplacesExistingDefaultOnce(DevHubDefaultTab previous)
+        [DataRow(DevHubDefaultTab.Issues, DevHubDefaultTab.Incoming)]
+        [DataRow(DevHubDefaultTab.PullRequests, DevHubDefaultTab.Incoming)]
+        [DataRow(DevHubDefaultTab.Builds, DevHubDefaultTab.Incoming)]
+        [DataRow(DevHubDefaultTab.Overview, DevHubDefaultTab.MyWork)]
+        [DataRow(DevHubDefaultTab.NeedsYou, DevHubDefaultTab.MyWork)]
+        [DataRow((DevHubDefaultTab)999, DevHubDefaultTab.MyWork)]
+        public void WorkViewsDefault_MigratesLegacyPreferencesOnce(DevHubDefaultTab previous, DevHubDefaultTab expected)
         {
             var options = new Options { DevHubDefaultTab = previous };
 
-            Assert.IsTrue(options.ApplyOverviewDefault());
-            Assert.AreEqual(DevHubDefaultTab.Overview, options.DevHubDefaultTab);
-            Assert.IsTrue(options.HasAppliedOverviewDefault);
+            Assert.IsTrue(options.ApplyWorkViewsDefault());
+            Assert.AreEqual(expected, options.DevHubDefaultTab);
+            Assert.IsFalse(options.ApplyWorkViewsDefault());
         }
 
         [TestMethod]
-        public void OverviewDefault_PreservesLaterExplicitPreference()
+        [DataRow(DevHubDefaultTab.MyWork)]
+        [DataRow(DevHubDefaultTab.Incoming)]
+        public void WorkViewsDefault_PreservesExplicitPreference(DevHubDefaultTab selected)
         {
             var options = new Options();
-            options.ApplyOverviewDefault();
-            options.DevHubDefaultTab = DevHubDefaultTab.NeedsYou;
+            options.DevHubDefaultTab = selected;
 
-            Assert.IsFalse(options.ApplyOverviewDefault());
-            Assert.AreEqual(DevHubDefaultTab.NeedsYou, options.DevHubDefaultTab);
+            Assert.IsFalse(options.ApplyWorkViewsDefault());
+            Assert.AreEqual(selected, options.DevHubDefaultTab);
         }
 
         [TestMethod]
@@ -179,8 +181,8 @@ namespace StartScreen.Test
         public void NeedsYou_RequiresActualReviewRequestOrFailingAuthoredPr()
         {
             var unrelated = new DevHubPullRequest { Title = "Other", CiStatus = "failure" };
-            var review = new DevHubPullRequest { Title = "Review", IsReviewRequestedForCurrentUser = true };
-            var authored = new DevHubPullRequest { Title = "Fix checks", IsAuthoredByCurrentUser = true, CiStatus = "failure" };
+            var review = new DevHubPullRequest { Title = "Review", Status = "open", IsReviewRequestedForCurrentUser = true };
+            var authored = new DevHubPullRequest { Title = "Fix checks", Status = "open", IsAuthoredByCurrentUser = true, CiStatus = "failure" };
             var draft = new DevHubPullRequest { Title = "Draft", Status = "draft", IsReviewRequestedForCurrentUser = true };
 
             var items = DevHubWorkItem.GetNeedsYou([unrelated, authored, review, draft]);
@@ -190,16 +192,16 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void Changes_UsesProviderTimestampsAndNewestFirst()
+        public void Incoming_PreservesOlderActivityAndUsesProviderTimestampsNewestFirst()
         {
             var seen = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-            var old = new DevHubPullRequest { Title = "Old", UpdatedAt = seen, WebUrl = "https://github.com/o/r/pull/1" };
+            var old = new DevHubPullRequest { Title = "Old", Status = "open", UpdatedAt = seen, WebUrl = "https://github.com/o/r/pull/1" };
             var recent = new DevHubIssue { Title = "Issue", UpdatedAt = seen.AddMinutes(1), WebUrl = "https://github.com/o/r/issues/2" };
             var latest = new DevHubCiRun { Name = "CI", Timestamp = seen.AddMinutes(2), WebUrl = "https://github.com/o/r/actions/runs/3" };
 
-            var items = DevHubWorkItem.GetChanges([old], [recent], [latest], seen);
+            var items = DevHubWorkItem.GetIncoming([old], [recent], [latest]);
 
-            CollectionAssert.AreEqual(new[] { "CI", "Issue" }, items.Select(item => item.Title).ToArray());
+            CollectionAssert.AreEqual(new[] { "CI", "Issue", "Old" }, items.Select(item => item.Title).ToArray());
             Assert.IsFalse(items[0].IsPullRequest);
         }
 
@@ -220,9 +222,8 @@ namespace StartScreen.Test
             Assert.HasCount(12, own);
             CollectionAssert.AreEqual(Enumerable.Reverse(prs).Select(pr => pr.Title).ToArray(), own.Select(item => item.Title).ToArray());
             Assert.IsTrue(own.All(item => item.IsPullRequest));
-            Assert.IsEmpty(DevHubWorkItem.GetChanges(prs, [], [], DateTime.MinValue));
-            Assert.IsEmpty(DevHubWorkItem.GetChanges(prs, [], [], DateTime.UtcNow));
-            Assert.HasCount(12, DevHubWorkItem.GetOwnPullRequests(prs));
+            Assert.IsEmpty(DevHubWorkItem.GetIncoming(prs, [], []));
+            Assert.HasCount(12, DevHubWorkItem.GetMyWork(prs, [], []));
         }
 
         [TestMethod]
@@ -336,11 +337,12 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void OverviewChanges_DoesNotRepeatTheNeedsYouList()
+        public void WorkViews_KeepActionableItemsInTheirOwnershipView()
         {
             var requested = new DevHubPullRequest
             {
                 Title = "Review me",
+                Status = "open",
                 IsReviewRequestedForCurrentUser = true,
                 WebUrl = "https://github.com/o/r/pull/1",
                 UpdatedAt = DateTime.UtcNow,
@@ -348,6 +350,7 @@ namespace StartScreen.Test
             var failing = new DevHubPullRequest
             {
                 Title = "Fix checks",
+                Status = "open",
                 IsAuthoredByCurrentUser = true,
                 CiStatus = "failure",
                 WebUrl = "https://github.com/o/r/pull/2",
@@ -356,15 +359,98 @@ namespace StartScreen.Test
             var other = new DevHubPullRequest
             {
                 Title = "Other update",
+                Status = "open",
                 WebUrl = "https://github.com/o/r/pull/3",
                 UpdatedAt = DateTime.UtcNow,
             };
 
-            var changes = DevHubWorkItem.GetChanges([requested, failing, other], [], [], DateTime.MinValue);
-            var attention = DevHubWorkItem.GetNeedsYou([requested, failing, other]);
+            var incoming = DevHubWorkItem.GetIncoming([requested, failing, other], [], []);
+            var own = DevHubWorkItem.GetMyWork([requested, failing, other], [], []);
 
-            CollectionAssert.AreEqual(new[] { "Other update" }, changes.Select(item => item.Title).ToArray());
-            CollectionAssert.AreEquivalent(new[] { "Review me", "Fix checks" }, attention.Select(item => item.Title).ToArray());
+            CollectionAssert.AreEqual(new[] { "Review me", "Other update" }, incoming.Select(item => item.Title).ToArray());
+            Assert.AreEqual("Requests for you", incoming[0].Section);
+            Assert.AreEqual("Repository activity", incoming[1].Section);
+            CollectionAssert.AreEqual(new[] { "Fix checks" }, own.Select(item => item.Title).ToArray());
+            Assert.AreEqual("Checks failing", own.Single().AttentionReason);
+            CollectionAssert.AreEqual(new[] { "Review me" },
+                DevHubWorkItem.Filter(incoming, DevHubWorkItemKind.All, true).Select(item => item.Title).ToArray());
+            Assert.HasCount(2, incoming);
+        }
+
+        [TestMethod]
+        public void MyWork_IncludesCreatedAndAssignedIssuesButDoesNotDuplicateThemInIncoming()
+        {
+            var issues = new[]
+            {
+                new DevHubIssue { Title = "Created", IsAuthoredByCurrentUser = true, State = "open", WebUrl = "https://example.com/1" },
+                new DevHubIssue { Title = "Assigned", IsAssignedToCurrentUser = true, State = "active", WebUrl = "https://example.com/2" },
+                new DevHubIssue { Title = "Both", IsAuthoredByCurrentUser = true, IsAssignedToCurrentUser = true, State = "open", WebUrl = "https://example.com/3" },
+                new DevHubIssue { Title = "Other", State = "open", WebUrl = "https://example.com/4" },
+                new DevHubIssue { Title = "Closed", IsAuthoredByCurrentUser = true, IsClosed = true, WebUrl = "https://example.com/5" },
+                new DevHubIssue { Title = "Unlinked", IsAuthoredByCurrentUser = true },
+            };
+
+            var own = DevHubWorkItem.GetMyWork([], issues, []);
+            var incoming = DevHubWorkItem.GetIncoming([], issues, []);
+
+            CollectionAssert.AreEquivalent(new[] { "Created", "Assigned", "Both" }, own.Select(item => item.Title).ToArray());
+            CollectionAssert.AreEqual(new[] { "Other" }, incoming.Select(item => item.Title).ToArray());
+            CollectionAssert.AreEquivalent(new[] { "Assigned", "Both" },
+                DevHubWorkItem.Filter(own, DevHubWorkItemKind.Issue, true).Select(item => item.Title).ToArray());
+        }
+
+        [TestMethod]
+        public void AttentionFilter_ComposesWithKindAndDoesNotTreatIdleOrCachedSessionsAsWaiting()
+        {
+            var sessions = new[]
+            {
+                new CopilotActivitySession { Id = "waiting", PendingQuestions = 1 },
+                new CopilotActivitySession { Id = "idle", IsResponding = false },
+                new CopilotActivitySession { Id = "cached", IsCached = true, PendingPermissions = 1 },
+                new CopilotActivitySession { Id = "saved", IsTranscript = true, PendingQuestions = 1 },
+            };
+            var prs = new[]
+            {
+                new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, HasChangesRequested = true, WebUrl = "https://example.com/1" },
+                new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, CiStatus = "pending", WebUrl = "https://example.com/2" },
+            };
+            var own = DevHubWorkItem.GetMyWork(prs, [], sessions);
+
+            Assert.HasCount(6, own);
+            Assert.HasCount(2, DevHubWorkItem.Filter(own, DevHubWorkItemKind.All, true));
+            Assert.AreEqual("waiting", DevHubWorkItem.Filter(own, DevHubWorkItemKind.Copilot, true).Single().CopilotSessionId);
+            Assert.AreEqual("Changes requested", DevHubWorkItem.Filter(own, DevHubWorkItemKind.PullRequest, true).Single().AttentionReason);
+            Assert.HasCount(4, DevHubWorkItem.Filter(own, DevHubWorkItemKind.Copilot, false));
+            Assert.IsEmpty(DevHubWorkItem.Filter(own, DevHubWorkItemKind.Build, true));
+        }
+
+        [STATestMethod]
+        public void WorkViews_GroupCardsWithoutLosingActionableItems()
+        {
+            var own = DevHubWorkItem.GetMyWork(
+                [new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, WebUrl = "https://example.com/1" }],
+                [new DevHubIssue { IsAssignedToCurrentUser = true, State = "open", WebUrl = "https://example.com/2" }],
+                [new CopilotActivitySession { Id = "session", PendingQuestions = 1 }]);
+
+            var view = ToolWindows.Controls.DevHubPanel.CreateWorkItemView(own);
+
+            Assert.HasCount(3, view.Groups);
+            CollectionAssert.AreEqual(new[] { "Pull requests", "Issues and tasks", "Copilot sessions" },
+                view.Groups.Cast<System.Windows.Data.CollectionViewGroup>().Select(group => group.Name.ToString()).ToArray());
+            Assert.AreEqual(own.Count, view.Count);
+        }
+
+        [TestMethod]
+        public void WorkViews_PreserveProviderSortWithinSections()
+        {
+            var prs = new[]
+            {
+                new DevHubPullRequest { Title = "GitHub", IsAuthoredByCurrentUser = true, Status = "open", WebUrl = "https://github.com/o/r/pull/1", RepoIdentifier = RemoteRepoIdentifier.TryParse("https://github.com/o/r.git"), UpdatedAt = DateTime.UtcNow },
+                new DevHubPullRequest { Title = "ADO", IsAuthoredByCurrentUser = true, Status = "open", WebUrl = "https://dev.azure.com/o/p/_git/r/pullrequest/1", RepoIdentifier = RemoteRepoIdentifier.TryParse("https://dev.azure.com/o/p/_git/r"), UpdatedAt = DateTime.UtcNow.AddDays(-1) },
+            };
+
+            CollectionAssert.AreEqual(new[] { "ADO", "GitHub" }, DevHubWorkItem.GetMyWork(prs, [], [], DevHubSortOrder.AzureDevOpsFirst)
+                .Select(item => item.Title).ToArray());
         }
     }
 }

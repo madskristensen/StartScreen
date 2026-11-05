@@ -35,6 +35,8 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public DateTime FetchedAt { get; set; }
 
+        public string ActivityWarning { get; set; }
+
         /// <summary>
         /// Whether this repo has any data to display.
         /// </summary>

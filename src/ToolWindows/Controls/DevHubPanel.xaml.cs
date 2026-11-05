@@ -21,9 +21,6 @@ namespace StartScreen.ToolWindows.Controls
         // Repo the user scoped to via the item context menu ("Scope to <repo>").
         // Intentionally not persisted, so the scope resets when the Start Screen is reopened.
         private RemoteRepoIdentifier _scopedRepo;
-        private IReadOnlyList<DevHubPullRequest> _lastBoundPullRequests;
-        private IReadOnlyList<DevHubIssue> _lastBoundIssues;
-        private IReadOnlyList<DevHubCiRun> _lastBoundCiRuns;
         private List<Border> _cachedBorders;
         private DependencyObject _cachedBordersList;
         private bool _suppressSaveOnLostFocus;
@@ -68,13 +65,18 @@ namespace StartScreen.ToolWindows.Controls
         public void ShowPullRequests()
         {
             _defaultTabApplied = true;
-            DevHubSubTabs.SelectedItem = PrsTab;
+            MyWorkNeedsAttention.IsChecked = false;
+            MyWorkPrFilter.IsChecked = true;
+            IncomingNeedsAttention.IsChecked = false;
+            IncomingPrFilter.IsChecked = true;
         }
 
         public void ShowRequestedReviews()
         {
             _defaultTabApplied = true;
-            DevHubSubTabs.SelectedItem = NeedsYouTab;
+            IncomingNeedsAttention.IsChecked = true;
+            IncomingPrFilter.IsChecked = true;
+            DevHubSubTabs.SelectedItem = IncomingTab;
         }
 
         /// <summary>
@@ -82,10 +84,6 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public void UpdateView(DevHubDashboard dashboard, RemoteRepoIdentifier filterRepo = null)
         {
-            // Skip the entire update when nothing has changed. RefreshAsync reports
-            // progress several times (after auth, then after each of issues / PRs / CI),
-            // and re-binding three ItemsControls each time causes a visible UI hitch
-            // even though most of the data is unchanged between calls.
             // A context-menu scope takes precedence over any externally supplied filter.
             RemoteRepoIdentifier effectiveFilter = _scopedRepo ?? filterRepo;
 
@@ -123,57 +121,21 @@ namespace StartScreen.ToolWindows.Controls
                 prs = detail.PullRequests;
                 issues = detail.Issues;
                 ciRuns = detail.CiRuns;
+                ActivityWarningText.Text = detail.ActivityWarning;
             }
             else
             {
                 prs = dashboard.PullRequests;
                 issues = dashboard.Issues;
                 ciRuns = dashboard.CiRuns;
+                ActivityWarningText.Text = string.Join("\n", dashboard.ActivityWarnings.Values.Distinct());
             }
 
-            // Only re-bind sections whose data changed. Each Update* method
-            // resets ItemsSource and forces WPF to rebuild the visual tree, which is
-            // the primary cause of the UI thread hitch when DevHub data arrives.
-            //
-            // Identity-based NEW detection is only meaningful when the previous and current
-            // lists describe the same population (a plain background refresh). It produces
-            // garbage across a scope/filter transition and whenever a scope is active, because
-            // the visible items are then a freshly fetched historical slice for one repo rather
-            // than the live aggregate feed - diffing those against the previously bound list
-            // would flag items as NEW purely because they were absent from the other view, even
-            // though they are older than what the user already saw. In those cases pass null as
-            // the previous list so the NEW calculation falls back to the timestamp-vs-lastSeen
-            // path, which only flags items genuinely newer than the user's last visit.
-            bool useTimestampBaseline = effectiveFilter != null || filterChanged;
-
-            if (filterChanged || !DevHubItemComparer.SamePullRequests(_lastBoundPullRequests, prs))
-            {
-                IReadOnlyList<DevHubPullRequest> previousPrs = useTimestampBaseline ? null : _lastBoundPullRequests;
-                _lastBoundPullRequests = Snapshot(prs);
-                UpdatePullRequests(prs, previousPrs);
-            }
-            if (filterChanged || !DevHubItemComparer.SameIssues(_lastBoundIssues, issues))
-            {
-                IReadOnlyList<DevHubIssue> previousIssues = useTimestampBaseline ? null : _lastBoundIssues;
-                _lastBoundIssues = Snapshot(issues);
-                UpdateIssues(issues, previousIssues);
-            }
-            if (filterChanged || !DevHubItemComparer.SameCiRuns(_lastBoundCiRuns, ciRuns))
-            {
-                IReadOnlyList<DevHubCiRun> previousCi = useTimestampBaseline ? null : _lastBoundCiRuns;
-                _lastBoundCiRuns = Snapshot(ciRuns);
-                UpdateCiRuns(ciRuns, previousCi);
-            }
-
+            ActivityWarningText.Visibility = string.IsNullOrEmpty(ActivityWarningText.Text) ? Visibility.Collapsed : Visibility.Visible;
             UpdateSettingsAccountStatus(hasGitHub, hasAdo);
             UpdateWorkspaceActivity(prs, issues, ciRuns);
             UpdateLastRefresh(dashboard.FetchedAt);
             ShowDashboard();
-        }
-
-        private static IReadOnlyList<T> Snapshot<T>(IReadOnlyList<T> items)
-        {
-            return items?.ToList();
         }
 
         /// <summary>
@@ -222,13 +184,9 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ClearRepositoryActivity()
         {
-            _lastBoundPullRequests = Array.Empty<DevHubPullRequest>();
-            _lastBoundIssues = Array.Empty<DevHubIssue>();
-            _lastBoundCiRuns = Array.Empty<DevHubCiRun>();
-            UpdatePullRequests(_lastBoundPullRequests, null);
-            UpdateIssues(_lastBoundIssues, null);
-            UpdateCiRuns(_lastBoundCiRuns, null);
-            UpdateWorkspaceActivity(_lastBoundPullRequests, _lastBoundIssues, _lastBoundCiRuns);
+            ActivityWarningText.Text = null;
+            ActivityWarningText.Visibility = Visibility.Collapsed;
+            UpdateWorkspaceActivity(Array.Empty<DevHubPullRequest>(), Array.Empty<DevHubIssue>(), Array.Empty<DevHubCiRun>());
         }
 
         private void UpdateSettingsAccountStatus(bool hasGitHub, bool hasAdo)
@@ -318,127 +276,6 @@ namespace StartScreen.ToolWindows.Controls
             SelectDefaultTab(Options.Instance.DevHubDefaultTab);
         }
 
-        private void UpdatePullRequests(IReadOnlyList<DevHubPullRequest> pullRequests, IReadOnlyList<DevHubPullRequest> previousPullRequests)
-        {
-            InvalidateBorderCache();
-            if (pullRequests != null && pullRequests.Count > 0)
-            {
-                DevHubNewFlagCalculator.Apply(
-                    pullRequests,
-                    previousPullRequests,
-                    Options.Instance.LastDevHubPrsSeen,
-                    item => item.UpdatedAt,
-                    item => item.WebUrl,
-                    item => item.IsNew,
-                    (item, isNew) => item.IsNew = isNew);
-                var incoming = pullRequests.Where(pr => !pr.IsAuthoredByCurrentUser).ToArray();
-                PullRequestsList.ItemsSource = incoming;
-                IncomingPullRequestsHeading.Visibility = incoming.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-                NoPrsText.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                PullRequestsList.ItemsSource = null;
-                IncomingPullRequestsHeading.Visibility = Visibility.Collapsed;
-                NoPrsText.Visibility = Visibility.Visible;
-            }
-            UpdatePrNewIndicator();
-        }
-
-        private void UpdateIssues(IReadOnlyList<DevHubIssue> issues, IReadOnlyList<DevHubIssue> previousIssues)
-        {
-            InvalidateBorderCache();
-            if (issues != null && issues.Count > 0)
-            {
-                DevHubNewFlagCalculator.Apply(
-                    issues,
-                    previousIssues,
-                    Options.Instance.LastDevHubIssuesSeen,
-                    item => item.UpdatedAt,
-                    item => item.WebUrl,
-                    item => item.IsNew,
-                    (item, isNew) => item.IsNew = isNew);
-                IssuesList.ItemsSource = issues;
-                NoIssuesText.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                IssuesList.ItemsSource = null;
-                NoIssuesText.Visibility = Visibility.Visible;
-            }
-            UpdateIssuesNewIndicator();
-        }
-
-        private void UpdateCiRuns(IReadOnlyList<DevHubCiRun> ciRuns, IReadOnlyList<DevHubCiRun> previousCiRuns)
-        {
-            InvalidateBorderCache();
-            if (ciRuns != null && ciRuns.Count > 0)
-            {
-                DevHubNewFlagCalculator.Apply(
-                    ciRuns,
-                    previousCiRuns,
-                    Options.Instance.LastDevHubCiSeen,
-                    item => item.Timestamp,
-                    item => item.WebUrl,
-                    item => item.IsNew,
-                    (item, isNew) => item.IsNew = isNew);
-                CiRunsList.ItemsSource = ciRuns;
-                NoCiText.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                CiRunsList.ItemsSource = null;
-                NoCiText.Visibility = Visibility.Visible;
-            }
-            UpdateCiNewIndicator();
-        }
-
-        private void UpdateIssuesNewIndicator()
-        {
-            bool hasNew = IssuesTab != null
-                && !IssuesTab.IsSelected
-                && _lastBoundIssues != null
-                && _lastBoundIssues.Any(i => i.IsNew);
-            IssueNewDot.Visibility = hasNew ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        private void UpdatePrNewIndicator()
-        {
-            bool hasNew = PrsTab != null
-                && !PrsTab.IsSelected
-                && _lastBoundPullRequests != null
-                && _lastBoundPullRequests.Any(p => p.IsNew);
-            PrNewDot.Visibility = hasNew ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        private void UpdateCiNewIndicator()
-        {
-            bool hasNew = CiTab != null
-                && !CiTab.IsSelected
-                && _lastBoundCiRuns != null
-                && _lastBoundCiRuns.Any(c => c.IsNew);
-            CiNewDot.Visibility = hasNew ? Visibility.Visible : Visibility.Collapsed;
-
-            if (hasNew)
-            {
-                bool hasNewFailure = _lastBoundCiRuns.Any(c => c.IsNew && string.Equals(c.Status, "failure", StringComparison.OrdinalIgnoreCase));
-                CiNewDot.Fill = hasNewFailure ? _ciDotFailureBrush : _ciDotDefaultBrush;
-                CiNewDot.ToolTip = hasNewFailure
-                    ? "A build has failed since you last viewed this tab"
-                    : "New activity since you last viewed this tab";
-            }
-        }
-
-        private static readonly System.Windows.Media.SolidColorBrush _ciDotDefaultBrush = CreateFrozenBrush(0xFF, 0x4C, 0xAF, 0x50);
-        private static readonly System.Windows.Media.SolidColorBrush _ciDotFailureBrush = CreateFrozenBrush(0xFF, 0xE5, 0x39, 0x35);
-
-        private static System.Windows.Media.SolidColorBrush CreateFrozenBrush(byte a, byte r, byte g, byte b)
-        {
-            System.Windows.Media.SolidColorBrush brush = new(System.Windows.Media.Color.FromArgb(a, r, g, b));
-            brush.Freeze();
-            return brush;
-        }
-
         private void DevHubSubTabs_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             // Only react to selection changes that originated from the TabControl itself,
@@ -448,73 +285,7 @@ namespace StartScreen.ToolWindows.Controls
                 return;
             }
 
-            MarkSelectedTabAsSeen();
-        }
-
-        private void MarkSelectedTabAsSeen()
-        {
-            object selected = DevHubSubTabs?.SelectedItem;
-            DateTime now = DateTime.UtcNow;
-
-            if (ReferenceEquals(selected, OverviewTab))
-            {
-                MarkOverviewAsSeen();
-                return;
-            }
-            if (ReferenceEquals(selected, IssuesTab))
-            {
-                Options.Instance.LastDevHubIssuesSeen = now;
-                ClearIsNewFlags(_lastBoundIssues, item => item.IsNew = false);
-                RefreshItemsControl(IssuesList);
-                UpdateIssuesNewIndicator();
-            }
-            else if (ReferenceEquals(selected, PrsTab))
-            {
-                Options.Instance.LastDevHubPrsSeen = now;
-                ClearIsNewFlags(_lastBoundPullRequests, item => item.IsNew = false);
-                RefreshItemsControl(PullRequestsList);
-                UpdatePrNewIndicator();
-            }
-            else if (ReferenceEquals(selected, CiTab))
-            {
-                Options.Instance.LastDevHubCiSeen = now;
-                ClearIsNewFlags(_lastBoundCiRuns, item => item.IsNew = false);
-                RefreshItemsControl(CiRunsList);
-                UpdateCiNewIndicator();
-            }
-            else
-            {
-                return;
-            }
-
-            _ = SaveOptionsAsync();
-        }
-
-        private static void ClearIsNewFlags<T>(IReadOnlyList<T> items, Action<T> clear)
-        {
-            if (items == null)
-            {
-                return;
-            }
-
-            foreach (T item in items)
-            {
-                clear(item);
-            }
-        }
-
-        private static void RefreshItemsControl(ItemsControl list)
-        {
-            // Models do not raise INotifyPropertyChanged for IsNew, so re-bind to
-            // force the data templates to re-evaluate the visibility of the NEW badge.
-            System.Collections.IEnumerable current = list?.ItemsSource;
-            if (current == null)
-            {
-                return;
-            }
-
-            list.ItemsSource = null;
-            list.ItemsSource = current;
+            InvalidateBorderCache();
         }
 
         private static async Task SaveOptionsAsync()
@@ -548,40 +319,6 @@ namespace StartScreen.ToolWindows.Controls
             }
 
             LastRefreshChanged?.Invoke(this, text);
-        }
-
-        private void PrItem_MouseUp(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == MouseButton.Left &&
-                sender is FrameworkElement fe &&
-                fe.DataContext is DevHubPullRequest pr &&
-                !string.IsNullOrEmpty(pr.WebUrl))
-            {
-                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => Services.PullRequestNavigationService.OpenAsync(pr.WebUrl))
-                    .FileAndForget(nameof(DevHubPanel));
-            }
-        }
-
-        private void IssueItem_MouseUp(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == MouseButton.Left &&
-                sender is FrameworkElement fe &&
-                fe.DataContext is DevHubIssue issue &&
-                !string.IsNullOrEmpty(issue.WebUrl))
-            {
-                OpenUrl(issue.WebUrl);
-            }
-        }
-
-        private void CiItem_MouseUp(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == MouseButton.Left &&
-                sender is FrameworkElement fe &&
-                fe.DataContext is DevHubCiRun ci &&
-                !string.IsNullOrEmpty(ci.WebUrl))
-            {
-                OpenUrl(ci.WebUrl);
-            }
         }
 
         private void Refresh_Click(object sender, RoutedEventArgs e)
@@ -655,6 +392,7 @@ namespace StartScreen.ToolWindows.Controls
                 case DevHubPullRequest pr: return pr.RepoIdentifier;
                 case DevHubIssue issue: return issue.RepoIdentifier;
                 case DevHubCiRun ci: return ci.RepoIdentifier;
+                case DevHubWorkItem work: return work.RepoIdentifier;
                 default: return null;
             }
         }
@@ -708,7 +446,7 @@ namespace StartScreen.ToolWindows.Controls
             _suppressSettingsComboChanged = true;
             try
             {
-                DefaultTabComboBox.SelectedIndex = (int)Options.Instance.DevHubDefaultTab;
+                DefaultTabComboBox.SelectedIndex = Options.Instance.DevHubDefaultTab == DevHubDefaultTab.Incoming ? 1 : 0;
                 SortOrderComboBox.SelectedIndex = (int)Options.Instance.DevHubSortOrder;
             }
             finally
@@ -719,12 +457,12 @@ namespace StartScreen.ToolWindows.Controls
 
         private void DefaultTabComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
-            if (_suppressSettingsComboChanged)
+            if (_suppressSettingsComboChanged || DefaultTabComboBox.SelectedIndex < 0)
             {
                 return;
             }
 
-            var selected = (DevHubDefaultTab)DefaultTabComboBox.SelectedIndex;
+            var selected = DefaultTabComboBox.SelectedIndex == 1 ? DevHubDefaultTab.Incoming : DevHubDefaultTab.MyWork;
             if (selected == Options.Instance.DevHubDefaultTab)
             {
                 return;
@@ -1443,15 +1181,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private DependencyObject GetActiveItemsList()
         {
-            if (ReferenceEquals(DevHubSubTabs.SelectedItem, OverviewTab))
-                return OverviewActivityPanel;
-            if (ReferenceEquals(DevHubSubTabs.SelectedItem, NeedsYouTab))
-                return NeedsYouList;
-            if (ReferenceEquals(DevHubSubTabs.SelectedItem, PrsTab))
-                return PullRequestActivityPanel;
-            if (ReferenceEquals(DevHubSubTabs.SelectedItem, CiTab))
-                return CiRunsList;
-            return IssuesList;
+            return ReferenceEquals(DevHubSubTabs.SelectedItem, IncomingTab) ? IncomingList : MyWorkList;
         }
 
         private void DevHubPanel_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -1558,7 +1288,7 @@ namespace StartScreen.ToolWindows.Controls
                 element = VisualTreeHelper.GetParent(element);
             }
 
-            return element == DevHubSubTabs;
+            return false;
         }
 
         private List<Border> GetCachedBorders(DependencyObject list)

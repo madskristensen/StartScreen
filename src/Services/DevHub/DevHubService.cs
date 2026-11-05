@@ -124,9 +124,7 @@ namespace StartScreen.Services.DevHub
                 // Fetch issues, PRs, and CI runs in parallel; report each as it arrives
                 DevHubSortOrder sortOrder = _getSortOrder();
 
-                // Providers without a user-level activity API (Azure DevOps) are populated by
-                // fetching each MRU repo individually. Fetch once and split the result into the
-                // issue / PR / CI categories below so each repo is only requested a single time.
+                // Repository-wide feeds supplement personal activity without replacing older authored items.
                 var perRepoActivityTask = FetchPerRepoActivityAsync(authenticated, cancellationToken);
                 var issueTask = Task.WhenAll(authenticated.Select(
                     p => p.GetUserIssuesAsync(cancellationToken)));
@@ -162,14 +160,17 @@ namespace StartScreen.Services.DevHub
                     else
                     {
                         perRepo = await perRepoActivityTask;
+                        dashboard.ActivityWarnings = perRepo.Where(detail => !string.IsNullOrEmpty(detail.ActivityWarning))
+                            .ToDictionary(detail => detail.RepoIdentifier.ToString().ToLowerInvariant(), detail => detail.ActivityWarning);
                     }
 
                     var replacedRepos = new HashSet<RemoteRepoIdentifier>(perRepo.Select(detail => detail.RepoIdentifier));
                     dashboard.Issues = DevHubItemSorter.Sort(
-                        issues.Where(item => !replacedRepos.Contains(item.RepoIdentifier)).Concat(perRepo.SelectMany(detail => detail.Issues)),
+                        MergeIssues(issues.Where(item => !replacedRepos.Contains(item.RepoIdentifier)), perRepo.SelectMany(detail => detail.Issues)),
                         sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
                     dashboard.PullRequests = DevHubItemSorter.Sort(
-                        pullRequests.Where(item => !replacedRepos.Contains(item.RepoIdentifier)).Concat(perRepo.SelectMany(detail => detail.PullRequests)),
+                        MergePullRequests(pullRequests.Where(item => item.IsAuthoredByCurrentUser || !replacedRepos.Contains(item.RepoIdentifier)),
+                            perRepo.SelectMany(detail => detail.PullRequests)),
                         sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
                     dashboard.CiRuns = ciRuns.Where(item => !replacedRepos.Contains(item.RepoIdentifier))
                         .Concat(perRepo.SelectMany(detail => detail.CiRuns)).OrderByDescending(item => item.Timestamp).ToList();
@@ -270,23 +271,45 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         internal static void MergeRepoDetail(DevHubDashboard dashboard, RemoteRepoIdentifier repo, DevHubRepoDetail detail)
         {
-            dashboard.PullRequests = dashboard.PullRequests
-                .Where(pr => !repo.Equals(pr.RepoIdentifier))
-                .Concat(detail.PullRequests)
-                .ToList();
-            dashboard.Issues = dashboard.Issues
-                .Where(i => !repo.Equals(i.RepoIdentifier))
-                .Concat(detail.Issues)
-                .ToList();
+            dashboard.PullRequests = MergePullRequests(dashboard.PullRequests
+                .Where(pr => pr.IsAuthoredByCurrentUser || !repo.Equals(pr.RepoIdentifier)), detail.PullRequests).ToList();
+            dashboard.Issues = MergeIssues(dashboard.Issues.Where(i => !repo.Equals(i.RepoIdentifier)), detail.Issues).ToList();
             dashboard.CiRuns = dashboard.CiRuns
                 .Where(c => !repo.Equals(c.RepoIdentifier))
                 .Concat(detail.CiRuns)
                 .ToList();
+            var warningKey = repo.ToString().ToLowerInvariant();
+            if (string.IsNullOrEmpty(detail.ActivityWarning))
+                dashboard.ActivityWarnings.Remove(warningKey);
+            else
+                dashboard.ActivityWarnings[warningKey] = detail.ActivityWarning;
+        }
+
+        internal static IEnumerable<DevHubPullRequest> MergePullRequests(IEnumerable<DevHubPullRequest> pullRequests,
+            IEnumerable<DevHubPullRequest> repositoryPullRequests)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pr in repositoryPullRequests.Concat(pullRequests))
+            {
+                if (string.IsNullOrEmpty(pr.WebUrl) || seen.Add(pr.WebUrl))
+                    yield return pr;
+            }
+        }
+
+        internal static IEnumerable<DevHubIssue> MergeIssues(IEnumerable<DevHubIssue> issues, IEnumerable<DevHubIssue> repositoryIssues)
+        {
+            // Project-level ADO results may include the same work item as linked repository activity.
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var issue in repositoryIssues.Concat(issues))
+            {
+                if (string.IsNullOrEmpty(issue.WebUrl) || seen.Add(issue.WebUrl))
+                    yield return issue;
+            }
         }
 
         /// <summary>
-        /// Fetches per-repository activity for providers that have no user-level aggregation
-        /// API (currently Azure DevOps). The repos are taken from the user's MRU list, so the
+        /// Fetches repository-wide activity alongside personal queries (currently Azure DevOps).
+        /// The repos are taken from the user's MRU list, so the
         /// number of requests stays proportional to what the user is actually working on.
         /// </summary>
         private async Task<IReadOnlyList<DevHubRepoDetail>> FetchPerRepoActivityAsync(

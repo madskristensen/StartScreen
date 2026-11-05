@@ -34,7 +34,7 @@
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding StatusText}" Value="Waiting for review">
-                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding StatusText}" Value="Draft">
                     <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
@@ -52,6 +52,10 @@
                     <Setter Property="Opacity" Value="1"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding StatusText}" Value="Conflicts">
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
+                    <Setter Property="Opacity" Value="1"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding NeedsAttention}" Value="True">
                     <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
                     <Setter Property="Opacity" Value="1"/>
                 </DataTrigger>
@@ -115,10 +119,39 @@
                 </WrapPanel>
             </DockPanel>
         </DataTemplate>
+        <DataTemplate x:Key="RepositoryItemMetadataTemplate">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Click="OpenPullRequestInBrowser_Click"
+                        Style="{StaticResource PullRequestActionButtonStyle}" Width="24" Height="24" Margin="8 0 0 0"
+                        ToolTip="Open in browser" AutomationProperties.Name="Open activity in browser"
+                        AutomationProperties.HelpText="{Binding Title}">
+                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Web}" Width="16" Height="16"/>
+                </Button>
+                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
+                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
+                            BorderBrush="{Binding Foreground, ElementName=RepositoryItemStatus}">
+                        <TextBlock x:Name="RepositoryItemStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
+                    </Border>
+                    <TextBlock Text="{Binding ActivityDateText}" FontSize="11" Opacity="0.65" Margin="0 2 0 2"
+                               VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
+                </WrapPanel>
+            </DockPanel>
+        </DataTemplate>
         <DataTemplate x:Key="WorkItemTemplate">
-            <Border Padding="8" Margin="0 0 0 4" CornerRadius="4" Focusable="True"
+            <Border x:Name="WorkItemBorder" Padding="8" Margin="0 0 0 4" CornerRadius="4" Focusable="True"
                     Cursor="Hand" AutomationProperties.Name="{Binding Title}" AutomationProperties.HelpText="{Binding ActionText}"
-                    MouseUp="WorkItem_MouseUp">
+                    MouseUp="WorkItem_MouseUp" Loaded="DevHubItemBorder_Loaded" ToolTip="{Binding AttentionReason}">
+                <Border.ContextMenu>
+                    <ContextMenu Opened="DevHubContextMenu_Opened">
+                        <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
+                        <Separator/>
+                        <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
+                        <Separator/>
+                        <MenuItem Header="{Binding RepoIdentifier.Repo}" HeaderStringFormat="Scope to {0}" Click="ScopeToRepoMenuItem_Click"/>
+                        <MenuItem Header="Show all repositories" Click="ClearFilter_Click"/>
+                    </ContextMenu>
+                </Border.ContextMenu>
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="Transparent"/>
@@ -190,26 +223,85 @@
                         <TextBlock Text="{Binding ActivityText}" FontSize="11" Opacity="0.5" VerticalAlignment="Center"
                                    ToolTip="{Binding ActivityDateToolTip}"/>
                     </StackPanel>
-                    <ContentControl Content="{Binding}" Focusable="False" ContentTemplate="{StaticResource PullRequestMetadataTemplate}"
-                                    Visibility="{Binding IsPullRequest, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                    <TextBlock Text="{Binding ActionText}"
-                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
+                    <ContentControl Content="{Binding}" Focusable="False"
+                                    Visibility="{Binding IsRepositoryItem, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <ContentControl.Style>
+                            <Style TargetType="ContentControl">
+                                <Setter Property="ContentTemplate" Value="{StaticResource PullRequestMetadataTemplate}"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsCopilot}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    <DataTrigger Binding="{Binding IsPullRequest}" Value="False">
+                                        <Setter Property="ContentTemplate" Value="{StaticResource RepositoryItemMetadataTemplate}"/>
                                     </DataTrigger>
-                                    <DataTrigger Binding="{Binding IsPullRequest}" Value="True">
+                                </Style.Triggers>
+                            </Style>
+                        </ContentControl.Style>
+                    </ContentControl>
+                    <TextBlock Text="{Binding BranchDisplayText}" FontSize="10.5" Opacity="0.5" Margin="0 2 0 0"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding BranchDisplayText}"
+                               Visibility="{Binding BranchDisplayText, Converter={StaticResource NullToCollapsedConverter}}"/>
+                    <ItemsControl ItemsSource="{Binding Labels}" Margin="0 3 0 0" Focusable="False">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Labels.Count}" Value="0">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                        </ItemsControl.Style>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border CornerRadius="8" Padding="6 1" Margin="0 0 4 2"
+                                        Background="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}">
+                                    <TextBlock Text="{Binding Name}" FontSize="10"
+                                               Foreground="{Binding Color, Converter={StaticResource HexColorToForegroundConverter}}"/>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsCopilot}" Value="True">
+                    <Setter TargetName="WorkItemBorder" Property="ContextMenu" Value="{x:Null}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
+        <Style x:Key="ActivityFilterStyle" TargetType="RadioButton">
+            <Setter Property="Margin" Value="0 0 6 6"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="FilterBorder" CornerRadius="11" Padding="8 3" BorderThickness="1"
+                                Background="Transparent" BorderBrush="Transparent">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="FilterBorder" Property="Background"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FilterBorder" Property="BorderBrush"
+                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <GroupStyle x:Key="WorkItemGroupStyle">
+            <GroupStyle.HeaderTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="8 12 0 6"/>
+                </DataTemplate>
+            </GroupStyle.HeaderTemplate>
+        </GroupStyle>
         <!-- Tab item style for sub-tabs -->
         <Style x:Key="DevHubTabItemStyle" TargetType="TabItem">
             <Setter Property="Padding" Value="8 4"/>
@@ -635,7 +727,7 @@
                         Margin="0 16 0 16"/>
 
                 <!-- Search query section -->
-                <Expander x:Name="SearchQueryOptions" Header="Custom search query (GitHub)" IsExpanded="False"
+                <Expander x:Name="SearchQueryOptions" Header="Incoming search query (GitHub)" IsExpanded="False"
                           FontSize="11" Margin="0 0 0 16">
                     <StackPanel Margin="18 10 0 0">
                 <Grid>
@@ -656,7 +748,7 @@
                                IsHitTestVisible="False"
                                VerticalAlignment="Center"/>
                 </Grid>
-                <TextBlock Text="Use {login} for your username. Leave empty for issues and PRs involving you. is:issue or is:pr is added automatically."
+                <TextBlock Text="Filters incoming activity, not your personal work. Use {login} for your username. Leave empty for issues and PRs involving you. is:issue or is:pr is added automatically."
                            FontSize="10"
                            Opacity="0.5"
                            TextWrapping="Wrap"
@@ -693,11 +785,8 @@
                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                           Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
                           BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}">
-                    <ComboBoxItem Content="Issues"/>
-                    <ComboBoxItem Content="Pull requests"/>
-                    <ComboBoxItem Content="Builds"/>
-                    <ComboBoxItem Content="Overview"/>
-                    <ComboBoxItem Content="Needs you"/>
+                    <ComboBoxItem Content="My work"/>
+                    <ComboBoxItem Content="Incoming"/>
                 </ComboBox>
 
                 <TextBlock Text="Sort issues and pull requests by"
@@ -787,274 +876,57 @@
         <!-- Dashboard Content -->
         <DockPanel x:Name="DashboardPanel" Grid.Row="1">
 
-            <!-- Sub-tabs for Issues / PRs / CI -->
+            <TextBlock x:Name="ActivityWarningText" DockPanel.Dock="Top" Visibility="Collapsed"
+                       Margin="8 0 0 8" TextWrapping="Wrap" FontSize="12"
+                       Foreground="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
+
             <TabControl x:Name="DevHubSubTabs"
                         Background="Transparent"
                         BorderThickness="0"
                         Padding="0"
                         SelectionChanged="DevHubSubTabs_SelectionChanged">
-                <TabItem x:Name="OverviewTab" Header="Overview" Style="{StaticResource DevHubTabItemStyle}">
-                    <StackPanel x:Name="OverviewActivityPanel" Margin="0 24 0 0">
-                        <ItemsControl x:Name="ChangesList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
-                        <TextBlock x:Name="ChangesEmpty" Text="No other changes in the loaded activity. Items requiring action are in Needs you."
+                <TabItem x:Name="MyWorkTab" Header="My work" Style="{StaticResource DevHubTabItemStyle}">
+                    <StackPanel Margin="0 24 0 0">
+                        <WrapPanel Margin="8 0 0 6">
+                            <RadioButton x:Name="MyWorkAllFilter" Content="All" GroupName="MyWorkKind" IsChecked="True"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <RadioButton x:Name="MyWorkPrFilter" Content="PRs" GroupName="MyWorkKind"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <RadioButton x:Name="MyWorkIssueFilter" Content="Issues" GroupName="MyWorkKind"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <RadioButton x:Name="MyWorkCopilotFilter" Content="Copilot" GroupName="MyWorkKind"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <CheckBox x:Name="MyWorkNeedsAttention" Content="Needs attention" Margin="8 3 0 6"
+                                      Checked="ActivityFilter_Changed" Unchecked="ActivityFilter_Changed"
+                                      ToolTip="Only show work with a known action for you to take."/>
+                        </WrapPanel>
+                        <ItemsControl x:Name="MyWorkList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}">
+                            <ItemsControl.GroupStyle><StaticResource ResourceKey="WorkItemGroupStyle"/></ItemsControl.GroupStyle>
+                        </ItemsControl>
+                        <TextBlock x:Name="MyWorkEmpty" Text="No personal work in the loaded activity."
                                    TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
                     </StackPanel>
                 </TabItem>
-                <TabItem x:Name="NeedsYouTab" Header="Needs you" Style="{StaticResource DevHubTabItemStyle}">
+                <TabItem x:Name="IncomingTab" Header="Incoming" Style="{StaticResource DevHubTabItemStyle}">
                     <StackPanel Margin="0 24 0 0">
-                        <ItemsControl x:Name="NeedsYouList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
-                        <TextBlock x:Name="NeedsYouEmpty" Text="No pending Copilot requests, requested reviews, or failing PRs in the loaded activity."
+                        <WrapPanel Margin="8 0 0 6">
+                            <RadioButton x:Name="IncomingAllFilter" Content="All" GroupName="IncomingKind" IsChecked="True"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <RadioButton x:Name="IncomingPrFilter" Content="PRs" GroupName="IncomingKind"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <RadioButton x:Name="IncomingIssueFilter" Content="Issues" GroupName="IncomingKind"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <RadioButton x:Name="IncomingBuildFilter" Content="Builds" GroupName="IncomingKind"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <CheckBox x:Name="IncomingNeedsAttention" Content="Needs attention" Margin="8 3 0 6"
+                                      Checked="ActivityFilter_Changed" Unchecked="ActivityFilter_Changed"
+                                      ToolTip="Only show incoming items with a known action for you to take."/>
+                        </WrapPanel>
+                        <ItemsControl x:Name="IncomingList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}">
+                            <ItemsControl.GroupStyle><StaticResource ResourceKey="WorkItemGroupStyle"/></ItemsControl.GroupStyle>
+                        </ItemsControl>
+                        <TextBlock x:Name="IncomingEmpty" Text="No incoming activity."
                                    TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
-                    </StackPanel>
-                </TabItem>
-                <!-- Issues Tab (first) -->
-                <TabItem x:Name="IssuesTab" Style="{StaticResource DevHubTabItemStyle}">
-                    <TabItem.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Issues"/>
-                            <Ellipse x:Name="IssueNewDot" Width="6" Height="6" Margin="4 0 0 0"
-                                     Fill="#FF4CAF50" VerticalAlignment="Center" Visibility="Collapsed"
-                                     ToolTip="New activity since you last viewed this tab"/>
-                        </StackPanel>
-                    </TabItem.Header>
-                    <StackPanel Margin="0 24 0 0">
-                        <ItemsControl x:Name="IssuesList" Focusable="False">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
-                                            Focusable="True" FocusVisualStyle="{x:Null}"
-                                            MouseUp="IssueItem_MouseUp"
-                                            Loaded="DevHubItemBorder_Loaded"
-                                            Style="{StaticResource HoverItemBorderStyle}">
-                                        <Border.ContextMenu>
-                                            <ContextMenu Opened="DevHubContextMenu_Opened">
-                                                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
-                                                <Separator/>
-                                                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
-                                                <Separator/>
-                                                <MenuItem Header="{Binding RepoIdentifier.Repo}" HeaderStringFormat="Scope to {0}" Click="ScopeToRepoMenuItem_Click"/>
-                                                <MenuItem Header="Show all repositories" Click="ClearFilter_Click"/>
-                                            </ContextMenu>
-                                        </Border.ContextMenu>
-                                        <DockPanel>
-                                            <TextBlock DockPanel.Dock="Right"
-                                                       Text="{Binding UpdatedAgoText}"
-                                                       FontSize="11"
-                                                       Opacity="0.5"
-                                                       VerticalAlignment="Top"
-                                                       Margin="8 0 0 0"/>
-                                            <StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="NEW"
-                                                               FontWeight="Bold"
-                                                               FontSize="10"
-                                                               Foreground="#FF4CAF50"
-                                                               Margin="0 0 6 0"
-                                                               VerticalAlignment="Center"
-                                                               Visibility="{Binding IsNew, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                                                    <TextBlock Text="{Binding Title}"
-                                                               FontSize="12"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal" Margin="0 2 0 0">
-                                                    <TextBlock Text="{Binding RepoFullName}"
-                                                               FontSize="11"
-                                                               Opacity="0.5"/>
-                                                    <TextBlock Text="{Binding Number}"
-                                                               FontSize="11"
-                                                               Opacity="0.5"
-                                                               Margin="4 0 0 0"/>
-                                                </StackPanel>
-                                                <ItemsControl ItemsSource="{Binding Labels}"
-                                                              Margin="0 3 0 0"
-                                                              Focusable="False">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate>
-                                                            <WrapPanel Orientation="Horizontal"/>
-                                                        </ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <Border CornerRadius="8"
-                                                                    Padding="6 1"
-                                                                    Margin="0 0 4 2"
-                                                                    Background="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}">
-                                                                <TextBlock Text="{Binding Name}"
-                                                                           FontSize="10"
-                                                                           Foreground="{Binding Color, Converter={StaticResource HexColorToForegroundConverter}}"/>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </StackPanel>
-                                        </DockPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock x:Name="NoIssuesText" Text="No open issues"
-                                   FontSize="12" Opacity="0.4"
-                                   Margin="4 4 0 0"
-                                   Visibility="Collapsed"/>
-                    </StackPanel>
-                </TabItem>
-
-                <!-- Pull Requests Tab -->
-                <TabItem x:Name="PrsTab" Style="{StaticResource DevHubTabItemStyle}">
-                    <TabItem.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Pull requests"/>
-                            <Ellipse x:Name="PrNewDot" Width="6" Height="6" Margin="4 0 0 0"
-                                     Fill="#FF4CAF50" VerticalAlignment="Center" Visibility="Collapsed"
-                                     ToolTip="New activity since you last viewed this tab"/>
-                        </StackPanel>
-                    </TabItem.Header>
-                    <StackPanel x:Name="PullRequestActivityPanel" Margin="0 24 0 0">
-                        <StackPanel x:Name="OwnPullRequestsSection" Visibility="Collapsed" Margin="0 0 0 12">
-                            <TextBlock Text="My open PRs" FontWeight="SemiBold" Margin="8 0 0 6"/>
-                            <ItemsControl x:Name="OwnPullRequestsList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
-                        </StackPanel>
-                        <TextBlock x:Name="IncomingPullRequestsHeading" Text="Incoming PRs" FontWeight="SemiBold"
-                                   Margin="4 0 0 6" Visibility="Collapsed"/>
-                        <ItemsControl x:Name="PullRequestsList" Focusable="False">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
-                                            Focusable="True" FocusVisualStyle="{x:Null}"
-                                            MouseUp="PrItem_MouseUp"
-                                            Loaded="DevHubItemBorder_Loaded"
-                                            Style="{StaticResource HoverItemBorderStyle}">
-                                        <Border.ContextMenu>
-                                            <ContextMenu Opened="DevHubContextMenu_Opened">
-                                                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
-                                                <Separator/>
-                                                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
-                                                <Separator/>
-                                                <MenuItem Header="{Binding RepoIdentifier.Repo}" HeaderStringFormat="Scope to {0}" Click="ScopeToRepoMenuItem_Click"/>
-                                                <MenuItem Header="Show all repositories" Click="ClearFilter_Click"/>
-                                            </ContextMenu>
-                                        </Border.ContextMenu>
-                                        <DockPanel>
-                                            <StackPanel>
-                                                <DockPanel>
-                                                    <TextBlock DockPanel.Dock="Left"
-                                                               Text="NEW"
-                                                               FontWeight="Bold"
-                                                               FontSize="10"
-                                                               Foreground="#FF4CAF50"
-                                                               Margin="0 0 6 0"
-                                                               VerticalAlignment="Center"
-                                                               Visibility="{Binding IsNew, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                                                    <TextBlock DockPanel.Dock="Left"
-                                                               Text="{Binding Number}"
-                                                               FontSize="11"
-                                                               Opacity="0.5"
-                                                               VerticalAlignment="Center"
-                                                               Margin="0 0 4 0"/>
-                                                    <TextBlock Text="{Binding Title}"
-                                                               FontSize="12"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </DockPanel>
-                                                <StackPanel Orientation="Horizontal" Margin="0 3 0 0">
-                                                    <TextBlock Text="{Binding RepoFullName}"
-                                                               FontSize="11"
-                                                               Opacity="0.5"/>
-                                                    <imaging:CrispImage Moniker="{Binding CiStatus, Converter={StaticResource CiStatusToMonikerConverter}}"
-                                                               Width="12" Height="12"
-                                                               Margin="6 0 0 0"
-                                                               VerticalAlignment="Center"
-                                                               Visibility="{Binding CiStatus, Converter={StaticResource NullToCollapsedConverter}}"/>
-                                                </StackPanel>
-                                                <ContentControl Content="{Binding}" Focusable="False" Margin="0 5 0 0"
-                                                                ContentTemplate="{StaticResource PullRequestMetadataTemplate}"/>
-                                                <!-- Branch info -->
-                                                <TextBlock Text="{Binding BranchDisplayText}"
-                                                           FontSize="10.5"
-                                                           Opacity="0.4"
-                                                           Margin="0 2 0 0"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           Visibility="{Binding BranchDisplayText, Converter={StaticResource NullToCollapsedConverter}}"/>
-                                            </StackPanel>
-                                        </DockPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock x:Name="NoPrsText" Text="No open pull requests"
-                                   FontSize="12" Opacity="0.4"
-                                   Margin="4 4 0 0"
-                                   Visibility="Collapsed"/>
-                    </StackPanel>
-                </TabItem>
-
-                <!-- CI Runs Tab -->
-                <TabItem x:Name="CiTab" Style="{StaticResource DevHubTabItemStyle}">
-                    <TabItem.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Builds"/>
-                            <Ellipse x:Name="CiNewDot" Width="6" Height="6" Margin="4 0 0 0"
-                                     Fill="#FF4CAF50" VerticalAlignment="Center" Visibility="Collapsed"
-                                     ToolTip="New activity since you last viewed this tab"/>
-                        </StackPanel>
-                    </TabItem.Header>
-                    <StackPanel Margin="0 24 0 0">
-                        <ItemsControl x:Name="CiRunsList" Focusable="False">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="4 6" CornerRadius="2" Cursor="Hand"
-                                            Focusable="True" FocusVisualStyle="{x:Null}"
-                                            MouseUp="CiItem_MouseUp"
-                                            Loaded="DevHubItemBorder_Loaded"
-                                            Style="{StaticResource HoverItemBorderStyle}">
-                                        <Border.ContextMenu>
-                                            <ContextMenu Opened="DevHubContextMenu_Opened">
-                                                <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
-                                                <Separator/>
-                                                <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
-                                                <Separator/>
-                                                <MenuItem Header="{Binding RepoIdentifier.Repo}" HeaderStringFormat="Scope to {0}" Click="ScopeToRepoMenuItem_Click"/>
-                                                <MenuItem Header="Show all repositories" Click="ClearFilter_Click"/>
-                                            </ContextMenu>
-                                        </Border.ContextMenu>
-                                        <DockPanel>
-                                            <imaging:CrispImage DockPanel.Dock="Left"
-                                                       Moniker="{Binding Status, Converter={StaticResource CiStatusToMonikerConverter}}"
-                                                       Width="14" Height="14"
-                                                       VerticalAlignment="Top"
-                                                       Margin="0 2 6 0"/>
-                                            <TextBlock DockPanel.Dock="Right"
-                                                       Text="{Binding TimestampAgoText}"
-                                                       FontSize="11"
-                                                       Opacity="0.5"
-                                                       VerticalAlignment="Center"
-                                                       Margin="8 0 0 0"/>
-                                            <StackPanel>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="NEW"
-                                                               FontWeight="Bold"
-                                                               FontSize="10"
-                                                               Foreground="#FF4CAF50"
-                                                               Margin="0 0 6 0"
-                                                               VerticalAlignment="Center"
-                                                               Visibility="{Binding IsNew, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                                                    <TextBlock Text="{Binding Name}"
-                                                               FontSize="12"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
-                                                <TextBlock Text="{Binding RepoFullName}"
-                                                           FontSize="11"
-                                                           Opacity="0.5"
-                                                           Margin="0 2 0 0"/>
-                                            </StackPanel>
-                                        </DockPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock x:Name="NoCiText" Text="No recent CI runs"
-                                   FontSize="12" Opacity="0.4"
-                                   Margin="4 4 0 0"
-                                   Visibility="Collapsed"/>
                     </StackPanel>
                 </TabItem>
             </TabControl>

@@ -13,10 +13,20 @@ namespace StartScreen.Models.DevHub
             : Title;
         public string Detail { get; private set; }
         public string StatusText { get; private set; }
+        public string AttentionReason { get; private set; }
+        public bool NeedsAttention => !string.IsNullOrEmpty(AttentionReason);
+        public string Section { get; private set; }
+        public RemoteRepoIdentifier RepoIdentifier { get; private set; }
+        public string BranchDisplayText { get; private set; }
+        public IReadOnlyList<DevHubLabel> Labels { get; private set; } = Array.Empty<DevHubLabel>();
+        public DevHubWorkItemKind Kind => IsCopilot ? DevHubWorkItemKind.Copilot
+            : IsPullRequest ? DevHubWorkItemKind.PullRequest : IsBuild ? DevHubWorkItemKind.Build : DevHubWorkItemKind.Issue;
+        public bool IsBuild { get; private set; }
+        public bool IsRepositoryItem => !IsCopilot;
         public string CopilotStatus { get; private set; }
         public string CopilotStatusDetails { get; private set; }
         public string ActivityText => IsCopilot ? $"{UpdatedAt.ToLocalTime():MMM d} in {Detail}" : string.Empty;
-        public string ActivityDateText => IsPullRequest ? DevHubPullRequest.FormatActivityDate(UpdatedAt, DateTime.Now) : string.Empty;
+        public string ActivityDateText => DevHubPullRequest.FormatActivityDate(UpdatedAt, DateTime.Now);
         public string ActivityDateToolTip => UpdatedAt == default ? string.Empty : UpdatedAt.ToLocalTime().ToString("f");
         public string ActionText => CopilotSessionId != null ? "Open in Copilot" : IsPullRequest ? "Open pull request" : "Open in browser";
         public string CopilotSessionId { get; private set; }
@@ -39,6 +49,8 @@ namespace StartScreen.Models.DevHub
                 CopilotStatus = session.StatusBadge,
                 CopilotStatusDetails = session.Status,
                 CopilotSessionId = session.Id,
+                AttentionReason = session.NeedsAttention ? session.Status : null,
+                Section = "Copilot sessions",
                 UpdatedAt = session.LastActivity.UtcDateTime,
             }).ToArray();
         }
@@ -46,46 +58,87 @@ namespace StartScreen.Models.DevHub
         internal static IReadOnlyList<DevHubWorkItem> GetNeedsYou(IEnumerable<DevHubPullRequest> pullRequests)
         {
             return (pullRequests ?? Enumerable.Empty<DevHubPullRequest>())
-                .Where(pr => !pr.IsDraft && (pr.IsReviewRequestedForCurrentUser
-                    || (pr.IsAuthoredByCurrentUser && (pr.CiStatus == "failure" || pr.Status == "conflicts"))))
+                .Where(pr => pr.NeedsAttention)
                 .OrderByDescending(pr => pr.IsReviewRequestedForCurrentUser)
                 .ThenByDescending(pr => pr.UpdatedAt)
                 .Select(FromPullRequest)
                 .ToList();
         }
 
-        internal static IReadOnlyList<DevHubWorkItem> GetChanges(
+        internal static IReadOnlyList<DevHubWorkItem> GetMyWork(
             IEnumerable<DevHubPullRequest> pullRequests, IEnumerable<DevHubIssue> issues,
-            IEnumerable<DevHubCiRun> builds, DateTime since)
+            IEnumerable<CopilotActivitySession> sessions, DevHubSortOrder order = DevHubSortOrder.MostRecent)
         {
-            var prs = (pullRequests ?? Enumerable.Empty<DevHubPullRequest>()).ToArray();
-            var attentionUrls = new HashSet<string>(GetNeedsYou(prs).Select(item => item.WebUrl), StringComparer.OrdinalIgnoreCase);
-            return prs.Where(pr => !pr.IsAuthoredByCurrentUser && !attentionUrls.Contains(pr.WebUrl))
+            var copilot = (sessions ?? Enumerable.Empty<CopilotActivitySession>()).ToArray();
+            return Sort(GetOwnPullRequests(pullRequests), order)
+                .Concat(Sort((issues ?? Enumerable.Empty<DevHubIssue>())
+                    .Where(issue => !issue.IsClosed && (issue.IsAuthoredByCurrentUser || issue.IsAssignedToCurrentUser)
+                        && !string.IsNullOrEmpty(issue.WebUrl)).Select(FromIssue), order))
+                .Concat(GetCopilotItems(copilot, true).Concat(GetCopilotItems(copilot, false))
+                    .OrderByDescending(item => item.CopilotStatus == "Running")
+                    .ThenByDescending(item => item.UpdatedAt))
+                .ToArray();
+        }
+
+        internal static IReadOnlyList<DevHubWorkItem> GetIncoming(
+            IEnumerable<DevHubPullRequest> pullRequests, IEnumerable<DevHubIssue> issues,
+            IEnumerable<DevHubCiRun> builds, DevHubSortOrder order = DevHubSortOrder.MostRecent)
+        {
+            var items = (pullRequests ?? Enumerable.Empty<DevHubPullRequest>())
+                .Where(pr => pr.IsOpen && !pr.IsAuthoredByCurrentUser && !string.IsNullOrEmpty(pr.WebUrl))
                 .Select(FromPullRequest)
-                .Concat((issues ?? Enumerable.Empty<DevHubIssue>()).Select(issue => new DevHubWorkItem
-                {
-                    Title = issue.Title,
-                    Detail = $"Issue updated / {issue.RepoDisplayName} / {issue.Number}",
-                    WebUrl = issue.WebUrl,
-                    UpdatedAt = issue.UpdatedAt,
-                }))
-                .Concat((builds ?? Enumerable.Empty<DevHubCiRun>()).Select(build => new DevHubWorkItem
+                .Concat((issues ?? Enumerable.Empty<DevHubIssue>())
+                    .Where(issue => !issue.IsClosed && !issue.IsAuthoredByCurrentUser && !issue.IsAssignedToCurrentUser
+                        && !string.IsNullOrEmpty(issue.WebUrl)).Select(FromIssue))
+                .Concat((builds ?? Enumerable.Empty<DevHubCiRun>()).Where(build => !string.IsNullOrEmpty(build.WebUrl))
+                    .Select(build => new DevHubWorkItem
                 {
                     Title = build.Name,
-                    Detail = $"Build {build.Status} / {build.RepoDisplayName} / {build.Branch}",
+                    Detail = $"{build.RepoDisplayName} / {build.Branch}",
+                    StatusText = $"Build {build.Status}",
+                    RepoIdentifier = build.RepoIdentifier,
                     WebUrl = build.WebUrl,
+                    IsBuild = true,
                     UpdatedAt = build.Timestamp,
-                }))
-                .Where(item => item.UpdatedAt > since && !string.IsNullOrEmpty(item.WebUrl))
-                .OrderByDescending(item => item.UpdatedAt)
-                .Take(10)
-                .ToList();
+                }));
+            var result = Sort(items, order).OrderByDescending(item => item.NeedsAttention).ToArray();
+            foreach (var item in result)
+                item.Section = item.NeedsAttention ? "Requests for you" : "Repository activity";
+            return result;
+        }
+
+        internal static IReadOnlyList<DevHubWorkItem> Filter(IEnumerable<DevHubWorkItem> items,
+            DevHubWorkItemKind kind, bool needsAttention)
+        {
+            return items.Where(item => (kind == DevHubWorkItemKind.All || item.Kind == kind)
+                && (!needsAttention || item.NeedsAttention)).ToArray();
+        }
+
+        private static IEnumerable<DevHubWorkItem> Sort(IEnumerable<DevHubWorkItem> items, DevHubSortOrder order)
+        {
+            return DevHubItemSorter.Sort(items, order, item => item.RepoIdentifier, item => item.UpdatedAt);
+        }
+
+        private static DevHubWorkItem FromIssue(DevHubIssue issue)
+        {
+            return new DevHubWorkItem
+            {
+                Title = issue.Title,
+                Detail = $"{issue.RepoDisplayName} / {issue.Number}",
+                StatusText = issue.StatusText,
+                AttentionReason = issue.AttentionReason,
+                RepoIdentifier = issue.RepoIdentifier,
+                Labels = issue.Labels ?? new List<DevHubLabel>(),
+                Section = "Issues and tasks",
+                WebUrl = issue.WebUrl,
+                UpdatedAt = issue.UpdatedAt,
+            };
         }
 
         internal static IReadOnlyList<DevHubWorkItem> GetOwnPullRequests(IEnumerable<DevHubPullRequest> pullRequests)
         {
             return (pullRequests ?? Enumerable.Empty<DevHubPullRequest>())
-                .Where(pr => pr.IsAuthoredByCurrentUser && (pr.Status == "open" || pr.IsDraft || pr.Status == "conflicts")
+                .Where(pr => pr.IsAuthoredByCurrentUser && pr.IsOpen
                     && !string.IsNullOrEmpty(pr.WebUrl))
                 .OrderByDescending(pr => pr.UpdatedAt)
                 .Select(FromPullRequest)
@@ -99,10 +152,23 @@ namespace StartScreen.Models.DevHub
                 Title = pr.Title,
                 Detail = $"{pr.RepoDisplayName} / {pr.Number}",
                 StatusText = pr.StatusText,
+                AttentionReason = pr.AttentionReason,
+                RepoIdentifier = pr.RepoIdentifier,
+                BranchDisplayText = pr.BranchDisplayText,
+                Section = "Pull requests",
                 WebUrl = pr.WebUrl,
                 IsPullRequest = true,
                 UpdatedAt = pr.UpdatedAt,
             };
         }
+    }
+
+    internal enum DevHubWorkItemKind
+    {
+        All,
+        PullRequest,
+        Issue,
+        Copilot,
+        Build
     }
 }

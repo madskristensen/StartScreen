@@ -55,6 +55,8 @@ namespace StartScreen.Models.DevHub
                 && StringEquals(left.Status, right.Status)
                 && StringEquals(left.CiStatus, right.CiStatus)
                 && left.ApprovalCount == right.ApprovalCount
+                && left.HasChangesRequested == right.HasChangesRequested
+                && left.IsApproved == right.IsApproved
                 && left.UpdatedAt == right.UpdatedAt
                 && left.CreatedAt == right.CreatedAt
                 && StringEquals(left.WebUrl, right.WebUrl)
@@ -78,6 +80,9 @@ namespace StartScreen.Models.DevHub
                 && StringEquals(left.Author, right.Author)
                 && SameLabels(left.Labels, right.Labels)
                 && StringEquals(left.State, right.State)
+                && left.IsAuthoredByCurrentUser == right.IsAuthoredByCurrentUser
+                && left.IsAssignedToCurrentUser == right.IsAssignedToCurrentUser
+                && left.IsClosed == right.IsClosed
                 && StringEquals(left.Priority, right.Priority)
                 && left.UpdatedAt == right.UpdatedAt
                 && left.CreatedAt == right.CreatedAt

@@ -35,6 +35,8 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public DateTime FetchedAt { get; set; }
 
+        public Dictionary<string, string> ActivityWarnings { get; set; } = new Dictionary<string, string>();
+
         /// <summary>
         /// Whether any providers are authenticated.
         /// </summary>
@@ -99,6 +101,7 @@ namespace StartScreen.Models.DevHub
                     .OrderByDescending(r => r.Timestamp)
                     .ToList(),
                 FetchedAt = FetchedAt,
+                ActivityWarning = ActivityWarnings.TryGetValue(repo.ToString().ToLowerInvariant(), out var warning) ? warning : null,
             };
         }
     }

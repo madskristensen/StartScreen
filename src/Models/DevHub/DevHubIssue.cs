@@ -60,6 +60,25 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public string State { get; set; }
 
+        public bool IsAuthoredByCurrentUser { get; set; }
+
+        public bool IsAssignedToCurrentUser { get; set; }
+
+        public bool IsClosed { get; set; }
+
+        [JsonIgnore]
+        public string AttentionReason => !IsClosed && !string.IsNullOrWhiteSpace(State)
+            && !string.Equals(State, "closed", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(State, "done", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(State, "removed", StringComparison.OrdinalIgnoreCase)
+            && IsAssignedToCurrentUser ? "Assigned to you" : null;
+
+        [JsonIgnore]
+        public bool NeedsAttention => AttentionReason != null;
+
+        [JsonIgnore]
+        public string StatusText => AttentionReason ?? State;
+
         /// <summary>
         /// Priority level if available (e.g., "P1", "Critical"), or null.
         /// </summary>

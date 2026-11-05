@@ -95,14 +95,19 @@ dashboard lists. Repository discovery uses each workspace's local Git remote, ev
 when checkouts are outside Visual Studio's default projects location.
 Only positive counts are shown; loading, unsupported, signed-out, and unavailable
 states add no placeholder links or status text to recent items. Select a PR count
-to open the scoped PR list, or select the workspace to view its repository activity.
+to filter both ownership views to PRs without changing your selected view, or
+select the workspace to view its repository activity. Select a personal review
+count to open Incoming with Needs attention enabled.
 
-The **Pull requests** tab groups your loaded open PRs, including drafts, under
-**My open PRs**, with incoming PRs below. Both groups show colored review/check
+**My work** tracks your loaded open PRs, including drafts, created or assigned
+issues and tasks, and local Copilot sessions. **Incoming** shows other people's
+PRs and issues, with requested reviews above general repository and build
+activity. Each view has type filters and an independent **Needs attention**
+filter. Items stay in their ownership view rather than appearing in a duplicate
+action tab. Both views show colored review/check
 status pills and a friendly update date, with the exact local date and
 time on hover, plus background-free globe and pull request icons to open a PR in
-your browser or Visual Studio. PRs
-requiring action also remain in **Needs you**, with the same badges and actions.
+your browser or Visual Studio.
 Selecting a workspace scopes these lists to that repository.
 
 **See your Git status at a glance.** Every repo shows its current branch,
@@ -187,14 +192,16 @@ Verified identities are shared across repository summaries for up to five minute
 scoped by credentials and identity endpoint, and invalidated when authentication
 changes. Failed identity lookups are retried rather than cached as signed-in users.
 
-**Overview** opens by default and shows Copilot activity and other recent
-changes, without a separate attention banner. Existing saved defaults are switched
-to Overview once; the default-tab setting remains configurable afterward.
-**Needs you** contains the full list of requested
-reviews and authored PRs with failing checks or conflicts. Those actionable
-PRs are not repeated in Overview's change list. Repository changes use provider timestamps and the last
-Overview visit, not guesses about agent progress. Lists are bounded and are
-not complete repository inventories.
+**My work** opens by default. Existing Overview/Needs you preferences migrate
+to My work, and existing Issues/Pull requests/Builds preferences migrate to
+Incoming. The default remains configurable. Work stays visible after viewing it;
+activity timestamps do not determine ownership or whether action is required.
+**Needs attention** uses explicit signals: requested reviews, changes requested
+on your PRs, known failing checks or merge conflicts on your PRs, assigned open
+issues/tasks, and live Copilot questions or permission requests. Pending checks,
+approvals, idle sessions, and generic updates do not imply an action. Unknown
+provider metadata is not treated as an action signal. Lists are bounded and are
+not complete repository inventories. Developer Community feedback is not included.
 
 PRs open in Visual Studio's native review experience when the installed Git
 tooling supports it. **Open in Browser** remains available from the PR context
@@ -204,9 +211,9 @@ can be opened from the Start Screen before a repository is active.
 Opening a review does not silently check out a branch.
 
 An experimental, optional Copilot integration observes the installed VS harness
-through its in-process MEF contracts. Overview includes running and recent local
-conversations; Needs you includes sessions with unresolved permission requests or
-questions, including requests from subagents. Clicking a conversation, or pressing
+through its in-process MEF contracts. My work includes running and recent local
+conversations; its Needs attention filter includes sessions with unresolved
+permission requests or questions, including requests from subagents. Clicking a conversation, or pressing
 Enter on it, opens it in Copilot so requests are answered in Copilot's own UI. It does not
 send prompts, resume sessions in another process, or answer requests automatically.
 Conversation titles occupy a single line with an ellipsis; hover to see the full
@@ -252,13 +259,23 @@ HTTP timeouts and other request failures are still logged for troubleshooting.
 
 ### Azure DevOps sign-in
 
-Azure DevOps activity appears alongside GitHub in **Pull requests** and **Builds**.
+Azure DevOps activity appears alongside GitHub in **My work** and **Incoming**.
 The dashboard discovers Azure DevOps repositories from your recent workspaces,
 not every repository accessible to your account. Open a checkout in Visual Studio
 so it appears in the recent list, then refresh Start Screen. Recent builds include
 failed PR validation runs; the combined dashboard loads up to 10 items per repository,
 and scoping to a repository loads up to 25. Signing in alone does not enumerate all
 organizations or projects.
+Personal PRs and created or assigned work items are queried independently across
+projects discovered from recent workspaces, with up to three project requests
+in flight per source. Personal PR queries include repositories in those projects
+even when the individual repository is not in the recent list. They load up to
+30 authored open PRs per project, separately from the repository-wide feed;
+repository scopes also query up to 30 authored open PRs independently.
+Project-level work items remain in the combined view; repository scopes include
+only work items with an explicit link to that repository. Work Items (read)
+access is required. If that optional lookup fails, accessible PRs and builds
+remain visible with an issue-activity warning.
 Queued Azure DevOps builds appear as pending using their queue time until they start;
 running and completed builds use their start and finish times respectively.
 Optimized Azure DevOps Git remotes (`/_git/_optimized/Repository`) are normalized
@@ -294,7 +311,7 @@ not sign you out of Visual Studio or affect other extensions.
 ### Scope to a repository
 
 Right-click any pull request, issue, or build and choose **Scope to
-&lt;repo&gt;** to filter all three Dev Hub tabs down to that single
+&lt;repo&gt;** to filter both ownership views down to that single
 repository. Selecting a recent workspace scopes the same view. While scoped,
 choose **All repositories**, or right-click an item and choose **Show all
 repositories** to clear the scope and see everything again.
@@ -302,11 +319,11 @@ repositories** to clear the scope and see everything again.
 The scope is not saved between sessions, so reopening the Start Screen
 always starts with the full view.
 
-### Custom search query (GitHub)
+### Incoming search query (GitHub)
 
-By default the Dev Hub shows issues and pull requests that "involve" your GitHub
+By default incoming activity shows issues and pull requests that "involve" your GitHub
 account. Click the gear icon next to the Dev Hub header to enter a custom
-GitHub search query under **Custom search query (GitHub)**. Advanced connection
+GitHub search query under **Incoming search query (GitHub)**. Advanced connection
 and search options are collapsed by default to keep account status and display
 preferences easy to scan. Expand **Connection options** to change Azure DevOps
 authentication, enter a PAT, or add a server. The extension prepends `is:issue` or `is:pr`
@@ -334,8 +351,11 @@ state:open org:dotnet
 
 Leave the field empty to restore the default behavior (`involves:{login}`).
 
-The custom query applies to the Issues and Pull requests tabs. The
-Builds tab always fetches from your recently pushed repositories and is
+The custom query controls incoming issue and pull request discovery. **My work**
+independently queries your authored open PRs and created or assigned open issues,
+including contributions outside that query's repositories and organizations.
+An explicit workspace/repository selection still scopes both views. Build
+activity always fetches from your recently pushed repositories and is
 not affected by the query.
 
 > The custom search query setting only applies to GitHub. Azure DevOps
@@ -346,12 +366,12 @@ not affected by the query.
 Click the gear icon next to the Dev Hub header to open its settings, where
 the **Display** section lets you tailor the layout:
 
-- **Default tab** - choose whether Overview, Needs you, Issues, Pull requests, or Builds is
+- **Default tab** - choose whether My work or Incoming is
   selected when the Start Screen opens.
 - **Sort issues and pull requests by** - order the lists by **Most recent
   first** (the default), **GitHub first**, or **Azure DevOps first**. The
   provider options group items by source, then fall back to most recent
-  within each group. The Builds tab is always ordered most recent first.
+  within each group. Incoming requests remain above general repository activity.
 
 ### Hiding the Dev Hub
 

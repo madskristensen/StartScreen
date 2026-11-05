@@ -102,6 +102,24 @@ namespace StartScreen.Models.DevHub
 
         public bool IsReviewRequestedForCurrentUser { get; set; }
 
+        public bool HasChangesRequested { get; set; }
+
+        public bool IsApproved { get; set; }
+
+        [JsonIgnore]
+        public bool IsOpen => string.Equals(Status, "open", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Status, "conflicts", StringComparison.OrdinalIgnoreCase) || IsDraft;
+
+        [JsonIgnore]
+        public string AttentionReason => !IsOpen || IsDraft ? null
+            : !IsAuthoredByCurrentUser ? (IsReviewRequestedForCurrentUser ? "Review requested" : null)
+            : string.Equals(Status, "conflicts", StringComparison.OrdinalIgnoreCase) ? "Conflicts"
+            : HasChangesRequested ? "Changes requested"
+            : CiStatus == "failure" ? "Checks failing" : null;
+
+        [JsonIgnore]
+        public bool NeedsAttention => AttentionReason != null;
+
         /// <summary>
         /// Whether this PR is a draft.
         /// </summary>
@@ -109,12 +127,14 @@ namespace StartScreen.Models.DevHub
 
         [JsonIgnore]
         public string StatusText => Status == "conflicts" ? "Conflicts"
+            : HasChangesRequested && IsOpen && !IsDraft ? "Changes requested"
             : CiStatus == "failure" ? "Checks failing"
             : IsDraft ? "Draft"
             : IsReviewRequestedForCurrentUser ? "Review requested"
             : CiStatus == "pending" ? "Checks pending"
             : ApprovalCount == 1 ? "1 approval"
-            : ApprovalCount > 1 ? $"{ApprovalCount} approvals" : "Waiting for review";
+            : ApprovalCount > 1 ? $"{ApprovalCount} approvals"
+            : IsApproved && IsOpen && !IsDraft ? "Approved" : "Waiting for review";
 
         [JsonIgnore]
         public string ActivityDateText => FormatActivityDate(UpdatedAt, DateTime.Now);

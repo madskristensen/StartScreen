@@ -17,6 +17,10 @@ namespace StartScreen.Models.DevHub
 
         Overview = 3,
 
-        NeedsYou = 4
+        NeedsYou = 4,
+
+        MyWork = 5,
+
+        Incoming = 6
     }
 }

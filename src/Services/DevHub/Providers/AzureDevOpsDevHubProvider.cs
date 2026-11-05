@@ -28,6 +28,7 @@ namespace StartScreen.Services.DevHub.Providers
         private readonly DevHubIdentityCache _identityCache = new DevHubIdentityCache();
         private readonly Func<string, string, CancellationToken, Task<DevHubCredential>> _acquireCredential;
         private readonly Action<string, DevHubCredential> _invalidateCredential;
+        private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _getRemoteUrls;
 
         public AzureDevOpsDevHubProvider() : this(_sharedHttpClient, DevHubCredentialHelper.GetAzureDevOpsCredentialAsync,
             (host, credential) =>
@@ -42,11 +43,13 @@ namespace StartScreen.Services.DevHub.Providers
 
         internal AzureDevOpsDevHubProvider(HttpClient httpClient,
             Func<string, string, CancellationToken, Task<DevHubCredential>> acquireCredential,
-            Action<string, DevHubCredential> invalidateCredential)
+            Action<string, DevHubCredential> invalidateCredential,
+            Func<CancellationToken, Task<IReadOnlyList<string>>> getRemoteUrls = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _acquireCredential = acquireCredential ?? throw new ArgumentNullException(nameof(acquireCredential));
             _invalidateCredential = invalidateCredential ?? throw new ArgumentNullException(nameof(invalidateCredential));
+            _getRemoteUrls = getRemoteUrls ?? MruService.GetRepositoryRemoteUrlsAsync;
         }
 
         private static HttpClient CreateSharedHttpClient()
@@ -300,17 +303,76 @@ namespace StartScreen.Services.DevHub.Providers
 
         public async Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken)
         {
-            // Cross-org/cross-collection PR search isn't supported by ADO; the per-repo
-            // detail view (driven by GetRepoDetailAsync) covers the common case.
-            await Task.CompletedTask;
-            return Array.Empty<DevHubPullRequest>();
+            var results = await GetPersonalProjectActivityAsync(
+                (repo, credential, identity, token) => GetPersonalPullRequestsAsync(repo, credential, identity, token), cancellationToken);
+            return results.OrderByDescending(pr => pr.UpdatedAt).ToList();
         }
 
         public async Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken)
         {
-            // Same limitation as PRs - WIQL queries are scoped to a project.
-            await Task.CompletedTask;
-            return Array.Empty<DevHubIssue>();
+            var results = await GetPersonalProjectActivityAsync(
+                (repo, credential, identity, token) => GetIssuesAsync(repo, credential, identity, 30, null, token), cancellationToken);
+            return results.OrderByDescending(issue => issue.UpdatedAt).ToList();
+        }
+
+        private async Task<IReadOnlyList<T>> GetPersonalProjectActivityAsync<T>(
+            Func<RemoteRepoIdentifier, DevHubCredential, string, CancellationToken, Task<List<T>>> fetch,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var remotes = await _getRemoteUrls(cancellationToken);
+                var repos = await GetActivityReposAsync(remotes, cancellationToken);
+                var projects = repos.GroupBy(repo => $"{GetBaseUrl(repo)}/{repo.Project}", StringComparer.OrdinalIgnoreCase)
+                    .Select(group => group.First()).ToList();
+                using var semaphore = new SemaphoreSlim(3, 3);
+                var results = await Task.WhenAll(projects.Select(async repo =>
+                {
+                    await semaphore.WaitAsync(cancellationToken);
+                    try
+                    {
+                        var host = GetCredentialHost(repo);
+                        var credential = await _acquireCredential(host, GetBaseUrl(repo), cancellationToken);
+                        if (credential == null)
+                            return new List<T>();
+                        var identity = await _identityCache.GetAsync(credential,
+                            $"{GetBaseUrl(repo).TrimEnd('/')}/_apis/connectionData?api-version=3.0",
+                            (auth, url, token) => SendAuthenticatedGetAsync(host, auth, url, token), false, cancellationToken);
+                        if (string.IsNullOrEmpty(identity))
+                            throw new InvalidOperationException("Azure DevOps personal activity requires an authenticated identity.");
+                        return await fetch(repo, credential, identity, cancellationToken);
+                    }
+                    catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await ex.LogAsync();
+                        return new List<T>();
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                }));
+                return results.SelectMany(items => items).ToList();
+            }
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                return Array.Empty<T>();
+            }
+        }
+
+        private async Task<List<DevHubPullRequest>> GetPersonalPullRequestsAsync(RemoteRepoIdentifier project,
+            DevHubCredential credential, string identity, CancellationToken cancellationToken, bool repositoryScoped = false)
+        {
+            var version = project.IsAzureDevOpsServer ? "5.0" : "7.1";
+            var projectUrl = $"{GetBaseUrl(project).TrimEnd('/')}/{Uri.EscapeDataString(project.Project)}";
+            var repositoryPath = repositoryScoped ? $"repositories/{Uri.EscapeDataString(project.Repo)}/" : string.Empty;
+            using var response = await SendAuthenticatedGetAsync(GetCredentialHost(project), credential,
+                $"{projectUrl}/_apis/git/{repositoryPath}pullrequests?searchCriteria.status=active&searchCriteria.creatorId={Uri.EscapeDataString(identity)}&$top=30&api-version={version}", cancellationToken);
+            response.EnsureSuccessStatusCode();
+            return ParseAdoPullRequests(await response.Content.ReadAsStringAsync(), project, identity, projectWide: !repositoryScoped)
+                .Where(pr => pr.IsOpen && pr.IsAuthoredByCurrentUser).ToList();
         }
 
         public async Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken)
@@ -383,19 +445,36 @@ namespace StartScreen.Services.DevHub.Providers
                 // YAML builds actually exist) and is still accepted by Azure DevOps Services.
                 // Newer numbers like 7.1 are preview on older on-prem releases and fail outright.
                 var apiVersion = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
+                var identity = await _identityCache.GetAsync(credential,
+                    $"{GetBaseUrl(repo).TrimEnd('/')}/_apis/connectionData?api-version=3.0",
+                    (auth, url, token) => SendAuthenticatedGetAsync(credentialHost, auth, url, token), false, cancellationToken);
+                string prJson = null;
 
                 // Fetch PRs
                 var prUrl = $"{projectUrl}/_apis/git/repositories/{repo.Repo}/pullrequests?searchCriteria.status=active&$top={top}&api-version={apiVersion}";
                 using var prResponse = await SendAuthenticatedGetAsync(credentialHost, credential, prUrl, cancellationToken);
                 if (prResponse.StatusCode == HttpStatusCode.Unauthorized)
                     return null;
+                prResponse.EnsureSuccessStatusCode();
                 if (prResponse.IsSuccessStatusCode)
                 {
-                    var prJson = await prResponse.Content.ReadAsStringAsync();
-                    var identity = await _identityCache.GetAsync(credential,
-                        $"{GetBaseUrl(repo).TrimEnd('/')}/_apis/connectionData?api-version=3.0",
-                        (auth, url, token) => SendAuthenticatedGetAsync(credentialHost, auth, url, token), false, cancellationToken);
+                    prJson = await prResponse.Content.ReadAsStringAsync();
                     detail.PullRequests = ParseAdoPullRequests(prJson, repo, identity);
+                }
+
+                if (!string.IsNullOrEmpty(identity))
+                {
+                    try
+                    {
+                        var ownPullRequests = await GetPersonalPullRequestsAsync(repo, credential, identity, cancellationToken, repositoryScoped: true);
+                        detail.PullRequests = DevHubService.MergePullRequests(ownPullRequests, detail.PullRequests).ToList();
+                    }
+                    catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await ex.LogAsync();
+                        detail.ActivityWarning = "Personal pull requests could not be loaded. Refresh to retry.";
+                    }
                 }
 
                 // Build queries require the repository ID, not the name from the Git remote.
@@ -415,6 +494,20 @@ namespace StartScreen.Services.DevHub.Providers
                 buildResponse.EnsureSuccessStatusCode();
                 var buildJson = await buildResponse.Content.ReadAsStringAsync();
                 detail.CiRuns = ParseAdoBuilds(buildJson, repo);
+                if (prJson != null)
+                    ApplyBuildStatuses(detail.PullRequests, prJson, buildJson);
+                try
+                {
+                    detail.Issues = await GetIssuesAsync(repo, credential, identity, top, id.ToString("D"), cancellationToken);
+                }
+                catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await ex.LogAsync();
+                    detail.ActivityWarning = string.Join(" ", new[] { detail.ActivityWarning,
+                        "Issue activity could not be loaded. Check Work Items read access and refresh to retry." }.Where(message => !string.IsNullOrEmpty(message)));
+                }
+                cancellationToken.ThrowIfCancellationRequested();
 
                 return detail;
             }
@@ -436,6 +529,11 @@ namespace StartScreen.Services.DevHub.Providers
 
         private async Task<HttpResponseMessage> SendAuthenticatedGetAsync(string host, DevHubCredential credential, string url, CancellationToken cancellationToken)
         {
+            return await SendAuthenticatedAsync(host, credential, url, null, cancellationToken);
+        }
+
+        private async Task<HttpResponseMessage> SendAuthenticatedAsync(string host, DevHubCredential credential, string url, string json, CancellationToken cancellationToken)
+        {
             if (credential.IsBearer)
             {
                 credential = await _acquireCredential(host, url, cancellationToken);
@@ -443,7 +541,7 @@ namespace StartScreen.Services.DevHub.Providers
                     return new HttpResponseMessage(HttpStatusCode.Unauthorized);
             }
 
-            var response = await SendGetAsync(credential, url, cancellationToken);
+            var response = await SendAsync(credential, url, json, cancellationToken);
             if (response.StatusCode != HttpStatusCode.Unauthorized)
                 return response;
 
@@ -460,18 +558,20 @@ namespace StartScreen.Services.DevHub.Providers
             if (fresh == null)
                 return new HttpResponseMessage(HttpStatusCode.Unauthorized);
 
-            var retried = await SendGetAsync(fresh, url, cancellationToken);
+            var retried = await SendAsync(fresh, url, json, cancellationToken);
             if (retried.StatusCode == HttpStatusCode.Unauthorized)
                 _invalidateCredential(host, fresh);
             return retried;
         }
 
-        private async Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken)
+        private async Task<HttpResponseMessage> SendAsync(DevHubCredential credential, string url, string json, CancellationToken cancellationToken)
         {
             if (credential.IsBearer && (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !AzureDevOpsCredentialProvider.IsCloudUrl(uri)))
                 throw new InvalidOperationException("Azure DevOps Entra tokens can only be sent to Azure DevOps Services over HTTPS.");
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var request = new HttpRequestMessage(json == null ? HttpMethod.Get : HttpMethod.Post, url);
+            if (json != null)
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
             request.Headers.Authorization = credential.IsBearer
                 ? new AuthenticationHeaderValue("Bearer", credential.Token)
                 : new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.ASCII.GetBytes($":{credential.Token}")));
@@ -481,7 +581,137 @@ namespace StartScreen.Services.DevHub.Providers
 
         private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);
 
-        internal static List<DevHubPullRequest> ParseAdoPullRequests(string json, RemoteRepoIdentifier repo, string currentUserId = null)
+        private async Task<List<DevHubIssue>> GetIssuesAsync(RemoteRepoIdentifier repo, DevHubCredential credential,
+            string identity, int top, string repositoryId, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(identity))
+                return new List<DevHubIssue>();
+            var host = GetCredentialHost(repo);
+            var projectUrl = $"{GetBaseUrl(repo).TrimEnd('/')}/{Uri.EscapeDataString(repo.Project)}";
+            var version = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
+            var query = "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project "
+                + "AND ([System.CreatedBy] = @Me OR [System.AssignedTo] = @Me) "
+                + "AND [System.State] NOT IN ('Closed', 'Done', 'Removed') ORDER BY [System.ChangedDate] DESC";
+            using var queryResponse = await SendAuthenticatedAsync(host, credential,
+                $"{projectUrl}/_apis/wit/wiql?$top={top}&api-version={version}",
+                JsonSerializer.Serialize(new { query }), cancellationToken);
+            queryResponse.EnsureSuccessStatusCode();
+            using var queryDoc = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
+            var ids = queryDoc.RootElement.GetProperty("workItems").EnumerateArray()
+                .Take(top).Select(item => item.GetProperty("id").GetInt32()).ToList();
+            if (ids.Count == 0)
+                return new List<DevHubIssue>();
+            using var itemsResponse = await SendAuthenticatedGetAsync(host, credential,
+                $"{projectUrl}/_apis/wit/workitems?ids={string.Join(",", ids)}&$expand=all&api-version={version}", cancellationToken);
+            itemsResponse.EnsureSuccessStatusCode();
+            return ParseAdoIssues(await itemsResponse.Content.ReadAsStringAsync(), repo, identity, repositoryId);
+        }
+
+        internal static List<DevHubIssue> ParseAdoIssues(string json, RemoteRepoIdentifier repo,
+            string currentUserId, string repositoryId = null)
+        {
+            using var doc = JsonDocument.Parse(json);
+            var results = new List<DevHubIssue>();
+            foreach (var item in doc.RootElement.GetProperty("value").EnumerateArray())
+            {
+                // Work items belong to projects, not repos. A scoped view requires an explicit Git link.
+                if (repositoryId != null && !HasRepositoryLink(item, repositoryId))
+                    continue;
+                var fields = item.GetProperty("fields");
+                var state = fields.GetProperty("System.State").GetString();
+                var closed = string.Equals(state, "Closed", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(state, "Done", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(state, "Removed", StringComparison.OrdinalIgnoreCase)
+                    || (fields.TryGetProperty("Microsoft.VSTS.Common.ClosedDate", out var closedDate)
+                        && closedDate.ValueKind == JsonValueKind.String && closedDate.TryGetDateTime(out var date) && date != DateTime.MinValue);
+                var authored = HasIdentity(fields, "System.CreatedBy", currentUserId);
+                var assigned = HasIdentity(fields, "System.AssignedTo", currentUserId);
+                if (!authored && !assigned)
+                    continue;
+                var id = item.GetProperty("id").GetInt32();
+                results.Add(new DevHubIssue
+                {
+                    ProviderName = "Azure DevOps",
+                    RepoIdentifier = repositoryId != null ? repo : null,
+                    RepoDisplayName = repositoryId != null ? repo.DisplayName : $"{repo.Owner}/{repo.Project}",
+                    NumericId = id,
+                    Number = $"#{id}",
+                    Title = fields.GetProperty("System.Title").GetString(),
+                    Author = fields.TryGetProperty("System.CreatedBy", out var creator) && creator.ValueKind == JsonValueKind.Object
+                        && creator.TryGetProperty("displayName", out var name) ? name.GetString() : null,
+                    State = state,
+                    IsClosed = closed,
+                    IsAuthoredByCurrentUser = authored,
+                    IsAssignedToCurrentUser = !closed && assigned,
+                    CreatedAt = fields.GetProperty("System.CreatedDate").GetDateTime().ToUniversalTime(),
+                    UpdatedAt = fields.GetProperty("System.ChangedDate").GetDateTime().ToUniversalTime(),
+                    WebUrl = $"{GetBaseUrl(repo)}/{Uri.EscapeDataString(repo.Project)}/_workitems/edit/{id}",
+                });
+            }
+            return results;
+        }
+
+        private static bool HasIdentity(JsonElement fields, string field, string identity)
+        {
+            return !string.IsNullOrEmpty(identity) && fields.TryGetProperty(field, out var user)
+                && user.ValueKind == JsonValueKind.Object && user.TryGetProperty("id", out var id)
+                && id.ValueKind == JsonValueKind.String && string.Equals(id.GetString(), identity, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HasRepositoryLink(JsonElement item, string repositoryId)
+        {
+            if (!item.TryGetProperty("relations", out var relations) || relations.ValueKind != JsonValueKind.Array)
+                return false;
+            foreach (var relation in relations.EnumerateArray())
+            {
+                if (!relation.TryGetProperty("rel", out var kind) || kind.GetString() != "ArtifactLink"
+                    || !relation.TryGetProperty("url", out var url) || url.ValueKind != JsonValueKind.String)
+                    continue;
+                var link = Uri.UnescapeDataString(url.GetString());
+                foreach (var prefix in new[] { "vstfs:///Git/PullRequestId/", "vstfs:///Git/Commit/", "vstfs:///Git/Ref/" })
+                {
+                    if (!link.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var parts = link.Substring(prefix.Length).Split('/');
+                    if (parts.Length >= 3 && string.Equals(parts[1], repositoryId, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        internal static void ApplyBuildStatuses(IReadOnlyList<DevHubPullRequest> pullRequests, string prJson, string buildJson)
+        {
+            using var prs = JsonDocument.Parse(prJson);
+            using var builds = JsonDocument.Parse(buildJson);
+            foreach (var pr in pullRequests.Where(item => item.IsOpen && !item.IsDraft && item.IsAuthoredByCurrentUser))
+            {
+                var metadata = prs.RootElement.GetProperty("value").EnumerateArray()
+                    .FirstOrDefault(item => item.GetProperty("pullRequestId").GetInt32() == pr.NumericId);
+                if (metadata.ValueKind != JsonValueKind.Object
+                    || !metadata.TryGetProperty("lastMergeCommit", out var merge) || merge.ValueKind != JsonValueKind.Object
+                    || !merge.TryGetProperty("commitId", out var commit) || commit.ValueKind != JsonValueKind.String
+                    || string.IsNullOrEmpty(commit.GetString()))
+                    continue;
+                // A failed build from an old PR iteration or another branch is not current action metadata.
+                var latest = builds.RootElement.GetProperty("value").EnumerateArray()
+                    .Where(build => build.TryGetProperty("sourceBranch", out var branch)
+                        && branch.GetString() == $"refs/pull/{pr.NumericId}/merge"
+                        && build.TryGetProperty("sourceVersion", out var version) && version.GetString() == commit.GetString()
+                        && build.TryGetProperty("definition", out var definition) && definition.ValueKind == JsonValueKind.Object
+                        && definition.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number)
+                    .GroupBy(build => build.GetProperty("definition").GetProperty("id").GetInt32())
+                    .Select(group => group.OrderByDescending(build => build.GetProperty("id").GetInt32()).First())
+                    .Select(build => MapAdoBuildStatus(build.GetProperty("status").GetString(),
+                        build.TryGetProperty("result", out var result) && result.ValueKind == JsonValueKind.String ? result.GetString() : null))
+                    .ToList();
+                pr.CiStatus = latest.Contains("failure") ? "failure" : latest.Contains("pending") ? "pending"
+                    : latest.Count > 0 && latest.All(status => status == "success") ? "success" : null;
+            }
+        }
+
+        internal static List<DevHubPullRequest> ParseAdoPullRequests(string json, RemoteRepoIdentifier repo,
+            string currentUserId = null, bool projectWide = false)
         {
             var results = new List<DevHubPullRequest>();
 
@@ -492,6 +722,14 @@ namespace StartScreen.Services.DevHub.Providers
 
                 foreach (var pr in prs.EnumerateArray())
                 {
+                    var prRepo = repo;
+                    if (projectWide)
+                    {
+                        var repositoryName = pr.GetProperty("repository").GetProperty("name").GetString();
+                        if (string.IsNullOrWhiteSpace(repositoryName))
+                            throw new JsonException("Azure DevOps did not return a repository name for a personal pull request.");
+                        prRepo = new RemoteRepoIdentifier(repo.Host, repo.Owner, repositoryName, repo.Project, repo.BaseUrl, repo.IsAzureDevOpsServer);
+                    }
                     var id = pr.GetProperty("pullRequestId").GetInt32();
                     var author = pr.TryGetProperty("createdBy", out var createdBy)
                         ? createdBy.GetProperty("displayName").GetString()
@@ -505,12 +743,15 @@ namespace StartScreen.Services.DevHub.Providers
                     var status = MapAdoPrStatus(pr.GetProperty("status").GetString());
                     if (status == "open" && pr.TryGetProperty("isDraft", out var draft) && draft.ValueKind == JsonValueKind.True)
                         status = "draft";
+                    if (status == "open" && pr.TryGetProperty("mergeStatus", out var mergeStatus)
+                        && mergeStatus.ValueKind == JsonValueKind.String && mergeStatus.GetString() == "conflicts")
+                        status = "conflicts";
 
                     results.Add(new DevHubPullRequest
                     {
                         ProviderName = "Azure DevOps",
-                        RepoIdentifier = repo,
-                        RepoDisplayName = repo.DisplayName,
+                        RepoIdentifier = prRepo,
+                        RepoDisplayName = prRepo.DisplayName,
                         Title = pr.GetProperty("title").GetString(),
                         Number = $"!{id}",
                         NumericId = id,
@@ -523,8 +764,12 @@ namespace StartScreen.Services.DevHub.Providers
                             ? closed.GetDateTime().ToUniversalTime()
                             : pr.GetProperty("creationDate").GetDateTime().ToUniversalTime(),
                         CreatedAt = pr.GetProperty("creationDate").GetDateTime().ToUniversalTime(),
-                        WebUrl = $"{GetBaseUrl(repo)}/{repo.Project}/_git/{repo.Repo}/pullrequest/{id}",
+                        WebUrl = $"{GetBaseUrl(prRepo)}/{Uri.EscapeDataString(prRepo.Project)}/_git/{Uri.EscapeDataString(prRepo.Repo)}/pullrequest/{id}",
                         ApprovalCount = approvalCount,
+                        HasChangesRequested = (status == "open" || status == "conflicts" || status == "draft")
+                            && reviewers.ValueKind == JsonValueKind.Array
+                            && reviewers.EnumerateArray().Any(reviewer => reviewer.TryGetProperty("vote", out var vote)
+                                && vote.ValueKind == JsonValueKind.Number && vote.TryGetInt32(out var value) && value == -10),
                         IsAuthoredByCurrentUser = !string.IsNullOrEmpty(currentUserId)
                             && createdBy.ValueKind == JsonValueKind.Object
                             && createdBy.TryGetProperty("id", out var authorId)
@@ -608,7 +853,7 @@ namespace StartScreen.Services.DevHub.Providers
                 "active" => "open",
                 "completed" => "merged",
                 "abandoned" => "closed",
-                _ => status ?? "open",
+                _ => status,
             };
         }
 

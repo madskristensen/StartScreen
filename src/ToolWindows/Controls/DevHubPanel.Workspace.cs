@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using StartScreen.Models.DevHub;
 
@@ -9,46 +10,27 @@ namespace StartScreen.ToolWindows.Controls
 {
     public partial class DevHubPanel
     {
-        private DateTime? _overviewBaseline;
         private string _workspaceActivitySignature;
-        private bool _overviewSeenForVisit;
+        private IReadOnlyList<DevHubWorkItem> _myWorkItems = Array.Empty<DevHubWorkItem>();
+        private IReadOnlyList<DevHubWorkItem> _incomingItems = Array.Empty<DevHubWorkItem>();
         private IReadOnlyList<DevHubPullRequest> _activityPullRequests = Array.Empty<DevHubPullRequest>();
         private IReadOnlyList<DevHubIssue> _activityIssues = Array.Empty<DevHubIssue>();
         private IReadOnlyList<DevHubCiRun> _activityBuilds = Array.Empty<DevHubCiRun>();
 
         private void BeginWorkspaceVisit(object sender, RoutedEventArgs e)
         {
-            _overviewBaseline = Options.Instance.LastOverviewSeen;
             _workspaceActivitySignature = null;
-            _overviewSeenForVisit = false;
             _copilotLoaded = true;
-            if (Options.Instance.ApplyOverviewDefault())
+            if (Options.Instance.ApplyWorkViewsDefault())
                 SaveOptionsAsync().FileAndForget(nameof(DevHubPanel));
             _defaultTabApplied = false;
             ApplyDefaultTab();
             StartCopilotActivity();
         }
 
-        private void MarkOverviewAsSeen()
-        {
-            if (_overviewSeenForVisit)
-                return;
-            _overviewBaseline ??= Options.Instance.LastOverviewSeen;
-            _overviewSeenForVisit = true;
-            Options.Instance.LastOverviewSeen = DateTime.UtcNow;
-            SaveOptionsAsync().FileAndForget(nameof(DevHubPanel));
-        }
-
         private void SelectDefaultTab(DevHubDefaultTab tab)
         {
-            DevHubSubTabs.SelectedItem = tab switch
-            {
-                DevHubDefaultTab.Issues => IssuesTab,
-                DevHubDefaultTab.PullRequests => PrsTab,
-                DevHubDefaultTab.Builds => CiTab,
-                DevHubDefaultTab.NeedsYou => NeedsYouTab,
-                _ => OverviewTab,
-            };
+            DevHubSubTabs.SelectedItem = tab == DevHubDefaultTab.Incoming ? IncomingTab : MyWorkTab;
         }
 
         private void UpdateWorkspaceActivity(IReadOnlyList<DevHubPullRequest> prs,
@@ -57,30 +39,58 @@ namespace StartScreen.ToolWindows.Controls
             _activityPullRequests = prs;
             _activityIssues = issues;
             _activityBuilds = builds;
-            _overviewBaseline ??= Options.Instance.LastOverviewSeen;
             var sessions = GetVisibleCopilotSessions();
-            var needsYou = DevHubWorkItem.GetCopilotItems(sessions, true).Concat(DevHubWorkItem.GetNeedsYou(prs)).ToArray();
-            var ownPullRequests = DevHubWorkItem.GetOwnPullRequests(prs);
-            var changes = DevHubWorkItem.GetCopilotItems(sessions, false)
-                .Concat(DevHubWorkItem.GetChanges(prs, issues, builds, _overviewBaseline.Value)).ToArray();
-            string signature = string.Join("\n", needsYou.Concat(ownPullRequests).Concat(changes)
-                .Select(item => $"{item.CopilotSessionId}|{item.WebUrl}|{item.Title}|{item.Detail}|{item.StatusText}|{item.CopilotStatus}|{item.CopilotStatusDetails}|{item.UpdatedAt.Ticks}"));
+            var myWork = DevHubWorkItem.GetMyWork(prs, issues, sessions, Options.Instance.DevHubSortOrder);
+            var incoming = DevHubWorkItem.GetIncoming(prs, issues, builds, Options.Instance.DevHubSortOrder);
+            string signature = string.Join("\n", myWork.Concat(incoming)
+                .Select(item => $"{item.Section}|{item.CopilotSessionId}|{item.WebUrl}|{item.Title}|{item.Detail}|{item.StatusText}|{item.AttentionReason}|{item.CopilotStatus}|{item.CopilotStatusDetails}|{item.UpdatedAt.Ticks}|{item.BranchDisplayText}|{string.Join(",", item.Labels.Select(label => label.Name + ":" + label.Color))}"));
             if (_workspaceActivitySignature != signature)
             {
                 _workspaceActivitySignature = signature;
-                InvalidateBorderCache();
-                NeedsYouList.ItemsSource = needsYou;
-                OwnPullRequestsList.ItemsSource = ownPullRequests;
-                OwnPullRequestsSection.Visibility = ownPullRequests.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-                ChangesList.ItemsSource = changes;
-                NeedsYouEmpty.Visibility = needsYou.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-                ChangesEmpty.Visibility = changes.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-                NeedsYouTab.Header = needsYou.Length == 0 ? "Needs you" : $"Needs you {needsYou.Length}";
+                _myWorkItems = myWork;
+                _incomingItems = incoming;
+                RenderWorkViews();
             }
-            if (ReferenceEquals(DevHubSubTabs.SelectedItem, OverviewTab))
-            {
-                MarkOverviewAsSeen();
-            }
+        }
+
+        private void ActivityFilter_Changed(object sender, RoutedEventArgs e)
+        {
+            if (MyWorkList != null && IncomingList != null)
+                RenderWorkViews();
+        }
+
+        private void RenderWorkViews()
+        {
+            InvalidateBorderCache();
+            var myWorkKind = MyWorkPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
+                : MyWorkIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
+                : MyWorkCopilotFilter.IsChecked == true ? DevHubWorkItemKind.Copilot : DevHubWorkItemKind.All;
+            var incomingKind = IncomingPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
+                : IncomingIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
+                : IncomingBuildFilter.IsChecked == true ? DevHubWorkItemKind.Build : DevHubWorkItemKind.All;
+            var myWork = DevHubWorkItem.Filter(_myWorkItems, myWorkKind, false);
+            var incoming = DevHubWorkItem.Filter(_incomingItems, incomingKind, false);
+            MyWorkNeedsAttention.Content = $"Needs attention ({myWork.Count(item => item.NeedsAttention)})";
+            IncomingNeedsAttention.Content = $"Needs attention ({incoming.Count(item => item.NeedsAttention)})";
+            myWork = DevHubWorkItem.Filter(myWork, DevHubWorkItemKind.All, MyWorkNeedsAttention.IsChecked == true);
+            incoming = DevHubWorkItem.Filter(incoming, DevHubWorkItemKind.All, IncomingNeedsAttention.IsChecked == true);
+            MyWorkList.ItemsSource = CreateWorkItemView(myWork);
+            IncomingList.ItemsSource = CreateWorkItemView(incoming);
+            MyWorkEmpty.Visibility = myWork.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            IncomingEmpty.Visibility = incoming.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            MyWorkEmpty.Text = MyWorkNeedsAttention.IsChecked == true
+                ? "No items need your attention in this view." : "No matching personal work in the loaded activity.";
+            IncomingEmpty.Text = IncomingNeedsAttention.IsChecked == true
+                ? "No items need your attention in this view." : "No matching incoming activity.";
+            MyWorkTab.Header = _myWorkItems.Count == 0 ? "My work" : $"My work {_myWorkItems.Count}";
+            IncomingTab.Header = _incomingItems.Count == 0 ? "Incoming" : $"Incoming {_incomingItems.Count}";
+        }
+
+        internal static ListCollectionView CreateWorkItemView(IReadOnlyList<DevHubWorkItem> items)
+        {
+            var view = new ListCollectionView(items.ToArray());
+            view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DevHubWorkItem.Section)));
+            return view;
         }
 
         private void WorkItem_MouseUp(object sender, MouseButtonEventArgs e)
