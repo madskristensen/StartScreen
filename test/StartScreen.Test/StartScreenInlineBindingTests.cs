@@ -573,9 +573,11 @@ namespace StartScreen.Test
             changed.Clear();
             model.SetServiceHealth("Checking service status...", "Refreshing", false, isChecking: true);
             expression.UpdateTarget();
-            Assert.IsFalse(model.HasServiceHealthStatus);
-            CollectionAssert.Contains(changed, nameof(StartScreenViewModel.HasServiceHealthStatus));
-            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+            Assert.IsTrue(model.HasServiceHealthStatus);
+            Assert.IsEmpty(changed);
+            Assert.AreEqual(Visibility.Visible, panel.Visibility);
+            Assert.AreEqual(healthy, model.IsServiceHealthy);
+            Assert.AreEqual("Completed", model.ServiceHealthText);
 
             model.SetServiceHealth("Service status unavailable", "Refresh to try again", false);
             expression.UpdateTarget();

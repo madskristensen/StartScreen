@@ -446,7 +446,9 @@ The header groups Refresh with its update timestamp. This single Refresh button
 updates repository activity, blog feeds, and videos; news tabs have no separate
 refresh link or timestamp. Visual Studio service
 health is shown below the action buttons and links to the public status page.
-It remains hidden until a check completes, including while a refresh is running.
+It remains hidden until the first check completes, then stays visible during
+refreshes. Unchanged status values and news/video cards are retained without
+rebuilding their UI; only changed content is updated.
 Unknown, stale, and failed checks are not displayed as healthy. Public service
 health does not describe your account sign-in or repository CI status.
 

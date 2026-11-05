@@ -1012,8 +1012,26 @@ namespace StartScreen.ToolWindows
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             cancellationToken.ThrowIfCancellationRequested();
 
+            UpdateNewsPosts(posts, options);
+        }
+
+        internal void UpdateNewsPosts(IReadOnlyList<NewsPost> posts, Options options)
+        {
+            var refreshed = posts.Select(post =>
+            {
+                var existing = _allNewsPosts.FirstOrDefault(item => item.Url == post.Url);
+                if (existing == null)
+                    return post;
+                existing.Title = post.Title;
+                existing.Summary = post.Summary;
+                existing.PublishDate = post.PublishDate;
+                existing.Source = post.Source;
+                existing.ToolTip = post.ToolTip;
+                existing.HasDescription = post.HasDescription;
+                return existing;
+            }).ToList();
             _allNewsPosts.Clear();
-            _allNewsPosts.AddRange(posts);
+            _allNewsPosts.AddRange(refreshed);
             ApplyPinnedStateToNews(options);
             UpdateNewsCollections();
             UpdateHasNewBlogs(options);
@@ -1145,12 +1163,30 @@ namespace StartScreen.ToolWindows
             List<YouTubeVideo> videos,
             CancellationToken cancellationToken)
         {
+            Options options = await Options.GetLiveInstanceAsync();
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             cancellationToken.ThrowIfCancellationRequested();
+
+            UpdateYouTubeVideos(videos, options);
+        }
+
+        internal void UpdateYouTubeVideos(IReadOnlyList<YouTubeVideo> videos, Options options)
+        {
+            var refreshed = videos.Select(video =>
+            {
+                var existing = _allYouTubeVideos.FirstOrDefault(item => item.Url == video.Url);
+                if (existing == null)
+                    return video;
+                existing.Title = video.Title;
+                existing.PublishDate = video.PublishDate;
+                if (existing.ThumbnailUrl != video.ThumbnailUrl || existing.Thumbnail == null)
+                    existing.Thumbnail = video.Thumbnail;
+                existing.ThumbnailUrl = video.ThumbnailUrl;
+                return existing;
+            }).ToList();
             _allYouTubeVideos.Clear();
-            _allYouTubeVideos.AddRange(videos);
+            _allYouTubeVideos.AddRange(refreshed);
             UpdateYouTubeCollections();
-            Options options = await Options.GetLiveInstanceAsync();
             UpdateHasNewVideos(options);
         }
 
@@ -1242,18 +1278,13 @@ namespace StartScreen.ToolWindows
         }
 
         /// <summary>
-        /// Rebuilds the pinned and unpinned news collections from the master list.
+        /// Synchronizes the pinned and unpinned news collections with the master list.
         /// Limits visible unpinned items to 10 per column.
         /// </summary>
         private void UpdateNewsCollections()
         {
-            // Bulk-replace to fire a single CollectionChanged.Reset per collection
-            PinnedNewsPosts = new ObservableCollection<NewsPost>(_allNewsPosts.Where(p => p.IsPinned));
-            OnPropertyChanged(nameof(PinnedNewsPosts));
-
-            NewsPosts = new ObservableCollection<NewsPost>(
-                _allNewsPosts.Where(p => !p.IsPinned).Take(NewsColumnCount * 10));
-            OnPropertyChanged(nameof(NewsPosts));
+            SynchronizeCollection(PinnedNewsPosts, _allNewsPosts.Where(p => p.IsPinned).ToList());
+            SynchronizeCollection(NewsPosts, _allNewsPosts.Where(p => !p.IsPinned).Take(NewsColumnCount * 10).ToList());
         }
 
         /// <summary>
@@ -1262,20 +1293,23 @@ namespace StartScreen.ToolWindows
         /// </summary>
         private void UpdateYouTubeCollections()
         {
-            var newVideos = _allYouTubeVideos.Take(YouTubeColumnCount * 5).ToList();
+            SynchronizeCollection(YouTubeVideos, _allYouTubeVideos.Take(YouTubeColumnCount * 5).ToList());
+        }
 
-            // Remove trailing items if the new list is shorter
-            for (var i = YouTubeVideos.Count - 1; i >= newVideos.Count; i--)
-                YouTubeVideos.RemoveAt(i);
-
-            // Update existing slots and append new ones
-            for (var i = 0; i < newVideos.Count; i++)
+        private static void SynchronizeCollection<T>(ObservableCollection<T> collection, IReadOnlyList<T> items)
+        {
+            for (var i = 0; i < items.Count; i++)
             {
-                if (i < YouTubeVideos.Count)
-                    YouTubeVideos[i] = newVideos[i];
+                if (i < collection.Count && ReferenceEquals(collection[i], items[i]))
+                    continue;
+                var existingIndex = collection.IndexOf(items[i]);
+                if (existingIndex >= 0)
+                    collection.Move(existingIndex, i);
                 else
-                    YouTubeVideos.Add(newVideos[i]);
+                    collection.Insert(i, items[i]);
             }
+            for (var i = collection.Count - 1; i >= items.Count; i--)
+                collection.RemoveAt(i);
         }
 
         /// <summary>

@@ -256,14 +256,25 @@ namespace StartScreen.ToolWindows
 
         internal void SetServiceHealth(string text, string details, bool healthy, bool isChecking = false)
         {
+            if (isChecking && _hasServiceHealthStatus)
+                return;
+
+            bool textChanged = _serviceHealthText != text;
+            bool detailsChanged = _serviceHealthDetails != details;
+            bool healthyChanged = _isServiceHealthy != healthy;
+            bool visibilityChanged = _hasServiceHealthStatus != !isChecking;
             _serviceHealthText = text;
             _serviceHealthDetails = details;
             _isServiceHealthy = healthy;
             _hasServiceHealthStatus = !isChecking;
-            OnPropertyChanged(nameof(ServiceHealthText));
-            OnPropertyChanged(nameof(ServiceHealthDetails));
-            OnPropertyChanged(nameof(IsServiceHealthy));
-            OnPropertyChanged(nameof(HasServiceHealthStatus));
+            if (textChanged)
+                OnPropertyChanged(nameof(ServiceHealthText));
+            if (detailsChanged)
+                OnPropertyChanged(nameof(ServiceHealthDetails));
+            if (healthyChanged)
+                OnPropertyChanged(nameof(IsServiceHealthy));
+            if (visibilityChanged)
+                OnPropertyChanged(nameof(HasServiceHealthStatus));
         }
 
         private void SelectedMruItem_PropertyChanged(object sender, PropertyChangedEventArgs e)

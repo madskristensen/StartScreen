@@ -10,6 +10,66 @@ namespace StartScreen.Test
     public class ServiceHealthRefreshTests
     {
         [STATestMethod]
+        [DataRow((int)ServiceHealthState.Healthy)]
+        [DataRow((int)ServiceHealthState.Incident)]
+        [DataRow((int)ServiceHealthState.Unknown)]
+        public void Refresh_UnchangedStatusStaysVisibleWithoutNotifications(int stateValue)
+        {
+            using var context = CreateContext();
+            var state = (ServiceHealthState)stateValue;
+            var status = Status(state);
+            var pending = new TaskCompletionSource<ServiceHealthStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var requests = 0;
+            var model = new StartScreenViewModel(CancellationToken.None,
+                _ => ++requests == 1 ? Task.FromResult(status) : pending.Task, () => context.Factory);
+            try
+            {
+                context.Factory.Run(() => model.RefreshServiceHealthAsync(CancellationToken.None));
+                var changed = new List<string?>();
+                model.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+                var refresh = context.Factory.RunAsync(() => model.RefreshServiceHealthAsync(CancellationToken.None));
+
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.IsTrue(model.HasServiceHealthStatus);
+                Assert.AreEqual(state == ServiceHealthState.Healthy, model.IsServiceHealthy);
+                Assert.AreEqual(status.StatusText, model.ServiceHealthText);
+                Assert.IsEmpty(changed);
+
+                pending.SetResult(status);
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                refresh.Join(timeout.Token);
+
+                Assert.IsTrue(model.HasServiceHealthStatus);
+                Assert.IsEmpty(changed);
+                Assert.AreEqual(2, requests);
+            }
+            finally
+            {
+                pending.TrySetCanceled();
+                model.CancelBackgroundWork();
+            }
+        }
+
+        [TestMethod]
+        public void SetServiceHealth_OnlyNotifiesChangedTooltipDetails()
+        {
+            var model = new StartScreenViewModel();
+            model.SetServiceHealth("Operational", "Checked earlier", true);
+            var changed = new List<string?>();
+            model.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+            model.SetServiceHealth("Operational", "Checked earlier", true);
+            Assert.IsEmpty(changed);
+
+            model.SetServiceHealth("Operational", "Checked just now", true);
+            CollectionAssert.AreEqual(new[] { nameof(StartScreenViewModel.ServiceHealthDetails) }, changed);
+            Assert.AreEqual("Checked just now", model.ServiceHealthDetails);
+            Assert.IsTrue(model.HasServiceHealthStatus);
+            Assert.IsTrue(model.IsServiceHealthy);
+        }
+
+        [STATestMethod]
         public void AutomaticRefresh_RechecksEveryFiveMinutesWithoutManualRefresh()
         {
             using var context = CreateContext();
