@@ -44,8 +44,12 @@ namespace StartScreen.ToolWindows
                 JoinableTask loadTask =
                     StartScreenPackage.BackgroundTaskFactory.RunAsync(() => _viewModel.LoadMruAsync());
 
-                // Return control immediately for fast window paint
-                _control = new StartScreenControl(_viewModel, loadTask);
+                // Restore layout before the first paint while MRU data continues loading.
+                Options options = await Options.GetLiveInstanceAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                StartScreenPackage.ShutdownToken.ThrowIfCancellationRequested();
+                _control = new StartScreenControl(_viewModel, loadTask, options.SplitterPosition);
                 return _control;
             }
             catch (Exception ex)

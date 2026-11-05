@@ -38,7 +38,7 @@ namespace StartScreen.ToolWindows
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
-        public StartScreenControl(StartScreenViewModel viewModel, JoinableTask loadTask)
+        public StartScreenControl(StartScreenViewModel viewModel, JoinableTask loadTask, double splitterPosition)
         {
             _viewModel = viewModel;
             _loadTask = loadTask;
@@ -46,6 +46,7 @@ namespace StartScreen.ToolWindows
             _devHubCacheTask = new AsyncLazy<DevHubDashboard>(
                 () => _devHubService.LoadFromCacheAsync(_shutdownToken), StartScreenPackage.BackgroundTaskFactory);
             InitializeComponent();
+            ApplyInitialMruWidth(LeftColumn, splitterPosition);
 
             // Bind the ViewModel up front so the MRU list pops in as soon as
             // LoadMruAsync raises PropertyChanged on GroupedMruItems, instead of
@@ -122,12 +123,11 @@ namespace StartScreen.ToolWindows
 
                 _viewModel.EnsureDeferredContentInitialized();
 
-                Task restoreSplitterTask = RestoreSplitterPositionAsync();
                 Task devHubTask = LoadDevHubAsync();
                 Task newsTask = _viewModel.RefreshInBackgroundAsync(refreshMru: false);
                 RefreshWorkspaceSignalsAsync(false).FileAndForget(nameof(StartScreenControl));
 
-                await Task.WhenAll(restoreSplitterTask, newsTask, devHubTask);
+                await Task.WhenAll(newsTask, devHubTask);
                 cancellationToken.ThrowIfCancellationRequested();
                 _isInitialized = true;
             }
@@ -145,19 +145,11 @@ namespace StartScreen.ToolWindows
             VS.Commands.ExecuteAsync("Help.ReleaseNotes").FileAndForget(nameof(StartScreenControl));
         }
 
-        private async Task RestoreSplitterPositionAsync()
+        internal static void ApplyInitialMruWidth(ColumnDefinition column, double splitterPosition)
         {
-            try
+            if (splitterPosition >= 280 && splitterPosition <= 480)
             {
-                Options options = await Options.GetLiveInstanceAsync();
-                if (options.SplitterPosition >= 280 && options.SplitterPosition <= 480)
-                {
-                    LeftColumn.Width = new GridLength(options.SplitterPosition);
-                }
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
+                column.Width = new GridLength(splitterPosition);
             }
         }
 

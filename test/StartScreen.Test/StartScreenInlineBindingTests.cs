@@ -12,6 +12,60 @@ namespace StartScreen.Test
     public class StartScreenInlineBindingTests
     {
         [STATestMethod]
+        [DataRow(280d, 280d)]
+        [DataRow(320d, 320d)]
+        [DataRow(360d, 360d)]
+        [DataRow(450d, 450d)]
+        [DataRow(480d, 480d)]
+        [DataRow(0d, 360d)]
+        [DataRow(-1d, 360d)]
+        [DataRow(279d, 360d)]
+        [DataRow(481d, 360d)]
+        [DataRow(double.NaN, 360d)]
+        [DataRow(double.PositiveInfinity, 360d)]
+        [DataRow(double.NegativeInfinity, 360d)]
+        public void RecentItems_UseSavedWidthOnFirstLayoutAndKeepItAsContentLoads(double savedWidth, double expectedWidth)
+        {
+            var document = ReadLayoutXaml("StartScreenControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var columnDefinition = document.Descendants(p + "ColumnDefinition")
+                .Single(element => element.Attribute(x + "Name")?.Value == "LeftColumn");
+            var grid = new Grid();
+            foreach (var column in columnDefinition.Parent!.Elements())
+                grid.ColumnDefinitions.Add((ColumnDefinition)XamlReader.Parse(column.ToString()));
+            var mruColumn = grid.ColumnDefinitions[0];
+            StartScreenControl.ApplyInitialMruWidth(mruColumn, savedWidth);
+            var items = new ListBox();
+            grid.Children.Add(items);
+            var splitter = new GridSplitter { Width = 5 };
+            Grid.SetColumn(splitter, 1);
+            grid.Children.Add(splitter);
+            var content = new Border();
+            Grid.SetColumn(content, 2);
+            grid.Children.Add(content);
+            void Layout()
+            {
+                grid.Measure(new Size(1400, 800));
+                grid.Arrange(new Rect(0, 0, 1400, 800));
+                grid.UpdateLayout();
+            }
+
+            Layout();
+            Assert.AreEqual(expectedWidth, mruColumn.ActualWidth, 0.01, "The saved width must be used on the first layout.");
+            double initialContentLeft = content.TranslatePoint(new Point(), grid).X;
+            Assert.AreEqual(expectedWidth + splitter.Width, initialContentLeft, 0.01);
+
+            items.Items.Add(new TextBlock { Text = new string('x', 200) });
+            content.Child = new TextBlock { Text = "Repository activity and news loaded" };
+            Layout();
+
+            Assert.AreEqual(expectedWidth, mruColumn.ActualWidth, 0.01);
+            Assert.AreEqual(initialContentLeft, content.TranslatePoint(new Point(), grid).X, 0.01,
+                "Loading secondary content must not shift the column boundary.");
+        }
+
+        [STATestMethod]
         public void RepositoryCounts_ShowInlinePositiveBadgeAndHideZeroStatusRow()
         {
             var document = ReadLayoutXaml("MruItemControl.xaml");

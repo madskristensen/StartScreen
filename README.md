@@ -23,6 +23,8 @@ The action bar and search are available before secondary content loads. Recent
 projects load first; Git metadata, repository summaries, Dev Hub, and news start after the UI has
 yielded to rendering and user input. Cache reads, feed parsing, and thumbnail
 decoding run on background threads with bounded disk and network concurrency.
+The saved recent-project column width is applied before the first render, so it
+does not shift when background content loads.
 Dev Hub does not read its cache or authenticate providers when disabled.
 
 Hiding the Start Screen cancels refreshes and pauses its automatic refresh timer.
