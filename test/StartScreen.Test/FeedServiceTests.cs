@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using System.ServiceModel.Syndication;
 using System.Text;
+using System.Xml;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -246,6 +247,263 @@ namespace StartScreen.Test
                     "https://example.com/feed",
                     DateTime.UtcNow,
                     cancellation.Token));
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_ForcedRefreshBypassesFreshSourceCacheAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            WriteSourceCache(directory, "Example", "Cached post", DateTime.UtcNow.AddHours(-1));
+            var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("Fresh post"));
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Example")], directory.Path, _ => Task.CompletedTask, forceRefresh: true);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("Fresh post", result.Posts.Single().Title);
+            Assert.IsEmpty(result.CachedFeeds);
+            Assert.IsEmpty(result.FailedFeeds);
+            var cached = await FeedService.GetCachedPostsAsync(directory.GetPath("_feed.json"));
+            Assert.IsNotNull(cached);
+            Assert.AreEqual("Fresh post", cached.Single().Title);
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_AutomaticRefreshReusesFreshSourceCacheAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            WriteSourceCache(directory, "Example", "Cached post", DateTime.UtcNow.AddHours(-1));
+            var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("Fresh post"));
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Example")], directory.Path, _ => Task.CompletedTask);
+
+            Assert.AreEqual(0, handler.RequestCount);
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("Cached post", result.Posts.Single().Title);
+            CollectionAssert.AreEqual(new[] { "Example" }, result.CachedFeeds.ToArray());
+            Assert.IsEmpty(result.FailedFeeds);
+        }
+
+        [TestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public async Task DownloadFeedsAsync_NotModifiedValidatesCacheAndResetsCheckTimeAsync(bool forceRefresh)
+        {
+            using var directory = new TemporaryDirectory();
+            var oldCheck = DateTime.UtcNow.AddHours(-5);
+            WriteSourceCache(directory, "Example", "Cached post", oldCheck);
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotModified));
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Example")], directory.Path, _ => Task.CompletedTask, forceRefresh: forceRefresh);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("Cached post", result.Posts.Single().Title);
+            Assert.IsEmpty(result.CachedFeeds);
+            Assert.IsEmpty(result.FailedFeeds);
+            Assert.AreEqual(new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero),
+                handler.LastRequest?.Headers.IfModifiedSince);
+            Assert.IsFalse(FeedService.IsCacheStale(directory.GetPath("Example.xml"), DateTime.UtcNow));
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_RetriesFailedSourceBeforeUsingCacheAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            WriteSourceCache(directory, "Example", "Cached post", DateTime.UtcNow.AddHours(-1));
+            var retries = 0;
+            var handler = new TestHttpMessageHandler((_, attempt) => attempt == 1
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : CreateFeedResponse("Recovered post"));
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Example")], directory.Path, _ =>
+                {
+                    retries++;
+                    return Task.CompletedTask;
+                }, forceRefresh: true);
+
+            Assert.AreEqual(2, handler.RequestCount);
+            Assert.AreEqual(1, retries);
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("Recovered post", result.Posts.Single().Title);
+            Assert.IsEmpty(result.CachedFeeds);
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_FailureRetainsCacheWithoutAdvancingFreshnessAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var oldCheck = DateTime.UtcNow.AddHours(-5);
+            WriteSourceCache(directory, "Example", "Cached post", oldCheck);
+            var combinedFile = directory.GetPath("_feed.json");
+            const string originalCache = "[{\"Title\":\"Previous combined content\"}]";
+            File.WriteAllText(combinedFile, originalCache);
+            File.SetLastWriteTimeUtc(combinedFile, oldCheck);
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Example")], directory.Path, _ => Task.CompletedTask);
+
+            Assert.AreEqual(2, handler.RequestCount);
+            Assert.IsFalse(result.Success);
+            Assert.AreEqual("Cached post", result.Posts.Single().Title);
+            CollectionAssert.AreEqual(new[] { "Example" }, result.FailedFeeds.ToArray());
+            CollectionAssert.AreEqual(new[] { "Example" }, result.CachedFeeds.ToArray());
+            Assert.AreEqual(originalCache, File.ReadAllText(combinedFile));
+            Assert.AreEqual(oldCheck, File.GetLastWriteTimeUtc(combinedFile));
+            Assert.AreEqual(oldCheck, File.GetLastWriteTimeUtc(directory.GetPath("Example.xml")));
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_PartialFailureKeepsFreshAndCachedPostsAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            WriteSourceCache(directory, "Failing", "Cached post", DateTime.UtcNow.AddHours(-5));
+            var handler = new TestHttpMessageHandler((request, _) => request.RequestUri?.Host == "failing.example.com"
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : CreateFeedResponse("Fresh post"));
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Working"), CreateFeed("Failing")], directory.Path, _ => Task.CompletedTask, forceRefresh: true);
+
+            Assert.AreEqual(3, handler.RequestCount);
+            Assert.AreEqual(2, result.FeedCount);
+            Assert.IsFalse(result.Success);
+            CollectionAssert.AreEquivalent(new[] { "Fresh post", "Cached post" }, result.Posts.Select(post => post.Title).ToArray());
+            CollectionAssert.AreEqual(new[] { "Failing" }, result.FailedFeeds.ToArray());
+            CollectionAssert.AreEqual(new[] { "Failing" }, result.CachedFeeds.ToArray());
+            Assert.IsFalse(File.Exists(directory.GetPath("_feed.json")));
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_FailureWithoutCacheIsExplicitAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Example")], directory.Path, _ => Task.CompletedTask);
+
+            Assert.AreEqual(2, handler.RequestCount);
+            Assert.IsFalse(result.Success);
+            Assert.IsEmpty(result.Posts);
+            Assert.IsEmpty(result.CachedFeeds);
+            CollectionAssert.AreEqual(new[] { "Example" }, result.FailedFeeds.ToArray());
+            Assert.IsFalse(File.Exists(directory.GetPath("_feed.json")));
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_DisabledFeedsAreNotFailuresOrRequestsAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var feed = CreateFeed("Disabled");
+            feed.Enabled = false;
+            var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("Unexpected"));
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [feed], directory.Path, _ => Task.CompletedTask, forceRefresh: true);
+
+            Assert.AreEqual(0, handler.RequestCount);
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual(0, result.FeedCount);
+            Assert.IsEmpty(result.Posts);
+            Assert.IsEmpty(result.FailedFeeds);
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_EmptySuccessfulFeedDoesNotRetryAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<rss version=\"2.0\"><channel><title>Empty</title>" +
+                    "<description>Empty feed</description><link>https://example.com</link></channel></rss>"),
+            });
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Example")], directory.Path, _ => Task.CompletedTask);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsTrue(result.Success);
+            Assert.IsEmpty(result.Posts);
+            Assert.IsEmpty(result.FailedFeeds);
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_MalformedCacheIsDownloadedEvenWhenRecentAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            File.WriteAllText(directory.GetPath("Example.xml"), "not xml");
+            var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("Recovered post"));
+            using var client = new HttpClient(handler);
+
+            FeedRefreshResult result = await FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Example")], directory.Path, _ => Task.CompletedTask);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("Recovered post", result.Posts.Single().Title);
+            Assert.IsNull(handler.LastRequest?.Headers.IfModifiedSince);
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_CancellationDuringRetryDoesNotPublishCacheAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var cancellation = new CancellationTokenSource();
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            using var client = new HttpClient(handler);
+
+            await Assert.ThrowsExactlyAsync<TaskCanceledException>(() => FeedService.DownloadFeedsAsync(client,
+                [CreateFeed("Example")], directory.Path, _ =>
+                {
+                    cancellation.Cancel();
+                    return Task.Delay(Timeout.Infinite, cancellation.Token);
+                }, cancellation.Token, forceRefresh: true));
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsFalse(File.Exists(directory.GetPath("_feed.json")));
+        }
+
+        private static FeedInfo CreateFeed(string name)
+        {
+            return new FeedInfo { Name = name, Url = $"https://{name.ToLowerInvariant()}.example.com/feed", Enabled = true };
+        }
+
+        private static HttpResponseMessage CreateFeedResponse(string title)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<rss version=\"2.0\"><channel><title>Feed</title>" +
+                    "<description>Description</description><link>https://example.com</link>" +
+                    $"<item><title>{title}</title><link>https://example.com/post</link></item></channel></rss>"),
+            };
+        }
+
+        private static void WriteSourceCache(TemporaryDirectory directory, string name, string title, DateTime checkedAt)
+        {
+            var path = directory.GetPath(name + ".xml");
+            var feed = new SyndicationFeed("Feed", "Description", new Uri("https://example.com"))
+            {
+                LastUpdatedTime = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero),
+                Items = [CreateItem(title, DateTimeOffset.UtcNow)],
+            };
+            using (var writer = XmlWriter.Create(path))
+            {
+                feed.SaveAsRss20(writer);
+            }
+            File.SetLastWriteTimeUtc(path, checkedAt);
         }
 
         private static SyndicationItem CreateItem(string title, DateTimeOffset publishDate)

@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.ServiceModel.Syndication;
 using System.Text.Json;
@@ -107,97 +107,55 @@ namespace StartScreen.Services
         }
 
         /// <summary>
-        /// Downloads and refreshes feeds from the network.
-        /// Retries the full download up to 2 times for transient failures.
-        /// Returns the updated news posts, or null if all attempts failed.
+        /// Refreshes enabled feeds, retaining cached content and reporting failed sources.
+        /// Forced refreshes contact each source even when its cache is fresh.
         /// </summary>
-        public static async Task<List<NewsPost>> DownloadFeedsAsync(
+        public static Task<FeedRefreshResult> DownloadFeedsAsync(
             IEnumerable<FeedInfo> feeds,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool forceRefresh = false)
         {
-            if (feeds == null || !feeds.Any())
-                return null;
-
-            const int maxAttempts = 2;
             const int baseDelayMs = 3000;
-
-            for (var attempt = 1; attempt <= maxAttempts; attempt++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                try
-                {
-                    SyndicationFeed combinedFeed = await DownloadAndCombineFeedsAsync(feeds, cancellationToken);
-
-                    if (combinedFeed?.Items != null && combinedFeed.Items.Any())
-                    {
-                        List<NewsPost> posts = ConvertToNewsPosts(combinedFeed);
-                        WriteCacheToDisk(posts);
-                        Trace.TraceInformation("Feed cache refreshed successfully.");
-                        return posts;
-                    }
-
-                    Trace.TraceWarning($"News feed download returned no items on attempt {attempt}/{maxAttempts}.");
-
-                    if (attempt < maxAttempts)
-                    {
-                        await Task.Delay(baseDelayMs * attempt, cancellationToken);
-                    }
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    await ex.LogAsync();
-
-                    if (attempt < maxAttempts)
-                    {
-                        await Task.Delay(baseDelayMs * attempt, cancellationToken);
-                    }
-                }
-            }
-
-            return null;
+            return DownloadFeedsAsync(_httpClient, feeds, _cacheFolder,
+                attempt => Task.Delay(baseDelayMs * attempt, cancellationToken), cancellationToken, forceRefresh);
         }
 
-        /// <summary>
-        /// Downloads and combines multiple feeds with concurrency limiting.
-        /// </summary>
-        private static async Task<SyndicationFeed> DownloadAndCombineFeedsAsync(
+        internal static async Task<FeedRefreshResult> DownloadFeedsAsync(
+            HttpClient httpClient,
             IEnumerable<FeedInfo> feeds,
-            CancellationToken cancellationToken)
+            string cacheFolder,
+            Func<int, Task> delayAsync,
+            CancellationToken cancellationToken = default,
+            bool forceRefresh = false)
         {
+            await TaskScheduler.Default.SwitchTo(alwaysYield: true);
+            cancellationToken.ThrowIfCancellationRequested();
             var selectedFeeds = feeds.Where(f => f.Enabled).ToList();
-            if (!selectedFeeds.Any())
-                return new SyndicationFeed("Start Screen", "Developer News", null);
-
-            var downloadedFeeds = new List<SyndicationFeed>();
+            (SyndicationFeed Feed, bool Refreshed, bool Failed)[] results;
 
             using (var semaphore = new SemaphoreSlim(_maxConcurrentDownloads, _maxConcurrentDownloads))
             {
-                IEnumerable<Task<SyndicationFeed>> downloadTasks = selectedFeeds.Select(async feedInfo =>
+                var downloadTasks = selectedFeeds.Select(async feedInfo =>
                 {
                     await semaphore.WaitAsync(cancellationToken);
                     try
                     {
-                        SyndicationFeed feed = await DownloadFeedAsync(feedInfo, cancellationToken);
-                        if (feed != null)
+                        var result = await DownloadFeedAsync(httpClient, feedInfo, cacheFolder,
+                            delayAsync, cancellationToken, forceRefresh);
+                        if (result.Feed != null)
                         {
-                            feed.Title = new TextSyndicationContent(feedInfo.Name);
+                            result.Feed.Title = new TextSyndicationContent(feedInfo.Name);
 
-                            // Set source feed for all items
-                            if (feed.Items != null)
+                            if (result.Feed.Items != null)
                             {
-                                foreach (SyndicationItem item in feed.Items)
+                                foreach (SyndicationItem item in result.Feed.Items)
                                 {
-                                    item.SourceFeed = feed;
+                                    item.SourceFeed = result.Feed;
                                 }
                             }
-
-                            return feed;
                         }
+
+                        return result;
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -205,76 +163,97 @@ namespace StartScreen.Services
                     }
                     catch (Exception ex)
                     {
-                        ex.Log();
+                        await ex.LogAsync();
+                        return (Feed: (SyndicationFeed)null, Refreshed: false, Failed: true);
                     }
                     finally
                     {
                         semaphore.Release();
                     }
-
-                    return null;
                 });
 
-                downloadedFeeds.AddRange((await Task.WhenAll(downloadTasks)).Where(f => f != null));
+                results = await Task.WhenAll(downloadTasks);
             }
 
-            // Combine feeds
-            return CombineFeeds(downloadedFeeds);
+            cancellationToken.ThrowIfCancellationRequested();
+            var combinedFeed = CombineFeeds(results.Where(result => result.Feed != null)
+                .Select(result => result.Feed).ToList());
+            var failedFeeds = selectedFeeds.Where((_, index) => results[index].Failed)
+                .Select(feed => feed.Name).ToList();
+            var cachedFeeds = selectedFeeds.Where((_, index) =>
+                results[index].Feed != null && !results[index].Refreshed)
+                .Select(feed => feed.Name).ToList();
+            var refreshResult = new FeedRefreshResult(ConvertToNewsPosts(combinedFeed),
+                selectedFeeds.Count, failedFeeds, cachedFeeds);
+
+            // A fallback must not reset the combined cache's freshness clock.
+            if (refreshResult.Success)
+            {
+                WriteCacheToDisk(refreshResult.Posts, Path.Combine(cacheFolder, "_feed.json"));
+            }
+
+            return refreshResult;
         }
 
         /// <summary>
         /// Downloads a single feed with disk caching.
         /// </summary>
-        private static async Task<SyndicationFeed> DownloadFeedAsync(
+        private static async Task<(SyndicationFeed Feed, bool Refreshed, bool Failed)> DownloadFeedAsync(
+            HttpClient httpClient,
             FeedInfo feedInfo,
-            CancellationToken cancellationToken)
+            string cacheFolder,
+            Func<int, Task> delayAsync,
+            CancellationToken cancellationToken,
+            bool forceRefresh)
         {
             var fileName = $"{feedInfo.Name}.xml";
-            var cacheFile = Path.Combine(_cacheFolder, fileName);
+            var cacheFile = Path.Combine(cacheFolder, fileName);
+            SyndicationFeed cachedFeed = null;
 
-            DateTime lastModified = File.Exists(cacheFile) 
-                ? File.GetLastWriteTimeUtc(cacheFile) 
-                : DateTime.UtcNow.AddMonths(-2);
-
-            // Try download if cache is stale
-            if (DateTime.UtcNow - lastModified >= _staleThreshold)
-            {
-                SyndicationFeed feed = await DownloadFromUrlAsync(feedInfo.Url, lastModified, cancellationToken);
-                if (feed != null)
-                {
-                    WriteFeedToDisk(cacheFile, feed);
-                    return feed;
-                }
-            }
-
-            // Fall back to cache
             if (File.Exists(cacheFile))
             {
                 try
                 {
                     using (var reader = XmlReader.Create(cacheFile))
                     {
-                        return SyndicationFeed.Load(reader);
+                        cachedFeed = SyndicationFeed.Load(reader);
                     }
                 }
                 catch (Exception ex)
                 {
-                    ex.Log();
+                    await ex.LogAsync();
                 }
             }
 
-            return null;
-        }
+            if (cachedFeed != null && !forceRefresh && !IsCacheStale(cacheFile, DateTime.UtcNow))
+                return (cachedFeed, false, false);
 
-        /// <summary>
-        /// Downloads feed from URL with If-Modified-Since header.
-        /// </summary>
-        private static async Task<SyndicationFeed> DownloadFromUrlAsync(
-            string url,
-            DateTime lastModified,
-            CancellationToken cancellationToken)
-        {
-            return await DownloadFromUrlAsync(_httpClient, url, lastModified, cancellationToken);
+            DateTime? lastModified = cachedFeed?.LastUpdatedTime > DateTimeOffset.MinValue
+                ? cachedFeed.LastUpdatedTime.UtcDateTime : (DateTime?)null;
+
+            const int maxAttempts = 2;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var download = await DownloadFromUrlWithStatusAsync(httpClient,
+                    feedInfo.Url, lastModified, cancellationToken);
+                if (download.Feed != null)
+                {
+                    await WriteFeedToDiskAsync(cacheFile, download.Feed);
+                    return (download.Feed, true, false);
+                }
+
+                if (download.NotModified && cachedFeed != null)
+                {
+                    await WriteFeedToDiskAsync(cacheFile, cachedFeed);
+                    return (cachedFeed, true, false);
+                }
+
+                if (attempt < maxAttempts)
+                    await delayAsync(attempt);
+            }
+
+            return (cachedFeed, false, true);
         }
 
         internal static async Task<SyndicationFeed> DownloadFromUrlAsync(
@@ -283,9 +262,16 @@ namespace StartScreen.Services
             DateTime lastModified,
             CancellationToken cancellationToken = default)
         {
-            if (!Uri.IsWellFormedUriString(url, UriKind.Absolute))
-                return null;
+            var result = await DownloadFromUrlWithStatusAsync(httpClient, url, lastModified, cancellationToken);
+            return result.Feed;
+        }
 
+        private static async Task<(SyndicationFeed Feed, bool NotModified)> DownloadFromUrlWithStatusAsync(
+            HttpClient httpClient,
+            string url,
+            DateTime? lastModified,
+            CancellationToken cancellationToken)
+        {
             cancellationToken.ThrowIfCancellationRequested();
 
             try
@@ -294,9 +280,12 @@ namespace StartScreen.Services
                 {
                     request.Headers.IfModifiedSince = lastModified;
 
-                    HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
-                    if (response.IsSuccessStatusCode)
+                    using (HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken))
                     {
+                        if (response.StatusCode == HttpStatusCode.NotModified && lastModified.HasValue)
+                            return (null, true);
+
+                        response.EnsureSuccessStatusCode();
                         using (Stream stream = await response.Content.ReadAsStreamAsync())
                         using (var reader = XmlReader.Create(stream))
                         {
@@ -307,7 +296,7 @@ namespace StartScreen.Services
                                 feed.LastUpdatedTime = response.Content.Headers.LastModified.Value;
                             }
 
-                            return feed;
+                            return (feed, false);
                         }
                     }
                 }
@@ -318,35 +307,30 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
             }
 
-            return null;
+            return (null, false);
         }
 
         /// <summary>
         /// Writes feed to disk cache.
         /// </summary>
-        private static void WriteFeedToDisk(string filePath, SyndicationFeed feed)
+        private static async Task WriteFeedToDiskAsync(string filePath, SyndicationFeed feed)
         {
             try
             {
-                Directory.CreateDirectory(_cacheFolder);
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
 
                 using (var writer = XmlWriter.Create(filePath))
                 {
                     feed.Items = feed.Items.Take(_maxNewsItems);
                     feed.SaveAsRss20(writer);
                 }
-
-                if (feed.LastUpdatedTime.DateTime != DateTime.MinValue)
-                {
-                    File.SetLastWriteTimeUtc(filePath, feed.LastUpdatedTime.DateTime);
-                }
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
             }
         }
 
@@ -392,11 +376,6 @@ namespace StartScreen.Services
         /// <summary>
         /// Writes the combined news posts to the JSON cache file.
         /// </summary>
-        private static void WriteCacheToDisk(List<NewsPost> posts)
-        {
-            WriteCacheToDisk(posts, _combinedFeedFile);
-        }
-
         internal static void WriteCacheToDisk(List<NewsPost> posts, string cacheFile)
         {
             try

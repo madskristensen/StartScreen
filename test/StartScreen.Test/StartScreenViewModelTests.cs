@@ -296,19 +296,116 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void UnifiedRefreshStatus_ListsRefreshingSectionsAndFallsBackToDevHubTime()
+        public void UnifiedRefreshStatus_ListsRefreshingSectionsAndLabelsIdleStatus()
         {
             var viewModel = new StartScreenViewModel
             {
                 LastDevHubRefreshText = "Updated 5 minutes ago",
             };
 
-            Assert.AreEqual("Updated 5 minutes ago", viewModel.UnifiedRefreshStatus);
+            Assert.AreEqual("Dev Hub: Updated 5 minutes ago", viewModel.UnifiedRefreshStatus);
 
             viewModel.IsRefreshingNews = true;
             viewModel.IsRefreshingYouTube = true;
 
             Assert.AreEqual("Refreshing news, videos...", viewModel.UnifiedRefreshStatus);
+        }
+
+        [TestMethod]
+        public void UnifiedRefreshStatus_IncludesNewsAndVideoFailuresAlongsideDevHubSuccess()
+        {
+            var viewModel = new StartScreenViewModel
+            {
+                LastDevHubRefreshText = "Updated just now",
+                LastNewsRefreshText = "Refresh failed - Example. Use Refresh to retry.",
+                LastYouTubeRefreshText = "Showing cached content - refresh failed. Use Refresh to retry.",
+            };
+
+            Assert.AreEqual("Dev Hub: Updated just now; News: Refresh failed - Example. Use Refresh to retry.; " +
+                "Videos: Showing cached content - refresh failed. Use Refresh to retry.", viewModel.UnifiedRefreshStatus);
+        }
+
+        [TestMethod]
+        public void UnifiedRefreshStatus_ReportsNewsWithoutDevHubAndNotifiesAfterRefresh()
+        {
+            var viewModel = new StartScreenViewModel { IsRefreshingNews = true };
+            var changed = new List<string?>();
+            viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+            viewModel.LastNewsRefreshText = "Showing cached content";
+            viewModel.IsRefreshingNews = false;
+
+            Assert.AreEqual("News: Showing cached content", viewModel.UnifiedRefreshStatus);
+            Assert.HasCount(2, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshStatus)));
+        }
+
+        [TestMethod]
+        public void NewsRefreshStatus_OnlyReportsFreshAfterEverySourceIsValidated()
+        {
+            var viewModel = new StartScreenViewModel { IsNewsUnavailable = true };
+
+            viewModel.UpdateNewsRefreshStatus(new FeedRefreshResult([new NewsPost()], 1, [], []));
+
+            Assert.IsFalse(viewModel.IsNewsUnavailable);
+            Assert.AreEqual("Updated just now", viewModel.LastNewsRefreshText);
+        }
+
+        [TestMethod]
+        public void NewsRefreshStatus_FreshCacheIsNotReportedAsRemoteRefresh()
+        {
+            var viewModel = new StartScreenViewModel();
+
+            viewModel.UpdateNewsRefreshStatus(new FeedRefreshResult([new NewsPost()], 1, [], ["Example"]));
+
+            Assert.IsFalse(viewModel.IsNewsUnavailable);
+            Assert.AreEqual("Showing cached content from Example", viewModel.LastNewsRefreshText);
+        }
+
+        [TestMethod]
+        public void NewsRefreshStatus_PartialFailureNamesFailedAndCachedSources()
+        {
+            var viewModel = new StartScreenViewModel();
+
+            viewModel.UpdateNewsRefreshStatus(new FeedRefreshResult([new NewsPost()], 2, ["Failing"], ["Failing"]));
+
+            Assert.IsFalse(viewModel.IsNewsUnavailable);
+            Assert.AreEqual("Partially refreshed - unavailable: Failing. Showing cached content from Failing. Use Refresh to retry.",
+                viewModel.LastNewsRefreshText);
+            StringAssert.Contains(viewModel.UnifiedRefreshStatus, viewModel.LastNewsRefreshText);
+        }
+
+        [TestMethod]
+        public void NewsRefreshStatus_AllFailedWithoutCacheShowsUnavailableAndRetry()
+        {
+            var viewModel = new StartScreenViewModel();
+
+            viewModel.UpdateNewsRefreshStatus(new FeedRefreshResult([], 1, ["Example"], []));
+
+            Assert.IsTrue(viewModel.IsNewsUnavailable);
+            Assert.AreEqual("Refresh failed - unavailable: Example. Use Refresh to retry.", viewModel.LastNewsRefreshText);
+        }
+
+        [TestMethod]
+        public void NewsRefreshStatus_AllFailedWithCacheIsNotFreshOrUnavailable()
+        {
+            var viewModel = new StartScreenViewModel();
+
+            viewModel.UpdateNewsRefreshStatus(new FeedRefreshResult([new NewsPost()], 1, ["Example"], ["Example"]));
+
+            Assert.IsFalse(viewModel.IsNewsUnavailable);
+            Assert.AreEqual("Refresh failed - unavailable: Example. Showing cached content from Example. Use Refresh to retry.",
+                viewModel.LastNewsRefreshText);
+        }
+
+        [TestMethod]
+        public void NewsRefreshStatus_DisabledFeedsAreNotReportedAsUnavailable()
+        {
+            var viewModel = new StartScreenViewModel { IsNewsUnavailable = true };
+
+            viewModel.UpdateNewsRefreshStatus(new FeedRefreshResult([], 0, [], []));
+
+            Assert.IsFalse(viewModel.IsNewsUnavailable);
+            Assert.AreEqual("No news feeds enabled", viewModel.LastNewsRefreshText);
         }
 
         private static MruItem CreateItem(string name, string path)

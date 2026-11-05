@@ -113,6 +113,14 @@ and more lives right next to your project list. It refreshes in the
 background and caches locally, so it's always ready and never slows you
 down.
 
+The Refresh button checks every enabled blog feed even when its local cache is
+less than four hours old. Unchanged feeds can be validated without downloading
+them again. Automatic refreshes continue to reuse fresh caches.
+The refresh status includes Dev Hub, news, and videos. If a blog source fails,
+available cached articles remain visible and the status identifies the failed
+sources and how to retry. Cached or partially refreshed news is not reported as
+fully updated. With no enabled blog feeds, the status says so explicitly.
+
 Want different sources? Drop your own RSS or Atom feeds into a simple JSON
 file and Start Screen picks them up automatically - no restart needed.
 

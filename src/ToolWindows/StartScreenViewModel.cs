@@ -229,9 +229,17 @@ namespace StartScreen.ToolWindows
                 if (_isRefreshingWorkspaceSignals)
                     refreshing.Add("workspace status");
 
-                return refreshing.Count > 0
-                    ? $"Refreshing {string.Join(", ", refreshing)}..."
-                    : LastDevHubRefreshText ?? string.Empty;
+                if (refreshing.Count > 0)
+                    return $"Refreshing {string.Join(", ", refreshing)}...";
+
+                var statuses = new List<string>();
+                if (!string.IsNullOrWhiteSpace(LastDevHubRefreshText))
+                    statuses.Add($"Dev Hub: {LastDevHubRefreshText}");
+                if (!string.IsNullOrWhiteSpace(LastNewsRefreshText))
+                    statuses.Add($"News: {LastNewsRefreshText}");
+                if (!string.IsNullOrWhiteSpace(LastYouTubeRefreshText))
+                    statuses.Add($"Videos: {LastYouTubeRefreshText}");
+                return string.Join("; ", statuses);
             }
         }
 
@@ -704,7 +712,7 @@ namespace StartScreen.ToolWindows
             // Timer fires on a ThreadPool thread. Check guards before dispatching work.
             if (FeedService.IsCacheStale() && !IsRefreshingNews)
             {
-                ForceRefreshNews();
+                StartBackgroundFeedRefresh();
             }
 
             if (YouTubeService.IsCacheStale() && !IsRefreshingYouTube)
@@ -832,7 +840,7 @@ namespace StartScreen.ToolWindows
                 {
                     await UpdateNewsPostsOnUIThreadAsync(posts, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
-                    LastNewsRefreshText = "Updated from cache";
+                    LastNewsRefreshText = "Showing cached content";
                     StartupDiagnostics.Mark("news cache displayed");
                 }
 
@@ -863,13 +871,13 @@ namespace StartScreen.ToolWindows
             if (GetBackgroundCancellationToken().IsCancellationRequested || IsRefreshingNews)
                 return;
 
-            StartBackgroundFeedRefresh();
+            StartBackgroundFeedRefresh(forceRefresh: true);
         }
 
         /// <summary>
         /// Starts a fire-and-forget background refresh of news feeds.
         /// </summary>
-        private void StartBackgroundFeedRefresh()
+        private void StartBackgroundFeedRefresh(bool forceRefresh = false)
         {
             CancellationToken lifetimeToken = GetBackgroundCancellationToken();
             if (lifetimeToken.IsCancellationRequested)
@@ -890,26 +898,17 @@ namespace StartScreen.ToolWindows
                     await TaskScheduler.Default;
                     cancellationToken.ThrowIfCancellationRequested();
                     List<FeedInfo> feeds = FeedStore.GetFeeds();
-                    List<NewsPost> posts = await FeedService.DownloadFeedsAsync(feeds, cancellationToken);
+                    FeedRefreshResult result = await FeedService.DownloadFeedsAsync(feeds, cancellationToken, forceRefresh);
 
-                    if (posts != null)
+                    if (result.Success || result.Posts.Count > 0)
                     {
-                        await UpdateNewsPostsOnUIThreadAsync(posts, cancellationToken);
-                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-                        cancellationToken.ThrowIfCancellationRequested();
-                        IsNewsUnavailable = false;
-                        LastNewsRefreshText = "Updated just now";
-                        StartupDiagnostics.Mark("news remote refresh completed");
+                        await UpdateNewsPostsOnUIThreadAsync(result.Posts, cancellationToken);
                     }
-                    else
-                    {
-                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-                        cancellationToken.ThrowIfCancellationRequested();
-                        IsNewsUnavailable = _allNewsPosts.Count == 0;
-                        LastNewsRefreshText = _allNewsPosts.Count == 0
-                            ? "Feed unavailable"
-                            : "Showing cached content - refresh failed";
-                    }
+
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    UpdateNewsRefreshStatus(result);
+                    StartupDiagnostics.Mark("news refresh completed");
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -922,8 +921,8 @@ namespace StartScreen.ToolWindows
                     {
                         IsNewsUnavailable = _allNewsPosts.Count == 0;
                         LastNewsRefreshText = _allNewsPosts.Count == 0
-                            ? "Feed unavailable"
-                            : "Showing cached content - refresh failed";
+                            ? "Feed unavailable. Use Refresh to retry."
+                            : "Showing cached content - refresh failed. Use Refresh to retry.";
                     }
                 }
                 finally
@@ -940,6 +939,34 @@ namespace StartScreen.ToolWindows
                     CompleteRefresh(ref _newsRefreshCancellation, refreshCancellation, () => IsRefreshingNews = false);
                 }
             }).FileAndForget(nameof(StartScreenViewModel));
+        }
+
+        internal void UpdateNewsRefreshStatus(FeedRefreshResult result)
+        {
+            var hasContent = result.Posts.Count > 0 || _allNewsPosts.Count > 0;
+            IsNewsUnavailable = !result.Success && !hasContent;
+
+            if (!result.Success)
+            {
+                var status = result.FailedFeeds.Count < result.FeedCount
+                    ? "Partially refreshed" : "Refresh failed";
+                var cached = result.CachedFeeds.Count > 0
+                    ? $" Showing cached content from {string.Join(", ", result.CachedFeeds)}."
+                    : hasContent && result.Posts.Count == 0 ? " Showing cached content." : string.Empty;
+                LastNewsRefreshText = $"{status} - unavailable: {string.Join(", ", result.FailedFeeds)}.{cached} Use Refresh to retry.";
+            }
+            else if (result.FeedCount == 0)
+            {
+                LastNewsRefreshText = "No news feeds enabled";
+            }
+            else if (result.CachedFeeds.Count > 0)
+            {
+                LastNewsRefreshText = $"Showing cached content from {string.Join(", ", result.CachedFeeds)}";
+            }
+            else
+            {
+                LastNewsRefreshText = "Updated just now";
+            }
         }
 
         private async Task UpdateNewsPostsOnUIThreadAsync(
@@ -972,7 +999,7 @@ namespace StartScreen.ToolWindows
                     await YouTubeService.LoadThumbnailsAsync(videos, cancellationToken);
                     await UpdateYouTubeOnUIThreadAsync(videos, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
-                    LastYouTubeRefreshText = "Updated from cache";
+                    LastYouTubeRefreshText = "Showing cached content";
                     StartupDiagnostics.Mark("video cache displayed");
                 }
 
@@ -1046,8 +1073,8 @@ namespace StartScreen.ToolWindows
                         cancellationToken.ThrowIfCancellationRequested();
                         IsYouTubeUnavailable = _allYouTubeVideos.Count == 0;
                         LastYouTubeRefreshText = _allYouTubeVideos.Count == 0
-                            ? "Feed unavailable"
-                            : "Showing cached content - refresh failed";
+                            ? "Feed unavailable. Use Refresh to retry."
+                            : "Showing cached content - refresh failed. Use Refresh to retry.";
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1061,8 +1088,8 @@ namespace StartScreen.ToolWindows
                     {
                         IsYouTubeUnavailable = _allYouTubeVideos.Count == 0;
                         LastYouTubeRefreshText = _allYouTubeVideos.Count == 0
-                            ? "Feed unavailable"
-                            : "Showing cached content - refresh failed";
+                            ? "Feed unavailable. Use Refresh to retry."
+                            : "Showing cached content - refresh failed. Use Refresh to retry.";
                     }
                 }
                 finally

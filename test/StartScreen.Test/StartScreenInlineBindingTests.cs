@@ -911,6 +911,23 @@ namespace StartScreen.Test
             Assert.AreEqual("Refresh Dev Hub, news, and videos", refresh.Attribute("ToolTip")?.Value);
         }
 
+        [TestMethod]
+        public void UnifiedRefreshStatus_WrapsAndExposesFullDetailsInTooltip()
+        {
+            using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
+            Assert.IsNotNull(stream);
+            var document = XDocument.Load(stream);
+            XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var status = document.Descendants(presentation + "TextBlock")
+                .Single(element => element.Attribute(xaml + "Name")?.Value == "LastRefreshText");
+
+            Assert.AreEqual("{Binding UnifiedRefreshStatus}", status.Attribute("Text")?.Value);
+            Assert.AreEqual("{Binding UnifiedRefreshStatus}", status.Attribute("ToolTip")?.Value);
+            Assert.AreEqual("Wrap", status.Attribute("TextWrapping")?.Value);
+            Assert.AreEqual("420", status.Attribute("MaxWidth")?.Value);
+        }
+
         [STATestMethod]
         [DataRow(nameof(StartScreenViewModel.ServiceHealthText))]
         [DataRow(nameof(StartScreenViewModel.UpdateAvailableText))]
