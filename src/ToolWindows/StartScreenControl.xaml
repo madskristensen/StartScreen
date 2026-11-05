@@ -10,6 +10,7 @@
              xmlns:catalog="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.ImageCatalog"
              xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:shell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              toolkit:Themes.UseVsTheme="True"
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="1400"
@@ -40,10 +41,8 @@
         </CollectionViewSource>
 
         <!-- Action Button Style -->
-        <Style x:Key="ActionButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"/>
-            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
+        <Style x:Key="ActionButtonStyle" TargetType="Button"
+               BasedOn="{StaticResource {x:Static shell:VsResourceKeys.ThemedDialogButtonStyleKey}}">
             <Setter Property="MinWidth" Value="90"/>
             <Setter Property="MinHeight" Value="34"/>
             <Setter Property="Padding" Value="12 6"/>
@@ -52,32 +51,6 @@
             <Setter Property="Height" Value="Auto"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                               BorderBrush="{TemplateBinding BorderBrush}"
-                               BorderThickness="{TemplateBinding BorderThickness}"
-                               CornerRadius="0"
-                               Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
-                    <Setter Property="Opacity" Value="1.0"/>
-                </Trigger>
-                <Trigger Property="IsFocused" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.5"/>
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
         <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
@@ -227,9 +200,9 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Attach" VerticalAlignment="Center" Margin="0 0 12 0"/>
                             <Border Grid.Column="1" BorderThickness="1 0 0 0" Padding="0 12"
-                                    BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}">
+                                    BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=Button}}">
                                 <Path Data="M0,0 L6,0 L3,4 z" Width="6" Height="4" Stretch="Fill"
-                                      Fill="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </Grid>

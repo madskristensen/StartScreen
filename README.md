@@ -69,12 +69,16 @@ activity in the center pane. Double-click or press Enter to open it. Choose
 **All repositories** to return to your combined activity. **Solutions only**
 filters unpinned entries; pinned folders and projects remain visible, and
 search still applies to them.
+The action buttons and **All repositories** use Visual Studio's native themed
+button style, including hover, pressed, disabled, and keyboard-focus states.
 
 **See real repository activity.** A small PR icon and count beside the branch show
 repository-wide open pull requests for supported GitHub and Azure DevOps repositories.
 Zero counts are hidden. Direct personal review requests appear on the second line.
-Counts are fetched independently of the limited
-dashboard lists. Unsupported, signed-out, and unavailable states are shown
+Counts are fetched for all visible recent workspaces, independently of the limited
+dashboard lists. Repository discovery uses each workspace's local Git remote, even
+when checkouts are outside Visual Studio's default projects location.
+Unsupported, signed-out, and unavailable states are shown
 explicitly rather than as zero. Select a summary to open the scoped PR list.
 Before a summary loads, **View repository activity** opens that same list;
 the tooltip explains that counts have not loaded yet.
@@ -209,6 +213,16 @@ normal cancellation as an error or caching canceled requests as empty data.
 HTTP timeouts and other request failures are still logged for troubleshooting.
 
 ### Azure DevOps sign-in
+
+Azure DevOps activity appears alongside GitHub in **Pull requests** and **Builds**.
+The dashboard discovers Azure DevOps repositories from your recent workspaces,
+not every repository accessible to your account. Open a checkout in Visual Studio
+so it appears in the recent list, then refresh Start Screen. Recent builds include
+failed PR validation runs; the combined dashboard loads up to 10 items per repository,
+and scoping to a repository loads up to 25. Signing in alone does not enumerate all
+organizations or projects.
+Optimized Azure DevOps Git remotes (`/_git/_optimized/Repository`) are normalized
+to the underlying repository for activity and build queries.
 
 Azure DevOps Services supports **Visual Studio account (Microsoft Entra ID)**
 authentication, including legacy `organization.visualstudio.com` URLs. No PAT,

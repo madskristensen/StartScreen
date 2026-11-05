@@ -181,13 +181,7 @@ namespace StartScreen.ToolWindows
             if (!Options.Instance.DevHubEnabled)
                 return;
             int generation = _repositorySummaryGeneration;
-            var visible = new HashSet<MruItem>(VisibleMruItems);
-            var groups = items.Where(item => visible.Contains(item) && item.HasRemoteUrl)
-                .OrderByDescending(item => ReferenceEquals(item, SelectedMruItem))
-                .ThenByDescending(item => item.IsPinned)
-                .Take(20)
-                .GroupBy(item => RemoteRepoIdentifier.TryParse(item.RemoteUrl))
-                .ToArray();
+            var groups = GetRepositorySummaryGroups(items);
             foreach (var group in groups.Where(group => group.Key == null))
             {
                 foreach (var item in group)
@@ -210,6 +204,16 @@ namespace StartScreen.ToolWindows
                         item.ApplyRepositorySummary(text, details, summary.OpenPullRequests, summary.RequestedReviews);
                 }
             }));
+        }
+
+        internal IGrouping<RemoteRepoIdentifier, MruItem>[] GetRepositorySummaryGroups(IEnumerable<MruItem> items)
+        {
+            var visible = new HashSet<MruItem>(VisibleMruItems);
+            return items.Where(item => visible.Contains(item) && item.HasRemoteUrl)
+                .OrderByDescending(item => ReferenceEquals(item, SelectedMruItem))
+                .ThenByDescending(item => item.IsPinned)
+                .GroupBy(item => RemoteRepoIdentifier.TryParse(item.RemoteUrl))
+                .ToArray();
         }
 
         internal async Task RefreshSelectedRepositorySummaryAsync(MruItem item, CancellationToken cancellationToken)

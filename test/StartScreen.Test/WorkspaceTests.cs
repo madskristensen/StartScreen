@@ -117,6 +117,44 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void RepositorySummaryGroups_IncludeEveryVisibleRepositoryBeyondTwenty()
+        {
+            var items = Enumerable.Range(0, 30).Select(index => new MruItem
+            {
+                Name = "Repo" + index,
+                Path = $@"C:\Checkouts\Repo{index}\App.sln",
+                RemoteUrl = $"https://github.com/owner/repo{index}.git",
+            }).ToArray();
+            var model = new StartScreenViewModel(items);
+
+            var groups = model.GetRepositorySummaryGroups(items);
+
+            Assert.HasCount(30, groups);
+            CollectionAssert.AreEquivalent(items, groups.SelectMany(group => group).ToArray());
+            Assert.AreEqual("repo29", groups.Last().Key.Repo);
+        }
+
+        [TestMethod]
+        public void RepositorySummaryGroups_PrioritizeSelectionAndPinsAndKeepAllCheckouts()
+        {
+            var first = new MruItem { Name = "First", Path = @"C:\First\App.sln", RemoteUrl = "https://github.com/owner/repo.git" };
+            var pinned = new MruItem { Name = "Pinned", Path = @"D:\Pinned\App.sln", IsPinned = true, RemoteUrl = "https://github.com/owner/pinned.git" };
+            var selected = new MruItem { Name = "Selected", Path = @"D:\Selected\App.sln", RemoteUrl = "git@github.com:OWNER/REPO.git" };
+            var local = new MruItem { Name = "Local", Path = @"D:\Local\App.sln" };
+            var model = new StartScreenViewModel([first, pinned, selected, local]) { SelectedMruItem = selected };
+
+            var groups = model.GetRepositorySummaryGroups([first, pinned, selected, local]);
+
+            Assert.HasCount(2, groups);
+            Assert.AreEqual("REPO", groups[0].Key.Repo);
+            CollectionAssert.AreEquivalent(new[] { first, selected }, groups[0].ToArray());
+            Assert.AreSame(pinned, groups[1].Single());
+
+            model.FilterMru("Pinned");
+            Assert.AreSame(pinned, model.GetRepositorySummaryGroups([first, pinned, selected, local]).Single().Single());
+        }
+
+        [TestMethod]
         public void RepositorySummary_OffersActivityLinkUntilLoadedAndPreservesFailures()
         {
             var item = new MruItem();

@@ -11,6 +11,34 @@ namespace StartScreen.Test
     [TestClass]
     public class StartScreenInlineBindingTests
     {
+        [TestMethod]
+        public void ActionButtons_InheritNativeVsThemingAndAttachGlyphFollowsButtonState()
+        {
+            var document = ReadLayoutXaml("StartScreenControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var style = document.Descendants(p + "Style")
+                .Single(element => element.Attribute(x + "Key")?.Value == "ActionButtonStyle");
+
+            Assert.AreEqual("{StaticResource {x:Static shell:VsResourceKeys.ThemedDialogButtonStyleKey}}", style.Attribute("BasedOn")!.Value);
+            Assert.IsFalse(style.Elements(p + "Setter").Any(setter => new[]
+            {
+                "Template", "Background", "Foreground", "BorderBrush", "FocusVisualStyle",
+            }.Contains(setter.Attribute("Property")?.Value)));
+            Assert.IsFalse(style.Elements(p + "Style.Triggers").Any());
+
+            var allRepositories = document.Descendants(p + "Button")
+                .Single(element => element.Attribute("Content")?.Value == "All repositories");
+            Assert.AreEqual("{StaticResource ActionButtonStyle}", allRepositories.Attribute("Style")!.Value);
+
+            var attach = document.Descendants(p + "Button")
+                .Single(element => element.Attribute(x + "Name")?.Value == "AttachToProcessButton");
+            Assert.AreEqual("{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}",
+                attach.Descendants(p + "Path").Single().Attribute("Fill")!.Value);
+            Assert.AreEqual("{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=Button}}",
+                attach.Descendants(p + "Border").Single().Attribute("BorderBrush")!.Value);
+        }
+
         [STATestMethod]
         [DataRow(280d, 280d)]
         [DataRow(320d, 320d)]

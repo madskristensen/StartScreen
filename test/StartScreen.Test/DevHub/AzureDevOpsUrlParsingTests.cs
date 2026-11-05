@@ -82,6 +82,24 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow("https://devdiv.visualstudio.com/DevDiv/_git/_optimized/VSEditor", "https://devdiv.visualstudio.com", false)]
+        [DataRow("https://dev.azure.com/devdiv/DevDiv/_git/_optimized/VSEditor", "https://dev.azure.com/devdiv", false)]
+        [DataRow("https://tfs.contoso.com/tfs/devdiv/DevDiv/_git/_optimized/VSEditor.git", "https://tfs.contoso.com/tfs/devdiv", true)]
+        [DataRow("https://devdiv.visualstudio.com/DevDiv/_git/_OPTIMIZED/VSEditor/", "https://devdiv.visualstudio.com", false)]
+        public void ParseRemoteUrl_OptimizedTransportSegmentIsNotRepositoryName(string url, string baseUrl, bool server)
+        {
+            var result = _provider.ParseRemoteUrl(url);
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual("devdiv", result.Owner);
+            Assert.AreEqual("DevDiv", result.Project);
+            Assert.AreEqual("VSEditor", result.Repo);
+            Assert.AreEqual(baseUrl, result.BaseUrl);
+            Assert.AreEqual(server, result.IsAzureDevOpsServer);
+            Assert.AreEqual($"{baseUrl}/DevDiv/_git/VSEditor", _provider.GetRepoWebUrl(result));
+        }
+
+        [TestMethod]
         public void ParseRemoteUrl_NonAdoUrl_ReturnsNull()
         {
             var result = _provider.ParseRemoteUrl("https://github.com/owner/repo.git");

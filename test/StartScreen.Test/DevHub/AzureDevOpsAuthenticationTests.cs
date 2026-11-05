@@ -11,6 +11,7 @@ namespace StartScreen.Test.DevHub
     public class AzureDevOpsAuthenticationTests
     {
         private const string Identity = "{\"authenticatedUser\":{\"id\":\"user-id\",\"customDisplayName\":\"User\",\"properties\":{\"Account\":{\"$value\":\"user@example.com\"}}}}";
+        private const string RepositoryId = "e2d789d1-67ab-405a-9704-c72759720867";
 
         [TestMethod]
         [DataRow(true)]
@@ -63,7 +64,9 @@ namespace StartScreen.Test.DevHub
             var handler = new TestHttpMessageHandler((request, _) =>
             {
                 Assert.AreEqual(entra ? "Bearer" : "Basic", request.Headers.Authorization!.Scheme);
-                return Json(request.RequestUri!.AbsolutePath.Contains("connectionData") ? Identity : "{\"value\":[]}");
+                var path = request.RequestUri!.AbsolutePath;
+                return Json(path.EndsWith("/repositories/repo") ? $"{{\"id\":\"{RepositoryId}\"}}"
+                    : path.Contains("connectionData") ? Identity : "{\"value\":[]}");
             });
             using var client = new HttpClient(handler);
             var provider = Provider(client, Credential(entra));
@@ -71,7 +74,81 @@ namespace StartScreen.Test.DevHub
             var result = await provider.GetRepoDetailAsync(Repo(), 10, CancellationToken.None);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(3, handler.RequestCount);
+            Assert.AreEqual(4, handler.RequestCount);
+        }
+
+        [TestMethod]
+        [DataRow(true, false)]
+        [DataRow(false, false)]
+        [DataRow(false, true)]
+        public async Task RepoDetail_ResolvesRepositoryGuidAndIncludesFailedPrBuildsAsync(bool onPremises, bool optimized)
+        {
+            var repo = onPremises
+                ? RemoteRepoIdentifier.TryParse("https://tfs.contoso.com/tfs/Collection/Project/_git/Repo")!
+                : optimized ? RemoteRepoIdentifier.TryParse("https://devdiv.visualstudio.com/DevDiv/_git/_optimized/VSEditor")! : Repo();
+            var buildRequested = false;
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+            {
+                var uri = request.RequestUri!;
+                Assert.DoesNotContain("_optimized", uri.AbsoluteUri);
+                if (uri.AbsolutePath.Contains("/build/builds"))
+                {
+                    buildRequested = true;
+                    StringAssert.Contains(uri.Query, $"repositoryId={RepositoryId}&repositoryType=TfsGit");
+                    StringAssert.Contains(uri.Query, onPremises ? "api-version=5.0" : "api-version=7.1");
+                    Assert.DoesNotContain("branchName=", uri.Query);
+                    Assert.DoesNotContain("resultFilter=", uri.Query);
+                    return Json("{\"value\":[{\"id\":71,\"buildNumber\":\"PR validation\",\"status\":\"completed\",\"result\":\"failed\",\"sourceBranch\":\"refs/pull/71/merge\",\"finishTime\":\"2026-11-04T20:00:00Z\",\"_links\":{\"web\":{\"href\":\"https://dev.azure.com/org/project/_build/results?buildId=71\"}}}]}");
+                }
+                return Json(uri.AbsolutePath.Contains("connectionData") ? Identity
+                    : uri.AbsolutePath.EndsWith("/pullrequests") ? "{\"value\":[]}"
+                    : $"{{\"id\":\"{RepositoryId}\"}}");
+            }));
+            var provider = Provider(client, Credential(!onPremises));
+
+            var result = await provider.GetRepoDetailAsync(repo, 10, CancellationToken.None);
+
+            Assert.IsTrue(buildRequested);
+            Assert.IsNotNull(result);
+            Assert.HasCount(1, result.CiRuns);
+            Assert.AreEqual("failure", result.CiRuns[0].Status);
+            Assert.AreEqual("refs/pull/71/merge", result.CiRuns[0].Branch);
+            Assert.AreEqual(repo, result.CiRuns[0].RepoIdentifier);
+        }
+
+        [TestMethod]
+        [DataRow("{}")]
+        [DataRow("{\"id\":\"repo\"}")]
+        [DataRow("{\"id\":\"00000000-0000-0000-0000-000000000000\"}")]
+        public async Task RepoDetail_InvalidRepositoryIdDoesNotQueryBuildsOrReportEmptySuccessAsync(string repositoryJson)
+        {
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                Assert.DoesNotContain("/build/builds", path);
+                return Json(path.EndsWith("/pullrequests") ? "{\"value\":[]}"
+                    : path.Contains("connectionData") ? Identity : repositoryJson);
+            }));
+
+            var result = await Provider(client, Credential(true)).GetRepoDetailAsync(Repo(), 10, CancellationToken.None);
+
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public async Task RepoDetail_FailedBuildRequestDoesNotReportEmptySuccessAsync()
+        {
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                return path.Contains("/build/builds") ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                    : Json(path.EndsWith("/pullrequests") ? "{\"value\":[]}"
+                    : path.Contains("connectionData") ? Identity : $"{{\"id\":\"{RepositoryId}\"}}");
+            }));
+
+            var result = await Provider(client, Credential(true)).GetRepoDetailAsync(Repo(), 10, CancellationToken.None);
+
+            Assert.IsNull(result);
         }
 
         [TestMethod]

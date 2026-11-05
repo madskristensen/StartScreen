@@ -111,6 +111,8 @@ namespace StartScreen.Models.DevHub
 
         private static RemoteRepoIdentifier ParseFromHostAndPath(Uri uri, string host, string path)
         {
+            path = Regex.Replace(path, @"(/_git/)_optimized/", "$1", RegexOptions.IgnoreCase);
+
             // Remove trailing .git
             if (path.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
                 path = path.Substring(0, path.Length - 4);

@@ -281,8 +281,8 @@ namespace StartScreen.Services.DevHub.Providers
         {
             try
             {
-                var items = await MruService.GetMruItemsAsync(cancellationToken: cancellationToken);
-                return GetCloudProfileBaseUrls(items.Select(i => i.RemoteUrl).Where(u => !string.IsNullOrWhiteSpace(u)));
+                var remoteUrls = await MruService.GetRepositoryRemoteUrlsAsync(cancellationToken);
+                return GetCloudProfileBaseUrls(remoteUrls);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -395,16 +395,23 @@ namespace StartScreen.Services.DevHub.Providers
                     detail.PullRequests = ParseAdoPullRequests(prJson, repo, identity);
                 }
 
-                // Fetch recent builds
-                var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={repo.Repo}&repositoryType=TfsGit&$top={top}&api-version={apiVersion}";
+                // Build queries require the repository ID, not the name from the Git remote.
+                var repositoryUrl = $"{projectUrl}/_apis/git/repositories/{Uri.EscapeDataString(repo.Repo)}?api-version={apiVersion}";
+                using var repositoryResponse = await SendAuthenticatedGetAsync(credentialHost, credential, repositoryUrl, cancellationToken);
+                repositoryResponse.EnsureSuccessStatusCode();
+                using var repositoryJson = JsonDocument.Parse(await repositoryResponse.Content.ReadAsStringAsync());
+                if (!repositoryJson.RootElement.TryGetProperty("id", out var repositoryId)
+                    || repositoryId.ValueKind != JsonValueKind.String
+                    || !Guid.TryParse(repositoryId.GetString(), out var id) || id == Guid.Empty)
+                    throw new JsonException("Azure DevOps did not return a valid repository ID for the build query.");
+
+                var buildUrl = $"{projectUrl}/_apis/build/builds?repositoryId={id:D}&repositoryType=TfsGit&$top={top}&api-version={apiVersion}";
                 using var buildResponse = await SendAuthenticatedGetAsync(credentialHost, credential, buildUrl, cancellationToken);
                 if (buildResponse.StatusCode == HttpStatusCode.Unauthorized)
                     return null;
-                if (buildResponse.IsSuccessStatusCode)
-                {
-                    var buildJson = await buildResponse.Content.ReadAsStringAsync();
-                    detail.CiRuns = ParseAdoBuilds(buildJson, repo);
-                }
+                buildResponse.EnsureSuccessStatusCode();
+                var buildJson = await buildResponse.Content.ReadAsStringAsync();
+                detail.CiRuns = ParseAdoBuilds(buildJson, repo);
 
                 return detail;
             }

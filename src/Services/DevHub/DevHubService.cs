@@ -328,12 +328,7 @@ namespace StartScreen.Services.DevHub
         {
             try
             {
-                var items = await MruService.GetMruItemsAsync(cancellationToken: cancellationToken);
-                return items
-                    .Select(i => i.RemoteUrl)
-                    .Where(u => !string.IsNullOrWhiteSpace(u))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                return await MruService.GetRepositoryRemoteUrlsAsync(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

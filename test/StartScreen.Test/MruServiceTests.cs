@@ -1,3 +1,4 @@
+using LibGit2Sharp;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -6,6 +7,66 @@ namespace StartScreen.Test
     [TestClass]
     public class MruServiceTests
     {
+        [TestMethod]
+        public async Task RepositoryRemoteUrls_ReadFreshMruPathsAcrossCheckoutLocationsWithoutFetchingAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var firstRoot = directory.GetPath(@"Projects\First");
+            var secondRoot = directory.GetPath(@"GitHub\Second");
+            Repository.Init(firstRoot);
+            Repository.Init(secondRoot);
+            const string firstRemote = "https://dev.azure.com/org/project/_git/First";
+            const string secondRemote = "https://github.com/owner/Second.git";
+            using (var first = new Repository(firstRoot))
+                first.Network.Remotes.Add("origin", firstRemote);
+            using (var second = new Repository(secondRoot))
+                second.Network.Remotes.Add("origin", secondRemote);
+            var solution = Path.Combine(firstRoot, "App.sln");
+            File.WriteAllText(solution, "");
+            var nested = Directory.CreateDirectory(Path.Combine(firstRoot, "src")).FullName;
+            var items = new[]
+            {
+                new MruItem { Path = solution, Type = MruItemType.Solution },
+                new MruItem { Path = nested, Type = MruItemType.Folder },
+                new MruItem { Path = secondRoot, Type = MruItemType.Folder },
+                new MruItem { Path = directory.GetPath("missing.sln"), Type = MruItemType.Solution },
+            };
+
+            var urls = await MruService.GetRepositoryRemoteUrlsAsync(items, CancellationToken.None);
+
+            CollectionAssert.AreEquivalent(new[] { firstRemote, secondRemote }, urls.ToArray());
+            Assert.IsTrue(items.All(item => item.RemoteUrl == null), "Discovery must not mutate bound MRU items from a worker thread.");
+            Assert.IsFalse(File.Exists(Path.Combine(firstRoot, ".git", "FETCH_HEAD")));
+            Assert.IsFalse(File.Exists(Path.Combine(secondRoot, ".git", "FETCH_HEAD")));
+        }
+
+        [TestMethod]
+        public async Task RepositoryRemoteUrls_PreserveKnownRemotesAndSkipLocalRepositoriesAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            Repository.Init(directory.Path);
+            const string remote = "https://dev.azure.com/org/project/_git/repo";
+            var urls = await MruService.GetRepositoryRemoteUrlsAsync(
+            [
+                new MruItem { RemoteUrl = remote },
+                new MruItem { RemoteUrl = remote.ToUpperInvariant() },
+                new MruItem { Path = directory.Path, Type = MruItemType.Folder },
+                new MruItem(),
+            ], CancellationToken.None);
+
+            CollectionAssert.AreEqual(new[] { remote }, urls.ToArray());
+        }
+
+        [TestMethod]
+        public async Task RepositoryRemoteUrls_CancellationStopsDiscoveryAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                MruService.GetRepositoryRemoteUrlsAsync([], cancellation.Token));
+        }
+
         [TestMethod]
         public async Task GetExtendedOnlyItems_CancellationPreservesHistoryAsync()
         {

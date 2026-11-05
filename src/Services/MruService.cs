@@ -153,6 +153,53 @@ namespace StartScreen.Services
             return pinned;
         }
 
+        internal static async Task<IReadOnlyList<string>> GetRepositoryRemoteUrlsAsync(CancellationToken cancellationToken)
+        {
+            var items = await GetMruItemsAsync(cancellationToken: cancellationToken);
+            return await GetRepositoryRemoteUrlsAsync(items, cancellationToken);
+        }
+
+        internal static async Task<IReadOnlyList<string>> GetRepositoryRemoteUrlsAsync(
+            IEnumerable<MruItem> items, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await TaskScheduler.Default;
+            var urls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in items)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (item.HasRemoteUrl)
+                {
+                    urls.Add(item.RemoteUrl);
+                    continue;
+                }
+
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(item.Path)
+                        || (!Directory.Exists(item.Path) && !File.Exists(item.Path)))
+                        continue;
+
+                    var startDir = item.Type == MruItemType.Folder ? item.Path : Path.GetDirectoryName(item.Path);
+                    var repoPath = GitHelper.FindRepositoryPath(startDir);
+                    if (repoPath == null || !visited.Add(repoPath))
+                        continue;
+
+                    using var repository = new LibGit2Sharp.Repository(repoPath);
+                    var url = repository.Network.Remotes["origin"]?.Url;
+                    if (!string.IsNullOrWhiteSpace(url))
+                        urls.Add(url);
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
+                }
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return urls.ToArray();
+        }
+
         internal static List<MruItem> MergeCurrentRecentProjects(
             IEnumerable<MruItem> items, IEnumerable<string> recentProjectPaths)
         {
