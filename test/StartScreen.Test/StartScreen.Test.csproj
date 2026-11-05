@@ -25,6 +25,7 @@
     <EmbeddedResource Include="..\..\src\ToolWindows\StartScreenControl.xaml" LogicalName="StartScreenControl.xaml" />
     <EmbeddedResource Include="..\..\src\ToolWindows\Controls\DevHubPanel.xaml" LogicalName="DevHubPanel.xaml" />
     <EmbeddedResource Include="..\..\src\ToolWindows\Controls\NewsItemControl.xaml" LogicalName="NewsItemControl.xaml" />
+    <EmbeddedResource Include="..\..\src\ToolWindows\Controls\MruItemControl.xaml" LogicalName="MruItemControl.xaml" />
   </ItemGroup>
 
 </Project>

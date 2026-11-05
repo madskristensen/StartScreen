@@ -175,15 +175,42 @@ namespace StartScreen.Test
             item.ApplyRepositorySummary("12 PRs / 1 review", "Complete counts", 12, 1);
 
             Assert.IsTrue(item.HasRepositoryCounts);
+            Assert.IsTrue(item.HasOpenPullRequests);
+            Assert.AreEqual("12", item.RepositoryPullRequestCountText);
             Assert.IsTrue(item.HasRequestedReviews);
             Assert.AreEqual("12 open PRs", item.RepositoryPullRequestsText);
             Assert.AreEqual("1 review", item.RepositoryReviewsText);
             CollectionAssert.Contains(changes, nameof(MruItem.RepositoryPullRequestsText));
             CollectionAssert.Contains(changes, nameof(MruItem.RepositoryReviewsText));
+            CollectionAssert.Contains(changes, nameof(MruItem.HasOpenPullRequests));
+            CollectionAssert.Contains(changes, nameof(MruItem.RepositoryPullRequestCountText));
 
             item.RemoteUrl = "https://github.com/o/other.git";
             Assert.IsFalse(item.HasRepositoryCounts);
+            Assert.IsFalse(item.HasOpenPullRequests);
+            Assert.AreEqual(string.Empty, item.RepositoryPullRequestCountText);
             Assert.IsFalse(item.HasRequestedReviews);
+        }
+
+        [TestMethod]
+        public void SummaryCounts_DistinguishZeroFromUnavailableAndKeepReviewsIndependent()
+        {
+            var item = new MruItem();
+            item.ApplyRepositorySummary("No open PRs", "Loaded", 0, 0);
+            Assert.IsTrue(item.HasRepositoryCounts);
+            Assert.IsFalse(item.HasOpenPullRequests);
+            Assert.IsFalse(item.HasRequestedReviews);
+
+            item.ApplyRepositorySummary("Reviews requested", "Loaded", 0, 2);
+            Assert.IsFalse(item.HasOpenPullRequests);
+            Assert.IsTrue(item.HasRequestedReviews);
+            Assert.AreEqual("2 reviews", item.RepositoryReviewsText);
+
+            item.ApplyRepositorySummary("Repository activity unavailable", "Refresh to try again");
+            Assert.IsFalse(item.HasRepositoryCounts);
+            Assert.IsFalse(item.HasOpenPullRequests);
+            Assert.AreEqual(string.Empty, item.RepositoryPullRequestCountText);
+            Assert.AreEqual("Repository activity unavailable", item.RepositorySummaryText);
         }
 
         [TestMethod]

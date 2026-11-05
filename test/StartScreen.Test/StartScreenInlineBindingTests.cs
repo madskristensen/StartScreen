@@ -12,6 +12,76 @@ namespace StartScreen.Test
     public class StartScreenInlineBindingTests
     {
         [STATestMethod]
+        public void RepositoryCounts_ShowInlinePositiveBadgeAndHideZeroStatusRow()
+        {
+            var document = ReadLayoutXaml("MruItemControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var badgeDefinition = new XElement(document.Descendants(p + "Button")
+                .Single(element => element.Attribute(x + "Name")?.Value == "RepositoryPullRequestsButton"));
+            Assert.AreEqual("RepositorySummary_Click", badgeDefinition.Attribute("Click")!.Value);
+            Assert.AreEqual("2", badgeDefinition.Attribute("Grid.Column")!.Value);
+            var icon = badgeDefinition.Descendants().Single(element => element.Name.LocalName == "CrispImage");
+            Assert.AreEqual("{x:Static catalog:KnownMonikers.PullRequest}", icon.Attribute("Moniker")!.Value);
+            icon.ReplaceWith(new XElement(p + "Border", new XAttribute("Width", "12"), new XAttribute("Height", "12")));
+            var rowDefinition = new XElement(document.Descendants(p + "Grid")
+                .Single(element => element.Attribute(x + "Name")?.Value == "RepositoryStatusRow"));
+            Assert.AreEqual("RepositoryReviews_Click", rowDefinition.Elements(p + "Button").First().Attribute("Click")!.Value);
+            foreach (var click in badgeDefinition.DescendantsAndSelf().Concat(rowDefinition.DescendantsAndSelf()).Attributes("Click").ToArray())
+                click.Remove();
+            var styles = document.Root!.Element(p + "UserControl.Resources")!.Elements(p + "Style")
+                .Select(element => new XElement(element)).ToArray();
+            foreach (var setter in styles.SelectMany(element => element.Elements(p + "Setter"))
+                .Where(element => element.Attribute("Property")?.Value == "Foreground").ToArray())
+                setter.Remove();
+            var root = new XElement(p + "Grid", new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
+                new XElement(p + "Grid.Resources",
+                    new XElement(p + "BooleanToVisibilityConverter", new XAttribute(x + "Key", "BoolToVisibilityConverter")), styles),
+                badgeDefinition, rowDefinition);
+            var grid = (Grid)XamlReader.Parse(root.ToString());
+            var badge = (Button)grid.Children[0];
+            var row = (Grid)grid.Children[1];
+            var reviews = (Button)row.Children[0];
+            var status = (Button)row.Children[1];
+            var item = new Models.MruItem { RemoteUrl = "https://github.com/o/r.git" };
+            grid.DataContext = item;
+            void UpdateBindings() => grid.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
+            UpdateBindings();
+            Assert.AreEqual(Visibility.Collapsed, badge.Visibility);
+            Assert.AreEqual(Visibility.Visible, row.Visibility);
+            Assert.AreEqual("View repository activity", status.Content);
+
+            item.ApplyRepositorySummary("No open PRs", "Loaded", 0, 0);
+            UpdateBindings();
+            Assert.AreEqual(Visibility.Collapsed, badge.Visibility);
+            Assert.AreEqual(Visibility.Collapsed, row.Visibility);
+
+            item.ApplyRepositorySummary("12 open PRs", "Loaded", 12, 0);
+            UpdateBindings();
+            Assert.AreEqual(Visibility.Visible, badge.Visibility);
+            Assert.AreEqual(Visibility.Collapsed, row.Visibility);
+            Assert.AreEqual("12", ((StackPanel)badge.Content).Children.OfType<TextBlock>().Single().Text);
+            Assert.AreEqual("12 open PRs", badge.ToolTip);
+            badge.ApplyTemplate();
+            Assert.IsNotNull(System.Windows.Media.VisualTreeHelper.GetChild(badge, 0) as ContentPresenter);
+
+            item.ApplyRepositorySummary("Reviews requested", "Loaded", 0, 2);
+            UpdateBindings();
+            Assert.AreEqual(Visibility.Collapsed, badge.Visibility);
+            Assert.AreEqual(Visibility.Visible, row.Visibility);
+            Assert.AreEqual(Visibility.Visible, reviews.Visibility);
+            Assert.AreEqual("2 reviews", reviews.Content);
+            Assert.AreEqual(Visibility.Collapsed, status.Visibility);
+
+            item.ApplyRepositorySummary("Sign in to see repository activity", "Sign in");
+            UpdateBindings();
+            Assert.AreEqual(Visibility.Collapsed, badge.Visibility);
+            Assert.AreEqual(Visibility.Visible, row.Visibility);
+            Assert.AreEqual(Visibility.Visible, status.Visibility);
+            Assert.AreEqual("Sign in to see repository activity", status.Content);
+        }
+
+        [STATestMethod]
         public void RecentItems_ReserveSpaceBetweenPinButtonsAndScrollbar()
         {
             var document = ReadLayoutXaml("StartScreenControl.xaml");

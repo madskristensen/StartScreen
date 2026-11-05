@@ -65,9 +65,10 @@ activity in the center pane. Double-click or press Enter to open it. Choose
 filters unpinned entries; pinned folders and projects remain visible, and
 search still applies to them.
 
-**See real repository activity.** Compact second-line summaries show repository-wide
-open PR counts and direct personal review requests for supported GitHub and
-Azure DevOps repositories. Counts are fetched independently of the limited
+**See real repository activity.** A small PR icon and count beside the branch show
+repository-wide open pull requests for supported GitHub and Azure DevOps repositories.
+Zero counts are hidden. Direct personal review requests appear on the second line.
+Counts are fetched independently of the limited
 dashboard lists. Unsupported, signed-out, and unavailable states are shown
 explicitly rather than as zero. Select a summary to open the scoped PR list.
 Before a summary loads, **View repository activity** opens that same list;

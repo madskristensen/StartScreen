@@ -464,6 +464,8 @@ namespace StartScreen.Models
                     OnPropertyChanged(nameof(RepositorySummaryText));
                     OnPropertyChanged(nameof(RepositorySummaryTooltip));
                     OnPropertyChanged(nameof(HasRepositoryCounts));
+                    OnPropertyChanged(nameof(HasOpenPullRequests));
+                    OnPropertyChanged(nameof(RepositoryPullRequestCountText));
                     OnPropertyChanged(nameof(HasRequestedReviews));
                     OnPropertyChanged(nameof(RepositoryPullRequestsText));
                     OnPropertyChanged(nameof(RepositoryReviewsText));
@@ -484,6 +486,10 @@ namespace StartScreen.Models
 
         public bool HasRepositoryCounts => _repositoryOpenPullRequests.HasValue;
 
+        public bool HasOpenPullRequests => _repositoryOpenPullRequests > 0;
+
+        public string RepositoryPullRequestCountText => _repositoryOpenPullRequests?.ToString() ?? string.Empty;
+
         public bool HasRequestedReviews => _repositoryRequestedReviews > 0;
 
         public string RepositoryPullRequestsText => _repositoryOpenPullRequests == 0 ? "No open PRs"
@@ -500,6 +506,8 @@ namespace StartScreen.Models
             OnPropertyChanged(nameof(RepositorySummaryText));
             OnPropertyChanged(nameof(RepositorySummaryTooltip));
             OnPropertyChanged(nameof(HasRepositoryCounts));
+            OnPropertyChanged(nameof(HasOpenPullRequests));
+            OnPropertyChanged(nameof(RepositoryPullRequestCountText));
             OnPropertyChanged(nameof(HasRequestedReviews));
             OnPropertyChanged(nameof(RepositoryPullRequestsText));
             OnPropertyChanged(nameof(RepositoryReviewsText));
