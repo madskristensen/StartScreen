@@ -296,14 +296,14 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void UnifiedRefreshStatus_ListsRefreshingSectionsAndLabelsIdleStatus()
+        public void UnifiedRefreshStatus_ListsRefreshingSectionsAndSimplifiesIdleStatus()
         {
             var viewModel = new StartScreenViewModel
             {
                 LastDevHubRefreshText = "Updated 5 minutes ago",
             };
 
-            Assert.AreEqual("Dev Hub: Updated 5 minutes ago", viewModel.UnifiedRefreshStatus);
+            Assert.AreEqual("Updated just now", viewModel.UnifiedRefreshStatus);
 
             viewModel.IsRefreshingNews = true;
             viewModel.IsRefreshingYouTube = true;
@@ -321,8 +321,29 @@ namespace StartScreen.Test
                 LastYouTubeRefreshText = "Showing cached content - refresh failed. Use Refresh to retry.",
             };
 
-            Assert.AreEqual("Dev Hub: Updated just now; News: Refresh failed - Example. Use Refresh to retry.; " +
+            Assert.AreEqual("News: Refresh failed - Example. Use Refresh to retry.; " +
                 "Videos: Showing cached content - refresh failed. Use Refresh to retry.", viewModel.UnifiedRefreshStatus);
+        }
+
+        [TestMethod]
+        public void UnifiedRefreshStatus_CombinesSuccessfulSectionsIntoOneMessage()
+        {
+            var viewModel = new StartScreenViewModel
+            {
+                LastDevHubRefreshText = "Updated just now",
+                LastNewsRefreshText = "Updated just now",
+                LastYouTubeRefreshText = "Updated just now",
+            };
+
+            Assert.AreEqual("Updated just now", viewModel.UnifiedRefreshStatus);
+        }
+
+        [TestMethod]
+        public void UnifiedRefreshStatus_IsEmptyBeforeAnyRefresh()
+        {
+            var viewModel = new StartScreenViewModel();
+
+            Assert.AreEqual(string.Empty, viewModel.UnifiedRefreshStatus);
         }
 
         [TestMethod]

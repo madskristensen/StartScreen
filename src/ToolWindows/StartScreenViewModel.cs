@@ -240,13 +240,17 @@ namespace StartScreen.ToolWindows
                     return $"Refreshing {string.Join(", ", refreshing)}...";
 
                 var statuses = new List<string>();
-                if (!string.IsNullOrWhiteSpace(LastDevHubRefreshText))
+                if (!string.IsNullOrWhiteSpace(LastDevHubRefreshText) && !LastDevHubRefreshText.StartsWith("Updated ", StringComparison.Ordinal))
                     statuses.Add($"Dev Hub: {LastDevHubRefreshText}");
-                if (!string.IsNullOrWhiteSpace(LastNewsRefreshText))
+                if (!string.IsNullOrWhiteSpace(LastNewsRefreshText) && !LastNewsRefreshText.StartsWith("Updated ", StringComparison.Ordinal))
                     statuses.Add($"News: {LastNewsRefreshText}");
-                if (!string.IsNullOrWhiteSpace(LastYouTubeRefreshText))
+                if (!string.IsNullOrWhiteSpace(LastYouTubeRefreshText) && !LastYouTubeRefreshText.StartsWith("Updated ", StringComparison.Ordinal))
                     statuses.Add($"Videos: {LastYouTubeRefreshText}");
-                return string.Join("; ", statuses);
+                if (statuses.Count > 0)
+                    return string.Join("; ", statuses);
+
+                return new[] { LastDevHubRefreshText, LastNewsRefreshText, LastYouTubeRefreshText }
+                    .Any(text => !string.IsNullOrWhiteSpace(text)) ? "Updated just now" : string.Empty;
             }
         }
 

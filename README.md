@@ -122,7 +122,8 @@ down.
 The Refresh button checks every enabled blog feed even when its local cache is
 less than four hours old. Unchanged feeds can be validated without downloading
 them again. Automatic refreshes continue to reuse fresh caches.
-The refresh status includes Dev Hub, news, and videos. If a blog source fails,
+Successful refreshes show a single "Updated just now" message for Dev Hub, news,
+and videos. If a blog source fails,
 available cached articles remain visible and the status identifies the failed
 sources and how to retry. Cached or partially refreshed news is not reported as
 fully updated. With no enabled blog feeds, the status says so explicitly.
