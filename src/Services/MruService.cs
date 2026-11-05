@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -92,13 +93,14 @@ namespace StartScreen.Services
             // to locate .suo files). Deduplicate so .sln and .slnx in the same
             // directory collapse to one entry, keeping the most recently accessed.
             var parsed = new MruItem[rawEntries.Count];
+            var metadataCache = new MetadataCache();
             Parallel.For(0, rawEntries.Count, new ParallelOptions
             {
                 CancellationToken = cancellationToken,
                 MaxDegreeOfParallelism = 2
             }, i =>
             {
-                parsed[i] = ParseMruEntry(rawEntries[i], includeMetadata);
+                parsed[i] = ParseMruEntry(rawEntries[i], includeMetadata, metadataCache);
             });
 
             var itemsByKey = new Dictionary<string, MruItem>(StringComparer.OrdinalIgnoreCase);
@@ -127,7 +129,7 @@ namespace StartScreen.Services
                 }
             }
 
-            List<MruItem> vsItems = MergeCurrentRecentProjects(itemsByKey.Values, recentProjectPaths, includeMetadata);
+            List<MruItem> vsItems = MergeCurrentRecentProjects(itemsByKey.Values, recentProjectPaths, includeMetadata, metadataCache);
             if (!includeMetadata)
                 RestoreStoredAccessTimes(vsItems, options);
 
@@ -204,7 +206,8 @@ namespace StartScreen.Services
         }
 
         internal static List<MruItem> MergeCurrentRecentProjects(
-            IEnumerable<MruItem> items, IEnumerable<string> recentProjectPaths, bool includeMetadata = true)
+            IEnumerable<MruItem> items, IEnumerable<string> recentProjectPaths, bool includeMetadata = true,
+            MetadataCache metadataCache = null)
         {
             var itemList = items.ToList();
             if (recentProjectPaths == null)
@@ -232,7 +235,7 @@ namespace StartScreen.Services
                     Path = path,
                     Name = type == MruItemType.Folder ? Path.GetFileName(path.TrimEnd('\\', '/')) : Path.GetFileNameWithoutExtension(path),
                     Type = type,
-                    LastAccessed = includeMetadata ? GetLastAccessTime(path, type) : DateTime.MinValue
+                    LastAccessed = includeMetadata ? GetLastAccessTime(path, type, metadataCache) : DateTime.MinValue
                 };
                 if (item != null)
                     current.RawMruEntries.AddRange(item.RawMruEntries);
@@ -361,7 +364,8 @@ namespace StartScreen.Services
         /// </summary>
         public static async Task PopulateGitStatusAsync(
             IEnumerable<MruItem> items,
-            System.Threading.CancellationToken cancellationToken = default)
+            System.Threading.CancellationToken cancellationToken = default,
+            Action<IReadOnlyList<MruItem>> localUpdatesApplied = null)
         {
             // Switch to background thread for parallel Git operations
             await TaskScheduler.Default;
@@ -377,67 +381,47 @@ namespace StartScreen.Services
             // walk the parent chain independently.
             var repoPathCache = new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var statusCache = new System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<GitStatus>>(StringComparer.OrdinalIgnoreCase);
-
-            var localUpdates =
-                new System.Collections.Concurrent.ConcurrentBag<(MruItem Item, GitStatus Status, int SessionCount)>();
+            var metadataCache = new MetadataCache();
 
             // Phase 1: Read local status (fast, no network)
-            Parallel.ForEach(itemList, new ParallelOptions
+            await BackgroundBatchProcessor.ProcessAsync(itemList, item =>
             {
-                CancellationToken = cancellationToken,
-                MaxDegreeOfParallelism = 2
-            }, item =>
-            {
-                try
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Skip missing targets before walking their parent directories.
+                if (string.IsNullOrWhiteSpace(item.Path)
+                    || (!Directory.Exists(item.Path) && !File.Exists(item.Path)))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    return (Item: (MruItem)null, Status: (GitStatus)null, SessionCount: 0);
+                }
 
-                    // Skip items whose target no longer exists on disk; otherwise we'd
-                    // pay for a parent-chain walk and a libgit2 Repository open per
-                    // dead path for nothing.
-                    if (string.IsNullOrWhiteSpace(item.Path)
-                        || (!Directory.Exists(item.Path) && !File.Exists(item.Path)))
+                var startDir = item.Type == MruItemType.Folder ? item.Path : Path.GetDirectoryName(item.Path);
+                var repoPath = repoPathCache.GetOrAdd(startDir ?? string.Empty, GitHelper.FindRepositoryPath);
+                GitStatus status = repoPath == null
+                    ? new GitStatus()
+                    : statusCache.GetOrAdd(repoPath,
+                        path => new Lazy<GitStatus>(() => GitHelper.GetGitStatus(path))).Value;
+
+                var sessionCount = CopilotChatHelper.CountSessions(item.Path, item.Type, repoPath, metadataCache.CountSessions);
+
+                if (status.IsGitRepository
+                    && !string.IsNullOrEmpty(status.UpstreamRemoteName)
+                    && !string.IsNullOrEmpty(status.UpstreamBranchRef))
+                {
+                    if (!string.IsNullOrEmpty(repoPath))
                     {
-                        return;
-                    }
-
-                    var startDir = item.Type == MruItemType.Folder ? item.Path : Path.GetDirectoryName(item.Path);
-                    var repoPath = repoPathCache.GetOrAdd(startDir ?? string.Empty, GitHelper.FindRepositoryPath);
-                    GitStatus status = repoPath == null
-                        ? new GitStatus()
-                        : statusCache.GetOrAdd(repoPath,
-                            path => new Lazy<GitStatus>(() => GitHelper.GetGitStatus(path))).Value;
-
-                    // Detect Copilot Chat sessions stored under .vs\*\copilot-chat\*\sessions
-                    var sessionCount = CopilotChatHelper.CountSessions(item.Path, item.Type);
-                    localUpdates.Add((item, status, sessionCount));
-
-                    // Track repo path for phase 2 (if item is in a git repo
-                    // and the current branch has an upstream we can fetch).
-                    if (status.IsGitRepository
-                        && !string.IsNullOrEmpty(status.UpstreamRemoteName)
-                        && !string.IsNullOrEmpty(status.UpstreamBranchRef))
-                    {
-                        if (!string.IsNullOrEmpty(repoPath))
-                        {
-                            itemRepoMap.AddOrUpdate(
-                                repoPath,
-                                _ => new RepoFetchInfo(status.UpstreamRemoteName, status.UpstreamBranchRef, item),
-                                (_, info) => { lock (info.Items) { info.Items.Add(item); } return info; });
-                        }
+                        itemRepoMap.AddOrUpdate(
+                            repoPath,
+                            _ => new RepoFetchInfo(status.UpstreamRemoteName, status.UpstreamBranchRef, item),
+                            (_, info) => { lock (info.Items) { info.Items.Add(item); } return info; });
                     }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    ex.LogAsync().FileAndForget(nameof(MruService));
-                }
-            });
-
-            await ApplyGitStatusUpdatesAsync(localUpdates, cancellationToken);
+                return (Item: item, Status: status, SessionCount: sessionCount);
+            }, async (updates, token) =>
+            {
+                await ApplyGitStatusUpdatesAsync(updates, token);
+                localUpdatesApplied?.Invoke(updates.Where(update => update.Item != null).Select(update => update.Item).ToArray());
+            }, cancellationToken);
 
             // Phase 2: Fetch and update ahead/behind (slow, network).
             if (itemRepoMap.Count == 0)
@@ -450,9 +434,6 @@ namespace StartScreen.Services
                 return;
 
             await TaskScheduler.Default;
-            var remoteUpdates =
-                new System.Collections.Concurrent.ConcurrentBag<(MruItem Item, int? Ahead, int? Behind)>();
-
             using (var semaphore = new SemaphoreSlim(2))
             {
                 await Task.WhenAll(itemRepoMap.Select(async kvp =>
@@ -485,13 +466,9 @@ namespace StartScreen.Services
                         // Re-read ahead/behind for all items in this repo
                         (var ahead, var behind) = GitHelper.GetUpdatedAheadBehind(repoPath);
 
-                        foreach (MruItem item in info.Items)
+                        if (ahead.HasValue || behind.HasValue)
                         {
-                            // Only update if fetch succeeded and tracking branch exists
-                            if (ahead.HasValue || behind.HasValue)
-                            {
-                                remoteUpdates.Add((item, ahead, behind));
-                            }
+                            await ApplyAheadBehindUpdatesAsync(info.Items.Select(item => (item, ahead, behind)), cancellationToken);
                         }
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -508,8 +485,6 @@ namespace StartScreen.Services
                     }
                 }));
             }
-
-            await ApplyAheadBehindUpdatesAsync(remoteUpdates, cancellationToken);
         }
 
         private static async Task ApplyGitStatusUpdatesAsync(
@@ -522,6 +497,8 @@ namespace StartScreen.Services
             foreach (var update in updates)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (update.Item == null)
+                    continue;
                 update.Item.ApplyGitStatus(update.Status);
                 update.Item.CopilotChatSessionCount = update.SessionCount;
 
@@ -602,44 +579,15 @@ namespace StartScreen.Services
         {
             await TaskScheduler.Default;
 
-            var itemList = items.ToList();
-            var updates =
-                new System.Collections.Concurrent.ConcurrentBag<(MruItem Item, bool Exists)>();
-
-            Parallel.ForEach(itemList, new ParallelOptions
+            await BackgroundBatchProcessor.ProcessAsync(items.ToList(), item => (Item: item, Exists: item.CalculateExists()), async (updates, token) =>
             {
-                CancellationToken = cancellationToken,
-                MaxDegreeOfParallelism = 2
-            }, item =>
-            {
-                try
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
+                foreach (var update in updates)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    updates.Add((item, item.CalculateExists()));
+                    token.ThrowIfCancellationRequested();
+                    update.Item.ApplyExists(update.Exists);
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    ex.Log();
-                }
-            });
-
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-            var index = 0;
-
-            foreach (var update in updates)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                update.Item.ApplyExists(update.Exists);
-
-                if (++index % 16 == 0)
-                {
-                    await Dispatcher.Yield(DispatcherPriority.Background);
-                }
-            }
+            }, cancellationToken);
         }
 
         /// <summary>
@@ -650,7 +598,7 @@ namespace StartScreen.Services
         /// The first segment is the path (may contain environment variables).
         /// The fourth segment is the display name.
         /// </remarks>
-        internal static MruItem ParseMruEntry(string raw, bool includeMetadata = true)
+        internal static MruItem ParseMruEntry(string raw, bool includeMetadata = true, MetadataCache metadataCache = null)
         {
             if (string.IsNullOrWhiteSpace(raw))
                 return null;
@@ -678,7 +626,7 @@ namespace StartScreen.Services
                     Path = rawPath,
                     Name = displayName,
                     Type = type,
-                    LastAccessed = includeMetadata ? GetLastAccessTime(rawPath, type) : DateTime.MinValue,
+                    LastAccessed = includeMetadata ? GetLastAccessTime(rawPath, type, metadataCache) : DateTime.MinValue,
                     IsPinned = false
                 };
 
@@ -725,7 +673,7 @@ namespace StartScreen.Services
         /// For Open Folder, the .vs/ directory itself is updated on each session.
         /// Falls back to the path's own last write time if no .suo is found.
         /// </remarks>
-        private static DateTime GetLastAccessTime(string path, MruItemType type)
+        private static DateTime GetLastAccessTime(string path, MruItemType type, MetadataCache metadataCache)
         {
             try
             {
@@ -744,7 +692,7 @@ namespace StartScreen.Services
                 }
 
                 // Solution/project file: look for .suo in the .vs/ folder
-                DateTime? suoTime = FindSuoLastWriteTime(path);
+                DateTime? suoTime = metadataCache != null ? metadataCache.GetSuoTime(path) : FindSuoLastWriteTime(path);
                 if (suoTime.HasValue)
                     return suoTime.Value;
 
@@ -803,6 +751,36 @@ namespace StartScreen.Services
             {
                 ex.Log();
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Memoizes filesystem scans only for the current MRU load or metadata pass.
+        /// </summary>
+        internal sealed class MetadataCache
+        {
+            private readonly ConcurrentDictionary<string, Lazy<DateTime?>> _suoTimes = new(StringComparer.OrdinalIgnoreCase);
+            private readonly ConcurrentDictionary<string, Lazy<int>> _sessionCounts = new(StringComparer.OrdinalIgnoreCase);
+            private readonly Func<string, DateTime?> _findSuo;
+            private readonly Func<string, int> _countSessions;
+
+            internal MetadataCache(Func<string, DateTime?> findSuo = null, Func<string, int> countSessions = null)
+            {
+                _findSuo = findSuo ?? FindSuoLastWriteTime;
+                _countSessions = countSessions ?? CopilotChatHelper.CountSessionsForRoot;
+            }
+
+            internal DateTime? GetSuoTime(string filePath)
+            {
+                var directory = Path.GetDirectoryName(filePath);
+                if (string.IsNullOrEmpty(directory))
+                    return null;
+                return _suoTimes.GetOrAdd(NormalizePath(directory), _ => new Lazy<DateTime?>(() => _findSuo(filePath))).Value;
+            }
+
+            internal int CountSessions(string root)
+            {
+                return _sessionCounts.GetOrAdd(NormalizePath(root), _ => new Lazy<int>(() => _countSessions(root))).Value;
             }
         }
 

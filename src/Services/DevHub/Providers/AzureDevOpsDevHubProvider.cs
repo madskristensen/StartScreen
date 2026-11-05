@@ -25,6 +25,7 @@ namespace StartScreen.Services.DevHub.Providers
         // and DefaultRequestHeaders is not safe to mutate while parallel requests are in flight.
         private static readonly HttpClient _sharedHttpClient = CreateSharedHttpClient();
         private readonly HttpClient _httpClient;
+        private readonly DevHubIdentityCache _identityCache = new DevHubIdentityCache();
         private readonly Func<string, string, CancellationToken, Task<DevHubCredential>> _acquireCredential;
         private readonly Action<string, DevHubCredential> _invalidateCredential;
 
@@ -68,7 +69,8 @@ namespace StartScreen.Services.DevHub.Providers
             return DevHubRepoSummaryFetcher.FetchAsync(repo,
                 token => _acquireCredential(host, GetBaseUrl(repo), token),
                 (credential, url, token) => SendAuthenticatedGetAsync(host, credential, url, token), false, cancellationToken,
-                host == AzureDevOpsServerHelper.CloudHost ? "Connect Azure DevOps in Dev Hub settings using your Visual Studio account or an optional PAT." : null);
+                host == AzureDevOpsServerHelper.CloudHost ? "Connect Azure DevOps in Dev Hub settings using your Visual Studio account or an optional PAT." : null,
+                _identityCache);
         }
 
         internal Task<DevHubRepoSummary> GetRepoSummaryAsync(HttpClient client, DevHubCredential credential,
@@ -220,6 +222,7 @@ namespace StartScreen.Services.DevHub.Providers
                         || string.IsNullOrWhiteSpace(userId.GetString()) || userId.GetString() == Guid.Empty.ToString())
                         throw new JsonException("Azure DevOps did not return an authenticated identity.");
 
+                    _identityCache.Remember(credential, profileUrl, userId.GetString());
                     string username = credential.Username ?? userId.GetString();
                     string displayName = credential.Username;
                     if (authUser.TryGetProperty("providerDisplayName", out var pd) && pd.ValueKind == JsonValueKind.String)
@@ -389,7 +392,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (prResponse.IsSuccessStatusCode)
                 {
                     var prJson = await prResponse.Content.ReadAsStringAsync();
-                    var identity = await DevHubRepoSummaryFetcher.GetIdentityAsync(credential,
+                    var identity = await _identityCache.GetAsync(credential,
                         $"{GetBaseUrl(repo).TrimEnd('/')}/_apis/connectionData?api-version=3.0",
                         (auth, url, token) => SendAuthenticatedGetAsync(credentialHost, auth, url, token), false, cancellationToken);
                     detail.PullRequests = ParseAdoPullRequests(prJson, repo, identity);

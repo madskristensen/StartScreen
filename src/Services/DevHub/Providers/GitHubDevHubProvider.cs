@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -31,14 +32,15 @@ namespace StartScreen.Services.DevHub.Providers
             return client;
         }
 
-        private static Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken, HttpClient httpClient = null)
+        private static async Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken, HttpClient httpClient = null)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {credential.Token}");
-            return (httpClient ?? _httpClient).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return await (httpClient ?? _httpClient).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
 
         private Tuple<DevHubCredential, string> _cachedIdentity;
+        private readonly DevHubIdentityCache _identityCache = new DevHubIdentityCache();
 
         private static string GetPreferredGitHubAccount()
         {
@@ -52,14 +54,14 @@ namespace StartScreen.Services.DevHub.Providers
         {
             return DevHubRepoSummaryFetcher.FetchAsync(repo,
                 token => DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), token),
-                (credential, url, token) => SendGetAsync(credential, url, token), true, cancellationToken);
+                (credential, url, token) => SendGetAsync(credential, url, token), true, cancellationToken, identityCache: _identityCache);
         }
 
         internal Task<DevHubRepoSummary> GetRepoSummaryAsync(HttpClient client, DevHubCredential credential,
             RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
             return DevHubRepoSummaryFetcher.FetchAsync(repo, _ => Task.FromResult(credential),
-                (auth, url, token) => SendGetAsync(auth, url, token, client), true, cancellationToken);
+                (auth, url, token) => SendGetAsync(auth, url, token, client), true, cancellationToken, identityCache: _identityCache);
         }
 
         public bool CanHandle(string remoteUrl)
@@ -115,6 +117,7 @@ namespace StartScreen.Services.DevHub.Providers
                     var root = doc.RootElement;
                     var login = root.GetProperty("login").GetString();
                     _cachedIdentity = Tuple.Create(credential, login);
+                    _identityCache.Remember(credential, "https://api.github.com/user", login);
 
                     return new DevHubUser
                     {
@@ -178,6 +181,7 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 var login = doc.RootElement.GetProperty("login").GetString();
                 _cachedIdentity = Tuple.Create(credential, login);
+                _identityCache.Remember(credential, "https://api.github.com/user", login);
                 return (credential, login);
             }
         }
@@ -267,35 +271,43 @@ namespace StartScreen.Services.DevHub.Providers
                 if (credential == null || string.IsNullOrEmpty(login))
                     return Array.Empty<DevHubCiRun>();
 
-                // Fetch user's recently pushed repos (personal + org) to find CI runs
-                var reposUrl = "https://api.github.com/user/repos?sort=pushed&per_page=5&affiliation=owner,collaborator,organization_member";
-                var reposResponse = await SendGetAsync(credential, reposUrl, cancellationToken);
-                if (!reposResponse.IsSuccessStatusCode)
-                    return Array.Empty<DevHubCiRun>();
-
-                var reposJson = await reposResponse.Content.ReadAsStringAsync();
-                var repos = ParseRepoList(reposJson);
-
-                var allRuns = new List<DevHubCiRun>();
-                foreach (var repo in repos)
-                {
-                    var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page=3";
-                    var runsResponse = await SendGetAsync(credential, runsUrl, cancellationToken);
-                    if (runsResponse.IsSuccessStatusCode)
-                    {
-                        var runsJson = await runsResponse.Content.ReadAsStringAsync();
-                        allRuns.AddRange(ParseCiRuns(runsJson, repo));
-                    }
-                }
-
-                allRuns.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
-                return allRuns;
+                return await GetUserCiRunsAsync(_httpClient, credential, cancellationToken);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
                 return Array.Empty<DevHubCiRun>();
             }
+        }
+
+        internal async Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(
+            HttpClient httpClient, DevHubCredential credential, CancellationToken cancellationToken)
+        {
+            const string reposUrl = "https://api.github.com/user/repos?sort=pushed&per_page=5&affiliation=owner,collaborator,organization_member";
+            using var reposResponse = await SendGetAsync(credential, reposUrl, cancellationToken, httpClient);
+            if (!reposResponse.IsSuccessStatusCode)
+                return Array.Empty<DevHubCiRun>();
+
+            var repos = ParseRepoList(await reposResponse.Content.ReadAsStringAsync());
+            using var semaphore = new SemaphoreSlim(3, 3);
+            var results = await Task.WhenAll(repos.Select(async repo =>
+            {
+                await semaphore.WaitAsync(cancellationToken);
+                try
+                {
+                    var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page=3";
+                    using var response = await SendGetAsync(credential, runsUrl, cancellationToken, httpClient);
+                    return response.IsSuccessStatusCode
+                        ? ParseCiRuns(await response.Content.ReadAsStringAsync(), repo)
+                        : new List<DevHubCiRun>();
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }));
+            cancellationToken.ThrowIfCancellationRequested();
+            return results.SelectMany(runs => runs).OrderByDescending(run => run.Timestamp).ToList();
         }
 
         private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);
@@ -350,7 +362,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (prResponse.IsSuccessStatusCode)
                 {
                     var prJson = await prResponse.Content.ReadAsStringAsync();
-                    var login = await DevHubRepoSummaryFetcher.GetIdentityAsync(credential, "https://api.github.com/user",
+                    var login = await _identityCache.GetAsync(credential, "https://api.github.com/user",
                         (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken);
                     detail.PullRequests = ParseRepoPullRequests(prJson, repo, login);
                 }

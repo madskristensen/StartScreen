@@ -25,6 +25,12 @@ checks, Git metadata, or history writes. Those details are filled in afterward;
 Your Work can load independently. Repository summaries, dashboard refreshes, and
 news start after the UI has yielded to rendering and user input. Cache reads, feed parsing, and thumbnail
 decoding run on background threads with bounded disk and network concurrency.
+Local workspace metadata is published progressively by two background workers in
+batches of up to eight, with selected and pinned workspaces scheduled first.
+Repository summaries start as local metadata arrives, independently of remote Git
+fetches. Copilot session and solution timestamp scans are shared within each pass
+for workspaces using the same directories. Search keeps the existing bound list
+and avoids resetting it when the matching items and their groups have not changed.
 The saved recent-project column width is applied before the first render, so it
 does not shift when background content loads.
 Dev Hub does not read its cache or authenticate providers when disabled.
@@ -164,6 +170,12 @@ The Dev Hub panel shows your open pull requests, assigned issues, and
 recent builds from GitHub and Azure DevOps - right next to your project
 list. Data loads in the background and is cached locally so the UI stays
 responsive.
+
+Completed Dev Hub categories appear without waiting for slower per-repository
+activity. GitHub CI queries run with at most three repository requests in flight.
+Verified identities are shared across repository summaries for up to five minutes,
+scoped by credentials and identity endpoint, and invalidated when authentication
+changes. Failed identity lookups are retried rather than cached as signed-in users.
 
 **Overview** opens by default and shows Copilot activity and other recent
 changes, without a separate attention banner. Existing saved defaults are switched

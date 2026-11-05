@@ -126,6 +126,69 @@ namespace StartScreen.Test.DevHub
             Assert.IsFalse(service.IsRefreshing);
         }
 
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task Refresh_PublishesSourcesIndependentlyAndMergesWithoutDuplicatesAsync(bool repositoryFirst)
+        {
+            var github = new RemoteRepoIdentifier("github.com", "owner", "repo");
+            var ado = new RemoteRepoIdentifier("dev.azure.com", "org", "repo", "project");
+            var issues = new TaskCompletionSource<IReadOnlyList<DevHubIssue>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var detail = new TaskCompletionSource<DevHubRepoDetail>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var published = Signal();
+            var provider = new AuthenticationProvider(_ => Task.FromResult<IReadOnlyList<DevHubUser>>([new DevHubUser { Username = "me" }]))
+            {
+                ReadIssues = _ => issues.Task,
+                ActivityRepo = ado,
+                Detail = detail.Task,
+            };
+            var cache = new DevHubCacheService(_cacheFolder);
+            cache.WriteDashboard(new DevHubDashboard
+            {
+                Issues = [new DevHubIssue { Title = "Old GitHub", RepoIdentifier = github }, new DevHubIssue { Title = "Old ADO", RepoIdentifier = ado }],
+            });
+            var service = new DevHubService(cache, [provider], _ => Task.FromResult<IReadOnlyList<string>>(["https://example.com/repo"]),
+                () => DevHubSortOrder.MostRecent);
+            await service.LoadFromCacheAsync();
+            var freshIssue = new DevHubIssue { Title = "Fresh GitHub", RepoIdentifier = github };
+            var freshDetail = new DevHubRepoDetail { RepoIdentifier = ado, Issues = [new DevHubIssue { Title = "Fresh ADO", RepoIdentifier = ado }] };
+            var progress = new InlineProgress(dashboard =>
+            {
+                if (dashboard.Issues.Any(issue => issue.Title == (repositoryFirst ? "Fresh ADO" : "Fresh GitHub")))
+                    published.TrySetResult(true);
+            });
+            var refresh = service.RefreshAsync(CancellationToken.None, progress);
+            try
+            {
+                if (repositoryFirst)
+                    detail.SetResult(freshDetail);
+                else
+                    issues.SetResult([freshIssue]);
+
+                Assert.AreSame(published.Task, await Task.WhenAny(published.Task, Task.Delay(TimeSpan.FromSeconds(10))));
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.IsTrue(service.IsRefreshing);
+                Assert.IsFalse(service.CurrentDashboard.Issues.Any(issue => issue.Title == "Old ADO") && repositoryFirst);
+            }
+            finally
+            {
+                issues.TrySetResult([freshIssue]);
+                detail.TrySetResult(freshDetail);
+            }
+            var result = await refresh;
+
+            CollectionAssert.AreEquivalent(new[] { "Fresh GitHub", "Fresh ADO" }, result.Issues.Select(issue => issue.Title).ToArray());
+            var cached = await cache.ReadDashboardAsync();
+            Assert.IsNotNull(cached);
+            CollectionAssert.AreEquivalent(new[] { "Fresh GitHub", "Fresh ADO" }, cached.Issues.Select(issue => issue.Title).ToArray());
+            Assert.IsFalse(service.IsRefreshing);
+        }
+
+        private sealed class InlineProgress(Action<DevHubDashboard> report) : IProgress<DevHubDashboard>
+        {
+            public void Report(DevHubDashboard value) => report(value);
+        }
+
         private DevHubService Service(Func<CancellationToken, Task<IReadOnlyList<DevHubUser>>> authenticate)
         {
             return new DevHubService(new DevHubCacheService(_cacheFolder), [new AuthenticationProvider(authenticate)]);
@@ -135,16 +198,20 @@ namespace StartScreen.Test.DevHub
 
         private sealed class AuthenticationProvider(Func<CancellationToken, Task<IReadOnlyList<DevHubUser>>> authenticate) : IDevHubProvider
         {
+            public Func<CancellationToken, Task<IReadOnlyList<DevHubIssue>>> ReadIssues { get; set; } =
+                _ => Task.FromResult<IReadOnlyList<DevHubIssue>>(Array.Empty<DevHubIssue>());
+            public RemoteRepoIdentifier? ActivityRepo { get; set; }
+            public Task<DevHubRepoDetail>? Detail { get; set; }
             public string DisplayName => "Authentication test";
             public Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken) => authenticate(cancellationToken);
             public bool CanHandle(string remoteUrl) => throw new NotSupportedException();
             public RemoteRepoIdentifier ParseRemoteUrl(string remoteUrl) => throw new NotSupportedException();
             public Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-            public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-            public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-            public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-            public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> candidateRemoteUrls, CancellationToken cancellationToken) => throw new NotSupportedException();
-            public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken) => throw new NotSupportedException();
+            public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([]);
+            public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken) => ReadIssues(cancellationToken);
+            public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<DevHubCiRun>>([]);
+            public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> candidateRemoteUrls, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(ActivityRepo == null ? [] : [ActivityRepo]);
+            public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken) => Detail ?? throw new NotSupportedException();
             public Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken) => throw new NotSupportedException();
             public string GetRepoWebUrl(RemoteRepoIdentifier repo) => throw new NotSupportedException();
             public string GetPullRequestsWebUrl(RemoteRepoIdentifier repo) => throw new NotSupportedException();

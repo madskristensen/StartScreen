@@ -17,6 +17,8 @@ namespace StartScreen.Services.DevHub
     {
         private static readonly Dictionary<string, DevHubCredential> _credentialCache = new Dictionary<string, DevHubCredential>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _cacheLock = new object();
+        private static int _credentialGeneration;
+        internal static int CredentialGeneration => Volatile.Read(ref _credentialGeneration);
         private static readonly Lazy<AzureDevOpsCredentialProvider> _azureDevOpsCredentials = new Lazy<AzureDevOpsCredentialProvider>(() =>
             new AzureDevOpsCredentialProvider(new Azure.Identity.VisualStudioCredential(new Azure.Identity.VisualStudioCredentialOptions
             {
@@ -46,6 +48,7 @@ namespace StartScreen.Services.DevHub
 
         internal static void InvalidateAzureDevOpsCredential(DevHubCredential credential)
         {
+            Interlocked.Increment(ref _credentialGeneration);
             if (credential.IsBearer)
             {
                 if (_azureDevOpsCredentials.IsValueCreated)
@@ -114,6 +117,7 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public static void ClearCachedCredentials()
         {
+            Interlocked.Increment(ref _credentialGeneration);
             lock (_cacheLock)
             {
                 _credentialCache.Clear();
@@ -132,6 +136,7 @@ namespace StartScreen.Services.DevHub
             if (string.IsNullOrWhiteSpace(host))
                 return;
 
+            Interlocked.Increment(ref _credentialGeneration);
             RemoveCachedCredentialsForHost(host);
         }
 

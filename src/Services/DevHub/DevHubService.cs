@@ -15,6 +15,8 @@ namespace StartScreen.Services.DevHub
     {
         private readonly DevHubCacheService _cache;
         private readonly IReadOnlyList<IDevHubProvider> _providers;
+        private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _getCandidateRemoteUrls;
+        private readonly Func<DevHubSortOrder> _getSortOrder;
         private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
         private DevHubDashboard _currentDashboard;
         private volatile bool _isRefreshing;
@@ -23,10 +25,14 @@ namespace StartScreen.Services.DevHub
         {
         }
 
-        public DevHubService(DevHubCacheService cache, IReadOnlyList<IDevHubProvider> providers = null)
+        public DevHubService(DevHubCacheService cache, IReadOnlyList<IDevHubProvider> providers = null,
+            Func<CancellationToken, Task<IReadOnlyList<string>>> getCandidateRemoteUrls = null,
+            Func<DevHubSortOrder> getSortOrder = null)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _providers = providers ?? DevHubProviderRegistry.GetAllProviders();
+            _getCandidateRemoteUrls = getCandidateRemoteUrls ?? GetCandidateRemoteUrlsAsync;
+            _getSortOrder = getSortOrder ?? (() => Options.Instance.DevHubSortOrder);
         }
 
         /// <summary>
@@ -57,7 +63,7 @@ namespace StartScreen.Services.DevHub
         /// <summary>
         /// Fetches fresh data from all authenticated providers and updates the dashboard.
         /// Reports progress incrementally so the UI can render data as it arrives.
-        /// Issues are fetched first (visible tab), then PRs, then CI runs.
+        /// Categories and per-repository activity are published independently as they complete.
         /// A forced refresh waits for an active refresh and then fetches fresh authentication and data.
         /// </summary>
         public async Task<DevHubDashboard> RefreshAsync(CancellationToken cancellationToken, IProgress<DevHubDashboard> progress = null, bool forceRefresh = false)
@@ -116,7 +122,7 @@ namespace StartScreen.Services.DevHub
                 progress?.Report(dashboard);
 
                 // Fetch issues, PRs, and CI runs in parallel; report each as it arrives
-                DevHubSortOrder sortOrder = Options.Instance.DevHubSortOrder;
+                DevHubSortOrder sortOrder = _getSortOrder();
 
                 // Providers without a user-level activity API (Azure DevOps) are populated by
                 // fetching each MRU repo individually. Fetch once and split the result into the
@@ -129,10 +135,12 @@ namespace StartScreen.Services.DevHub
                 var ciTask = Task.WhenAll(authenticated.Select(
                     p => p.GetUserCiRunsAsync(cancellationToken)));
 
-                var perRepo = await perRepoActivityTask;
+                IReadOnlyList<DevHubRepoDetail> perRepo = Array.Empty<DevHubRepoDetail>();
+                IEnumerable<DevHubIssue> issues = dashboard.Issues;
+                IEnumerable<DevHubPullRequest> pullRequests = dashboard.PullRequests;
+                IEnumerable<DevHubCiRun> ciRuns = dashboard.CiRuns;
 
-                // Report each category as it completes
-                var remaining = new List<Task> { issueTask, prTask, ciTask };
+                var remaining = new List<Task> { issueTask, prTask, ciTask, perRepoActivityTask };
                 while (remaining.Count > 0)
                 {
                     var completed = await Task.WhenAny(remaining);
@@ -141,30 +149,30 @@ namespace StartScreen.Services.DevHub
 
                     if (completed == issueTask)
                     {
-                        var results = await issueTask;
-                        dashboard.Issues = DevHubItemSorter.Sort(
-                            results.SelectMany(r => r).Concat(perRepo.SelectMany(d => d.Issues)),
-                            sortOrder,
-                            i => i.RepoIdentifier,
-                            i => i.UpdatedAt);
+                        issues = (await issueTask).SelectMany(r => r).ToList();
                     }
                     else if (completed == prTask)
                     {
-                        var results = await prTask;
-                        dashboard.PullRequests = DevHubItemSorter.Sort(
-                            results.SelectMany(r => r).Concat(perRepo.SelectMany(d => d.PullRequests)),
-                            sortOrder,
-                            pr => pr.RepoIdentifier,
-                            pr => pr.UpdatedAt);
+                        pullRequests = (await prTask).SelectMany(r => r).ToList();
                     }
                     else if (completed == ciTask)
                     {
-                        var results = await ciTask;
-                        dashboard.CiRuns = results.SelectMany(r => r)
-                            .Concat(perRepo.SelectMany(d => d.CiRuns))
-                            .OrderByDescending(r => r.Timestamp)
-                            .ToList();
+                        ciRuns = (await ciTask).SelectMany(r => r).ToList();
                     }
+                    else
+                    {
+                        perRepo = await perRepoActivityTask;
+                    }
+
+                    var replacedRepos = new HashSet<RemoteRepoIdentifier>(perRepo.Select(detail => detail.RepoIdentifier));
+                    dashboard.Issues = DevHubItemSorter.Sort(
+                        issues.Where(item => !replacedRepos.Contains(item.RepoIdentifier)).Concat(perRepo.SelectMany(detail => detail.Issues)),
+                        sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
+                    dashboard.PullRequests = DevHubItemSorter.Sort(
+                        pullRequests.Where(item => !replacedRepos.Contains(item.RepoIdentifier)).Concat(perRepo.SelectMany(detail => detail.PullRequests)),
+                        sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
+                    dashboard.CiRuns = ciRuns.Where(item => !replacedRepos.Contains(item.RepoIdentifier))
+                        .Concat(perRepo.SelectMany(detail => detail.CiRuns)).OrderByDescending(item => item.Timestamp).ToList();
 
                     _currentDashboard = dashboard;
                     progress?.Report(dashboard);
@@ -281,12 +289,12 @@ namespace StartScreen.Services.DevHub
         /// API (currently Azure DevOps). The repos are taken from the user's MRU list, so the
         /// number of requests stays proportional to what the user is actually working on.
         /// </summary>
-        private static async Task<IReadOnlyList<DevHubRepoDetail>> FetchPerRepoActivityAsync(
+        private async Task<IReadOnlyList<DevHubRepoDetail>> FetchPerRepoActivityAsync(
             IReadOnlyList<IDevHubProvider> providers, CancellationToken cancellationToken)
         {
             try
             {
-                var candidateUrls = await GetCandidateRemoteUrlsAsync(cancellationToken);
+                var candidateUrls = await _getCandidateRemoteUrls(cancellationToken);
                 if (candidateUrls.Count == 0)
                     return Array.Empty<DevHubRepoDetail>();
 

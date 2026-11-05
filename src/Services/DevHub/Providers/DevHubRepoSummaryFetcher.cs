@@ -17,7 +17,8 @@ namespace StartScreen.Services.DevHub.Providers
         internal static async Task<DevHubRepoSummary> FetchAsync(RemoteRepoIdentifier repo,
             Func<CancellationToken, Task<DevHubCredential>> acquireCredential,
             Func<DevHubCredential, string, CancellationToken, Task<HttpResponseMessage>> send,
-            bool gitHub, CancellationToken cancellationToken, string signInMessage = null)
+            bool gitHub, CancellationToken cancellationToken, string signInMessage = null,
+            DevHubIdentityCache identityCache = null)
         {
             if (repo == null)
                 throw new ArgumentNullException(nameof(repo));
@@ -37,7 +38,9 @@ namespace StartScreen.Services.DevHub.Providers
                 var apiVersion = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
                 var identityUrl = gitHub ? "https://api.github.com/user"
                     : $"{baseUrl}/_apis/connectionData?api-version=3.0";
-                var identity = await GetIdentityAsync(credential, identityUrl, send, gitHub, cancellationToken);
+                var identity = identityCache != null
+                    ? await identityCache.GetAsync(credential, identityUrl, send, gitHub, cancellationToken)
+                    : await GetIdentityAsync(credential, identityUrl, send, gitHub, cancellationToken);
                 int? requested = identity == null ? (int?)null : 0;
                 var seen = new HashSet<int>();
                 var offset = 0;

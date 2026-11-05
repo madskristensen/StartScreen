@@ -28,9 +28,17 @@ namespace StartScreen.Helpers
                 ? itemPath
                 : Path.GetDirectoryName(itemPath);
 
-            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            return CountSessionsForRoot(itemRoot, visited)
-                 + CountSessionsForRoot(GitHelper.FindRepositoryPath(itemRoot), visited);
+            return CountSessions(itemPath, type, GitHelper.FindRepositoryPath(itemRoot), CountSessionsForRoot);
+        }
+
+        internal static int CountSessions(string itemPath, MruItemType type, string repositoryRoot, Func<string, int> countRoot)
+        {
+            var itemRoot = type == MruItemType.Folder ? itemPath : Path.GetDirectoryName(itemPath);
+            itemRoot = string.IsNullOrEmpty(itemRoot) ? null : Path.GetFullPath(itemRoot);
+            repositoryRoot = string.IsNullOrEmpty(repositoryRoot) ? null : Path.GetFullPath(repositoryRoot);
+            var count = itemRoot == null ? 0 : countRoot(itemRoot);
+            return repositoryRoot == null || string.Equals(itemRoot?.TrimEnd('\\', '/'), repositoryRoot.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase)
+                ? count : count + countRoot(repositoryRoot);
         }
 
         /// <summary>
@@ -63,9 +71,9 @@ namespace StartScreen.Helpers
             return deleted;
         }
 
-        private static int CountSessionsForRoot(string root, HashSet<string> visited)
+        internal static int CountSessionsForRoot(string root)
         {
-            if (string.IsNullOrEmpty(root) || !visited.Add(root))
+            if (string.IsNullOrEmpty(root))
             {
                 return 0;
             }
@@ -103,7 +111,7 @@ namespace StartScreen.Helpers
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
             }
 
             return count;
