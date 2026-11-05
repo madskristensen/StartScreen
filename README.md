@@ -89,7 +89,8 @@ the Visual Studio theme changes while settings are open.
 
 **See real repository activity.** A small PR icon and count beside the branch show
 repository-wide open pull requests for supported GitHub and Azure DevOps repositories.
-Zero counts are hidden. Direct personal review requests appear on the second line.
+Zero counts are hidden. Recent items use compact 32-pixel single-line rows;
+direct personal review requests add a second line only when present.
 Counts are fetched for all visible recent workspaces, independently of the limited
 dashboard lists. Repository discovery uses each workspace's local Git remote, even
 when checkouts are outside Visual Studio's default projects location.
@@ -97,19 +98,25 @@ Only positive counts are shown; loading, unsupported, signed-out, and unavailabl
 states add no placeholder links or status text to recent items. Select a PR count
 to filter both ownership views to PRs without changing your selected view, or
 select the workspace to view its repository activity. Select a personal review
-count to open Incoming with Needs attention enabled.
+count to open Team activity's Attention feed.
 
 **My work** tracks your loaded open PRs, including drafts, created or assigned
-issues and tasks, personally triggered builds, and local Copilot sessions. **Incoming** shows other people's
+issues and tasks, personally triggered builds, and local Copilot sessions. **Team activity** shows other people's
 PRs and issues, with requested reviews above general repository and build
-activity. Each view has type filters and an independent **Needs attention**
-filter. Items stay in their ownership view rather than appearing in a duplicate
-action tab. The two work blades sit side by side, with News to their right.
+activity. Each blade defaults to **Attention**, a mixed-type feed of all loaded
+items with a known action for you, ordered newest updated first without type
+grouping or a separate top-items limit. The count shows how many items need you.
+Type filters show their full inventories independently of Attention. There is
+no separate Needs attention checkbox. Items stay in their ownership view rather
+than appearing in a duplicate action blade. The two work blades sit side by side, with News to their right.
 Smaller windows use horizontal scrolling rather than hiding a work blade or
 moving News below it. Both views show colored review/check
 status pills and a friendly update date, with the exact local date and
 time on hover, plus background-free globe and pull request icons to open a PR in
-your browser or Visual Studio.
+your browser or Visual Studio. These action icons appear only while their entire
+card is hovered or contains keyboard focus; their space stays reserved to avoid
+layout shifts. When a workspace is selected, its name and **All repositories**
+sit beside the My work heading, keeping both blades' filter rows aligned.
 PR authors appear beside the status, before the date; PRs have no separate
 action-text line or check-details link. Issues and tasks assigned to you have a
 prominent themed **Assigned to you** banner. Labels use lightweight text rather
@@ -200,7 +207,11 @@ a visual indicator shows exactly where the item will land.
 The Dev Hub panel shows your open pull requests, assigned issues, and
 recent builds from GitHub and Azure DevOps - right next to your project
 list. Data loads in the background and is cached locally so the UI stays
-responsive.
+responsive. On later opens, the saved authenticated dashboard populates both work
+blades before any network refresh. A cache older than 15 minutes refreshes in the
+background while its content stays visible. First use without a cache still needs
+to fetch data. Additional repository-scoped details are not persisted as separate
+snapshots; the saved aggregate dashboard supplies the initial content.
 
 Completed Dev Hub categories appear without waiting for slower per-repository
 activity. GitHub CI queries run with at most three repository requests in flight.
@@ -211,9 +222,9 @@ changes. Failed identity lookups are retried rather than cached as signed-in use
 Both work blades are always visible. Keyboard navigation initially targets
 **My work** by default. Existing Overview/Needs you preferences migrate
 to My work, and existing Issues/Pull requests/Builds preferences migrate to
-Incoming. The initial keyboard destination remains configurable. Work stays visible after viewing it;
+Team activity. The initial keyboard destination remains configurable. Work stays visible after viewing it;
 activity timestamps do not determine ownership or whether action is required.
-**Needs attention** uses explicit signals: requested reviews, changes requested
+**Attention** uses explicit signals: requested reviews, changes requested
 on your PRs, known failing checks or merge conflicts on your PRs, assigned open
 issues/tasks, your failed builds, unresolved discussions on your PRs, verified
 merge readiness, and live Copilot questions or permission requests. Pending checks,
@@ -238,7 +249,7 @@ These are recent, bounded activity lists, not complete repository inventories;
 permissions, discovered projects, and provider availability still limit coverage.
 **Recently completed** optionally adds a separate My work group for your merged
 PRs and completed created/assigned issues or tasks from the last 14 days. It does
-not replace the active-work queries or add completed work to Needs attention.
+not replace the active-work queries or add completed work to Attention.
 Cloud-agent sessions and sessions in other VS/CLI processes are not included.
 
 PRs open in Visual Studio's native review experience when the installed Git
@@ -250,7 +261,7 @@ Opening a review does not silently check out a branch.
 
 An experimental, optional Copilot integration observes the installed VS harness
 through its in-process MEF contracts. My work includes running and recent local
-conversations; its Needs attention filter includes sessions with unresolved
+conversations; its Attention feed includes sessions with unresolved
 permission requests or questions, including requests from subagents. Clicking a conversation, or pressing
 Enter on it, opens it in Copilot so requests are answered in Copilot's own UI. It does not
 send prompts, resume sessions in another process, or answer requests automatically.
@@ -297,7 +308,7 @@ HTTP timeouts and other request failures are still logged for troubleshooting.
 
 ### Azure DevOps sign-in
 
-Azure DevOps activity appears alongside GitHub in **My work** and **Incoming**.
+Azure DevOps activity appears alongside GitHub in **My work** and **Team activity**.
 The dashboard discovers Azure DevOps repositories from your recent workspaces,
 not every repository accessible to your account. Open a checkout in Visual Studio
 so it appears in the recent list, then refresh Start Screen. Recent builds include
@@ -312,7 +323,7 @@ even when the individual repository is not in the recent list. They load up to
 30 authored open PRs per project initially, separately from the repository-wide feed;
 repository scopes also query authored open PRs independently.
 Personal review requests are queried at project level as well, so they are not
-limited to the latest PRs in individual recent repositories. Incoming work items
+limited to the latest PRs in individual recent repositories. Team work items
 use a separate query from your created/assigned work. Available workflow categories
 identify completed custom states; custom workflow coverage depends on the state
 metadata exposed by the project. Recent ADO completion history requires a reliable
@@ -365,11 +376,11 @@ repositories** to clear the scope and see everything again.
 The scope is not saved between sessions, so reopening the Start Screen
 always starts with the full view.
 
-### Incoming search query (GitHub)
+### Team activity search query (GitHub)
 
-By default incoming activity shows issues and pull requests that "involve" your GitHub
+By default team activity shows issues and pull requests that "involve" your GitHub
 account. Click the gear icon next to the Dev Hub header to enter a custom
-GitHub search query under **Incoming search query (GitHub)**. Advanced connection
+GitHub search query under **Team activity search query (GitHub)**. Advanced connection
 and search options are collapsed by default to keep account status and display
 preferences easy to scan. Expand **Connection options** to change Azure DevOps
 authentication, enter a PAT, or add a server. The extension prepends `is:issue` or `is:pr`
@@ -397,7 +408,9 @@ state:open org:dotnet
 
 Leave the field empty to restore the default behavior (`involves:{login}`).
 
-The custom query controls incoming issue and pull request discovery. **My work**
+The custom query controls all **Team activity** issue and pull request discovery,
+including review requests, mentions, and the **Attention** view. It also applies
+when a repository is selected. **My work**
 independently queries your authored open PRs and created or assigned open issues,
 including contributions outside that query's repositories and organizations.
 An explicit workspace/repository selection still scopes both views. Build
@@ -413,11 +426,12 @@ Click the gear icon next to the Dev Hub header to open its settings, where
 the **Display** section lets you tailor the layout:
 
 - **Initial keyboard focus** - choose whether keyboard navigation initially
-  targets My work or Incoming. Both blades remain visible.
+  targets My work or Team activity. Both blades remain visible.
 - **Sort issues and pull requests by** - order the lists by **Most recent
   first** (the default), **GitHub first**, or **Azure DevOps first**. The
   provider options group items by source, then fall back to most recent
-  within each group. Incoming requests remain above general repository activity.
+  within each group. Team requests remain above general repository activity in
+  inventory views; Attention always uses newest-updated-first ordering.
 
 ### Hiding the Dev Hub
 

@@ -136,28 +136,29 @@ namespace StartScreen.ToolWindows.Controls
             var incomingKind = IncomingPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
                 : IncomingIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
                 : IncomingBuildFilter.IsChecked == true ? DevHubWorkItemKind.Build : DevHubWorkItemKind.All;
-            var myWork = DevHubWorkItem.Filter(_myWorkItems, myWorkKind, false);
-            var incoming = DevHubWorkItem.Filter(_incomingItems, incomingKind, false);
-            MyWorkNeedsAttention.Content = $"Needs attention ({myWork.Count(item => item.NeedsAttention)})";
-            IncomingNeedsAttention.Content = $"Needs attention ({incoming.Count(item => item.NeedsAttention)})";
-            myWork = DevHubWorkItem.Filter(myWork, DevHubWorkItemKind.All, MyWorkNeedsAttention.IsChecked == true);
-            incoming = DevHubWorkItem.Filter(incoming, DevHubWorkItemKind.All, IncomingNeedsAttention.IsChecked == true);
-            MyWorkList.ItemsSource = CreateWorkItemView(myWork);
-            IncomingList.ItemsSource = CreateWorkItemView(incoming);
+            var myWorkAttention = MyWorkAttentionFilter.IsChecked == true;
+            var incomingAttention = IncomingAttentionFilter.IsChecked == true;
+            var myWork = DevHubWorkItem.Filter(_myWorkItems, myWorkKind, myWorkAttention);
+            var incoming = DevHubWorkItem.Filter(_incomingItems, incomingKind, incomingAttention);
+            MyWorkAttentionFilter.Content = $"Attention ({_myWorkItems.Count(item => item.NeedsAttention)})";
+            IncomingAttentionFilter.Content = $"Attention ({_incomingItems.Count(item => item.NeedsAttention)})";
+            MyWorkList.ItemsSource = CreateWorkItemView(myWork, !myWorkAttention);
+            IncomingList.ItemsSource = CreateWorkItemView(incoming, !incomingAttention);
             MyWorkEmpty.Visibility = myWork.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             IncomingEmpty.Visibility = incoming.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            MyWorkEmpty.Text = MyWorkNeedsAttention.IsChecked == true
+            MyWorkEmpty.Text = myWorkAttention
                 ? "No items need your attention in this view." : "No matching personal work in the loaded activity.";
-            IncomingEmpty.Text = IncomingNeedsAttention.IsChecked == true
-                ? "No items need your attention in this view." : "No matching incoming activity.";
+            IncomingEmpty.Text = incomingAttention
+                ? "No items need your attention in this view." : "No matching team activity.";
             MyWorkCount.Text = _myWorkItems.Count == 0 ? string.Empty : $" {_myWorkItems.Count}";
             IncomingCount.Text = _incomingItems.Count == 0 ? string.Empty : $" {_incomingItems.Count}";
         }
 
-        internal static ListCollectionView CreateWorkItemView(IReadOnlyList<DevHubWorkItem> items)
+        internal static ListCollectionView CreateWorkItemView(IReadOnlyList<DevHubWorkItem> items, bool groupBySection = true)
         {
             var view = new ListCollectionView(items.ToArray());
-            view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DevHubWorkItem.Section)));
+            if (groupBySection)
+                view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DevHubWorkItem.Section)));
             return view;
         }
 

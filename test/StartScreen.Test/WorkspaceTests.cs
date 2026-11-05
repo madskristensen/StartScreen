@@ -425,6 +425,60 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
+        public void Attention_ShowsEveryActionableTypeChronologicallyWithoutGroupsOrATopItemsLimit()
+        {
+            var now = DateTime.UtcNow;
+            var prs = new[]
+            {
+                new DevHubPullRequest { Title = "My PR", Status = "open", IsAuthoredByCurrentUser = true, CiStatus = "failure", WebUrl = "https://example.com/pr/1", UpdatedAt = now.AddHours(-12.5) },
+                new DevHubPullRequest { Title = "Waiting PR", Status = "open", IsAuthoredByCurrentUser = true, CiStatus = "pending", WebUrl = "https://example.com/pr/2", UpdatedAt = now },
+                new DevHubPullRequest { Title = "Merged PR", Status = "closed", IsMerged = true, IsAuthoredByCurrentUser = true, HasChangesRequested = true, WebUrl = "https://example.com/pr/3", UpdatedAt = now },
+            };
+            var issues = Enumerable.Range(0, 12).Select(index => new DevHubIssue
+            {
+                Title = $"Task {index}", IsAssignedToCurrentUser = true, State = "open",
+                WebUrl = $"https://example.com/issues/{index}", UpdatedAt = now.AddHours(-index - 1),
+            }).Append(new DevHubIssue { Title = "Completed task", IsAssignedToCurrentUser = true, IsClosed = true, WebUrl = "https://example.com/issues/closed", UpdatedAt = now });
+            var sessions = new[]
+            {
+                new CopilotActivitySession { Id = "waiting", Title = "Copilot", PendingQuestions = 1, LastActivity = now.AddHours(-3.5) },
+                new CopilotActivitySession { Id = "idle", Title = "Idle", LastActivity = now },
+            };
+            var builds = new[]
+            {
+                new DevHubCiRun { Name = "Build", Status = "failure", IsTriggeredByCurrentUser = true, WebUrl = "https://example.com/build/1", Timestamp = now.AddHours(-7.5) },
+                new DevHubCiRun { Name = "Successful build", Status = "success", IsTriggeredByCurrentUser = true, WebUrl = "https://example.com/build/2", Timestamp = now },
+            };
+            var inventory = DevHubWorkItem.GetMyWork(prs, issues, sessions, DevHubSortOrder.AzureDevOpsFirst,
+                includeCompleted: true, builds: builds);
+            var attention = DevHubWorkItem.Filter(inventory, DevHubWorkItemKind.All, true);
+            var view = ToolWindows.Controls.DevHubPanel.CreateWorkItemView(attention, groupBySection: false);
+
+            Assert.AreEqual(2, inventory.Count(item => item.IsCompleted));
+            CollectionAssert.AreEqual(new[] { "Task 0", "Task 1", "Task 2", "Copilot", "Task 3", "Task 4", "Task 5", "Task 6", "Build", "Task 7", "Task 8", "Task 9", "Task 10", "Task 11", "My PR" },
+                view.Cast<DevHubWorkItem>().Select(item => item.Title).ToArray());
+            Assert.IsNull(view.Groups);
+        }
+
+        [TestMethod]
+        public void IncomingAttention_OverridesProviderOrderButTypeInventoryKeepsEveryItemAndItsOrder()
+        {
+            var now = DateTime.UtcNow;
+            var prs = new[]
+            {
+                new DevHubPullRequest { Title = "GitHub review", Status = "open", IsReviewRequestedForCurrentUser = true, WebUrl = "https://github.com/o/r/pull/1", RepoIdentifier = RemoteRepoIdentifier.TryParse("https://github.com/o/r.git"), UpdatedAt = now.AddHours(-1) },
+                new DevHubPullRequest { Title = "ADO review", Status = "open", IsReviewRequestedForCurrentUser = true, WebUrl = "https://dev.azure.com/o/p/_git/r/pullrequest/1", RepoIdentifier = RemoteRepoIdentifier.TryParse("https://dev.azure.com/o/p/_git/r"), UpdatedAt = now.AddHours(-2) },
+                new DevHubPullRequest { Title = "Passive update", Status = "open", WebUrl = "https://github.com/o/r/pull/2", RepoIdentifier = RemoteRepoIdentifier.TryParse("https://github.com/o/r.git"), UpdatedAt = now },
+            };
+            var incoming = DevHubWorkItem.GetIncoming(prs, [], [], DevHubSortOrder.AzureDevOpsFirst);
+
+            CollectionAssert.AreEqual(new[] { "GitHub review", "ADO review" },
+                DevHubWorkItem.Filter(incoming, DevHubWorkItemKind.All, true).Select(item => item.Title).ToArray());
+            CollectionAssert.AreEqual(new[] { "ADO review", "GitHub review", "Passive update" },
+                DevHubWorkItem.Filter(incoming, DevHubWorkItemKind.PullRequest, false).Select(item => item.Title).ToArray());
+        }
+
+        [STATestMethod]
         public void WorkViews_GroupCardsWithoutLosingActionableItems()
         {
             var own = DevHubWorkItem.GetMyWork(

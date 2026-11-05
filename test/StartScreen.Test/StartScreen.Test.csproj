@@ -28,4 +28,16 @@
     <EmbeddedResource Include="..\..\src\ToolWindows\Controls\MruItemControl.xaml" LogicalName="MruItemControl.xaml" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Update="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="MSTest.TestAdapter" Version="4.5.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="MSTest.TestFramework" Version="4.5.2" />
+  </ItemGroup>
+
 </Project>

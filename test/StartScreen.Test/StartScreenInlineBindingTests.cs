@@ -1,5 +1,5 @@
-using System.Windows.Controls;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Markup;
@@ -170,6 +170,58 @@ namespace StartScreen.Test
             Assert.AreEqual(expectedWidth, mruColumn.ActualWidth, 0.01);
             Assert.AreEqual(initialContentLeft, content.TranslatePoint(new Point(), grid).X, 0.01,
                 "Loading secondary content must not shift the column boundary.");
+        }
+
+        [STATestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void RecentItems_AreCompactUnlessReviewDetailsNeedASecondLine(bool hasReviews)
+        {
+            var document = ReadLayoutXaml("MruItemControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var definition = new XElement(document.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "RootBorder"));
+            definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            definition.Elements(p + "Border.Style").Remove();
+            definition.Elements(p + "Border.ToolTip").Remove();
+            definition.Elements(p + "Border.ContextMenu").Remove();
+            foreach (var attribute in definition.DescendantsAndSelf().Attributes().Where(attribute =>
+                attribute.Value.EndsWith("_Click", StringComparison.Ordinal) || attribute.Value.StartsWith("RootBorder_", StringComparison.Ordinal)
+                || attribute.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)).ToArray())
+                attribute.Remove();
+            var name = definition.Descendants(p + "TextBlock").Single(element => element.Attribute(x + "Name")?.Value == "NameText");
+            name.Attribute("TextDecorations")!.Remove();
+            name.Attribute("Opacity")!.Remove();
+            foreach (var image in definition.Descendants().Where(element => element.Name.LocalName == "CrispImage").ToArray())
+                image.ReplaceWith(new XElement(p + "Border", image.Attributes().Where(attribute => new[]
+                {
+                    "Width", "Height", "Margin", "VerticalAlignment",
+                }.Contains(attribute.Name.LocalName)).Select(attribute => new XAttribute(attribute))));
+            var styles = document.Root!.Element(p + "UserControl.Resources")!.Elements(p + "Style")
+                .Select(element => new XElement(element)).ToArray();
+            styles.SelectMany(element => element.Descendants(p + "Setter")).Where(element =>
+                element.Attribute("Property")?.Value == "Foreground").Remove();
+            definition.AddFirst(new XElement(p + "Border.Resources",
+                new XElement(p + "BooleanToVisibilityConverter", new XAttribute(x + "Key", "BoolToVisibilityConverter")), styles));
+            var card = (Border)XamlReader.Parse(definition.ToString());
+            var item = new Models.MruItem { Name = "hubitat-drivers", GitBranch = "main" };
+            item.ApplyRepositorySummary("Loaded", "Review details", 0, hasReviews ? 2 : 0);
+            card.DataContext = item;
+
+            card.Measure(new Size(320, double.PositiveInfinity));
+            card.Arrange(new Rect(0, 0, 320, card.DesiredSize.Height));
+            card.UpdateLayout();
+
+            var details = (Grid)card.FindName("RepositoryStatusRow");
+            Assert.AreEqual(hasReviews ? Visibility.Visible : Visibility.Collapsed, details.Visibility);
+            if (hasReviews)
+            {
+                Assert.IsGreaterThan(32d, card.ActualHeight);
+                Assert.IsLessThanOrEqualTo(card.ActualHeight - card.Padding.Bottom,
+                    details.TranslatePoint(new Point(0, details.ActualHeight), card).Y);
+            }
+            else
+                Assert.AreEqual(32d, card.ActualHeight, 0.01);
         }
 
         [STATestMethod]
@@ -532,10 +584,13 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        [DataRow(700d)]
-        [DataRow(1200d)]
-        [DataRow(2400d)]
-        public void ActivitySections_KeepBothWorkBladesBesideNews(double width)
+        [DataRow(700d, false)]
+        [DataRow(700d, true)]
+        [DataRow(1200d, false)]
+        [DataRow(1200d, true)]
+        [DataRow(2400d, false)]
+        [DataRow(2400d, true)]
+        public void ActivitySections_KeepBothWorkBladesBesideNews(double width, bool repositorySelected)
         {
             var screen = ReadLayoutXaml("StartScreenControl.xaml");
             var work = ReadLayoutXaml("DevHubPanel.xaml");
@@ -545,6 +600,7 @@ namespace StartScreen.Test
             var layout = StartScreenControl.CalculateContentLayout(width, true);
             Assert.IsFalse(layout.Stacked);
             var grid = new Grid();
+            grid.DataContext = new { HasSelectedMruItem = repositorySelected, WorkSectionTitle = "hubitat-drivers" };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(layout.WorkWidth) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var bladesDefinition = work.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "WorkBlades");
@@ -553,24 +609,35 @@ namespace StartScreen.Test
                 blades.ColumnDefinitions.Add((ColumnDefinition)XamlReader.Parse(column.ToString()));
             grid.Children.Add(blades);
             var headings = new List<TextBlock>();
+            var headers = new List<DockPanel>();
+            var filterRows = new List<FrameworkElement>();
             foreach (var definition in bladesDefinition.Elements(p + "StackPanel"))
             {
                 var blade = new StackPanel();
                 if (definition.Attribute("Margin") != null)
                     blade.Margin = ReadThickness(definition, "Margin");
                 Grid.SetColumn(blade, int.Parse(definition.Attribute("Grid.Column")!.Value));
-                var heading = new XElement(definition.Elements(p + "TextBlock").First());
+                var heading = new XElement(definition.Elements(p + "DockPanel").Single());
                 heading.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
                 heading.Descendants(p + "Run.Foreground").Remove();
-                foreach (var run in heading.Descendants(p + "Run"))
+                foreach (var button in heading.Elements(p + "Button"))
                 {
-                    run.SetAttributeValue("Text", string.Empty);
-                    run.SetAttributeValue("FontSize", "11");
+                    button.Attribute("Click")!.Remove();
+                    button.Attribute("Style")!.Remove();
                 }
-                var text = (TextBlock)XamlReader.Parse(heading.ToString());
+                var status = heading.Descendants(p + "Run").SingleOrDefault(element => element.Attribute(x + "Name")?.Value == "CopilotActivityStatusText");
+                status?.SetAttributeValue("Text", string.Empty);
+                status?.SetAttributeValue("FontSize", "12");
+                heading.AddFirst(new XElement(p + "DockPanel.Resources",
+                    new XElement(p + "BooleanToVisibilityConverter", new XAttribute(x + "Key", "BoolToVisibilityConverter"))));
+                var header = (DockPanel)XamlReader.Parse(heading.ToString());
+                var text = header.Children.OfType<TextBlock>().Single();
                 headings.Add(text);
-                blade.Children.Add(text);
-                blade.Children.Add(CreateActivityFilters(work, definition));
+                headers.Add(header);
+                blade.Children.Add(header);
+                var filters = CreateActivityFilters(work, definition);
+                filterRows.Add(filters);
+                blade.Children.Add(filters);
                 blade.Children.Add(new TextBlock { Text = "Example activity", TextWrapping = TextWrapping.Wrap });
                 blades.Children.Add(blade);
             }
@@ -593,7 +660,18 @@ namespace StartScreen.Test
             Assert.AreEqual(headings[0].TranslatePoint(new Point(), grid).Y, newsHeading.TranslatePoint(new Point(), grid).Y, 0.01);
             Assert.IsGreaterThan(headings[0].TranslatePoint(new Point(), grid).X + headings[0].ActualWidth, headings[1].TranslatePoint(new Point(), grid).X);
             Assert.IsGreaterThan(headings[1].TranslatePoint(new Point(), grid).X + headings[1].ActualWidth, newsHeading.TranslatePoint(new Point(), grid).X);
-            Assert.IsGreaterThanOrEqualTo(400d, headings[0].ActualWidth);
+            Assert.IsGreaterThanOrEqualTo(400d, headers[0].ActualWidth);
+            Assert.AreEqual(filterRows[0].TranslatePoint(new Point(), grid).Y, filterRows[1].TranslatePoint(new Point(), grid).Y, 0.01);
+            var allRepositories = headers[0].Children.OfType<Button>().Single();
+            Assert.AreEqual(repositorySelected ? Visibility.Visible : Visibility.Collapsed, allRepositories.Visibility);
+            var repositoryName = headings[0].Inlines.OfType<Run>().Single(run => run.ToolTip as string == "hubitat-drivers");
+            Assert.AreEqual(repositorySelected ? "  hubitat-drivers" : string.Empty, repositoryName.Text);
+            if (repositorySelected)
+            {
+                var buttonTop = allRepositories.TranslatePoint(new Point(), headers[0]).Y;
+                Assert.IsGreaterThanOrEqualTo(0d, buttonTop);
+                Assert.IsLessThanOrEqualTo(headers[0].ActualHeight, buttonTop + allRepositories.ActualHeight);
+            }
             var scroll = screen.Descendants(p + "ScrollViewer").Single(element => element.Attribute(x + "Name")?.Value == "ContentScroll");
             Assert.AreEqual("Hidden", scroll.Attribute("HorizontalScrollBarVisibility")?.Value);
         }
@@ -627,19 +705,6 @@ namespace StartScreen.Test
             return (StackPanel)XamlReader.Parse(new XElement(p + "StackPanel",
                 new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
                 new XElement(p + "StackPanel.Resources", style), definition).ToString());
-        }
-
-        private static TabControl CreateLayoutTabs(XDocument document, string styleName, FrameworkElement content)
-        {
-            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var definition = new XElement(document.Descendants(p + "Style").Single(element => element.Attribute(x + "Key")?.Value == styleName));
-            definition.Attribute(x + "Key")!.Remove();
-            definition.Descendants(p + "Setter").Where(element => element.Attribute("Value")?.Value.StartsWith("{DynamicResource", StringComparison.Ordinal) == true).Remove();
-            var tabs = new TabControl { BorderThickness = new Thickness(0), Padding = new Thickness(0) };
-            tabs.Items.Add(new TabItem { Header = "Example", Style = (Style)XamlReader.Parse(definition.ToString()), Content = content });
-            tabs.SelectedIndex = 0;
-            return tabs;
         }
 
         [STATestMethod]
@@ -704,11 +769,12 @@ namespace StartScreen.Test
             XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
             var line = new XElement(document.Descendants(presentation + "TextBlock")
                 .Single(element => element.Attribute(xaml + "Name")?.Value == "WorkHeadingLine"));
+            line.SetAttributeValue(XNamespace.Xmlns + "x", xaml.NamespaceName);
             line.Descendants(presentation + "TextBlock").Single().SetAttributeValue("Text", "Your work");
             var status = line.Elements(presentation + "Run").Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotActivityStatusText");
             status.SetAttributeValue("Text", "Discovering local Copilot sessions...");
             status.SetAttributeValue("FontSize", "12");
-            status.Element(presentation + "Run.Foreground")!.Remove();
+            line.Descendants(presentation + "Run.Foreground").Remove();
             var textBlock = (TextBlock)XamlReader.Parse(line.ToString());
             var heading = (TextBlock)textBlock.Inlines.OfType<InlineUIContainer>().First().Child;
             textBlock.Measure(new Size(536, double.PositiveInfinity));
@@ -755,20 +821,26 @@ namespace StartScreen.Test
             Assert.IsEmpty(document.Descendants(p + "TabControl"));
             foreach (var tab in tabs)
             {
-                var attention = tab.Descendants(p + "CheckBox").Single(element => element.Attribute("Content")?.Value == "Needs attention");
-                Assert.AreEqual("Needs attention", attention.Attribute("Content")?.Value);
+                var attention = tab.Descendants(p + "RadioButton").Single(element => element.Attribute("Content")?.Value == "Attention");
+                Assert.AreEqual("True", attention.Attribute("IsChecked")?.Value);
                 Assert.AreEqual("ActivityFilter_Changed", attention.Attribute("Checked")?.Value);
-                Assert.AreEqual("ActivityFilter_Changed", attention.Attribute("Unchecked")?.Value);
+                Assert.IsEmpty(tab.Descendants(p + "CheckBox").Where(element => element.Attribute("Content")?.Value == "Needs attention"));
                 var list = tab.Descendants(p + "ItemsControl").Single();
                 Assert.AreEqual("{StaticResource WorkItemTemplate}", list.Attribute("ItemTemplate")?.Value);
                 Assert.AreEqual("WorkItemGroupStyle", list.Descendants(p + "StaticResource").Single().Attribute("ResourceKey")?.Value);
             }
-            CollectionAssert.AreEqual(new[] { "All", "PRs", "Issues", "Copilot", "Builds" }, tabs[0].Descendants(p + "RadioButton")
+            CollectionAssert.AreEqual(new[] { "Attention", "PRs", "Issues", "Copilot", "Builds" }, tabs[0].Descendants(p + "RadioButton")
                 .Select(button => button.Attribute("Content")?.Value).ToArray());
-            CollectionAssert.AreEqual(new[] { "All", "PRs", "Issues", "Builds" }, tabs[1].Descendants(p + "RadioButton")
+            CollectionAssert.AreEqual(new[] { "Attention", "PRs", "Issues", "Builds" }, tabs[1].Descendants(p + "RadioButton")
                 .Select(button => button.Attribute("Content")?.Value).ToArray());
             Assert.AreNotEqual(tabs[0].Descendants(p + "RadioButton").First().Attribute("GroupName")?.Value,
                 tabs[1].Descendants(p + "RadioButton").First().Attribute("GroupName")?.Value);
+            var teamHeading = tabs[1].Descendants(p + "TextBlock").Single(element => element.Attribute(x + "Name")?.Value == "IncomingHeading");
+            Assert.AreEqual("Team activity", teamHeading.Attribute("AutomationProperties.Name")?.Value);
+            Assert.AreEqual("Team activity", teamHeading.Element(p + "Run")?.Attribute("Text")?.Value);
+            var focusOptions = document.Descendants(p + "ComboBox").Single(element => element.Attribute(x + "Name")?.Value == "DefaultTabComboBox");
+            CollectionAssert.AreEqual(new[] { "My work", "Team activity" }, focusOptions.Elements(p + "ComboBoxItem")
+                .Select(element => element.Attribute("Content")?.Value).ToArray());
         }
 
         [STATestMethod]
@@ -805,6 +877,10 @@ namespace StartScreen.Test
             var ownButtons = ((WrapPanel)own.Children[0]).Children.OfType<RadioButton>().ToArray();
             var incomingButtons = ((WrapPanel)incoming.Children[0]).Children.OfType<RadioButton>().ToArray();
 
+            Assert.IsTrue(ownButtons[0].IsChecked);
+            Assert.IsTrue(incomingButtons[0].IsChecked);
+            ownButtons[0].Content = "Attention (123)";
+            incomingButtons[0].Content = "Attention (123)";
             ownButtons[1].IsChecked = true;
             incomingButtons[2].IsChecked = true;
             root.Measure(new Size(width, double.PositiveInfinity));
@@ -860,7 +936,11 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        public void PullRequestActions_HaveNoButtonBackgroundAndRetainKeyboardFocusFeedback()
+        [DataRow(false, false, Visibility.Hidden)]
+        [DataRow(true, false, Visibility.Visible)]
+        [DataRow(false, true, Visibility.Visible)]
+        [DataRow(true, true, Visibility.Visible)]
+        public void PullRequestActions_OnlyShowForActiveCardsWithoutMovingContent(bool hovered, bool focused, Visibility expected)
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -875,8 +955,41 @@ namespace StartScreen.Test
             Assert.IsFalse(definition.Descendants(p + "Trigger").Descendants(p + "Setter")
                 .Any(element => element.Attribute("Property")?.Value == "Background"));
             focus.Element(p + "Setter")!.SetAttributeValue("Value", "{DynamicResource TestFocusBrush}");
-            var button = new Button { Style = (Style)XamlReader.Parse(definition.ToString()), Width = 24, Height = 24 };
-            button.ApplyTemplate();
+            var style = (Style)XamlReader.Parse(definition.ToString());
+            var interactionTriggers = style.Triggers.OfType<DataTrigger>().ToArray();
+            CollectionAssert.AreEquivalent(new[] { "IsMouseOver", "IsKeyboardFocusWithin" },
+                interactionTriggers.Select(trigger => ((Binding)trigger.Binding).Path.Path).ToArray());
+            foreach (var trigger in interactionTriggers)
+            {
+                var binding = (Binding)trigger.Binding;
+                Assert.AreEqual(RelativeSourceMode.FindAncestor, binding.RelativeSource.Mode);
+                Assert.AreEqual(typeof(Border), binding.RelativeSource.AncestorType);
+                // Drive read-only interaction states without moving the user's mouse or stealing focus.
+                trigger.Binding = new Binding("Tag." + binding.Path.Path) { RelativeSource = binding.RelativeSource };
+            }
+            var button = new Button { Style = style, Width = 24, Height = 24 };
+            var second = new Button { Style = style, Width = 24, Height = 24, Margin = new Thickness(4, 0, 0, 0) };
+            var actions = new StackPanel { Orientation = Orientation.Horizontal };
+            actions.Children.Add(button);
+            actions.Children.Add(second);
+            var content = new StackPanel();
+            content.Children.Add(new TextBlock { Text = "Whole work item" });
+            content.Children.Add(actions);
+            var card = new Border { Child = content, Tag = new { IsMouseOver = hovered, IsKeyboardFocusWithin = focused } };
+            var inactiveButton = new Button { Style = style, Width = 24, Height = 24 };
+            var otherCard = new Border { Child = inactiveButton, Tag = new { IsMouseOver = false, IsKeyboardFocusWithin = false } };
+            var root = new StackPanel();
+            root.Children.Add(card);
+            root.Children.Add(otherCard);
+            root.Measure(new Size(400, double.PositiveInfinity));
+            root.Arrange(new Rect(0, 0, 400, root.DesiredSize.Height));
+            root.UpdateLayout();
+
+            Assert.AreEqual(expected, button.Visibility);
+            Assert.AreEqual(expected, second.Visibility);
+            Assert.AreEqual(Visibility.Hidden, inactiveButton.Visibility);
+            Assert.AreEqual(52d, actions.DesiredSize.Width, 0.01);
+            Assert.AreEqual(24d, actions.DesiredSize.Height, 0.01);
             var border = (Border)button.Template.FindName("ActionBorder", button);
 
             Assert.AreEqual((byte)0, ((System.Windows.Media.SolidColorBrush)border.Background).Color.A);
@@ -1009,8 +1122,8 @@ namespace StartScreen.Test
                 }
             }
             Assert.IsNotNull(date.ToolTip);
-            Assert.IsTrue(date.TranslatePoint(new Point(), root).X + date.ActualWidth <= width - 60 + 0.1);
-            Assert.IsTrue(pill.ActualWidth > badge.ActualWidth);
+            Assert.IsLessThanOrEqualTo(width - 60 + 0.1, date.TranslatePoint(new Point(), root).X + date.ActualWidth);
+            Assert.IsGreaterThan(badge.ActualWidth, pill.ActualWidth);
             Assert.AreSame(badge.Foreground, pill.BorderBrush);
             root.Resources["TestStatusBrush"] = SystemColors.WindowTextBrush;
             root.UpdateLayout();

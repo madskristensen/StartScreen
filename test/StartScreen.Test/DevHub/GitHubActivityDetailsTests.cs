@@ -13,6 +13,123 @@ namespace StartScreen.Test.DevHub
         private static readonly RemoteRepoIdentifier _repo = new RemoteRepoIdentifier("github.com", "owner", "repo");
 
         [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task PullRequests_CustomQueryConstrainsReviewAndMentionLanesButNotPersonalWorkAsync(bool scoped)
+        {
+            var queries = new List<string>();
+            using var client = Client(request =>
+            {
+                var query = Query(request);
+                queries.Add(query);
+                if (scoped)
+                    Assert.Contains("AND repo:owner/repo", query);
+                if (query.Contains("author:me"))
+                {
+                    Assert.DoesNotContain("org:ligershark", query);
+                    return query.Contains("is:merged")
+                        ? Search(new[] { Item(3, "me", closed: true, merged: true) })
+                        : Search(new[] { Item(2, "me") });
+                }
+                return query.Contains("(user:me org:ligershark)")
+                    ? Search(new[] { Item(1) }) : Search(new[] { Item(99) });
+            });
+
+            var results = await GitHubDevHubProvider.GetUserPullRequestsAsync(client, Credential(), "me",
+                new DevHubActivityOptions(includeCompleted: true), CancellationToken.None, scoped ? _repo : null,
+                "user:{login} org:ligershark", populateMetadata: false);
+
+            CollectionAssert.AreEquivalent(new[] { 1, 2, 3 }, results.Select(pr => pr.NumericId).ToArray());
+            var incoming = results.Single(pr => pr.NumericId == 1);
+            Assert.IsTrue(incoming.IsReviewRequestedForCurrentUser);
+            Assert.IsTrue(incoming.IsMentioned);
+            Assert.IsTrue(incoming.NeedsAttention);
+            Assert.IsTrue(results.Single(pr => pr.NumericId == 2).IsAuthoredByCurrentUser);
+            Assert.IsTrue(results.Single(pr => pr.NumericId == 3).IsMerged);
+            Assert.HasCount(5, queries);
+            Assert.IsTrue(queries.Where(query => !query.Contains("author:me"))
+                .All(query => query.Contains("is:pr AND (user:me org:ligershark)")));
+            Assert.IsTrue(queries.Any(query => query.Contains("AND (user:me org:ligershark) AND is:open AND review-requested:me")));
+            Assert.IsTrue(queries.Any(query => query.Contains("AND (user:me org:ligershark) AND is:open AND mentions:me")));
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task Issues_CustomQueryConstrainsMentionsButNotAuthoredAssignedOrCompletedWorkAsync(bool scoped)
+        {
+            var queries = new List<string>();
+            using var client = Client(request =>
+            {
+                var query = Query(request);
+                queries.Add(query);
+                if (scoped)
+                    Assert.Contains("AND repo:owner/repo", query);
+                if (query.Contains("author:me") || query.Contains("assignee:me"))
+                {
+                    Assert.DoesNotContain("org:ligershark", query);
+                    var assigned = query.Contains("assignee:me");
+                    var closed = query.Contains("is:closed");
+                    return Search(new[] { Item((assigned ? 3 : 2) + (closed ? 2 : 0),
+                        assigned ? "other" : "me", assigned: assigned, closed: closed) });
+                }
+                return query.Contains("(user:me org:ligershark)")
+                    ? Search(new[] { Item(1) }) : Search(new[] { Item(99) });
+            });
+
+            var results = await GitHubDevHubProvider.GetUserIssuesAsync(client, Credential(), "me",
+                new DevHubActivityOptions(includeCompleted: true), CancellationToken.None, scoped ? _repo : null,
+                "user:{login} org:ligershark");
+
+            CollectionAssert.AreEquivalent(new[] { 1, 2, 3, 4, 5 }, results.Select(issue => issue.NumericId).ToArray());
+            Assert.IsTrue(results.Single(issue => issue.NumericId == 1).IsMentioned);
+            Assert.IsTrue(results.Single(issue => issue.NumericId == 2).IsAuthoredByCurrentUser);
+            Assert.IsTrue(results.Single(issue => issue.NumericId == 3).IsAssignedToCurrentUser);
+            Assert.IsTrue(results.Single(issue => issue.NumericId == 4).IsClosed);
+            Assert.IsTrue(results.Single(issue => issue.NumericId == 5).IsClosed);
+            Assert.HasCount(6, queries);
+            Assert.IsTrue(queries.Any(query => query.Contains("is:issue AND (user:me org:ligershark) AND is:open AND mentions:me")));
+        }
+
+        [TestMethod]
+        [DataRow("me")]
+        [DataRow(null)]
+        public async Task RepoDetails_CustomQueryUsesSearchInsteadOfUnfilteredRestListsAsync(string? login)
+        {
+            using var client = Client(request =>
+            {
+                if (request.Method == HttpMethod.Post)
+                    return Json("{\"data\":{}}");
+                if (request.RequestUri!.AbsolutePath.EndsWith("/actions/runs", StringComparison.Ordinal))
+                    return Json("{\"workflow_runs\":[]}");
+                Assert.AreEqual("/search/issues", request.RequestUri.AbsolutePath);
+                var query = Query(request);
+                Assert.Contains("AND repo:owner/repo", query);
+                if (query.Contains("author:me") || query.Contains("assignee:me"))
+                {
+                    Assert.DoesNotContain("org:ligershark", query);
+                    return Search(new[] { Item(2, "me", assigned: true) });
+                }
+                Assert.Contains("AND (org:ligershark OR org:other)", query);
+                return Search(new[] { Item(1) });
+            });
+
+            var detail = await GitHubDevHubProvider.GetRepoDetailAsync(client, Credential(), login!, _repo,
+                new DevHubActivityOptions(), CancellationToken.None, "org:ligershark OR org:other");
+
+            CollectionAssert.AreEquivalent(login == null ? new[] { 1 } : new[] { 1, 2 },
+                detail.PullRequests.Select(pr => pr.NumericId).ToArray());
+            CollectionAssert.AreEquivalent(login == null ? new[] { 1 } : new[] { 1, 2 },
+                detail.Issues.Select(issue => issue.NumericId).ToArray());
+            if (login != null)
+            {
+                Assert.IsTrue(detail.PullRequests.Single(pr => pr.NumericId == 1).IsReviewRequestedForCurrentUser);
+                Assert.IsTrue(detail.PullRequests.Single(pr => pr.NumericId == 1).IsMentioned);
+                Assert.IsTrue(detail.Issues.Single(issue => issue.NumericId == 1).IsMentioned);
+            }
+        }
+
+        [TestMethod]
         [DataRow(125, 2)]
         [DataRow(300, 3)]
         public async Task PullRequests_PaginatesIndependentAuthoredLaneBeyondOneHundredAsync(int limit, int pages)

@@ -498,11 +498,11 @@
                                         <RowDefinition Height="Auto" SharedSizeGroup="ActivitySectionHeader"/>
                                         <RowDefinition Height="*"/>
                                     </Grid.RowDefinitions>
-                                    <DockPanel Margin="0 0 0 12">
+                                    <DockPanel MinHeight="28" Margin="0 0 0 12">
                                         <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12 0 0 0">
                                             <Hyperlink Click="NewsFeedsSettingsLink_Click" Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">Feeds</Hyperlink>
                                         </TextBlock>
-                                        <TextBlock Text="News &amp; updates" FontSize="20" FontWeight="SemiBold"/>
+                                        <TextBlock Text="News &amp; updates" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                     </DockPanel>
                             <TabControl Grid.Row="1"
                                         x:Name="NewsTabs"

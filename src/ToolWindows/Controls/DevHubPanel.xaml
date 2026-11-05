@@ -1,3 +1,4 @@
+
     <UserControl x:Class="StartScreen.ToolWindows.Controls.DevHubPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -54,6 +55,7 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Visibility" Value="Hidden"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -76,6 +78,14 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
         <DataTemplate x:Key="PullRequestActionsTemplate">
             <StackPanel Orientation="Horizontal">
@@ -698,7 +708,7 @@
                         Margin="0 16 0 16"/>
 
                 <!-- Search query section -->
-                <Expander x:Name="SearchQueryOptions" Header="Incoming search query (GitHub)" IsExpanded="False"
+                <Expander x:Name="SearchQueryOptions" Header="Team activity search query (GitHub)" IsExpanded="False"
                           FontSize="11" Margin="0 0 0 16">
                     <StackPanel Margin="18 10 0 0">
                 <Grid>
@@ -719,7 +729,7 @@
                                IsHitTestVisible="False"
                                VerticalAlignment="Center"/>
                 </Grid>
-                <TextBlock Text="Filters incoming activity, not your personal work. Use {login} for your username. Leave empty for issues and PRs involving you. is:issue or is:pr is added automatically."
+                <TextBlock Text="Filters team activity, not your personal work. Use {login} for your username. Leave empty for issues and PRs involving you. is:issue or is:pr is added automatically."
                            FontSize="10"
                            Opacity="0.5"
                            TextWrapping="Wrap"
@@ -757,7 +767,7 @@
                           Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
                           BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}">
                     <ComboBoxItem Content="My work"/>
-                    <ComboBoxItem Content="Incoming"/>
+                    <ComboBoxItem Content="Team activity"/>
                 </ComboBox>
 
                 <TextBlock Text="Sort issues and pull requests by"
@@ -870,46 +880,62 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel x:Name="MyWorkBlade" Grid.Column="0" Margin="0 0 24 0">
-                    <TextBlock x:Name="WorkHeadingLine" FontSize="20" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
-                               Focusable="True" FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
-                               Margin="8 0 0 20" AutomationProperties.Name="My work">
-                        <InlineUIContainer BaselineAlignment="Baseline">
-                            <TextBlock Text="My work" FontSize="20" FontWeight="SemiBold"/>
-                        </InlineUIContainer>
-                        <Run x:Name="MyWorkCount" FontSize="11"/>
-                        <InlineUIContainer BaselineAlignment="Baseline">
-                            <Border x:Name="CopilotActivityStatusGap" Width="12" Height="0"
-                                    Tag="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}">
-                                <Border.Style>
-                                    <Style TargetType="Border">
+                    <DockPanel MinHeight="28" Margin="8 0 0 20">
+                        <Button DockPanel.Dock="Right" Content="All repositories" Click="ClearFilter_Click"
+                                Style="{DynamicResource ActionButtonStyle}" MinWidth="0" MinHeight="24" Padding="6 2" Margin="8 0 0 0"
+                                VerticalAlignment="Center"
+                                Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        <TextBlock x:Name="WorkHeadingLine" FontSize="20" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                   Focusable="True" FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
+                                   VerticalAlignment="Center" AutomationProperties.Name="My work">
+                            <InlineUIContainer BaselineAlignment="Baseline">
+                                <TextBlock Text="My work" FontSize="20" FontWeight="SemiBold"/>
+                            </InlineUIContainer>
+                            <Run x:Name="MyWorkCount" FontSize="11"/>
+                            <Run FontSize="11" FontWeight="Normal" ToolTip="{Binding WorkSectionTitle}">
+                                <Run.Style>
+                                    <Style TargetType="Run">
+                                        <Setter Property="Text" Value=""/>
                                         <Style.Triggers>
-                                            <Trigger Property="Tag" Value="">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                            </Trigger>
+                                            <DataTrigger Binding="{Binding HasSelectedMruItem}" Value="True">
+                                                <Setter Property="Text" Value="{Binding WorkSectionTitle, Mode=OneWay, StringFormat='  {0}'}"/>
+                                            </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
-                                </Border.Style>
-                            </Border>
-                        </InlineUIContainer>
-                        <Run x:Name="CopilotActivityStatusText" BaselineAlignment="Baseline" FontWeight="Normal"
-                             Text="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                             FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                             ToolTip="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}">
-                            <Run.Foreground>
-                                <SolidColorBrush Color="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextColorKey}}" Opacity="0.7"/>
-                            </Run.Foreground>
-                        </Run>
-                    </TextBlock>
-                    <DockPanel Margin="8 0 0 8" Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <Button DockPanel.Dock="Right" Content="All repositories" Click="ClearFilter_Click"
-                                Style="{DynamicResource ActionButtonStyle}" MinWidth="0" MinHeight="24" Padding="6 2"/>
-                        <TextBlock Text="{Binding WorkSectionTitle}" FontSize="11" Opacity="0.65" VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding WorkSectionTitle}"/>
+                                </Run.Style>
+                                <Run.Foreground>
+                                    <SolidColorBrush Color="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextColorKey}}" Opacity="0.65"/>
+                                </Run.Foreground>
+                            </Run>
+                            <InlineUIContainer BaselineAlignment="Baseline">
+                                <Border x:Name="CopilotActivityStatusGap" Width="12" Height="0"
+                                        Tag="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <Trigger Property="Tag" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                </Border>
+                            </InlineUIContainer>
+                            <Run x:Name="CopilotActivityStatusText" BaselineAlignment="Baseline" FontWeight="Normal"
+                                 Text="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
+                                 FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
+                                 ToolTip="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}">
+                                <Run.Foreground>
+                                    <SolidColorBrush Color="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextColorKey}}" Opacity="0.7"/>
+                                </Run.Foreground>
+                            </Run>
+                        </TextBlock>
                     </DockPanel>
                     <StackPanel>
                         <WrapPanel Margin="8 0 0 6">
-                            <RadioButton x:Name="MyWorkAllFilter" Content="All" GroupName="MyWorkKind" IsChecked="True"
-                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <RadioButton x:Name="MyWorkAttentionFilter" Content="Attention" GroupName="MyWorkKind" IsChecked="True"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"
+                                         ToolTip="All items with a known action for you, newest updated first."/>
                             <RadioButton x:Name="MyWorkPrFilter" Content="PRs" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="MyWorkIssueFilter" Content="Issues" GroupName="MyWorkKind"
@@ -918,45 +944,53 @@
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="MyWorkBuildFilter" Content="Builds" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
-                            <CheckBox x:Name="MyWorkNeedsAttention" Content="Needs attention" Margin="8 3 0 6"
-                                      Checked="ActivityFilter_Changed" Unchecked="ActivityFilter_Changed"
-                                      ToolTip="Only show work with a known action for you to take."/>
                         </WrapPanel>
                         <ItemsControl x:Name="MyWorkList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}">
                             <ItemsControl.GroupStyle><StaticResource ResourceKey="WorkItemGroupStyle"/></ItemsControl.GroupStyle>
                         </ItemsControl>
                         <TextBlock x:Name="MyWorkEmpty" Text="No personal work in the loaded activity."
                                    TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
-                        <CheckBox x:Name="IncludeCompletedItems" Content="Include completed work (14 days)" FontSize="11" Margin="8 8 0 0"
-                                  Checked="IncludeCompletedItems_Changed" Unchecked="IncludeCompletedItems_Changed"
-                                  ToolTip="Include your merged PRs and completed issues/tasks from the last 14 days."/>
+                        <StackPanel>
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=MyWorkAttentionFilter}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <CheckBox x:Name="IncludeCompletedItems" Content="Include completed work (14 days)" FontSize="11" Margin="8 8 0 0"
+                                      Checked="IncludeCompletedItems_Changed" Unchecked="IncludeCompletedItems_Changed"
+                                      ToolTip="Include your merged PRs and completed issues/tasks from the last 14 days."/>
+                        </StackPanel>
                     </StackPanel>
                 </StackPanel>
                 <StackPanel x:Name="IncomingBlade" Grid.Column="1">
-                    <TextBlock x:Name="IncomingHeading" FontSize="20" FontWeight="SemiBold" Focusable="True"
-                               FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
-                               Margin="8 0 0 20" AutomationProperties.Name="Incoming">
-                        <Run Text="Incoming"/>
-                        <Run x:Name="IncomingCount" FontSize="11" FontWeight="Normal"/>
-                    </TextBlock>
+                    <DockPanel MinHeight="28" Margin="8 0 0 20">
+                        <TextBlock x:Name="IncomingHeading" FontSize="20" FontWeight="SemiBold" Focusable="True"
+                                   FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
+                                   VerticalAlignment="Center" AutomationProperties.Name="Team activity">
+                            <Run Text="Team activity"/>
+                            <Run x:Name="IncomingCount" FontSize="11" FontWeight="Normal"/>
+                        </TextBlock>
+                    </DockPanel>
                     <StackPanel>
                         <WrapPanel Margin="8 0 0 6">
-                            <RadioButton x:Name="IncomingAllFilter" Content="All" GroupName="IncomingKind" IsChecked="True"
-                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                            <RadioButton x:Name="IncomingAttentionFilter" Content="Attention" GroupName="IncomingKind" IsChecked="True"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"
+                                         ToolTip="All team activity with a known action for you, newest updated first."/>
                             <RadioButton x:Name="IncomingPrFilter" Content="PRs" GroupName="IncomingKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="IncomingIssueFilter" Content="Issues" GroupName="IncomingKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="IncomingBuildFilter" Content="Builds" GroupName="IncomingKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
-                            <CheckBox x:Name="IncomingNeedsAttention" Content="Needs attention" Margin="8 3 0 6"
-                                      Checked="ActivityFilter_Changed" Unchecked="ActivityFilter_Changed"
-                                      ToolTip="Only show incoming items with a known action for you to take."/>
                         </WrapPanel>
                         <ItemsControl x:Name="IncomingList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}">
                             <ItemsControl.GroupStyle><StaticResource ResourceKey="WorkItemGroupStyle"/></ItemsControl.GroupStyle>
                         </ItemsControl>
-                        <TextBlock x:Name="IncomingEmpty" Text="No incoming activity."
+                        <TextBlock x:Name="IncomingEmpty" Text="No team activity."
                                    TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
                     </StackPanel>
                 </StackPanel>

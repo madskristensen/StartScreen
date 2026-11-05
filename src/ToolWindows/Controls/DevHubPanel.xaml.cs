@@ -70,17 +70,14 @@ namespace StartScreen.ToolWindows.Controls
         public void ShowPullRequests()
         {
             _defaultTabApplied = true;
-            MyWorkNeedsAttention.IsChecked = false;
             MyWorkPrFilter.IsChecked = true;
-            IncomingNeedsAttention.IsChecked = false;
             IncomingPrFilter.IsChecked = true;
         }
 
         public void ShowRequestedReviews()
         {
             _defaultTabApplied = true;
-            IncomingNeedsAttention.IsChecked = true;
-            IncomingPrFilter.IsChecked = true;
+            IncomingAttentionFilter.IsChecked = true;
             SelectDefaultTab(DevHubDefaultTab.Incoming);
         }
 

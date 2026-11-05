@@ -329,30 +329,52 @@ namespace StartScreen.Services.DevHub.Providers
                 return null;
             var login = await _identityCache.GetAsync(credential, "https://api.github.com/user",
                 (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken);
-            return await GetRepoDetailAsync(_httpClient, credential, login, repo, options, cancellationToken);
+            return await GetRepoDetailAsync(_httpClient, credential, login, repo, options, cancellationToken,
+                Options.Instance.DevHubSearchQuery);
         }
 
         internal static async Task<DevHubRepoDetail> GetRepoDetailAsync(HttpClient client, DevHubCredential credential,
-            string login, RemoteRepoIdentifier repo, DevHubActivityOptions options, CancellationToken cancellationToken)
+            string login, RemoteRepoIdentifier repo, DevHubActivityOptions options, CancellationToken cancellationToken,
+            string customQuery = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var detail = new DevHubRepoDetail { RepoIdentifier = repo, FetchedAt = DateTime.UtcNow };
             var root = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}";
-            var prs = await ReadPagesAsync(client, credential, root + "/pulls?state=open&sort=updated&direction=desc",
-                null, options.MaxItems, item => ParseRepoPullRequests("[" + item.GetRawText() + "]", repo, login), cancellationToken);
+            var hasCustomQuery = !string.IsNullOrWhiteSpace(customQuery);
+            // REST repository lists cannot enforce GitHub search syntax. Use the same scoped
+            // activity searches as the dashboard, keeping personal work independent of the filter.
+            var prs = hasCustomQuery
+                ? new List<DevHubPullRequest>()
+                : await ReadPagesAsync(client, credential, root + "/pulls?state=open&sort=updated&direction=desc",
+                    null, options.MaxItems, item => ParseRepoPullRequests("[" + item.GetRawText() + "]", repo, login), cancellationToken);
             detail.PullRequests = prs;
             if (!string.IsNullOrEmpty(login))
             {
-                var personal = await GetUserPullRequestsAsync(client, credential, login, options, cancellationToken, repo, populateMetadata: false);
+                var personal = await GetUserPullRequestsAsync(client, credential, login, options, cancellationToken, repo,
+                    customQuery, populateMetadata: false);
                 MergePullRequests(prs, personal);
             }
+            else if (hasCustomQuery)
+            {
+                var incoming = await SearchPullRequestsAsync(client, credential,
+                    BuildActivitySearchQuery("is:pr", login, customQuery, repo), login, options.MaxItems, cancellationToken);
+                MergePullRequests(prs, incoming.Where(pr => pr.IsOpen));
+            }
             await PopulateActivityMetadataAsync(client, credential, prs, cancellationToken);
-            detail.Issues = await ReadPagesAsync(client, credential, root + "/issues?state=open&sort=updated&direction=desc",
-                null, options.MaxItems, item => ParseRepoIssues("[" + item.GetRawText() + "]", repo, login), cancellationToken);
+            detail.Issues = hasCustomQuery
+                ? new List<DevHubIssue>()
+                : await ReadPagesAsync(client, credential, root + "/issues?state=open&sort=updated&direction=desc",
+                    null, options.MaxItems, item => ParseRepoIssues("[" + item.GetRawText() + "]", repo, login), cancellationToken);
             if (!string.IsNullOrEmpty(login))
             {
-                var personal = await GetUserIssuesAsync(client, credential, login, options, cancellationToken, repo);
+                var personal = await GetUserIssuesAsync(client, credential, login, options, cancellationToken, repo, customQuery);
                 MergeIssues(detail.Issues, personal);
+            }
+            else if (hasCustomQuery)
+            {
+                var incoming = await SearchIssuesAsync(client, credential,
+                    BuildActivitySearchQuery("is:issue", login, customQuery, repo), login, options.MaxItems, cancellationToken);
+                MergeIssues(detail.Issues, incoming.Where(issue => !issue.IsClosed));
             }
             detail.CiRuns = await ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken);
             return detail;
@@ -366,9 +388,9 @@ namespace StartScreen.Services.DevHub.Providers
         {
             var results = new List<DevHubPullRequest>();
             var scope = repo == null ? string.Empty : $" AND repo:{repo.Owner}/{repo.Repo}";
-            var incoming = repo == null ? BuildSearchQuery("is:pr", login, customQuery) : $"is:pr is:open involves:{login}";
-            var queries = new[] { incoming + scope, BuildPersonalSearchQuery("is:pr", login, "author", repo),
-                $"is:pr is:open review-requested:{login}{scope}", $"is:pr is:open mentions:{login}{scope}" };
+            var queries = new[] { BuildActivitySearchQuery("is:pr", login, customQuery, repo), BuildPersonalSearchQuery("is:pr", login, "author", repo),
+                BuildActivitySearchQuery("is:pr", login, customQuery, repo, "review-requested"),
+                BuildActivitySearchQuery("is:pr", login, customQuery, repo, "mentions") };
             for (var index = 0; index < queries.Length; index++)
             {
                 var page = await SearchPullRequestsAsync(client, credential, queries[index], login, options.MaxItems, cancellationToken);
@@ -397,9 +419,9 @@ namespace StartScreen.Services.DevHub.Providers
         {
             var results = new List<DevHubIssue>();
             var scope = repo == null ? string.Empty : $" AND repo:{repo.Owner}/{repo.Repo}";
-            var incoming = repo == null ? BuildSearchQuery("is:issue", login, customQuery) : $"is:issue is:open involves:{login}";
-            var queries = new[] { incoming + scope, BuildPersonalSearchQuery("is:issue", login, "author", repo),
-                BuildPersonalSearchQuery("is:issue", login, "assignee", repo), $"is:issue is:open mentions:{login}{scope}" };
+            var queries = new[] { BuildActivitySearchQuery("is:issue", login, customQuery, repo), BuildPersonalSearchQuery("is:issue", login, "author", repo),
+                BuildPersonalSearchQuery("is:issue", login, "assignee", repo),
+                BuildActivitySearchQuery("is:issue", login, customQuery, repo, "mentions") };
             for (var index = 0; index < queries.Length; index++)
             {
                 var page = await SearchIssuesAsync(client, credential, queries[index], login, options.MaxItems, cancellationToken);
@@ -419,6 +441,18 @@ namespace StartScreen.Services.DevHub.Providers
                 }
             }
             return results;
+        }
+
+        private static string BuildActivitySearchQuery(string typePrefix, string login, string customQuery,
+            RemoteRepoIdentifier repo, string qualifier = null)
+        {
+            var scope = repo == null ? string.Empty : $" AND repo:{repo.Owner}/{repo.Repo}";
+            if (string.IsNullOrWhiteSpace(customQuery))
+                return qualifier == null ? BuildSearchQuery(typePrefix, login) + scope
+                    : $"{typePrefix} is:open {qualifier}:{login}{scope}";
+
+            var query = BuildSearchQuery(typePrefix + " AND", login, "(" + customQuery + ")");
+            return query + (qualifier == null ? string.Empty : $" AND is:open AND {qualifier}:{login}") + scope;
         }
 
         private static void MergePullRequests(List<DevHubPullRequest> results, IEnumerable<DevHubPullRequest> additions)

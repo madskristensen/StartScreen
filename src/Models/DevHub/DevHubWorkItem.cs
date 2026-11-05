@@ -123,8 +123,9 @@ namespace StartScreen.Models.DevHub
         internal static IReadOnlyList<DevHubWorkItem> Filter(IEnumerable<DevHubWorkItem> items,
             DevHubWorkItemKind kind, bool needsAttention)
         {
-            return items.Where(item => (kind == DevHubWorkItemKind.All || item.Kind == kind)
-                && (!needsAttention || item.NeedsAttention)).ToArray();
+            var matching = items.Where(item => (kind == DevHubWorkItemKind.All || item.Kind == kind)
+                && (!needsAttention || item.NeedsAttention));
+            return (needsAttention ? matching.OrderByDescending(item => item.UpdatedAt) : matching).ToArray();
         }
 
         private static IEnumerable<DevHubWorkItem> Sort(IEnumerable<DevHubWorkItem> items, DevHubSortOrder order)

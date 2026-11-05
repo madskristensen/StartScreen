@@ -13,7 +13,7 @@
              Background="Transparent"
              Focusable="False"
              mc:Ignorable="d" 
-             d:DesignHeight="52" d:DesignWidth="360">
+             d:DesignHeight="32" d:DesignWidth="360">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <controls:NullToCollapsedConverter x:Key="NullToCollapsedConverter"/>
@@ -51,8 +51,8 @@
     </UserControl.Resources>
     <Border x:Name="RootBorder"
             BorderThickness="0"
-            Padding="8 5 5 5"
-            MinHeight="52"
+            Padding="8 6 5 6"
+            MinHeight="32"
             CornerRadius="4"
             Cursor="Hand"
             Focusable="True"
