@@ -12,6 +12,24 @@ namespace StartScreen.Test
     public class StartScreenInlineBindingTests
     {
         [STATestMethod]
+        public void RecentItems_ReserveSpaceBetweenPinButtonsAndScrollbar()
+        {
+            var document = ReadLayoutXaml("StartScreenControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var list = document.Descendants(p + "ListBox")
+                .Single(element => element.Attribute(x + "Name")?.Value == "MruPanel");
+            var definition = new XElement(list.Element(p + "ListBox.ItemContainerStyle")!.Elements().Single());
+            definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            var style = (Style)XamlReader.Parse(definition.ToString());
+            var item = new ListBoxItem { Style = style };
+
+            Assert.IsGreaterThanOrEqualTo(12d, item.Margin.Right);
+            Assert.AreEqual(0d, item.Margin.Left);
+            Assert.AreEqual(HorizontalAlignment.Stretch, item.HorizontalContentAlignment);
+        }
+
+        [STATestMethod]
         [DataRow(true)]
         [DataRow(false)]
         public void ServiceHealth_HidesUncheckedAndCheckingStatusButShowsCompletedResults(bool healthy)

@@ -477,9 +477,10 @@ namespace StartScreen.Models
         public bool HasRemoteUrl => !string.IsNullOrEmpty(_remoteUrl);
 
         public string RepositorySummaryText => _repositorySummaryText
-            ?? (HasRemoteUrl ? "Repository activity not loaded" : HasGitBranch ? "Local repository" : "");
+            ?? (HasRemoteUrl ? "View repository activity" : HasGitBranch ? "Local repository" : "");
 
-        public string RepositorySummaryTooltip => _repositorySummaryTooltip ?? RepositorySummaryText;
+        public string RepositorySummaryTooltip => _repositorySummaryTooltip ?? _repositorySummaryText
+            ?? (HasRemoteUrl ? "Repository activity has not been loaded yet. Select to view this repository's pull requests." : RepositorySummaryText);
 
         public bool HasRepositoryCounts => _repositoryOpenPullRequests.HasValue;
 

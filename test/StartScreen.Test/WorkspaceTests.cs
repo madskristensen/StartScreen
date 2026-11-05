@@ -112,7 +112,29 @@ namespace StartScreen.Test
             item.ApplyRepositorySummary("12 PRs / 1 review", "Repository-wide counts");
             Assert.AreEqual("12 PRs / 1 review", item.RepositorySummaryText);
             item.RemoteUrl = "https://github.com/owner/other.git";
-            Assert.AreEqual("Repository activity not loaded", item.RepositorySummaryText);
+            Assert.AreEqual("View repository activity", item.RepositorySummaryText);
+            StringAssert.Contains(item.RepositorySummaryTooltip, "not been loaded yet");
+        }
+
+        [TestMethod]
+        public void RepositorySummary_OffersActivityLinkUntilLoadedAndPreservesFailures()
+        {
+            var item = new MruItem();
+            Assert.AreEqual(string.Empty, item.RepositorySummaryText);
+            item.GitBranch = "main";
+            Assert.AreEqual("Local repository", item.RepositorySummaryText);
+
+            item.RemoteUrl = "https://github.com/owner/repo.git";
+            Assert.AreEqual("View repository activity", item.RepositorySummaryText);
+            Assert.IsFalse(item.HasRepositoryCounts);
+            StringAssert.Contains(item.RepositorySummaryTooltip, "Select to view");
+
+            item.ApplyRepositorySummary("Repository activity unavailable", "Refresh to try again.");
+            Assert.AreEqual("Repository activity unavailable", item.RepositorySummaryText);
+            Assert.AreEqual("Refresh to try again.", item.RepositorySummaryTooltip);
+
+            item.ApplyRepositorySummary("Sign in to see repository activity", null);
+            Assert.AreEqual(item.RepositorySummaryText, item.RepositorySummaryTooltip);
         }
 
         [TestMethod]

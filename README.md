@@ -70,6 +70,8 @@ open PR counts and direct personal review requests for supported GitHub and
 Azure DevOps repositories. Counts are fetched independently of the limited
 dashboard lists. Unsupported, signed-out, and unavailable states are shown
 explicitly rather than as zero. Select a summary to open the scoped PR list.
+Before a summary loads, **View repository activity** opens that same list;
+the tooltip explains that counts have not loaded yet.
 
 **See your Git status at a glance.** Every repo shows its current branch,
 ahead/behind counts, uncommitted changes, and the last commit time - all
