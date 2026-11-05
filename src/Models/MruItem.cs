@@ -37,6 +37,10 @@ namespace StartScreen.Models
         private bool _isFromExtendedList;
         private bool _hasCopilotChatSessions;
         private int _copilotChatSessionCount;
+        private string _repositorySummaryText;
+        private string _repositorySummaryTooltip;
+        private int? _repositoryOpenPullRequests;
+        private int? _repositoryRequestedReviews;
 
         /// <summary>
         /// The raw MRU entry strings from IVsMRUItemsStore, used for deletion.
@@ -128,6 +132,7 @@ namespace StartScreen.Models
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(HasGitBranch));
                     OnPropertyChanged(nameof(ToolTipText));
+                    OnPropertyChanged(nameof(RepositorySummaryText));
                 }
             }
         }
@@ -450,8 +455,18 @@ namespace StartScreen.Models
                 if (_remoteUrl != value)
                 {
                     _remoteUrl = value;
+                    _repositorySummaryText = null;
+                    _repositorySummaryTooltip = null;
+                    _repositoryOpenPullRequests = null;
+                    _repositoryRequestedReviews = null;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(HasRemoteUrl));
+                    OnPropertyChanged(nameof(RepositorySummaryText));
+                    OnPropertyChanged(nameof(RepositorySummaryTooltip));
+                    OnPropertyChanged(nameof(HasRepositoryCounts));
+                    OnPropertyChanged(nameof(HasRequestedReviews));
+                    OnPropertyChanged(nameof(RepositoryPullRequestsText));
+                    OnPropertyChanged(nameof(RepositoryReviewsText));
                 }
             }
         }
@@ -460,6 +475,34 @@ namespace StartScreen.Models
         /// Whether a remote URL is available for this item.
         /// </summary>
         public bool HasRemoteUrl => !string.IsNullOrEmpty(_remoteUrl);
+
+        public string RepositorySummaryText => _repositorySummaryText
+            ?? (HasRemoteUrl ? "Repository activity not loaded" : HasGitBranch ? "Local repository" : "");
+
+        public string RepositorySummaryTooltip => _repositorySummaryTooltip ?? RepositorySummaryText;
+
+        public bool HasRepositoryCounts => _repositoryOpenPullRequests.HasValue;
+
+        public bool HasRequestedReviews => _repositoryRequestedReviews > 0;
+
+        public string RepositoryPullRequestsText => _repositoryOpenPullRequests == 0 ? "No open PRs"
+            : $"{_repositoryOpenPullRequests} open PR{(_repositoryOpenPullRequests == 1 ? "" : "s")}";
+
+        public string RepositoryReviewsText => $"{_repositoryRequestedReviews} review{(_repositoryRequestedReviews == 1 ? "" : "s")}";
+
+        internal void ApplyRepositorySummary(string text, string tooltip, int? openPullRequests = null, int? requestedReviews = null)
+        {
+            _repositorySummaryText = text;
+            _repositorySummaryTooltip = tooltip;
+            _repositoryOpenPullRequests = openPullRequests;
+            _repositoryRequestedReviews = requestedReviews;
+            OnPropertyChanged(nameof(RepositorySummaryText));
+            OnPropertyChanged(nameof(RepositorySummaryTooltip));
+            OnPropertyChanged(nameof(HasRepositoryCounts));
+            OnPropertyChanged(nameof(HasRequestedReviews));
+            OnPropertyChanged(nameof(RepositoryPullRequestsText));
+            OnPropertyChanged(nameof(RepositoryReviewsText));
+        }
 
         /// <summary>
         /// Whether one or more GitHub Copilot Chat sessions exist on disk for this

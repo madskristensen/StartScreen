@@ -58,7 +58,8 @@ namespace StartScreen.Models.DevHub
                 && left.UpdatedAt == right.UpdatedAt
                 && left.CreatedAt == right.CreatedAt
                 && StringEquals(left.WebUrl, right.WebUrl)
-                && left.IsAuthoredByCurrentUser == right.IsAuthoredByCurrentUser;
+                && left.IsAuthoredByCurrentUser == right.IsAuthoredByCurrentUser
+                && left.IsReviewRequestedForCurrentUser == right.IsReviewRequestedForCurrentUser;
         }
 
         private static bool SameIssue(DevHubIssue left, DevHubIssue right)

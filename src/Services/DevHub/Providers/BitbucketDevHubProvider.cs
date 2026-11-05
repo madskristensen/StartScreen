@@ -42,6 +42,13 @@ namespace StartScreen.Services.DevHub.Providers
 
         public string DisplayName => "Bitbucket";
 
+        public Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new DevHubRepoSummary(repo, DevHubRepoSummaryStatus.Unsupported,
+                statusMessage: "Bitbucket repository summaries are not supported. Repository activity is still available."));
+        }
+
         public bool CanHandle(string remoteUrl)
         {
             if (string.IsNullOrWhiteSpace(remoteUrl))

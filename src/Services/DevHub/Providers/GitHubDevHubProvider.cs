@@ -38,7 +38,7 @@ namespace StartScreen.Services.DevHub.Providers
             return (httpClient ?? _httpClient).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
 
-        private string _cachedLogin;
+        private Tuple<DevHubCredential, string> _cachedIdentity;
 
         private static string GetPreferredGitHubAccount()
         {
@@ -47,6 +47,20 @@ namespace StartScreen.Services.DevHub.Providers
         }
 
         public string DisplayName => "GitHub";
+
+        public Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        {
+            return DevHubRepoSummaryFetcher.FetchAsync(repo,
+                token => DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), token),
+                (credential, url, token) => SendGetAsync(credential, url, token), true, cancellationToken);
+        }
+
+        internal Task<DevHubRepoSummary> GetRepoSummaryAsync(HttpClient client, DevHubCredential credential,
+            RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        {
+            return DevHubRepoSummaryFetcher.FetchAsync(repo, _ => Task.FromResult(credential),
+                (auth, url, token) => SendGetAsync(auth, url, token, client), true, cancellationToken);
+        }
 
         public bool CanHandle(string remoteUrl)
         {
@@ -100,7 +114,7 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     var root = doc.RootElement;
                     var login = root.GetProperty("login").GetString();
-                    _cachedLogin = login;
+                    _cachedIdentity = Tuple.Create(credential, login);
 
                     return new DevHubUser
                     {
@@ -138,8 +152,9 @@ namespace StartScreen.Services.DevHub.Providers
             if (credential == null)
                 return (null, null);
 
-            if (_cachedLogin != null)
-                return (credential, _cachedLogin);
+            var cachedIdentity = _cachedIdentity;
+            if (cachedIdentity != null && ReferenceEquals(cachedIdentity.Item1, credential))
+                return (credential, cachedIdentity.Item2);
 
             // Fetch login from API if not yet cached
             var response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken);
@@ -161,8 +176,9 @@ namespace StartScreen.Services.DevHub.Providers
             var json = await response.Content.ReadAsStringAsync();
             using (var doc = System.Text.Json.JsonDocument.Parse(json))
             {
-                _cachedLogin = doc.RootElement.GetProperty("login").GetString();
-                return (credential, _cachedLogin);
+                var login = doc.RootElement.GetProperty("login").GetString();
+                _cachedIdentity = Tuple.Create(credential, login);
+                return (credential, login);
             }
         }
 
@@ -182,7 +198,34 @@ namespace StartScreen.Services.DevHub.Providers
                     return Array.Empty<DevHubPullRequest>();
 
                 var json = await response.Content.ReadAsStringAsync();
-                return ParsePullRequests(json, login);
+                var results = ParsePullRequests(json, login);
+                // Search items do not contain requested_reviewers. Only the dedicated
+                // authenticated review-requested query establishes this flag reliably.
+                var reviewQuery = Uri.EscapeDataString($"is:pr is:open review-requested:{login}");
+                try
+                {
+                    using (var reviewsResponse = await SendGetAsync(credential,
+                        $"https://api.github.com/search/issues?q={reviewQuery}&per_page=30", cancellationToken))
+                    {
+                        if (reviewsResponse.IsSuccessStatusCode)
+                        {
+                            var reviews = ParsePullRequests(await reviewsResponse.Content.ReadAsStringAsync(), login, true);
+                            foreach (var review in reviews)
+                            {
+                                var existing = results.Find(pr => pr.NumericId == review.NumericId && Equals(pr.RepoIdentifier, review.RepoIdentifier));
+                                if (existing != null)
+                                    existing.IsReviewRequestedForCurrentUser = true;
+                                else
+                                    results.Add(review);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+                {
+                    await ex.LogAsync();
+                }
+                return results;
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
@@ -307,7 +350,9 @@ namespace StartScreen.Services.DevHub.Providers
                 if (prResponse.IsSuccessStatusCode)
                 {
                     var prJson = await prResponse.Content.ReadAsStringAsync();
-                    detail.PullRequests = ParseRepoPullRequests(prJson, repo, credential.Username);
+                    var login = await DevHubRepoSummaryFetcher.GetIdentityAsync(credential, "https://api.github.com/user",
+                        (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken);
+                    detail.PullRequests = ParseRepoPullRequests(prJson, repo, login);
                 }
 
                 // Fetch issues for this repo
@@ -346,7 +391,7 @@ namespace StartScreen.Services.DevHub.Providers
         public string GetIssuesWebUrl(RemoteRepoIdentifier repo) =>
             $"https://github.com/{repo.Owner}/{repo.Repo}/issues";
 
-        internal static List<DevHubPullRequest> ParsePullRequests(string json, string currentUser)
+        internal static List<DevHubPullRequest> ParsePullRequests(string json, string currentUser, bool reviewRequested = false)
         {
             var results = new List<DevHubPullRequest>();
 
@@ -359,7 +404,10 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     var pr = ParsePrFromSearchItem(item, currentUser);
                     if (pr != null)
+                    {
+                        pr.IsReviewRequestedForCurrentUser = reviewRequested;
                         results.Add(pr);
+                    }
                 }
             }
 
@@ -391,7 +439,7 @@ namespace StartScreen.Services.DevHub.Providers
             };
         }
 
-        private static List<DevHubPullRequest> ParseRepoPullRequests(string json, RemoteRepoIdentifier repo, string currentUser)
+        internal static List<DevHubPullRequest> ParseRepoPullRequests(string json, RemoteRepoIdentifier repo, string currentUser)
         {
             var results = new List<DevHubPullRequest>();
 
@@ -418,6 +466,7 @@ namespace StartScreen.Services.DevHub.Providers
                         CreatedAt = item.GetProperty("created_at").GetDateTime().ToUniversalTime(),
                         WebUrl = item.GetProperty("html_url").GetString(),
                         IsAuthoredByCurrentUser = string.Equals(author, currentUser, StringComparison.OrdinalIgnoreCase),
+                        IsReviewRequestedForCurrentUser = DevHubRepoSummaryFetcher.IsRequested(item, currentUser, true) == true,
                     });
                 }
             }

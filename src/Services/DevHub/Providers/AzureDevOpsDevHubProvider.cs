@@ -35,6 +35,20 @@ namespace StartScreen.Services.DevHub.Providers
 
         public string DisplayName => "Azure DevOps";
 
+        public Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        {
+            return DevHubRepoSummaryFetcher.FetchAsync(repo,
+                token => DevHubCredentialHelper.GetCredentialAsync(GetCredentialHost(repo), token),
+                (credential, url, token) => SendGetAsync(credential, url, token), false, cancellationToken);
+        }
+
+        internal Task<DevHubRepoSummary> GetRepoSummaryAsync(HttpClient client, DevHubCredential credential,
+            RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        {
+            return DevHubRepoSummaryFetcher.FetchAsync(repo, _ => Task.FromResult(credential),
+                (auth, url, token) => SendGetAsync(auth, url, token, client), false, cancellationToken);
+        }
+
         public bool CanHandle(string remoteUrl)
         {
             if (string.IsNullOrWhiteSpace(remoteUrl))
@@ -364,7 +378,10 @@ namespace StartScreen.Services.DevHub.Providers
                 if (prResponse.IsSuccessStatusCode)
                 {
                     var prJson = await prResponse.Content.ReadAsStringAsync();
-                    detail.PullRequests = ParseAdoPullRequests(prJson, repo);
+                    var identity = await DevHubRepoSummaryFetcher.GetIdentityAsync(credential,
+                        $"{GetBaseUrl(repo).TrimEnd('/')}/_apis/connectionData?api-version=3.0",
+                        (auth, url, token) => SendGetAsync(auth, url, token), false, cancellationToken);
+                    detail.PullRequests = ParseAdoPullRequests(prJson, repo, identity);
                 }
 
                 // Fetch recent builds
@@ -394,7 +411,7 @@ namespace StartScreen.Services.DevHub.Providers
         public string GetIssuesWebUrl(RemoteRepoIdentifier repo) =>
             $"{GetBaseUrl(repo)}/{repo.Project}/_workitems";
 
-        private static Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken)
+        private static Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken, HttpClient httpClient = null)
         {
             var request = new HttpRequestMessage(HttpMethod.Get, url);
 
@@ -402,12 +419,12 @@ namespace StartScreen.Services.DevHub.Providers
             var authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($":{credential.Token}"));
             request.Headers.TryAddWithoutValidation("Authorization", $"Basic {authValue}");
 
-            return _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return (httpClient ?? _httpClient).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
 
         private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);
 
-        internal static List<DevHubPullRequest> ParseAdoPullRequests(string json, RemoteRepoIdentifier repo)
+        internal static List<DevHubPullRequest> ParseAdoPullRequests(string json, RemoteRepoIdentifier repo, string currentUserId = null)
         {
             var results = new List<DevHubPullRequest>();
 
@@ -445,6 +462,12 @@ namespace StartScreen.Services.DevHub.Providers
                         CreatedAt = pr.GetProperty("creationDate").GetDateTime().ToUniversalTime(),
                         WebUrl = $"{GetBaseUrl(repo)}/{repo.Project}/_git/{repo.Repo}/pullrequest/{id}",
                         ApprovalCount = reviewerCount,
+                        IsAuthoredByCurrentUser = !string.IsNullOrEmpty(currentUserId)
+                            && createdBy.ValueKind == JsonValueKind.Object
+                            && createdBy.TryGetProperty("id", out var authorId)
+                            && string.Equals(authorId.GetString(), currentUserId, StringComparison.OrdinalIgnoreCase),
+                        IsReviewRequestedForCurrentUser = string.Equals(pr.GetProperty("status").GetString(), "active", StringComparison.OrdinalIgnoreCase)
+                            && DevHubRepoSummaryFetcher.IsRequested(pr, currentUserId, false) == true,
                     });
                 }
             }

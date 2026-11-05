@@ -16,6 +16,10 @@ namespace StartScreen
         [DefaultValue("")]
         public string PinnedItems { get; set; } = "";
 
+        [Browsable(false)]
+        [DefaultValue(false)]
+        public bool ShowSolutionsOnly { get; set; }
+
         /// <summary>
         /// Semicolon-delimited list of pinned news article URLs.
         /// </summary>
@@ -80,8 +84,8 @@ namespace StartScreen
         /// Width of the left (MRU) pane, persisted when the user drags the splitter.
         /// </summary>
         [Browsable(false)]
-        [DefaultValue(500d)]
-        public double SplitterPosition { get; set; } = 500d;
+        [DefaultValue(360d)]
+        public double SplitterPosition { get; set; } = 360d;
 
         /// <summary>
         /// Whether the Dev Hub feature is enabled.
@@ -101,12 +105,27 @@ namespace StartScreen
         public string DevHubSearchQuery { get; set; } = "";
 
         /// <summary>
-        /// The Dev Hub sub-tab (Issues, Pull requests, or Builds) selected by default
-        /// when the Start Screen opens.
+        /// The Dev Hub sub-tab selected by default when the Start Screen opens.
         /// </summary>
         [Browsable(false)]
-        [DefaultValue(DevHubDefaultTab.Issues)]
-        public DevHubDefaultTab DevHubDefaultTab { get; set; } = DevHubDefaultTab.Issues;
+        [DefaultValue(DevHubDefaultTab.Overview)]
+        public DevHubDefaultTab DevHubDefaultTab { get; set; } = DevHubDefaultTab.Overview;
+
+        [Browsable(false)]
+        [DefaultValue(false)]
+        public bool HasAppliedOverviewDefault { get; set; }
+
+        internal bool ApplyOverviewDefault()
+        {
+            if (HasAppliedOverviewDefault)
+                return false;
+            DevHubDefaultTab = DevHubDefaultTab.Overview;
+            HasAppliedOverviewDefault = true;
+            return true;
+        }
+
+        [Browsable(false)]
+        public DateTime LastOverviewSeen { get; set; } = DateTime.MinValue;
 
         /// <summary>
         /// How issues and pull requests from multiple providers are ordered in the

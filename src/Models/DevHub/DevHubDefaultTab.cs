@@ -2,9 +2,7 @@ namespace StartScreen.Models.DevHub
 {
     /// <summary>
     /// The Dev Hub sub-tab that is selected by default when the Start Screen opens.
-    /// The numeric values match the tab order in the Dev Hub panel
-    /// (Issues, Pull requests, Builds), so they map directly to the
-    /// TabControl's SelectedIndex.
+    /// Numeric values are persisted independently of the visual tab order.
     /// </summary>
     public enum DevHubDefaultTab
     {
@@ -15,6 +13,10 @@ namespace StartScreen.Models.DevHub
         PullRequests = 1,
 
         /// <summary>Show the Builds tab first.</summary>
-        Builds = 2
+        Builds = 2,
+
+        Overview = 3,
+
+        NeedsYou = 4
     }
 }

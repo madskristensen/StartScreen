@@ -212,11 +212,9 @@ namespace StartScreen.Services.DevHub
         }
 
         /// <summary>
-        /// Fetches fresh detail for a single repository (bypassing the dashboard filter shortcut)
-        /// and merges it into the current dashboard, replacing any previously loaded items for
-        /// that repo. Used by the "Scope to repo" command so the scoped view shows the full set
-        /// of PRs / issues / builds rather than whatever happened to already be loaded.
-        /// Returns the updated dashboard.
+        /// Fetches a separate repository view without replacing the aggregate dashboard or
+        /// its cache. This prevents overlapping MRU selections and global refreshes from
+        /// overwriting each other's results.
         /// </summary>
         public async Task<DevHubDashboard> ScopeToRepoAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
@@ -226,13 +224,14 @@ namespace StartScreen.Services.DevHub
             var detail = await FetchRepoDetailFromProviderAsync(repo, ScopedRepoItemCount, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (detail == null)
-                return _currentDashboard;
+                return null;
 
-            var dashboard = _currentDashboard ?? new DevHubDashboard { FetchedAt = DateTime.UtcNow };
+            var dashboard = new DevHubDashboard
+            {
+                Users = _currentDashboard?.Users.ToList() ?? new List<DevHubUser>(),
+                FetchedAt = detail.FetchedAt,
+            };
             MergeRepoDetail(dashboard, repo, detail);
-
-            _currentDashboard = dashboard;
-            _cache.WriteDashboard(dashboard);
             return dashboard;
         }
 

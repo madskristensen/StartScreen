@@ -20,7 +20,7 @@ gets you into code immediately - no clicking through menus, no waiting.
 ### Startup and background work
 
 The action bar and search are available before secondary content loads. Recent
-projects load first; Git metadata, tips, Dev Hub, and news start after the UI has
+projects load first; Git metadata, repository summaries, Dev Hub, and news start after the UI has
 yielded to rendering and user input. Cache reads, feed parsing, and thumbnail
 decoding run on background threads with bounded disk and network concurrency.
 Dev Hub does not read its cache or authenticate providers when disabled.
@@ -39,7 +39,7 @@ including offline and large-repository scenarios, in the Performance Profiler.
 
 ![Start Screen screenshot](art/startscreen.png)
 
-## Get to work in one click
+## Get to work
 
 Open a recent solution, create a new project, open a project or folder,
 clone a repo, or attach and reattach to a process - all from a single,
@@ -54,6 +54,18 @@ work:
 **Find anything instantly.** Type a few characters and the search filter
 narrows your list in real time. Pin the projects you care about most so
 they always float to the top.
+
+**Preview before opening.** Select a recent workspace to show its repository
+activity in the center pane. Double-click or press Enter to open it. Choose
+**All repositories** to return to your combined activity. **Solutions only**
+filters unpinned entries; pinned folders and projects remain visible, and
+search still applies to them.
+
+**See real repository activity.** Compact second-line summaries show repository-wide
+open PR counts and direct personal review requests for supported GitHub and
+Azure DevOps repositories. Counts are fetched independently of the limited
+dashboard lists. Unsupported, signed-out, and unavailable states are shown
+explicitly rather than as zero. Select a summary to open the scoped PR list.
 
 **See your Git status at a glance.** Every repo shows its current branch,
 ahead/behind counts, uncommitted changes, and the last commit time - all
@@ -105,7 +117,7 @@ content. A green dot appears on the Videos tab whenever new videos
 arrive in a refresh, and clears once you view the tab.
 
 The feed is cached locally and refreshes automatically every four hours.
-Click the refresh button next to the News header to force an update at
+Click the Refresh button at the top of the screen to force an update at
 any time.
 
 ## Drag and drop
@@ -121,6 +133,65 @@ recent builds from GitHub and Azure DevOps - right next to your project
 list. Data loads in the background and is cached locally so the UI stays
 responsive.
 
+**Overview** opens by default and shows Copilot activity and other recent
+changes, without a separate attention banner. Existing saved defaults are switched
+to Overview once; the default-tab setting remains configurable afterward.
+**Needs you** contains the full list of requested
+reviews and authored PRs with failing checks or conflicts. Those actionable
+PRs are not repeated in Overview's change list. Repository changes use provider timestamps and the last
+Overview visit, not guesses about agent progress. Lists are bounded and are
+not complete repository inventories.
+
+PRs open in Visual Studio's native review experience when the installed Git
+tooling supports it. **Open in Browser** remains available from the PR context
+menu; unsupported providers use the browser. Native review failures are reported
+instead of silently opening a browser. Git tooling is loaded on demand, so review
+can be opened from the Start Screen before a repository is active.
+Opening a review does not silently check out a branch.
+
+An experimental, optional Copilot integration observes the installed VS harness
+through its in-process MEF contracts. Overview includes running and recent local
+conversations; Needs you includes sessions with unresolved permission requests or
+questions, including requests from subagents. Clicking a conversation, or pressing
+Enter on it, opens it in Copilot so requests are answered in Copilot's own UI. It does not
+send prompts, resume sessions in another process, or answer requests automatically.
+Conversation titles occupy a single line with an ellipsis; hover to see the full
+title. The native Copilot icon identifies conversation cards. A compact,
+theme-aware status badge and news-style date appear below the
+title. Running uses the accent color, Waiting uses the warning color, and Idle
+is muted. Conversations without a known live state show no state badge rather
+than claiming to be idle. These signals do not describe work in
+another Visual Studio instance or a separate CLI process.
+Loading and error status appears beside the work-section heading.
+Sessions appear as they are discovered, without waiting for the entire catalog.
+Reopening the page reuses up to 100 conversation metadata entries while reconnecting.
+Metadata is also saved locally under `%LOCALAPPDATA%\StartScreen\CopilotCache` after
+discovery and when leaving the page. It contains conversation IDs, titles, working
+directories, timestamps, and saved-conversation markers, not messages or live state.
+On a new VS launch, cached metadata is loaded off the UI thread and bound before
+Copilot service initialization, with a dispatcher yield to allow rendering first.
+The first launch without a cache still depends on VS discovery. Cached entries show
+no state badge and never retain old running or permission state. Completed discovery
+replaces stale entries, including deleting history when the catalog is empty.
+Cache errors are logged and surfaced beside the work heading without disabling
+live discovery. Opening a cached entry requires the current backend to confirm
+that the conversation still exists.
+Workspace selection filters sessions by their reported working directory; sessions
+whose directory is not yet known are not attributed to a selected workspace.
+
+These are internal, version-sensitive contracts, not a supported Copilot SDK API.
+The harness does not expose a force-relist operation. Refresh reconnects to its
+current in-memory catalog; it cannot force saved history from other processes to
+be re-listed, or obtain their live activity. Missing or incompatible contracts
+produce an explicit unavailable status; discovery
+in progress is not reported as an empty successful result. Refresh retries the
+connection. Subscriptions are removed while the page is hidden or closed. Copilot
+activity remains accessible without a GitHub/Azure DevOps dashboard connection.
+Only sessions exposed by this VS instance's current backend are shown, not cloud
+agents or agents in other processes. Chat files and open-session counts are never
+treated as proof that an agent is running. No Copilot implementation assemblies are
+shipped or required to build the extension.
+
 Closing the Start Screen cancels pending Dev Hub requests without logging
 normal cancellation as an error or caching canceled requests as empty data.
 HTTP timeouts and other request failures are still logged for troubleshooting.
@@ -131,7 +202,8 @@ HTTP timeouts and other request failures are still logged for troubleshooting.
 
 Right-click any pull request, issue, or build and choose **Scope to
 &lt;repo&gt;** to filter all three Dev Hub tabs down to that single
-repository. While scoped, right-click any item and choose **Show all
+repository. Selecting a recent workspace scopes the same view. While scoped,
+choose **All repositories**, or right-click an item and choose **Show all
 repositories** to clear the scope and see everything again.
 
 The scope is not saved between sessions, so reopening the Start Screen
@@ -178,7 +250,7 @@ not affected by the query.
 Click the gear icon next to the Dev Hub header to open its settings, where
 the **Display** section lets you tailor the layout:
 
-- **Default tab** - choose whether Issues, Pull requests, or Builds is
+- **Default tab** - choose whether Overview, Needs you, Issues, Pull requests, or Builds is
   selected when the Start Screen opens.
 - **Sort issues and pull requests by** - order the lists by **Most recent
   first** (the default), **GitHub first**, or **Azure DevOps first**. The
@@ -192,41 +264,23 @@ button in the top-right of the Start Screen and uncheck **Show Dev Hub**.
 The News section expands to use the freed-up space. Re-check the box at
 any time to bring it back.
 
-## Tip of the day
+## Refresh, service health, and VS updates
 
-Every time Visual Studio starts, a short productivity tip appears at the
-bottom of the Start Screen. The tips rotate daily and cover navigation
-shortcuts, editing tricks, refactoring commands, and other features you
-might not know about. No configuration required - just glance down and
-learn something new.
+The header groups Refresh with its update timestamp. This single Refresh button
+updates repository activity, blog feeds, and videos; news tabs have no separate
+refresh link or timestamp. Visual Studio service
+health is shown below the action buttons and links to the public status page.
+Unknown, stale, and failed checks are not displayed as healthy. Public service
+health does not describe your account sign-in or repository CI status.
 
-![Tip of the day screenshot](art/tip.png)
+The work pane is capped at 560 pixels including its gutter. Extra screen width
+goes to news and videos, which expand into multiple columns. At narrow widths,
+news moves below the work pane.
 
-Have a tip to share? [Open an issue][repo] with your suggestion or submit
-a pull request directly to
-[tips.txt](https://github.com/madskristensen/StartScreen/blob/master/src/Resources/tips.txt).
-
-## Suggested extensions
-
-Right next to the Tip of the Day, Start Screen showcases a curated
-extension from the Visual Studio Marketplace. The suggestion rotates
-daily and highlights free, open-source extensions that enhance your
-development workflow.
-
-![Suggested extensions](art/suggested-extensions.png)
-
-Extensions you've already installed show an "Installed" badge.
-Extensions you haven't tried yet display an "Install" link that takes
-you straight to the Marketplace page.
-
-Want to suggest an extension? Submit a pull request to
-[extensions.json](https://github.com/madskristensen/StartScreen/blob/master/src/Resources/extensions.json).
-We're looking for extensions that are:
-
-- Free
-- Open source (with a GitHub repository link)
-- Support both ARM and x86 architectures
-- Compatible with Visual Studio 2022+
+A discreet update link uses Visual Studio's setup API and shows the available
+version when supplied by VS. It opens the standard Visual Studio update flow;
+there is no separate release-notes link. Tips and suggested-extension panels
+have been removed to give workspace activity and news more room.
 
 ## Keyboard-first design
 
@@ -239,7 +293,7 @@ Open the Start Screen any time from **File > Start Screen** or press
 
 | Shortcut   | Action                 |
 | ---------- | ---------------------- |
-| Up / Down  | Move between items     |
+| Up / Down  | Select and preview     |
 | Enter      | Open                   |
 | Ctrl+Enter | Open in new instance   |
 | O          | Open containing folder |
@@ -256,7 +310,7 @@ Open the Start Screen any time from **File > Start Screen** or press
 | Shortcut  | Action               |
 | --------- | -------------------- |
 | Up / Down | Move between items   |
-| Enter     | Open in browser      |
+| Enter     | Review PR in VS; other items in browser |
 | Ctrl+C    | Copy URL             |
 | Left      | Jump to recent files |
 | Right     | Jump to news feed    |

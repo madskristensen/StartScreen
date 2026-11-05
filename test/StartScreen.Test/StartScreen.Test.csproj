@@ -17,7 +17,14 @@
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
     <Reference Include="System.ServiceModel" />
+    <Reference Include="System.Xaml" />
     <Reference Include="WindowsBase" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\src\ToolWindows\StartScreenControl.xaml" LogicalName="StartScreenControl.xaml" />
+    <EmbeddedResource Include="..\..\src\ToolWindows\Controls\DevHubPanel.xaml" LogicalName="DevHubPanel.xaml" />
+    <EmbeddedResource Include="..\..\src\ToolWindows\Controls\NewsItemControl.xaml" LogicalName="NewsItemControl.xaml" />
   </ItemGroup>
 
 </Project>

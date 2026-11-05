@@ -82,6 +82,13 @@ namespace StartScreen.Services.DevHub
         Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken);
 
         /// <summary>
+        /// Gets uncapped repository-wide PR totals. Unknown counts are null; unsupported,
+        /// unauthenticated and failed requests are explicit statuses, never zero totals.
+        /// Caller cancellation propagates as OperationCanceledException.
+        /// </summary>
+        Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken);
+
+        /// <summary>
         /// Builds the web URL for a repository's home page.
         /// </summary>
         string GetRepoWebUrl(RemoteRepoIdentifier repo);

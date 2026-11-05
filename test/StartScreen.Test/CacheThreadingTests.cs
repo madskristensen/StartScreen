@@ -54,6 +54,21 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task CopilotCache_DoesNotMarshalIoBackToCallerAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var path = directory.GetPath("copilot.json");
+            await CopilotActivityCache.WriteAsync(path,
+                [new CopilotActivitySession { Id = "session", Title = new string('x', 100000) }], CancellationToken.None);
+
+            var sessions = await ReadWithoutCallerContextAsync(() => CopilotActivityCache.ReadAsync(path, CancellationToken.None));
+
+            Assert.HasCount(1, sessions);
+            Assert.AreEqual(100000, sessions[0].Title.Length);
+            Assert.IsTrue(sessions[0].IsCached);
+        }
+
+        [TestMethod]
         public async Task CacheReads_PropagateCancellationEvenWhenCacheIsMissingAsync()
         {
             using var directory = new TemporaryDirectory();
@@ -65,6 +80,7 @@ namespace StartScreen.Test
             await Assert.ThrowsAsync<OperationCanceledException>(() => FeedService.GetCachedPostsAsync(path, cancellation.Token));
             await Assert.ThrowsAsync<OperationCanceledException>(() => YouTubeService.GetCachedVideosAsync(path, cancellation.Token));
             await Assert.ThrowsAsync<OperationCanceledException>(() => cache.ReadDashboardAsync(cancellation.Token));
+            await Assert.ThrowsAsync<OperationCanceledException>(() => CopilotActivityCache.ReadAsync(path, cancellation.Token));
         }
 
         private static async Task<T> ReadWithoutCallerContextAsync<T>(Func<Task<T>> readAsync)

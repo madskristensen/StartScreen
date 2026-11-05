@@ -13,16 +13,36 @@
              Background="Transparent"
              Focusable="False"
              mc:Ignorable="d" 
-             d:DesignHeight="60" d:DesignWidth="400">
+             d:DesignHeight="52" d:DesignWidth="360">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <controls:NullToCollapsedConverter x:Key="NullToCollapsedConverter"/>
         <controls:ExistsToTextDecorationsConverter x:Key="ExistsToTextDecorationsConverter"/>
         <controls:ExistsToOpacityConverter x:Key="ExistsToOpacityConverter"/>
+        <Style x:Key="RepositoryLinkButtonStyle" TargetType="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="MinHeight" Value="16"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock Text="{TemplateBinding Content}" TextTrimming="CharacterEllipsis"
+                                   Foreground="{TemplateBinding Foreground}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
     <Border x:Name="RootBorder"
             BorderThickness="0"
-            Padding="8 6 5 6"
+            Padding="8 5 5 5"
+            MinHeight="52"
             CornerRadius="4"
             Cursor="Hand"
             Focusable="True"
@@ -69,7 +89,7 @@
                                        Margin="6 0 0 0"
                                        Visibility="{Binding HasAheadBehind, Converter={StaticResource BoolToVisibilityConverter}}"/>
                             <TextBlock Text=" &#x25CF;"
-                                       Foreground="#E8A838"
+                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
                                        FontSize="10"
                                        ToolTip="Uncommitted changes"
                                        Visibility="{Binding HasUncommittedChanges, Converter={StaticResource BoolToVisibilityConverter}}"/>
@@ -96,10 +116,13 @@
                                     Margin="0 2 0 0"
                                     Visibility="{Binding HasCurrentOperation, Converter={StaticResource BoolToVisibilityConverter}}">
                             <TextBlock Text="Operation: " Opacity="0.7"/>
-                            <TextBlock Text="{Binding CurrentOperation}" Foreground="#E8A838" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding CurrentOperation}" FontWeight="SemiBold"/>
                             <TextBlock Text=" in progress" Opacity="0.7"/>
                         </StackPanel>
                     </StackPanel>
+
+                    <TextBlock Text="{Binding CopilotChatTooltip}" Margin="0 4 0 0"
+                               Visibility="{Binding HasCopilotChatSessions, Converter={StaticResource BoolToVisibilityConverter}}"/>
 
                     <!-- Path -->
                     <StackPanel Orientation="Horizontal" Margin="0 6 0 0">
@@ -111,104 +134,67 @@
                 </StackPanel>
             </ToolTip>
         </Border.ToolTip>
-        <DockPanel>
-            <!-- Right side: Git info and pin -->
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                <!-- Copilot Chat sessions indicator -->
-                <imaging:CrispImage Moniker="{x:Static helpers:CopilotMonikers.GitHubCopilot}"
-                                    Width="11" Height="11"
-                                    Margin="0 0 4 0"
-                                    VerticalAlignment="Center"
-                                    ToolTip="{Binding CopilotChatTooltip}"
-                                    Visibility="{Binding HasCopilotChatSessions, Converter={StaticResource BoolToVisibilityConverter}}"/>
-
-                <!-- Git status (right-aligned) -->
-                <StackPanel Orientation="Horizontal" 
-                            VerticalAlignment="Center"
-                            Margin="12 0 0 0"
-                            Visibility="{Binding HasGitBranch, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <!-- Ahead/Behind indicators -->
-                    <TextBlock Text="{Binding AheadBehindText}"
-                               FontSize="11"
-                               Opacity="0.6"
-                               Margin="0 0 4 0"
-                               VerticalAlignment="Center"
-                               Visibility="{Binding HasAheadBehind, Converter={StaticResource BoolToVisibilityConverter}}"/>
-
-                    <!-- Uncommitted changes indicator -->
-                    <TextBlock Text="●"
-                               FontSize="9"
-                               Foreground="#E8A838"
-                               Margin="0 0 4 2"
-                               VerticalAlignment="Center"
-                               ToolTip="Uncommitted changes"
-                               Visibility="{Binding HasUncommittedChanges, Converter={StaticResource BoolToVisibilityConverter}}"/>
-
-                    <!-- Stash indicator -->
-                    <TextBlock Text="📦"
-                               FontSize="11"
-                               Margin="0 0 4 0"
-                               VerticalAlignment="Center"
-                               ToolTip="{Binding StashText}"
-                               Visibility="{Binding HasStashes, Converter={StaticResource BoolToVisibilityConverter}}"/>
-
-                    <!-- Current operation indicator -->
-                    <TextBlock Text="⚠"
-                               FontSize="11"
-                               Foreground="#E8A838"
-                               Margin="0 0 4 0"
-                               VerticalAlignment="Center"
-                               ToolTip="{Binding CurrentOperation}"
-                               Visibility="{Binding HasCurrentOperation, Converter={StaticResource BoolToVisibilityConverter}}"/>
-
-                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Branch}"
-                                        Width="12" Height="12"
-                                        Margin="0 0 4 0"
-                                        Opacity="0.6"
-                                        VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding GitBranch}"
-                               FontSize="11"
-                               Opacity="0.6"
-                               VerticalAlignment="Center"
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <imaging:CrispImage x:Name="Icon" Width="20" Height="20" Margin="0 0 8 0" VerticalAlignment="Top"/>
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="NameText" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                                TextTrimming="CharacterEllipsis"
-                               MaxWidth="80"/>
-                </StackPanel>
-
-                <!-- Pin Button -->
-                <Button x:Name="PinButton"
-                       Width="16" Height="24"
-                       MinWidth="0"
-                       MinHeight="0"
-                       Padding="0"
-                       Background="Transparent"
-                       BorderThickness="0"
-                       Cursor="Hand"
-                       Focusable="False"
-                       HorizontalContentAlignment="Right"
-                       VerticalAlignment="Center"
-                       Margin="10 0 0 0"
-                       ToolTip="Pin/Unpin"
-                       Click="PinButton_Click">
-                    <imaging:CrispImage x:Name="PinIcon" Moniker="{x:Static catalog:KnownMonikers.Pin}" Width="16" Height="16"/>
-                </Button>
-            </StackPanel>
-
-            <!-- Icon -->
-            <imaging:CrispImage x:Name="Icon" DockPanel.Dock="Left"
-                              Width="24" Height="24"
-                              Margin="0 0 8 0"
-                              VerticalAlignment="Center"/>
-
-            <!-- Solution/Project Name -->
-            <TextBlock x:Name="NameText"
-                      Text="{Binding Name}"
-                      FontWeight="SemiBold"
-                      VerticalAlignment="Center"
-                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
-                      TextTrimming="CharacterEllipsis"
-                      TextDecorations="{Binding Exists, Converter={StaticResource ExistsToTextDecorationsConverter}}"
-                      Opacity="{Binding Exists, Converter={StaticResource ExistsToOpacityConverter}}"/>
-        </DockPanel>
+                               TextDecorations="{Binding Exists, Converter={StaticResource ExistsToTextDecorationsConverter}}"
+                               Opacity="{Binding Exists, Converter={StaticResource ExistsToOpacityConverter}}"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8 0 0 0" VerticalAlignment="Center"
+                                ToolTip="{Binding GitBranch}"
+                                Visibility="{Binding HasGitBranch, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Branch}" Width="12" Height="12" Margin="0 0 4 0" Opacity="0.7"/>
+                        <TextBlock Text="{Binding GitBranch}" FontSize="11" Opacity="0.7" TextTrimming="CharacterEllipsis" MaxWidth="72"/>
+                    </StackPanel>
+                    <Button x:Name="PinButton" Grid.Column="2" Width="18" Height="20" MinWidth="0" MinHeight="0" Padding="0"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand" Focusable="False"
+                            HorizontalContentAlignment="Right" VerticalAlignment="Center" Margin="8 0 0 0"
+                            ToolTip="Pin/Unpin" Click="PinButton_Click">
+                        <imaging:CrispImage x:Name="PinIcon" Moniker="{x:Static catalog:KnownMonikers.Pin}" Width="16" Height="16"/>
+                    </Button>
+                </Grid>
+                <Grid Grid.Row="1" Margin="0 3 0 0" ToolTip="{Binding RepositorySummaryTooltip}">
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding HasRepositoryCounts, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <Button Content="{Binding RepositoryPullRequestsText}" Click="RepositorySummary_Click"
+                                Style="{StaticResource RepositoryLinkButtonStyle}"/>
+                        <StackPanel Orientation="Horizontal"
+                                    Visibility="{Binding HasRequestedReviews, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Text="/" Margin="4 0" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                            <Button Content="{Binding RepositoryReviewsText}" Click="RepositoryReviews_Click"
+                                    Style="{StaticResource RepositoryLinkButtonStyle}"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Button Content="{Binding RepositorySummaryText}" Click="RepositorySummary_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource RepositoryLinkButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasRepositoryCounts}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+            </Grid>
+        </Grid>
 
         <!-- Context Menu -->
         <Border.ContextMenu>

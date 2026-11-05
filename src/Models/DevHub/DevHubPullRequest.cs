@@ -100,6 +100,8 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public bool IsAuthoredByCurrentUser { get; set; }
 
+        public bool IsReviewRequestedForCurrentUser { get; set; }
+
         /// <summary>
         /// Whether this PR is a draft.
         /// </summary>

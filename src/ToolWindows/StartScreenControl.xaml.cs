@@ -32,6 +32,9 @@ namespace StartScreen.ToolWindows
         private bool _isSynchronizingContentHorizontalScroll;
         private readonly CancellationToken _shutdownToken = StartScreenPackage.ShutdownToken;
         private CancellationTokenSource _lifetimeCancellation;
+        private CancellationTokenSource _workspaceCancellation;
+        private DevHubDashboard _workspaceDashboard;
+        private string _workspaceError;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -92,13 +95,13 @@ namespace StartScreen.ToolWindows
                 if (_isInitialized)
                 {
                     _viewModel.EnsureDeferredContentInitialized();
+                    RefreshWorkspaceSignalsAsync(false).FileAndForget(nameof(StartScreenControl));
                     await ViewModel?.RefreshInBackgroundAsync();
                     cancellationToken.ThrowIfCancellationRequested();
                     await LoadDevHubAsync();
                     return;
                 }
 
-                await ApplyShowTipsAndExtensionsAsync();
                 await ApplyDevHubEnabledAsync();
 
                 UpdateResponsiveColumns();
@@ -122,6 +125,7 @@ namespace StartScreen.ToolWindows
                 Task restoreSplitterTask = RestoreSplitterPositionAsync();
                 Task devHubTask = LoadDevHubAsync();
                 Task newsTask = _viewModel.RefreshInBackgroundAsync(refreshMru: false);
+                RefreshWorkspaceSignalsAsync(false).FileAndForget(nameof(StartScreenControl));
 
                 await Task.WhenAll(restoreSplitterTask, newsTask, devHubTask);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -146,7 +150,7 @@ namespace StartScreen.ToolWindows
             try
             {
                 Options options = await Options.GetLiveInstanceAsync();
-                if (options.SplitterPosition >= 500)
+                if (options.SplitterPosition >= 280 && options.SplitterPosition <= 480)
                 {
                     LeftColumn.Width = new GridLength(options.SplitterPosition);
                 }
@@ -173,28 +177,28 @@ namespace StartScreen.ToolWindows
             if (ViewModel == null || RightPaneBorder.ActualWidth == 0)
                 return;
 
-            double available = RightPaneBorder.ActualWidth - 64; // subtract left+right margins (32+32)
+            bool showWork = DevHubPanelControl.Visibility == Visibility.Visible;
+            double contentWidth = Math.Max(0, RightPaneBorder.ActualWidth - NewsPanel.Margin.Left - NewsPanel.Margin.Right);
+            var layout = CalculateContentLayout(contentWidth, showWork);
+            bool stacked = layout.Stacked;
+            bool sideBySide = showWork && !stacked;
+            DevHubColumn.Width = new GridLength(layout.WorkWidth);
+            NewsColumn.Width = new GridLength(1, GridUnitType.Star);
+            Grid.SetRow(NewsColumnPanel, stacked ? 2 : 0);
+            Grid.SetRowSpan(NewsColumnPanel, stacked ? 1 : 2);
+            Grid.SetColumn(NewsColumnPanel, sideBySide ? 1 : 0);
+            Grid.SetColumnSpan(NewsColumnPanel, sideBySide ? 1 : 2);
+            NewsColumnPanel.Margin = stacked ? new Thickness(0, 24, 0, 0) : new Thickness(0);
+            DevHubPanelControl.Margin = stacked ? new Thickness(0) : new Thickness(0, 0, 24, 0);
+            ViewModel.UpdateColumnCounts(layout.NewsColumns, layout.VideoColumns);
+        }
 
-            // DevHub fixed-width column + gap, the rest is the News-with-tabs column.
-            const double devHubWidth = 520;
-            const double devHubGap = 24;
-            const double newsCardWidth = 372;   // NewsItemControl 360 + 12 right margin
-            const double videoCardWidth = 292;  // YouTubeVideoControl 280 + 12 right margin
-            const int maxNewsCols = 4;
-            const int maxVideoCols = 4;
-
-            double newsArea = Math.Max(0, available - devHubWidth - devHubGap);
-
-            // Cards are fixed width, so we can only add another column when one fully
-            // fits without overflow - otherwise the UniformGrid clips and the parent
-            // ScrollViewer shows a horizontal scrollbar. Floor + Max(1, ...) prevents that.
-            int newsColumns = (int)Math.Floor(newsArea / newsCardWidth);
-            newsColumns = Math.Max(1, Math.Min(maxNewsCols, newsColumns));
-
-            int videoColumns = (int)Math.Floor(newsArea / videoCardWidth);
-            videoColumns = Math.Max(1, Math.Min(maxVideoCols, videoColumns));
-
-            ViewModel.UpdateColumnCounts(newsColumns, videoColumns);
+        internal static (double WorkWidth, bool Stacked, int NewsColumns, int VideoColumns) CalculateContentLayout(double width, bool showWork)
+        {
+            bool stacked = showWork && width < 780;
+            double workWidth = !showWork ? 0 : stacked ? Math.Min(560, width) : Math.Min(560, width - 320);
+            double newsWidth = stacked ? width : width - workWidth;
+            return (workWidth, stacked, Math.Max(1, (int)(newsWidth / 332)), Math.Max(1, (int)(newsWidth / 292)));
         }
 
         private void NewProjectButton_Click(object sender, RoutedEventArgs e)
@@ -360,7 +364,9 @@ namespace StartScreen.ToolWindows
         private void DevHubPanel_FocusMruRequested(object sender, EventArgs e)
         {
             // Focus the currently selected MRU item, or the first one
-            MruItemControl mru = FindFirstControl<MruItemControl>(MruPanel);
+            MruItemControl mru = ViewModel.SelectedMruItem != null
+                ? FindMruItemControlByPath(MruPanel, ViewModel.SelectedMruItem.Path) : null;
+            mru ??= FindFirstControl<MruItemControl>(MruPanel);
             if (mru != null)
             {
                 mru.RootBorder.Focus();
@@ -383,6 +389,7 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_RefreshRequested(object sender, EventArgs e)
         {
+            DevHubPanelControl.RefreshCopilotActivity();
             // Don't fetch Dev Hub data when the section is hidden. The unified
             // refresh button routes through here, so this keeps a refresh from
             // hitting GitHub/Azure DevOps while the panel is collapsed.
@@ -475,40 +482,131 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_ScopeToRepoRequested(object sender, RemoteRepoIdentifier repo)
         {
-            if (repo == null)
-            {
-                return;
-            }
+            ViewModel.SelectedMruItem = null;
+            ViewModel.SetRepositoryScope(repo);
+        }
 
-            CancellationToken cancellationToken = _lifetimeCancellation.Token;
+        private void RefreshWorkspaceScope()
+        {
+            _workspaceDashboard = null;
+            _workspaceError = null;
+            _workspaceCancellation?.Cancel();
+            _workspaceCancellation?.Dispose();
+            _workspaceCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
+            CancellationToken cancellationToken = _workspaceCancellation.Token;
+            RemoteRepoIdentifier repo = ViewModel.SelectedRepository;
+            DevHubPanelControl.SetWorkspaceFilter(repo);
+            UpdateDevHubPanel();
+            if (repo == null || !Options.Instance.DevHubEnabled)
+                return;
+
+            ViewModel.RefreshSelectedRepositorySummaryAsync(ViewModel.SelectedMruItem, cancellationToken)
+                .FileAndForget(nameof(StartScreenControl));
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 try
                 {
                     await TaskScheduler.Default;
-
-                    // Fetch a fuller set of items for just this repo so the scoped view isn't
-                    // limited to whatever happened to be loaded in the aggregate dashboard.
                     var dashboard = await _devHubService.ScopeToRepoAsync(repo, cancellationToken);
-
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (dashboard != null)
+                    if (Equals(repo, ViewModel.SelectedRepository))
                     {
-                        DevHubPanelControl.UpdateView(dashboard);
+                        if (dashboard == null)
+                        {
+                            _workspaceError = "Repository activity is unavailable. Check your connection and account access, then refresh.";
+                            UpdateDevHubPanel();
+                        }
+                        else
+                        {
+                            _workspaceDashboard = dashboard;
+                            UpdateDevHubPanel(dashboard);
+                        }
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        _workspaceError = "Could not load repository activity. Refresh to try again.";
+                        UpdateDevHubPanel();
+                    }
                 }
             }).FileAndForget(nameof(StartScreenControl));
         }
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(StartScreenViewModel.SelectedMruItem))
+            if (e.PropertyName == nameof(StartScreenViewModel.SelectedRepository))
             {
-                UpdateDevHubPanel();
+                RefreshWorkspaceScope();
+            }
+            else if (e.PropertyName == nameof(StartScreenViewModel.ShowSolutionsOnly))
+            {
+                SaveSolutionsOnlyAsync().FileAndForget(nameof(StartScreenControl));
+            }
+        }
+
+        private async Task SaveSolutionsOnlyAsync()
+        {
+            try
+            {
+                Options options = await Options.GetLiveInstanceAsync();
+                options.ShowSolutionsOnly = ViewModel.ShowSolutionsOnly;
+                await options.SaveAsync();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        private void MruItemControl_SelectionRequested(object sender, MruItem item)
+        {
+            ViewModel.SelectedMruItem = item;
+        }
+
+        private void MruItemControl_RepositorySummaryRequested(object sender, MruItem item)
+        {
+            ViewModel.SelectedMruItem = item;
+            DevHubPanelControl.ShowPullRequests();
+        }
+
+        private void MruItemControl_RepositoryReviewsRequested(object sender, MruItem item)
+        {
+            ViewModel.SelectedMruItem = item;
+            DevHubPanelControl.ShowRequestedReviews();
+        }
+
+        private void ClearWorkspaceSelection_Click(object sender, RoutedEventArgs e)
+        {
+            ViewModel.SelectedMruItem = null;
+            ViewModel.SetRepositoryScope(null);
+        }
+
+        private void ServiceStatusLink_Click(object sender, RoutedEventArgs e)
+        {
+            OpenServiceStatusAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private static async Task OpenServiceStatusAsync()
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://vsstatus.visualstudio.com/")
+                {
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen", "Could not open the service status page.");
             }
         }
 
@@ -585,6 +683,8 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 cancellationToken.ThrowIfCancellationRequested();
                 UpdateDevHubPanel();
+                if (ViewModel.SelectedRepository != null)
+                    RefreshWorkspaceScope();
                 StartupDiagnostics.Mark("Dev Hub remote refresh completed");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -610,7 +710,19 @@ namespace StartScreen.ToolWindows
 
         private void UpdateDevHubPanel(DevHubDashboard dashboard)
         {
-            DevHubPanelControl.UpdateView(dashboard, null);
+            DevHubPanelControl.SetCopilotWorkspace(ViewModel.GetCopilotWorkspaceRoots(),
+                ViewModel.SelectedMruItem != null || ViewModel.SelectedRepository != null);
+            if (_workspaceError != null)
+            {
+                DevHubPanelControl.ShowError(_workspaceError);
+                return;
+            }
+            if (ViewModel.HasSelectedMruItem && ViewModel.SelectedRepository == null)
+            {
+                DevHubPanelControl.ShowError("No supported remote repository was found for this workspace. Local work can still be opened from Recent.");
+                return;
+            }
+            DevHubPanelControl.UpdateView(_workspaceDashboard ?? dashboard, ViewModel.SelectedRepository);
         }
 
         private void NewsItemControl_FocusDevHubRequested(object sender, EventArgs e)
@@ -1007,7 +1119,6 @@ namespace StartScreen.ToolWindows
             try
             {
                 Options options = await Options.GetLiveInstanceAsync();
-                ShowTipsAndExtensionsCheckBox.IsChecked = options.ShowTipsAndExtensions;
                 ShowDevHubCheckBox.IsChecked = options.DevHubEnabled;
                 StartScreenSettingsPopup.IsOpen = true;
             }
@@ -1018,42 +1129,6 @@ namespace StartScreen.ToolWindows
         }
 
 
-
-        private void ShowTipsAndExtensionsCheckBox_Changed(object sender, RoutedEventArgs e)
-        {
-            SaveShowTipsAndExtensionsAsync().FileAndForget(nameof(StartScreenControl));
-        }
-
-        private async Task SaveShowTipsAndExtensionsAsync()
-        {
-            try
-            {
-                bool show = ShowTipsAndExtensionsCheckBox.IsChecked == true;
-                Options options = await Options.GetLiveInstanceAsync();
-                options.ShowTipsAndExtensions = show;
-                await options.SaveAsync();
-                TipsAndExtensionsSection.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-            }
-        }
-
-        private async Task ApplyShowTipsAndExtensionsAsync()
-        {
-            try
-            {
-                Options options = await Options.GetLiveInstanceAsync();
-                TipsAndExtensionsSection.Visibility = options.ShowTipsAndExtensions
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-            }
-        }
 
         private void ShowDevHubCheckBox_Changed(object sender, RoutedEventArgs e)
         {
@@ -1101,8 +1176,8 @@ namespace StartScreen.ToolWindows
         private void ApplyDevHubVisibility(bool show)
         {
             DevHubPanelControl.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-            DevHubColumn.Width = show ? GridLength.Auto : new GridLength(0);
             DevHubSettingsLinkText.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            UpdateResponsiveColumns();
         }
 
         private void DevHubPanel_LastRefreshChanged(object sender, string text)
@@ -1111,16 +1186,6 @@ namespace StartScreen.ToolWindows
             {
                 ViewModel.LastDevHubRefreshText = text ?? string.Empty;
             }
-        }
-
-        private void RefreshNewsLink_Click(object sender, RoutedEventArgs e)
-        {
-            ViewModel?.ForceRefreshNews();
-        }
-
-        private void RefreshYouTubeLink_Click(object sender, RoutedEventArgs e)
-        {
-            ViewModel?.ForceRefreshYouTube();
         }
 
         private void UnifiedRefreshButton_Click(object sender, RoutedEventArgs e)
@@ -1132,6 +1197,26 @@ namespace StartScreen.ToolWindows
             }
 
             DevHubPanel_RefreshRequested(this, System.EventArgs.Empty);
+            RefreshWorkspaceSignalsAsync(true).FileAndForget(nameof(StartScreenControl));
+        }
+
+        private async Task RefreshWorkspaceSignalsAsync(bool force)
+        {
+            CancellationToken cancellationToken = _lifetimeCancellation.Token;
+            try
+            {
+                await ViewModel.RefreshWorkspaceSignalsAsync(force, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (!cancellationToken.IsCancellationRequested)
+                    ViewModel.SetServiceHealth("Service status unavailable", "Refresh to try checking service health again.", false);
+            }
         }
 
         private void DevHubSettingsLink_Click(object sender, RoutedEventArgs e)

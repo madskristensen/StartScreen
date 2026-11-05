@@ -60,6 +60,23 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public event EventHandler FocusNewsRequested;
 
+        public void SetWorkspaceFilter(RemoteRepoIdentifier repo)
+        {
+            _scopedRepo = repo;
+        }
+
+        public void ShowPullRequests()
+        {
+            _defaultTabApplied = true;
+            DevHubSubTabs.SelectedItem = PrsTab;
+        }
+
+        public void ShowRequestedReviews()
+        {
+            _defaultTabApplied = true;
+            DevHubSubTabs.SelectedItem = NeedsYouTab;
+        }
+
         /// <summary>
         /// Updates the panel to show a filtered view for the given repo, or global dashboard if null.
         /// </summary>
@@ -149,6 +166,7 @@ namespace StartScreen.ToolWindows.Controls
             }
 
             UpdateSettingsAccountStatus(hasGitHub, hasAdo);
+            UpdateWorkspaceActivity(prs, issues, ciRuns);
             UpdateLastRefresh(dashboard.FetchedAt);
             ShowDashboard();
         }
@@ -165,7 +183,7 @@ namespace StartScreen.ToolWindows.Controls
         {
             LoadingText.Text = message ?? "Loading your activity...";
             NotConnectedPanel.Visibility = Visibility.Collapsed;
-            DashboardPanel.Visibility = Visibility.Collapsed;
+            DashboardPanel.Visibility = Visibility.Visible;
             ErrorPanel.Visibility = Visibility.Collapsed;
             LoadingPanel.Visibility = Visibility.Visible;
         }
@@ -176,15 +194,16 @@ namespace StartScreen.ToolWindows.Controls
         public void ShowError(string message)
         {
             NotConnectedPanel.Visibility = Visibility.Collapsed;
-            DashboardPanel.Visibility = Visibility.Collapsed;
+            DashboardPanel.Visibility = Visibility.Visible;
             LoadingPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Visible;
             ErrorMessageText.Text = message;
+            ClearRepositoryActivity();
         }
 
         private void ShowNotConnected(bool hasGitHub, bool hasAdo)
         {
-            DashboardPanel.Visibility = Visibility.Collapsed;
+            DashboardPanel.Visibility = Visibility.Visible;
             LoadingPanel.Visibility = Visibility.Collapsed;
             ErrorPanel.Visibility = Visibility.Collapsed;
             NotConnectedPanel.Visibility = Visibility.Visible;
@@ -192,6 +211,18 @@ namespace StartScreen.ToolWindows.Controls
             ConnectGitHubTextBlock.Visibility = hasGitHub ? Visibility.Collapsed : Visibility.Visible;
             GitHubCredentialHelpTextBlock.Visibility = _showGitHubCredentialHelp && !hasGitHub ? Visibility.Visible : Visibility.Collapsed;
             ConnectAdoTextBlock.Visibility = hasAdo ? Visibility.Collapsed : Visibility.Visible;
+            ClearRepositoryActivity();
+        }
+
+        private void ClearRepositoryActivity()
+        {
+            _lastBoundPullRequests = Array.Empty<DevHubPullRequest>();
+            _lastBoundIssues = Array.Empty<DevHubIssue>();
+            _lastBoundCiRuns = Array.Empty<DevHubCiRun>();
+            UpdatePullRequests(_lastBoundPullRequests, null);
+            UpdateIssues(_lastBoundIssues, null);
+            UpdateCiRuns(_lastBoundCiRuns, null);
+            UpdateWorkspaceActivity(_lastBoundPullRequests, _lastBoundIssues, _lastBoundCiRuns);
         }
 
         private void UpdateSettingsAccountStatus(bool hasGitHub, bool hasAdo)
@@ -259,11 +290,7 @@ namespace StartScreen.ToolWindows.Controls
 
             _defaultTabApplied = true;
 
-            int index = (int)Options.Instance.DevHubDefaultTab;
-            if (index >= 0 && index < DevHubSubTabs.Items.Count)
-            {
-                DevHubSubTabs.SelectedIndex = index;
-            }
+            SelectDefaultTab(Options.Instance.DevHubDefaultTab);
         }
 
         private void UpdatePullRequests(IReadOnlyList<DevHubPullRequest> pullRequests, IReadOnlyList<DevHubPullRequest> previousPullRequests)
@@ -401,6 +428,11 @@ namespace StartScreen.ToolWindows.Controls
             object selected = DevHubSubTabs?.SelectedItem;
             DateTime now = DateTime.UtcNow;
 
+            if (ReferenceEquals(selected, OverviewTab))
+            {
+                MarkOverviewAsSeen();
+                return;
+            }
             if (ReferenceEquals(selected, IssuesTab))
             {
                 Options.Instance.LastDevHubIssuesSeen = now;
@@ -497,7 +529,8 @@ namespace StartScreen.ToolWindows.Controls
                 fe.DataContext is DevHubPullRequest pr &&
                 !string.IsNullOrEmpty(pr.WebUrl))
             {
-                OpenUrl(pr.WebUrl);
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => Services.PullRequestNavigationService.OpenAsync(pr.WebUrl))
+                    .FileAndForget(nameof(DevHubPanel));
             }
         }
 
@@ -536,6 +569,7 @@ namespace StartScreen.ToolWindows.Controls
             }
 
             _scopedRepo = null;
+            ScopeToRepoRequested?.Invoke(this, null);
 
             if (_currentDashboard != null)
             {
@@ -672,11 +706,7 @@ namespace StartScreen.ToolWindows.Controls
             Options.Instance.SaveAsync().FireAndForget();
 
             // Reflect the new default immediately so the user sees the effect.
-            int index = (int)selected;
-            if (index >= 0 && index < DevHubSubTabs.Items.Count)
-            {
-                DevHubSubTabs.SelectedIndex = index;
-            }
+            SelectDefaultTab(selected);
         }
 
         private void SortOrderComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -1262,13 +1292,19 @@ namespace StartScreen.ToolWindows.Controls
 
         private static void OpenUrl(string url)
         {
+            OpenUrlAsync(url).FileAndForget(nameof(DevHubPanel));
+        }
+
+        private static async Task OpenUrlAsync(string url)
+        {
             try
             {
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen", "Could not open this activity in your browser.");
             }
         }
 
@@ -1279,6 +1315,7 @@ namespace StartScreen.ToolWindows.Controls
                 case DevHubPullRequest pr: return pr.WebUrl;
                 case DevHubIssue issue: return issue.WebUrl;
                 case DevHubCiRun ci: return ci.WebUrl;
+                case DevHubWorkItem work: return work.WebUrl;
                 default: return null;
             }
         }
@@ -1345,13 +1382,15 @@ namespace StartScreen.ToolWindows.Controls
 
         private ItemsControl GetActiveItemsList()
         {
-            switch (DevHubSubTabs.SelectedIndex)
-            {
-                case 0: return IssuesList;
-                case 1: return PullRequestsList;
-                case 2: return CiRunsList;
-                default: return IssuesList;
-            }
+            if (ReferenceEquals(DevHubSubTabs.SelectedItem, OverviewTab))
+                return ChangesList;
+            if (ReferenceEquals(DevHubSubTabs.SelectedItem, NeedsYouTab))
+                return NeedsYouList;
+            if (ReferenceEquals(DevHubSubTabs.SelectedItem, PrsTab))
+                return PullRequestsList;
+            if (ReferenceEquals(DevHubSubTabs.SelectedItem, CiTab))
+                return CiRunsList;
+            return IssuesList;
         }
 
         private void DevHubPanel_PreviewKeyDown(object sender, KeyEventArgs e)

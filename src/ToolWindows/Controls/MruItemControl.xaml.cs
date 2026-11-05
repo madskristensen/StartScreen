@@ -27,6 +27,9 @@ namespace StartScreen.ToolWindows.Controls
         public event EventHandler<MruItem> RemoveRequested;
         public event EventHandler FocusSearchBoxRequested;
         public event EventHandler FocusDevHubRequested;
+        public event EventHandler<MruItem> SelectionRequested;
+        public event EventHandler<MruItem> RepositorySummaryRequested;
+        public event EventHandler<MruItem> RepositoryReviewsRequested;
 
         public MruItemControl()
         {
@@ -56,6 +59,16 @@ namespace StartScreen.ToolWindows.Controls
                 _pinMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Pin);
                 ((MenuItem)menu.Items[10]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Cancel);
                 menu.Opened += ContextMenu_Opened;
+            }
+        }
+
+        private void RepositoryReviews_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (MruItem != null)
+            {
+                SelectionRequested?.Invoke(this, MruItem);
+                RepositoryReviewsRequested?.Invoke(this, MruItem);
             }
         }
 
@@ -92,6 +105,10 @@ namespace StartScreen.ToolWindows.Controls
         {
             RootBorder.SetResourceReference(Border.BackgroundProperty,
                 EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey);
+            if (MruItem != null)
+            {
+                SelectionRequested?.Invoke(this, MruItem);
+            }
         }
 
         private void RootBorder_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -125,13 +142,43 @@ namespace StartScreen.ToolWindows.Controls
 
                 _dragStartPoint = null;
 
-                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => OpenItemAsync())
-                    .FileAndForget(nameof(MruItemControl));
+                RootBorder.Focus();
+                SelectionRequested?.Invoke(this, MruItem);
             }
         }
 
         private void RootBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            if (e.ClickCount == 2 && MruItem != null && !IsButtonSource(e.OriginalSource as DependencyObject))
+            {
+                _dragStartPoint = null;
+                e.Handled = true;
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(OpenItemAsync)
+                    .FileAndForget(nameof(MruItemControl));
+            }
+        }
+
+        private static bool IsButtonSource(DependencyObject source)
+        {
+            while (source != null)
+            {
+                if (source is Button)
+                    return true;
+                source = source is ContentElement content
+                    ? ContentOperations.GetParent(content) ?? (content as FrameworkContentElement)?.Parent
+                    : VisualTreeHelper.GetParent(source);
+            }
+            return false;
+        }
+
+        private void RepositorySummary_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (MruItem != null)
+            {
+                SelectionRequested?.Invoke(this, MruItem);
+                RepositorySummaryRequested?.Invoke(this, MruItem);
+            }
         }
 
         internal void HandlePreviewMouseLeftButtonDown(MouseButtonEventArgs e)
@@ -162,6 +209,8 @@ namespace StartScreen.ToolWindows.Controls
         private void RootBorder_KeyDown(object sender, KeyEventArgs e)
         {
             if (MruItem == null)
+                return;
+            if ((e.Key == Key.Enter || e.Key == Key.Space) && IsButtonSource(e.OriginalSource as DependencyObject))
                 return;
 
             if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)

@@ -24,7 +24,7 @@ namespace StartScreen.ToolWindows
     /// <summary>
     /// Main ViewModel for the Start Screen.
     /// </summary>
-    public class StartScreenViewModel : INotifyPropertyChanged
+    public partial class StartScreenViewModel : INotifyPropertyChanged
     {
         private static readonly TimeSpan _autoRefreshInterval = TimeSpan.FromHours(4);
         private bool _isRefreshingNews;
@@ -157,7 +157,7 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        public bool IsRefreshingAny => _isRefreshingNews || _isRefreshingYouTube || _isRefreshingDevHub;
+        public bool IsRefreshingAny => _isRefreshingNews || _isRefreshingYouTube || _isRefreshingDevHub || _isRefreshingWorkspaceSignals;
 
         public bool IsYouTubeUnavailable
         {
@@ -225,6 +225,8 @@ namespace StartScreen.ToolWindows
                     refreshing.Add("news");
                 if (IsRefreshingYouTube)
                     refreshing.Add("videos");
+                if (_isRefreshingWorkspaceSignals)
+                    refreshing.Add("workspace status");
 
                 return refreshing.Count > 0
                     ? $"Refreshing {string.Join(", ", refreshing)}..."
@@ -280,19 +282,24 @@ namespace StartScreen.ToolWindows
                     // Deselect previous
                     if (_selectedMruItem != null)
                     {
+                        _selectedMruItem.PropertyChanged -= SelectedMruItem_PropertyChanged;
                         _selectedMruItem.IsSelected = false;
                     }
 
                     _selectedMruItem = value;
+                    _repositoryScopeOverride = null;
 
                     // Select new
                     if (_selectedMruItem != null)
                     {
                         _selectedMruItem.IsSelected = true;
+                        _selectedMruItem.PropertyChanged += SelectedMruItem_PropertyChanged;
                     }
 
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(HasSelectedMruItem));
+                    OnPropertyChanged(nameof(WorkSectionTitle));
+                    OnPropertyChanged(nameof(SelectedRepository));
                 }
             }
         }
@@ -300,7 +307,7 @@ namespace StartScreen.ToolWindows
         /// <summary>
         /// Whether an MRU item is currently selected.
         /// </summary>
-        public bool HasSelectedMruItem => _selectedMruItem != null;
+        public bool HasSelectedMruItem => _selectedMruItem != null || _repositoryScopeOverride != null;
 
         /// <summary>
         /// True when a Visual Studio update is available.
@@ -453,6 +460,7 @@ namespace StartScreen.ToolWindows
         internal StartScreenViewModel(CancellationToken shutdownToken)
         {
             _shutdownToken = shutdownToken;
+            _repositorySummaries = new Services.DevHub.DevHubRepoSummaryService(shutdownToken);
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             MruItems = new ObservableCollection<MruItem>();
             PinnedItems = new ObservableCollection<MruItem>();
@@ -465,13 +473,6 @@ namespace StartScreen.ToolWindows
             _allMruItems = new ObservableCollection<MruItem>();
             _discoverySectionTitle = "Discover what's new";
             _discoverySectionVersion = string.Empty;
-
-            // Tip / suggested-extension initialization is deferred until MRU has painted.
-            // The first call into TipProvider/SuggestedExtensionProvider triggers static
-            // initializers that read embedded resources synchronously, and
-            // InstalledExtensionChecker.IsInstalled hits the VS private registry hive.
-            // Doing all of that on the UI thread inside the ctor is what trips the
-            // "this extension delayed VS startup" InfoBar.
 
             FeedStore.FeedsChanged += OnFeedsChanged;
         }
@@ -500,9 +501,19 @@ namespace StartScreen.ToolWindows
                 _newsRefreshCancellation?.Cancel();
                 _youTubeRefreshCancellation?.Cancel();
                 _mruMetadataCancellation?.Cancel();
+                _repositorySummaries.CancelPendingRequests();
+                _serviceHealthExpiryTimer?.Stop();
                 _autoRefreshTimer?.Change(Timeout.Infinite, Timeout.Infinite);
             }
 
+            bool wasRefreshingWorkspace = _isRefreshingWorkspaceSignals;
+            _isRefreshingWorkspaceSignals = false;
+            _workspaceSignalsGeneration++;
+            if (wasRefreshingWorkspace)
+            {
+                OnPropertyChanged(nameof(IsRefreshingAny));
+                OnPropertyChanged(nameof(UnifiedRefreshStatus));
+            }
             IsRefreshingNews = false;
             IsRefreshingYouTube = false;
         }
@@ -535,8 +546,14 @@ namespace StartScreen.ToolWindows
 
         internal void SetMruItems(IEnumerable<MruItem> mruItems)
         {
+            string selectedPath = SelectedMruItem?.Path;
             _allMruItems = new ObservableCollection<MruItem>(
                 mruItems ?? Enumerable.Empty<MruItem>());
+            if (selectedPath != null)
+            {
+                SelectedMruItem = _allMruItems.FirstOrDefault(item =>
+                    string.Equals(item.Path, selectedPath, StringComparison.OrdinalIgnoreCase));
+            }
             RefreshMruCollections();
         }
 
@@ -605,6 +622,7 @@ namespace StartScreen.ToolWindows
                     await Task.WhenAll(
                         MruService.PopulateGitStatusAsync(items, refreshCancellation.Token),
                         MruService.PopulateExistenceAsync(items, refreshCancellation.Token));
+                    await RefreshRepositorySummariesAsync(items, refreshCancellation.Token);
                 }
                 catch (OperationCanceledException) when (refreshCancellation.IsCancellationRequested)
                 {
@@ -630,16 +648,6 @@ namespace StartScreen.ToolWindows
 
                 await TaskScheduler.Default;
 
-                var tipIndex = DateTime.Now.DayOfYear % TipProvider.TipCount;
-                var currentTip = TipProvider.GetTipOfTheDay();
-
-                var extensionIndex = DateTime.Now.DayOfYear % SuggestedExtensionProvider.SuggestionCount;
-                var suggestedExtension = SuggestedExtensionProvider.GetSuggestionOfTheDay();
-                if (suggestedExtension != null)
-                {
-                    suggestedExtension.IsInstalled = InstalledExtensionChecker.IsInstalled(suggestedExtension.Id);
-                }
-
                 FeedStore.StartWatching();
                 _autoRefreshTimer ??= new Timer(
                     OnAutoRefreshTimerTick,
@@ -650,10 +658,6 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 _autoRefreshTimer.Change(_autoRefreshInterval, _autoRefreshInterval);
-                _currentTipIndex = tipIndex;
-                CurrentTip = currentTip;
-                _currentExtensionIndex = extensionIndex;
-                CurrentSuggestedExtension = suggestedExtension;
 
                 lock (_cancellationSync)
                 {
@@ -702,7 +706,7 @@ namespace StartScreen.ToolWindows
         /// <summary>
         /// Loads MRU data from VS's MRU store for initial display.
         /// MRU is loaded first so it appears in the UI as quickly as possible.
-        /// News, YouTube, tips, and the extension suggestion are handled by
+        /// News and YouTube are handled by
         /// RefreshInBackgroundAsync (called immediately after _loadTask completes),
         /// so there is no need to read those caches here.
         /// </summary>
@@ -725,6 +729,8 @@ namespace StartScreen.ToolWindows
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            _showSolutionsOnly = options.ShowSolutionsOnly;
+            OnPropertyChanged(nameof(ShowSolutionsOnly));
             SetMruItems(allItems);
             StartupDiagnostics.Mark("MRU displayed");
         }
@@ -1272,11 +1278,10 @@ namespace StartScreen.ToolWindows
                 cancellationToken.ThrowIfCancellationRequested();
 
                 IVsSetupCompositionService setupService = await VS.GetServiceAsync<SVsSetupCompositionService, IVsSetupCompositionService>();
-                if (setupService != null && setupService.IsManifestRefreshedAndUpdateAvailable)
-                {
-                    await Task.Delay(2000, cancellationToken);
-                    IsUpdateAvailable = true;
-                }
+                IsUpdateAvailable = setupService?.IsManifestRefreshedAndUpdateAvailable == true;
+                UpdateAvailableText = IsUpdateAvailable && !string.IsNullOrWhiteSpace(setupService.ChannelProductVersion)
+                    ? $"VS {setupService.ChannelProductVersion} update available"
+                    : "VS update available";
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -1469,9 +1474,7 @@ namespace StartScreen.ToolWindows
                 return;
             }
 
-            var filtered = _allMruItems.Where(item =>
-                item.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                item.Path.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+            var filtered = _allMruItems.Where(item => MatchesMruFilter(item, query, ShowSolutionsOnly))
                 .ToList();
 
             // Bulk-replace to fire a single CollectionChanged.Reset per collection
@@ -1510,11 +1513,11 @@ namespace StartScreen.ToolWindows
         {
             var pinned = _allMruItems.Where(i => i.IsPinned).ToList();
             var unpinnedVs = _allMruItems
-                .Where(i => !i.IsPinned && !i.IsFromExtendedList)
+                .Where(i => !i.IsPinned && !i.IsFromExtendedList && MatchesMruFilter(i, null, ShowSolutionsOnly))
                 .OrderByDescending(i => i.LastAccessed)
                 .ToList();
             var unpinnedExtended = _allMruItems
-                .Where(i => !i.IsPinned && i.IsFromExtendedList)
+                .Where(i => !i.IsPinned && i.IsFromExtendedList && MatchesMruFilter(i, null, ShowSolutionsOnly))
                 .OrderByDescending(i => i.LastAccessed)
                 .ToList();
 
