@@ -457,10 +457,14 @@ namespace StartScreen.ToolWindows
         {
         }
 
-        internal StartScreenViewModel(CancellationToken shutdownToken)
+        internal StartScreenViewModel(CancellationToken shutdownToken,
+            Func<CancellationToken, Task<ServiceHealthStatus>> getServiceHealthStatusAsync = null,
+            Func<JoinableTaskFactory> getServiceHealthTaskFactory = null)
         {
             _shutdownToken = shutdownToken;
             _repositorySummaries = new Services.DevHub.DevHubRepoSummaryService(shutdownToken);
+            _getServiceHealthStatusAsync = getServiceHealthStatusAsync ?? ServiceHealthService.GetStatusAsync;
+            _getServiceHealthTaskFactory = getServiceHealthTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             MruItems = new ObservableCollection<MruItem>();
             PinnedItems = new ObservableCollection<MruItem>();
@@ -502,7 +506,8 @@ namespace StartScreen.ToolWindows
                 _youTubeRefreshCancellation?.Cancel();
                 _mruMetadataCancellation?.Cancel();
                 _repositorySummaries.CancelPendingRequests();
-                _serviceHealthExpiryTimer?.Stop();
+                _serviceHealthRefreshCancellation?.Cancel();
+                _serviceHealthRefreshTimer?.Stop();
                 _autoRefreshTimer?.Change(Timeout.Infinite, Timeout.Infinite);
             }
 
@@ -575,13 +580,13 @@ namespace StartScreen.ToolWindows
         }
 
         private CancellationTokenSource ReplaceRefreshCancellation(
-            ref CancellationTokenSource refreshCancellation)
+            ref CancellationTokenSource refreshCancellation, CancellationToken cancellationToken = default)
         {
             lock (_cancellationSync)
             {
                 refreshCancellation?.Cancel();
                 refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                    _lifetimeCancellation.Token);
+                    _lifetimeCancellation.Token, cancellationToken);
                 return refreshCancellation;
             }
         }

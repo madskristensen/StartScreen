@@ -24,7 +24,10 @@ namespace StartScreen.ToolWindows
         private bool _isRefreshingWorkspaceSignals;
         private int _workspaceSignalsGeneration;
         private int _repositorySummaryGeneration;
-        private System.Windows.Threading.DispatcherTimer _serviceHealthExpiryTimer;
+        private readonly Func<CancellationToken, Task<ServiceHealthStatus>> _getServiceHealthStatusAsync;
+        private readonly Func<JoinableTaskFactory> _getServiceHealthTaskFactory;
+        private CancellationTokenSource _serviceHealthRefreshCancellation;
+        private System.Windows.Threading.DispatcherTimer _serviceHealthRefreshTimer;
 
         public string WorkSectionTitle => _repositoryScopeOverride?.Repo ?? SelectedMruItem?.Name ?? "Your work";
 
@@ -113,32 +116,63 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async Task RefreshServiceHealthAsync(CancellationToken cancellationToken)
+        internal async Task RefreshServiceHealthAsync(CancellationToken cancellationToken)
         {
-            _serviceHealthExpiryTimer?.Stop();
-            SetServiceHealth("Checking service status...", "Checking the public Visual Studio service status.", false, isChecking: true);
-            var status = await ServiceHealthService.GetStatusAsync(cancellationToken);
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-            SetServiceHealth(status.StatusText, $"{status.Details}\nChecked {status.CheckedAtUtc.ToLocalTime():g}.",
-                status.State == ServiceHealthState.Healthy && !status.IsStale);
-            if (status.State != ServiceHealthState.Unknown && !status.IsStale)
+            var taskFactory = _getServiceHealthTaskFactory();
+            await taskFactory.SwitchToMainThreadAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            CancellationTokenSource refreshCancellation =
+                ReplaceRefreshCancellation(ref _serviceHealthRefreshCancellation, cancellationToken);
+            _serviceHealthRefreshTimer?.Stop();
+            try
             {
-                if (_serviceHealthExpiryTimer == null)
+                SetServiceHealth("Checking service status...", "Checking the public Visual Studio service status.", false, isChecking: true);
+                var status = await _getServiceHealthStatusAsync(refreshCancellation.Token);
+                await taskFactory.SwitchToMainThreadAsync(refreshCancellation.Token);
+                refreshCancellation.Token.ThrowIfCancellationRequested();
+                SetServiceHealth(status.StatusText, $"{status.Details}\nChecked {status.CheckedAtUtc.ToLocalTime():g}.",
+                    status.State == ServiceHealthState.Healthy && !status.IsStale);
+            }
+            catch (OperationCanceledException ex) when (refreshCancellation.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await taskFactory.SwitchToMainThreadAsync();
+                if (!refreshCancellation.IsCancellationRequested)
+                    SetServiceHealth("Service status unavailable", "Unable to refresh Visual Studio service status. Retrying automatically in five minutes. Open the status page for current information.", false);
+            }
+            finally
+            {
+                await taskFactory.SwitchToMainThreadAsync();
+                CompleteRefresh(ref _serviceHealthRefreshCancellation, refreshCancellation, () =>
                 {
-                    _serviceHealthExpiryTimer = new System.Windows.Threading.DispatcherTimer
+                    if (cancellationToken.IsCancellationRequested || GetBackgroundCancellationToken().IsCancellationRequested)
+                        return;
+
+                    if (_serviceHealthRefreshTimer == null)
                     {
-                        Interval = TimeSpan.FromMinutes(5),
-                    };
-                    _serviceHealthExpiryTimer.Tick += (sender, args) => ExpireServiceHealth();
-                }
-                _serviceHealthExpiryTimer.Start();
+                        _serviceHealthRefreshTimer = new System.Windows.Threading.DispatcherTimer();
+                        _serviceHealthRefreshTimer.Tick += ServiceHealthRefreshTimer_Tick;
+                    }
+                    _serviceHealthRefreshTimer.Interval = TimeSpan.FromMinutes(5);
+                    _serviceHealthRefreshTimer.Start();
+                });
             }
         }
 
-        internal void ExpireServiceHealth()
+        private void ServiceHealthRefreshTimer_Tick(object sender, EventArgs e)
         {
-            _serviceHealthExpiryTimer?.Stop();
-            SetServiceHealth("Service status out of date", "Refresh to check the current public Visual Studio service status.", false);
+            _serviceHealthRefreshTimer.Stop();
+            CancellationToken cancellationToken = GetBackgroundCancellationToken();
+            if (cancellationToken.IsCancellationRequested)
+                return;
+
+            var taskFactory = _getServiceHealthTaskFactory();
+            taskFactory.RunAsync(() => RefreshServiceHealthAsync(cancellationToken))
+                .Task.Forget();
         }
 
         private async Task RefreshRepositorySummariesAsync(IEnumerable<MruItem> items, CancellationToken cancellationToken)

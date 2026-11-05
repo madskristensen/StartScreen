@@ -214,20 +214,6 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void ExpiredServiceHealth_DoesNotKeepShowingHealthy()
-        {
-            var model = new StartScreenViewModel();
-            model.SetServiceHealth("No incidents", "Checked recently", true);
-            Assert.IsTrue(model.IsServiceHealthy);
-
-            model.ExpireServiceHealth();
-
-            Assert.IsFalse(model.IsServiceHealthy);
-            Assert.AreEqual("Service status out of date", model.ServiceHealthText);
-            StringAssert.Contains(model.ServiceHealthDetails, "Refresh");
-        }
-
-        [TestMethod]
         [DataRow(780d, true, 460d, false, 1, 1)]
         [DataRow(900d, true, 560d, false, 1, 1)]
         [DataRow(1600d, true, 560d, false, 3, 3)]
