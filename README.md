@@ -59,6 +59,8 @@ work:
 Recent projects and folders come from Visual Studio's current Recent Projects
 list, even when they are missing from the legacy MRU store. Removing or clearing
 entries also updates that list.
+Recent items expand with their content and share the page's right-edge scrollbar;
+there is no separate scrollbar inside the recent list.
 
 **Find anything instantly.** Type a few characters and the search filter
 narrows your list in real time. Pin the projects you care about most so
@@ -266,7 +268,10 @@ always starts with the full view.
 
 By default the Dev Hub shows issues and pull requests that "involve" your GitHub
 account. Click the gear icon next to the Dev Hub header to enter a custom
-GitHub search query. The extension prepends `is:issue` or `is:pr`
+GitHub search query under **Custom search query (GitHub)**. Advanced connection
+and search options are collapsed by default to keep account status and display
+preferences easy to scan. Expand **Connection options** to change Azure DevOps
+authentication, enter a PAT, or add a server. The extension prepends `is:issue` or `is:pr`
 automatically, so you only need to provide the filtering part.
 
 Use the `{login}` placeholder to reference the authenticated username.

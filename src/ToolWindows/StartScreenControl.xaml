@@ -32,7 +32,6 @@
         <local:RefreshingToOpacityConverter x:Key="RefreshingToOpacityConverter"/>
         <local:CountToVisibilityConverter x:Key="CountToVisibilityConverter"/>
         <local:ColumnCountToWidthConverter x:Key="ColumnCountToWidthConverter"/>
-        <local:ViewportHeightConverter x:Key="ViewportHeightConverter"/>
         <CollectionViewSource x:Key="GroupedMruItemsView"
                               Source="{Binding VisibleMruItems}">
             <CollectionViewSource.GroupDescriptions>
@@ -332,7 +331,6 @@
                 <Grid>
                     <ListBox x:Name="MruPanel"
                              ItemsSource="{Binding Source={StaticResource GroupedMruItemsView}}"
-                             MaxHeight="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource ViewportHeightConverter}, ConverterParameter=240}"
                              VerticalAlignment="Top"
                              VerticalContentAlignment="Top"
                              Background="Transparent"
@@ -340,7 +338,7 @@
                              Focusable="False"
                              ScrollViewer.CanContentScroll="True"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.VerticalScrollBarVisibility="Disabled"
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"

@@ -181,6 +181,64 @@ namespace StartScreen.Test
             Assert.AreEqual(HorizontalAlignment.Stretch, item.HorizontalContentAlignment);
         }
 
+        [STATestMethod]
+        public void RecentItems_ExpandWithGroupedContentAndUseOnlyThePageScrollbar()
+        {
+            var document = ReadLayoutXaml("StartScreenControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var definition = new XElement(document.Descendants(p + "ListBox")
+                .Single(element => element.Attribute(x + "Name")?.Value == "MruPanel"));
+            Assert.IsNull(definition.Attribute("MaxHeight"));
+            Assert.AreEqual("Disabled", definition.Attribute("ScrollViewer.VerticalScrollBarVisibility")!.Value);
+            definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            definition.Attribute("ItemsSource")!.Remove();
+            foreach (var attribute in definition.Attributes().Where(attribute => attribute.Value.Contains("_", StringComparison.Ordinal)).ToArray())
+                attribute.Remove();
+            definition.Element(p + "ListBox.ItemTemplate")!.ReplaceWith(new XElement(p + "ListBox.ItemTemplate",
+                new XElement(p + "DataTemplate", new XElement(p + "Border", new XAttribute("Height", "32")))));
+            var list = (ListBox)XamlReader.Parse(definition.ToString());
+            var items = Enumerable.Range(0, 60).Select(index => new Models.MruItem
+            {
+                Name = "Project" + index,
+                Path = $@"C:\Project{index}\App.sln",
+                IsPinned = index < 3,
+                LastAccessed = DateTime.Now.AddDays(-index),
+            }).ToArray();
+            var view = CollectionViewSource.GetDefaultView(items);
+            view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(Models.MruItem.DisplayGroup)));
+            list.ItemsSource = view;
+            var pageDefinition = new XElement(document.Descendants(p + "ScrollViewer")
+                .Single(element => element.Attribute(x + "Name")?.Value == "PageScroll"));
+            pageDefinition.RemoveNodes();
+            pageDefinition.Attribute("PreviewMouseWheel")!.Remove();
+            pageDefinition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            var page = (ScrollViewer)XamlReader.Parse(pageDefinition.ToString());
+            page.Content = list;
+            void Layout()
+            {
+                page.Measure(new Size(360, 300));
+                page.Arrange(new Rect(0, 0, 360, 300));
+                page.UpdateLayout();
+            }
+
+            Layout();
+
+            Assert.IsGreaterThan(60 * 32d, list.ActualHeight);
+            Assert.IsGreaterThan(0d, page.ScrollableHeight);
+            var inner = System.Windows.Media.VisualTreeHelper.GetChild(list, 0) as Border;
+            Assert.IsNotNull(inner);
+            Assert.IsInstanceOfType<ScrollViewer>(inner.Child);
+            var innerScroll = (ScrollViewer)inner.Child;
+            Assert.AreEqual(0d, innerScroll.ScrollableHeight);
+
+            page.ScrollToEnd();
+            Layout();
+
+            Assert.AreEqual(page.ScrollableHeight, page.VerticalOffset, 0.01);
+            Assert.AreEqual(0d, innerScroll.VerticalOffset);
+        }
+
         [TestMethod]
         public void AzureDevOpsSettings_OfferVsAuthenticationAndSeparateOptionalPatEntry()
         {
@@ -198,6 +256,68 @@ namespace StartScreen.Test
             var help = document.Descendants(p + "TextBlock").Single(element => element.Attribute(x + "Name")?.Value == "AdoAuthenticationHelpText");
             Assert.AreEqual("Collapsed", help.Attribute("Visibility")!.Value);
             Assert.AreEqual("Wrap", help.Attribute("TextWrapping")!.Value);
+        }
+
+        [STATestMethod]
+        [DataRow(360d)]
+        [DataRow(520d)]
+        public void DevHubSettings_KeepStatusVisibleAndAdvancedOptionsCollapsed(double width)
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var definition = new XElement(document.Descendants(p + "Border")
+                .Single(element => element.Attribute(x + "Name")?.Value == "SettingsPanel"));
+            definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            definition.SetAttributeValue("Visibility", "Visible");
+            var events = new[] { "Click", "SelectionChanged", "KeyDown", "PasswordChanged", "TextChanged", "LostFocus" };
+            foreach (var attribute in definition.DescendantsAndSelf().Attributes()
+                .Where(attribute => events.Contains(attribute.Name.LocalName)
+                    || attribute.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)).ToArray())
+                attribute.Remove();
+            foreach (var image in definition.Descendants().Where(element => element.Name.LocalName == "CrispImage").ToArray())
+                image.ReplaceWith(new XElement(p + "Border", new XAttribute("Width", "12"), new XAttribute("Height", "12")));
+
+            var panel = (Border)XamlReader.Parse(definition.ToString());
+            var connections = (Expander)panel.FindName("AdoConnectionOptions");
+            var search = (Expander)panel.FindName("SearchQueryOptions");
+            var query = (TextBox)panel.FindName("SearchQueryTextBox");
+            var servers = (ItemsControl)panel.FindName("AdoServersList");
+            var display = (Grid)panel.FindName("DisplaySettingsGrid");
+            var defaultTab = (ComboBox)panel.FindName("DefaultTabComboBox");
+            var sortOrder = (ComboBox)panel.FindName("SortOrderComboBox");
+            void Layout()
+            {
+                panel.Measure(new Size(width, double.PositiveInfinity));
+                panel.Arrange(new Rect(0, 0, width, panel.DesiredSize.Height));
+                panel.UpdateLayout();
+            }
+
+            Layout();
+
+            Assert.AreEqual(new Thickness(16), panel.Padding);
+            Assert.IsFalse(connections.IsExpanded);
+            Assert.IsFalse(search.IsExpanded);
+            Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)search.Template.FindName("ExpandSite", search)).Visibility);
+            Assert.AreEqual(Visibility.Visible, servers.Visibility);
+            Assert.AreSame(connections.Parent, servers.Parent, "Connection status must remain outside the collapsed controls.");
+            Assert.AreEqual(Visibility.Visible, defaultTab.Visibility);
+            Assert.AreEqual(Visibility.Visible, sortOrder.Visibility);
+            Assert.AreSame(display, defaultTab.Parent);
+            Assert.AreSame(display, sortOrder.Parent);
+            Assert.AreEqual(1, Grid.GetColumn(defaultTab));
+            Assert.AreEqual(1, Grid.GetColumn(sortOrder));
+            Assert.AreEqual(defaultTab.ActualWidth, sortOrder.ActualWidth, 0.01);
+            Assert.IsGreaterThan(100d, defaultTab.ActualWidth, "Preference controls must remain usable in the narrow pane.");
+            var collapsedHeight = panel.DesiredSize.Height;
+
+            connections.IsExpanded = true;
+            search.IsExpanded = true;
+            Layout();
+
+            Assert.AreEqual(Visibility.Visible, ((FrameworkElement)search.Template.FindName("ExpandSite", search)).Visibility);
+            Assert.AreEqual(Visibility.Visible, ((TextBlock)panel.FindName("AddAdoServerLink")).Visibility);
+            Assert.IsGreaterThan(collapsedHeight, panel.DesiredSize.Height);
         }
 
         [STATestMethod]

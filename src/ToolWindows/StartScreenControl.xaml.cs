@@ -848,13 +848,9 @@ namespace StartScreen.ToolWindows
         {
             if (FindAncestor<ListBox>(e.OriginalSource as DependencyObject) == MruPanel)
             {
-                ScrollViewer mruScroll = FindFirstControl<ScrollViewer>(MruPanel);
-                if (mruScroll != null && mruScroll.ScrollableHeight > 0)
-                {
-                    mruScroll.ScrollToVerticalOffset(mruScroll.VerticalOffset - e.Delta);
-                    e.Handled = true;
-                    return;
-                }
+                PageScroll.ScrollToVerticalOffset(PageScroll.VerticalOffset - e.Delta);
+                e.Handled = true;
+                return;
             }
 
             if (Keyboard.Modifiers == ModifierKeys.Shift && ContentScroll != null && ContentScroll.ScrollableWidth > 0)
@@ -1444,24 +1440,6 @@ namespace StartScreen.ToolWindows
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         {
             throw new NotImplementedException();
-        }
-    }
-
-    public class ViewportHeightConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            var height = value is double actualHeight ? actualHeight : 0;
-            var offset = double.TryParse(parameter?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
-                ? parsed
-                : 0;
-
-            return Math.Max(180, height - offset);
-        }
-
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            throw new NotSupportedException();
         }
     }
 

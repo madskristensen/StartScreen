@@ -174,7 +174,7 @@
         <!-- Settings panel (toggled by gear button) -->
         <Border x:Name="SettingsPanel" Visibility="Collapsed"
                 Margin="0 0 0 8"
-                Padding="8"
+                Padding="16"
                 CornerRadius="4"
                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
                 BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
@@ -204,27 +204,27 @@
                 <StackPanel>
                 <!-- Accounts section -->
                 <TextBlock Text="Accounts"
-                           FontSize="11"
+                           FontSize="12"
                            FontWeight="SemiBold"
-                           Margin="0 0 0 6"/>
-                <StackPanel x:Name="ConnectedGitHubStatus" Margin="0 0 0 4">
-                    <StackPanel Orientation="Horizontal">
-                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.StatusOK}"
-                                            Width="12" Height="12"
-                                            Margin="0 0 4 0"
-                                            VerticalAlignment="Center"/>
-                        <TextBlock x:Name="GitHubConnectedStatusText"
-                                   Text="GitHub: connected"
-                                   FontSize="11"
-                                   Opacity="0.6"/>
-                        <TextBlock FontSize="11" Margin="8 0 0 0">
+                           Margin="0 0 24 12"/>
+                <StackPanel x:Name="ConnectedGitHubStatus" Margin="0 0 0 12">
+                    <DockPanel LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Right" FontSize="11" Margin="12 0 0 0">
                             <Hyperlink Click="GitHubSignOut_Click"
                                        Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                                 Sign out
                             </Hyperlink>
                         </TextBlock>
-                    </StackPanel>
-                    <StackPanel x:Name="GitHubAccountSelectionPanel" Orientation="Horizontal" Margin="16 4 0 0">
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.StatusOK}"
+                                            Width="12" Height="12"
+                                            Margin="0 0 6 0"
+                                            VerticalAlignment="Center"/>
+                        <TextBlock x:Name="GitHubConnectedStatusText"
+                                   Text="GitHub: connected"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                    <StackPanel x:Name="GitHubAccountSelectionPanel" Orientation="Horizontal" Margin="18 8 0 0">
                         <TextBlock Text="Use account"
                                    FontSize="10"
                                    Opacity="0.6"
@@ -290,25 +290,12 @@
                     </TextBlock>
                 </StackPanel>
                 <!-- Azure DevOps section: cloud + on-prem servers -->
-                <TextBlock Text="Azure DevOps" FontSize="11" FontWeight="SemiBold" Margin="0 4 0 4"/>
-                <TextBlock FontSize="11" Margin="0 0 0 4" TextWrapping="Wrap">
-                    <Hyperlink Click="ConnectAdo_Click"
-                               ToolTip="Use the account selected in Visual Studio's Azure Service Authentication settings. No PAT is required."
-                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                        Use Visual Studio account (Entra ID)
-                    </Hyperlink>
-                    <Run Text=" or "/>
-                    <Hyperlink Click="ShowCloudAdoPatEntry_Click"
-                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                        use a PAT...
-                    </Hyperlink>
-                </TextBlock>
                 <TextBlock x:Name="AdoAuthenticationHelpText" Visibility="Collapsed"
                            FontSize="11" Opacity="0.8" TextWrapping="Wrap" Margin="0 0 0 6"/>
                 <ItemsControl x:Name="AdoServersList" Focusable="False">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="0 0 0 3">
+                            <Grid Margin="0 0 0 8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
@@ -317,12 +304,11 @@
                                 <imaging:CrispImage Grid.Column="0"
                                                     Moniker="{Binding StatusMoniker}"
                                                     Width="12" Height="12"
-                                                    Margin="0 0 4 0"
+                                                    Margin="0 0 6 0"
                                                     VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="1"
                                            Text="{Binding DisplayText}"
                                            FontSize="11"
-                                           Opacity="0.8"
                                            VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis"/>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal">
@@ -359,6 +345,22 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <Expander x:Name="AdoConnectionOptions" Header="Connection options" IsExpanded="False"
+                          FontSize="11" Margin="0 4 0 0">
+                    <StackPanel Margin="18 10 0 0">
+                <TextBlock FontSize="11" Margin="0 0 0 10" TextWrapping="Wrap">
+                    <Hyperlink Click="ConnectAdo_Click"
+                               ToolTip="Use the account selected in Visual Studio's Azure Service Authentication settings. No PAT is required."
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                        Use Visual Studio account (Entra ID)
+                    </Hyperlink>
+                    <Run Text=" or "/>
+                    <Hyperlink Click="ShowCloudAdoPatEntry_Click"
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                        use a PAT...
+                    </Hyperlink>
+                </TextBlock>
 
                 <!-- PAT entry for an existing server (revealed when "Sign in" / "Change" is clicked) -->
                 <StackPanel x:Name="AdoPatEntryPanel" Visibility="Collapsed" Margin="0 4 0 4">
@@ -467,21 +469,18 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Separator between accounts and search query -->
+                    </StackPanel>
+                </Expander>
+
+                <!-- Separator between accounts and preferences -->
                 <Border BorderThickness="0 0 0 1"
                         BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
-                        Margin="0 4 0 8"/>
+                        Margin="0 16 0 16"/>
 
                 <!-- Search query section -->
-                <TextBlock Text="Custom search query (GitHub)"
-                           FontSize="11"
-                           FontWeight="SemiBold"
-                           Margin="0 0 0 4"/>
-                <TextBlock Text="Overrides the default query. Use {login} for your username."
-                           FontSize="10"
-                           Opacity="0.6"
-                           TextWrapping="Wrap"
-                           Margin="0 0 0 6"/>
+                <Expander x:Name="SearchQueryOptions" Header="Custom search query (GitHub)" IsExpanded="False"
+                          FontSize="11" Margin="0 0 0 16">
+                    <StackPanel Margin="18 10 0 0">
                 <Grid>
                     <TextBox x:Name="SearchQueryTextBox"
                              FontSize="11"
@@ -500,32 +499,39 @@
                                IsHitTestVisible="False"
                                VerticalAlignment="Center"/>
                 </Grid>
-                <TextBlock Text="Leave empty to use the default (issues/PRs involving you). &quot;is:issue&quot; or &quot;is:pr&quot; is added automatically."
+                <TextBlock Text="Use {login} for your username. Leave empty for issues and PRs involving you. is:issue or is:pr is added automatically."
                            FontSize="10"
                            Opacity="0.5"
                            TextWrapping="Wrap"
-                           Margin="0 4 0 0"/>
-
-                <!-- Separator between search query and display options -->
-                <Border BorderThickness="0 0 0 1"
-                        BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
-                        Margin="0 8 0 8"/>
+                           Margin="0 8 0 0"/>
+                    </StackPanel>
+                </Expander>
 
                 <!-- Display section -->
                 <TextBlock Text="Display"
-                           FontSize="11"
+                           FontSize="12"
                            FontWeight="SemiBold"
-                           Margin="0 0 0 6"/>
+                           Margin="0 0 0 12"/>
 
+                <Grid x:Name="DisplaySettingsGrid">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                 <TextBlock Text="Default tab"
                            FontSize="11"
-                           Margin="0 0 0 2"/>
+                           VerticalAlignment="Center"
+                           Margin="0 0 16 12"/>
                 <ComboBox x:Name="DefaultTabComboBox"
+                          Grid.Column="1"
                           FontSize="11"
                           Padding="4 2"
-                          Margin="0 0 0 8"
-                          HorizontalAlignment="Left"
-                          MinWidth="160"
+                          Margin="0 0 0 12"
+                          HorizontalAlignment="Stretch"
                           SelectionChanged="DefaultTabComboBox_SelectionChanged"
                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                           Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
@@ -538,13 +544,15 @@
                 </ComboBox>
 
                 <TextBlock Text="Sort issues and pull requests by"
+                           Grid.Row="1"
                            FontSize="11"
-                           Margin="0 0 0 2"/>
+                           VerticalAlignment="Center"
+                           Margin="0 0 16 0"/>
                 <ComboBox x:Name="SortOrderComboBox"
+                          Grid.Row="1" Grid.Column="1"
                           FontSize="11"
                           Padding="4 2"
-                          HorizontalAlignment="Left"
-                          MinWidth="160"
+                          HorizontalAlignment="Stretch"
                           SelectionChanged="SortOrderComboBox_SelectionChanged"
                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                           Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
@@ -553,6 +561,7 @@
                     <ComboBoxItem Content="GitHub first"/>
                     <ComboBoxItem Content="Azure DevOps first"/>
                 </ComboBox>
+                </Grid>
             </StackPanel>
             </Grid>
         </Border>

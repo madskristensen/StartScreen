@@ -1170,6 +1170,7 @@ namespace StartScreen.ToolWindows.Controls
                 ? "Azure DevOps (cloud) personal access token"
                 : $"Personal access token for {host}";
             AdoPatBox.Clear();
+            AdoConnectionOptions.IsExpanded = true;
             AdoPatEntryPanel.Visibility = Visibility.Visible;
             AddAdoServerPanel.Visibility = Visibility.Collapsed;
             AddAdoServerLink.Visibility = Visibility.Visible;
