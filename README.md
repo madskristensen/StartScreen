@@ -273,6 +273,20 @@ Cached or incomplete activity is labeled, and no match is not proof of no PR.
 Hovering does not authenticate, fetch data, or invoke Copilot. Existing row-level
 branch and repository-wide counts are unchanged.
 
+When a matching workspace is actually opened in this Visual Studio instance,
+Start Screen saves a small activity checkpoint only if its loaded data is fresh,
+verified, and complete. Selecting or hovering an MRU item never advances it.
+On return, the tooltip can show up to four known changes since that visit: PR
+status, checks, unresolved-discussion counts, head commits, and workflow states of
+explicitly linked work items already loaded in Dev Hub. Missing items are not
+assumed completed, newly discovered PRs are labeled as newly present in loaded
+activity, and unknown metadata is not interpreted as a change. Comparisons require
+the same workspace path, repository, branch, accounts, query, and activity limits.
+Cached or incomplete comparisons are labeled and cannot replace a checkpoint.
+An empty comparison makes no claim that nothing changed. Checkpoints retain at
+most 500 workspace paths locally and contain no conversations or review text.
+Opens in another VS instance are recorded only if Start Screen is loaded there.
+
 **See your Git status at a glance.** Every repo shows its current branch,
 ahead/behind counts, uncommitted changes, and the last commit time - all
 loaded in the background so the UI stays snappy. Hover for the full

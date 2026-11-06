@@ -30,12 +30,24 @@ namespace StartScreen.ToolWindows
         private System.Windows.Threading.DispatcherTimer _serviceHealthRefreshTimer;
         private IReadOnlyList<DevHubPullRequest> _workspacePullRequests = Array.Empty<DevHubPullRequest>();
         private bool _workspaceActivityIncomplete;
+        private IReadOnlyList<DevHubIssue> _workspaceIssues = Array.Empty<DevHubIssue>();
+        private IReadOnlyList<WorkspaceVisitHistory.Snapshot> _workspaceVisits = Array.Empty<WorkspaceVisitHistory.Snapshot>();
+        private string _workspaceActivityContext;
+        private DateTime _workspaceActivityFetchedAtUtc;
+        private string _workspaceVisitError;
 
         internal void UpdateWorkspaceActivity(DevHubDashboard dashboard, DevHubDashboard scoped = null, bool cached = false)
         {
             var snapshots = new[] { scoped, dashboard }.Where(snapshot => snapshot?.HasAuthentication == true).ToArray();
             _workspacePullRequests = snapshots.SelectMany(snapshot => snapshot.PullRequests)
                 .GroupBy(pr => pr.WebUrl, StringComparer.Ordinal).Select(group => group.First()).ToArray();
+            _workspaceIssues = snapshots.SelectMany(snapshot => snapshot.Issues)
+                .GroupBy(issue => issue.WebUrl, StringComparer.Ordinal).Select(group => group.First()).ToArray();
+            _workspaceActivityContext = snapshots.Length == 0 ? null : string.Join(";", snapshots.SelectMany(snapshot => snapshot.Users)
+                .Select(user => user.Host + ":" + user.IdentityId + ":" + user.Username).Distinct().OrderBy(identity => identity))
+                + "|" + string.Join(";", snapshots.Select(snapshot => (snapshot.QueryContext ?? string.Empty)
+                    + ":" + snapshot.ActivityLimit + ":" + snapshot.IncludesCompleted).Distinct().OrderBy(context => context));
+            _workspaceActivityFetchedAtUtc = snapshots.Length == 0 ? default : snapshots.Min(snapshot => snapshot.FetchedAt);
             _workspaceActivityIncomplete = cached || snapshots.Any(snapshot => snapshot.IsRefreshing
                 || snapshot.Status != DevHubActivityStatus.Success || snapshot.ActivityWarnings.Count > 0);
             RefreshWorkspaceActivity(_allMruItems?.AsEnumerable() ?? Enumerable.Empty<MruItem>());
@@ -44,7 +56,66 @@ namespace StartScreen.ToolWindows
         private void RefreshWorkspaceActivity(IEnumerable<MruItem> items)
         {
             foreach (var item in items)
+            {
                 item.ApplyBranchActivity(WorkspaceActivity.Format(item, _workspacePullRequests, _workspaceActivityIncomplete));
+                var previous = _workspaceVisits.FirstOrDefault(visit => string.Equals(visit.Path, item.Path?.TrimEnd(System.IO.Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase));
+                item.ApplyVisitChanges(_workspaceVisitError ?? (previous == null ? null : WorkspaceVisitHistory.Compare(previous,
+                    WorkspaceVisitHistory.Capture(item, _workspacePullRequests, _workspaceIssues, _workspaceActivityContext, DateTime.UtcNow),
+                    _workspaceActivityIncomplete)));
+            }
+        }
+
+        private async Task LoadWorkspaceVisitsAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var visits = await WorkspaceVisitHistory.ReadAsync(WorkspaceVisitHistory.DefaultFile, cancellationToken);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                _workspaceVisits = visits;
+                _workspaceVisitError = null;
+                RefreshWorkspaceActivity(_allMruItems?.AsEnumerable() ?? Enumerable.Empty<MruItem>());
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                _workspaceVisitError = "Workspace visit history unavailable. See the Start Screen Output pane.";
+                OutputLog.Info("Workspace", _workspaceVisitError);
+                RefreshWorkspaceActivity(_allMruItems?.AsEnumerable() ?? Enumerable.Empty<MruItem>());
+            }
+        }
+
+        internal async Task RecordWorkspaceVisitAsync(string path)
+        {
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
+                var item = _allMruItems?.FirstOrDefault(candidate => string.Equals(candidate.Path?.TrimEnd(System.IO.Path.DirectorySeparatorChar),
+                    path?.TrimEnd(System.IO.Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase));
+                if (_isDisposed || item == null || !item.HasGitBranch || item.IsDetachedHead || !item.HasRemoteUrl
+                    || string.IsNullOrEmpty(_workspaceActivityContext) || _workspaceActivityIncomplete
+                    || _workspaceActivityFetchedAtUtc < DateTime.UtcNow.AddMinutes(-15))
+                    return;
+                var snapshot = WorkspaceVisitHistory.Capture(item, _workspacePullRequests, _workspaceIssues, _workspaceActivityContext, DateTime.UtcNow);
+                await WorkspaceVisitHistory.SaveAsync(WorkspaceVisitHistory.DefaultFile, snapshot, StartScreenPackage.ShutdownToken);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
+                if (!_isDisposed)
+                {
+                    _workspaceVisits = _workspaceVisits.Where(visit => !string.Equals(visit.Path, snapshot.Path, StringComparison.OrdinalIgnoreCase))
+                        .Append(snapshot).ToArray();
+                    _workspaceVisitError = null;
+                    RefreshWorkspaceActivity([item]);
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                OutputLog.Info("Workspace", "Could not save the workspace visit checkpoint. The previous checkpoint is retained.");
+            }
         }
 
         public string WorkSectionTitle => _repositoryScopeOverride?.Repo ?? SelectedMruItem?.Name ?? "Your work";

@@ -55,7 +55,50 @@ namespace StartScreen.ToolWindows
             // waiting until the Loaded handler awaits _loadTask before binding.
             DataContext = _viewModel;
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+            Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenSolution += WorkspaceSolutionOpened;
+            Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder += WorkspaceFolderOpened;
+            Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenProject += WorkspaceProjectOpened;
             StartupDiagnostics.Mark("control created and search ready");
+        }
+
+        private void WorkspaceSolutionOpened(object sender, Microsoft.VisualStudio.Shell.Events.OpenSolutionEventArgs e)
+        {
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    var solution = await VS.Solutions.GetCurrentSolutionAsync();
+                    if (solution != null)
+                        await _viewModel.RecordWorkspaceVisitAsync(solution.FullPath);
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
+                    OutputLog.Info("Workspace", "Could not identify the opened workspace for its visit checkpoint.");
+                }
+            }).FileAndForget(nameof(StartScreenControl));
+        }
+
+        private void WorkspaceFolderOpened(object sender, Microsoft.VisualStudio.Shell.Events.FolderEventArgs e)
+        {
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(() => _viewModel.RecordWorkspaceVisitAsync(e.FolderPath))
+                .FileAndForget(nameof(StartScreenControl));
+        }
+
+        private void WorkspaceProjectOpened(object sender, Microsoft.VisualStudio.Shell.Events.OpenProjectEventArgs e)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Microsoft.VisualStudio.ErrorHandler.ThrowOnFailure(e.Hierarchy.GetCanonicalName(Microsoft.VisualStudio.VSConstants.VSITEMID_ROOT, out var path));
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => _viewModel.RecordWorkspaceVisitAsync(path))
+                    .FileAndForget(nameof(StartScreenControl));
+            }
+            catch (Exception ex)
+            {
+                ex.LogAsync().FileAndForget(nameof(StartScreenControl));
+                OutputLog.Info("Workspace", "Could not identify the opened project for its visit checkpoint.");
+            }
         }
 
         private void UserControl_Loaded(object sender, RoutedEventArgs e)
@@ -110,6 +153,9 @@ namespace StartScreen.ToolWindows
             Loaded -= UserControl_Loaded;
             Unloaded -= UserControl_Unloaded;
             _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenSolution -= WorkspaceSolutionOpened;
+            Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder -= WorkspaceFolderOpened;
+            Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenProject -= WorkspaceProjectOpened;
             DevHubPanelControl.Dispose();
             _viewModel.Dispose();
         }

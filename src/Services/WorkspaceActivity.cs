@@ -7,12 +7,12 @@ namespace StartScreen.Services
 {
     internal static class WorkspaceActivity
     {
-        internal static IReadOnlyList<DevHubPullRequest> MatchBranch(MruItem item, IEnumerable<DevHubPullRequest> pullRequests)
+        internal static IReadOnlyList<DevHubPullRequest> MatchBranch(MruItem item, IEnumerable<DevHubPullRequest> pullRequests, bool includeClosed = false)
         {
             var repository = RemoteRepoIdentifier.TryParse(item.RemoteUrl);
             if (repository == null || !item.HasGitBranch || item.IsDetachedHead)
                 return Array.Empty<DevHubPullRequest>();
-            return pullRequests.Where(pr => pr.IsOpen && repository.Equals(pr.SourceRepoIdentifier)
+            return pullRequests.Where(pr => (pr.IsOpen || includeClosed) && !string.IsNullOrEmpty(pr.WebUrl) && repository.Equals(pr.SourceRepoIdentifier)
                     && string.Equals(pr.SourceBranch, item.GitBranch, StringComparison.Ordinal))
                 .GroupBy(pr => pr.WebUrl, StringComparer.Ordinal).Select(group => group.First())
                 .OrderByDescending(pr => pr.UpdatedAt).ToArray();

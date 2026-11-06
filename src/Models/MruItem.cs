@@ -42,6 +42,18 @@ namespace StartScreen.Models
         private int? _repositoryOpenPullRequests;
         private int? _repositoryRequestedReviews;
         private string _branchActivityTooltip;
+        private string _visitChangesTooltip;
+
+        public string VisitChangesTooltip => _visitChangesTooltip;
+
+        internal void ApplyVisitChanges(string text)
+        {
+            if (_visitChangesTooltip == text)
+                return;
+            _visitChangesTooltip = text;
+            OnPropertyChanged(nameof(VisitChangesTooltip));
+            OnPropertyChanged(nameof(ToolTipText));
+        }
 
         internal string HeadCommitId { get; private set; }
         internal bool IsDetachedHead { get; private set; }
@@ -144,6 +156,7 @@ namespace StartScreen.Models
                 {
                     _gitBranch = value;
                     ApplyBranchActivity(null);
+                    ApplyVisitChanges(null);
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(HasGitBranch));
                     OnPropertyChanged(nameof(ToolTipText));
@@ -376,6 +389,8 @@ namespace StartScreen.Models
 
                 if (!string.IsNullOrEmpty(BranchActivityTooltip))
                     lines.Add(BranchActivityTooltip);
+                if (!string.IsNullOrEmpty(VisitChangesTooltip))
+                    lines.Add(VisitChangesTooltip);
 
                 return string.Join("\n", lines);
             }
@@ -464,6 +479,7 @@ namespace StartScreen.Models
                 {
                     _remoteUrl = value;
                     ApplyBranchActivity(null);
+                    ApplyVisitChanges(null);
                     _repositorySummaryText = null;
                     _repositorySummaryTooltip = null;
                     _repositoryOpenPullRequests = null;
