@@ -704,7 +704,10 @@ namespace StartScreen.Services.DevHub.Providers
                 catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
                 {
                     await ex.LogAsync();
-                    DevHubActivityRequest.Warning("Pull requests loaded, but some review and check details are unavailable. Refresh to retry.");
+                    var reason = ex is HttpRequestException || ex is JsonException ? ex.Message
+                        : ex is OperationCanceledException ? "The GitHub metadata request timed out. Try again later."
+                        : "An unexpected error occurred while reading GitHub metadata. See the extension log for details.";
+                    DevHubActivityRequest.Warning($"Pull requests loaded, but some review and check details are unavailable. {reason}");
                     cancellationToken.ThrowIfCancellationRequested();
                 }
             }
@@ -734,7 +737,16 @@ namespace StartScreen.Services.DevHub.Providers
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", credential.Token);
             request.Content = new StringContent(JsonSerializer.Serialize(new { query = query.ToString() }), Encoding.UTF8, "application/json");
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var rateLimited = (int)response.StatusCode == 429
+                    || response.Headers.TryGetValues("X-RateLimit-Remaining", out var remaining) && remaining.Contains("0");
+                var guidance = rateLimited ? "GitHub's API rate limit was reached. Wait before retrying."
+                    : response.StatusCode == System.Net.HttpStatusCode.Unauthorized ? "Reconnect the GitHub account to renew its credentials."
+                    : response.StatusCode == System.Net.HttpStatusCode.Forbidden ? "Check the GitHub account's repository and checks permissions. Refresh cannot grant missing permissions."
+                    : "GitHub could not provide metadata. Try again later.";
+                throw new HttpRequestException($"GitHub metadata returned HTTP {(int)response.StatusCode}. {guidance}");
+            }
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             cancellationToken.ThrowIfCancellationRequested();
             var hasErrors = doc.RootElement.TryGetProperty("errors", out var errors) && errors.GetArrayLength() > 0;
@@ -746,7 +758,7 @@ namespace StartScreen.Services.DevHub.Providers
                         && repository.TryGetProperty("pullRequest", out var pr) && pr.ValueKind == JsonValueKind.Object)
                     {
                         ApplyActionMetadata(authored[i], pr);
-                        if (hasErrors)
+                        if (hasErrors && errors.EnumerateArray().Any(error => AffectsPullRequest(error, i)))
                         {
                             authored[i].CanMerge = null;
                             authored[i].MergeBlockReason = "Merge readiness could not be verified because some GitHub metadata was unavailable.";
@@ -755,8 +767,38 @@ namespace StartScreen.Services.DevHub.Providers
                 }
             }
             if (hasErrors)
-                throw new JsonException("GitHub could not retrieve all pull request action metadata.");
+            {
+                var samlErrors = errors.EnumerateArray().Where(IsSamlError).ToArray();
+                if (samlErrors.Length > 0)
+                {
+                    var affected = authored.Where((pr, index) => samlErrors.Any(error => AffectsPullRequest(error, index)))
+                        .Select(pr => $"{pr.RepoIdentifier.Owner}/{pr.RepoIdentifier.Repo}#{pr.NumericId}").Distinct();
+                    OutputLog.Info("GitHub", "Review/check metadata is restricted by organization SAML SSO for "
+                        + string.Join(", ", affected) + ". Authorize the existing OAuth app under GitHub Settings > Applications > "
+                        + "Authorized OAuth Apps for that organization. Loaded pull requests remain available.");
+                }
+                var actionableErrors = errors.EnumerateArray().Where(error => !IsSamlError(error)).ToArray();
+                if (actionableErrors.Length == 0)
+                    return;
+                var messages = actionableErrors.Select(error => GetString(error, "message"))
+                    .Where(message => !string.IsNullOrWhiteSpace(message)).Distinct().Take(3)
+                    .Select(message =>
+                    {
+                        var safe = string.IsNullOrEmpty(credential.Token) ? message : message.Replace(credential.Token, "[redacted]");
+                        return safe.Length > 300 ? safe.Substring(0, 300) + "..." : safe;
+                    });
+                var details = string.Join(" ", messages);
+                throw new JsonException("GitHub could not retrieve all pull request action metadata. " + details
+                    + " Check the reported error and the account's repository/checks permissions before retrying.");
+            }
         }
+
+        private static bool IsSamlError(JsonElement error) =>
+            (GetString(error, "message") ?? string.Empty).IndexOf("SAML", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        private static bool AffectsPullRequest(JsonElement error, int index) =>
+            !error.TryGetProperty("path", out var path) || path.ValueKind != JsonValueKind.Array || path.GetArrayLength() == 0
+            || path[0].ValueKind != JsonValueKind.String || path[0].GetString() == $"r{index}";
 
         internal static void ApplyActionMetadata(DevHubPullRequest pr, JsonElement metadata)
         {

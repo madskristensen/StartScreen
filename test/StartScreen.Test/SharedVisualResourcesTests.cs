@@ -152,6 +152,32 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void SettingsSelectors_InheritTheVisualStudioComboBoxStyle()
+        {
+            var style = SharedXamlReader.ReadResources().Descendants(_presentation + "Style")
+                .Single(element => element.Attribute(_xaml + "Key")?.Value == "StartScreen.FilterSelector");
+            Assert.AreEqual("{StaticResource {x:Static shell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}",
+                style.Attribute("BasedOn")?.Value);
+            var panel = Read("DevHubPanel.xaml");
+            foreach (var name in new[] { "GitHubAccountsComboBox", "DefaultTabComboBox", "SortOrderComboBox" })
+                Assert.AreEqual("{StaticResource StartScreen.FilterSelector}", panel.Descendants(_presentation + "ComboBox")
+                    .Single(element => element.Attribute(_xaml + "Name")?.Value == name).Attribute("Style")?.Value);
+        }
+
+        [STATestMethod]
+        public void SettingsSelectors_ResolveHostStyleAndFollowThemeBrushChanges()
+        {
+            var selector = (ComboBox)SharedXamlReader.Parse("<ComboBox xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Style=\"{StaticResource StartScreen.FilterSelector}\"/>");
+            Assert.IsNotNull(selector.Style.BasedOn);
+            Assert.AreEqual(typeof(ComboBox), selector.Style.BasedOn.TargetType);
+            Assert.AreEqual(24d, selector.MinHeight);
+            selector.Resources["TestThemeBrush"] = SystemColors.ControlTextBrush;
+            Assert.AreSame(SystemColors.ControlTextBrush, selector.Foreground);
+            selector.Resources["TestThemeBrush"] = SystemColors.HighlightTextBrush;
+            Assert.AreSame(SystemColors.HighlightTextBrush, selector.Foreground);
+        }
+
+        [TestMethod]
         public void SharedInteractionPrimitives_KeepDynamicHoverAndKeyboardFocus()
         {
             var document = SharedXamlReader.ReadResources();

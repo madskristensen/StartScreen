@@ -26,7 +26,6 @@ namespace StartScreen.ToolWindows
         private readonly JoinableTask _loadTask;
         private DropIndicatorAdorner _dropAdorner;
         private readonly DevHubService _devHubService = new DevHubService();
-        private readonly AsyncLazy<DevHubDashboard> _devHubCacheTask;
         private JoinableTask _controlLoadTask;
         private bool _isInitialized;
         private bool _isSynchronizingContentHorizontalScroll;
@@ -47,8 +46,6 @@ namespace StartScreen.ToolWindows
             _viewModel = viewModel;
             _loadTask = loadTask;
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
-            _devHubCacheTask = new AsyncLazy<DevHubDashboard>(
-                () => _devHubService.LoadFromCacheAsync(_shutdownToken), StartScreenPackage.BackgroundTaskFactory);
             InitializeComponent();
             ApplyInitialMruWidth(LeftColumn, splitterPosition);
 
@@ -125,9 +122,8 @@ namespace StartScreen.ToolWindows
                 {
                     _viewModel.EnsureDeferredContentInitialized();
                     RefreshWorkspaceSignalsAsync(false).FileAndForget(nameof(StartScreenControl));
-                    await ViewModel?.RefreshInBackgroundAsync();
+                    await Task.WhenAll(LoadDevHubAsync(), ViewModel.RefreshInBackgroundAsync());
                     cancellationToken.ThrowIfCancellationRequested();
-                    await LoadDevHubAsync();
                     return;
                 }
 
@@ -703,10 +699,14 @@ namespace StartScreen.ToolWindows
                 if (!Options.Instance.DevHubEnabled)
                     return;
 
-                var cached = await _devHubCacheTask.GetValueAsync(cancellationToken);
+                var activityOptions = DevHubPanelControl.ActivityOptions;
+                await TaskScheduler.Default;
+                var cached = await _devHubService.LoadFromCacheAsync(cancellationToken, activityOptions);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (cached != null && cached.HasAuthentication)
                 {
+                    OutputLog.Info("Activity", $"Restored {cached.PullRequests.Count} PRs, {cached.Issues.Count} issues, and {cached.CiRuns.Count} builds from disk after verifying the current accounts.");
                     // Show cached data immediately (same pattern as News/MRU)
                     UpdateDevHubPanel(cached, cached: true);
                     StartupDiagnostics.Mark("Dev Hub cache displayed");

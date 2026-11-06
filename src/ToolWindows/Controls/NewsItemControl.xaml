@@ -7,6 +7,7 @@
              xmlns:catalog="clr-namespace:Microsoft.VisualStudio.Imaging;assembly=Microsoft.VisualStudio.ImageCatalog"
              xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
+             xmlns:local="clr-namespace:StartScreen.ToolWindows"
              toolkit:Themes.UseVsTheme="True"
              Style="{DynamicResource StartScreen.Root}"
              Background="Transparent"
@@ -45,17 +46,22 @@
                 <TextBlock Text="{Binding Title}"
                           Style="{StaticResource StartScreen.CardTitle}"
                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"
-                          TextWrapping="Wrap"/>
+                          TextWrapping="Wrap"
+                          TextTrimming="WordEllipsis"
+                          local:Typography.LineCount="2"
+                          ToolTip="{Binding Title}"/>
 
                 <!-- Summary -->
                 <TextBlock Text="{Binding Summary}"
                           Opacity="0.7"
                           TextWrapping="Wrap"
                           TextTrimming="WordEllipsis"
-                          Margin="0 6 0 6"/>
+                          local:Typography.LineCount="4"
+                          ToolTip="{Binding Summary}"
+                          Margin="0 6 0 0"/>
 
                 <!-- Source and Date -->
-                <StackPanel Orientation="Horizontal" Margin="{StaticResource StartScreen.MetadataSpacing}">
+                <StackPanel Orientation="Horizontal" Margin="0 2 0 0">
                     <TextBlock Text="NEW"
                                Style="{StaticResource StartScreen.StatusText}"
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"

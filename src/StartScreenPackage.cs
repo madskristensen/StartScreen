@@ -41,6 +41,7 @@ namespace StartScreen
 
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
+            await OutputLog.InitializeAsync();
             await this.RegisterCommandsAsync();
 
             // Register tool window

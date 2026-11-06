@@ -14,15 +14,19 @@ namespace StartScreen.Test
             var feeds = new[]
             {
                 new FeedInfo { Name = "Feed", Url = "https://example.com/feed", Enabled = true },
+                new FeedInfo { Name = "Disabled custom feed", Url = "https://example.com/custom", Enabled = false },
             };
 
             await FeedStore.SaveFeedsAsync(feeds, filePath);
             List<FeedInfo> restored = FeedStore.ReadFeeds(filePath);
 
-            Assert.HasCount(1, restored);
+            Assert.HasCount(2, restored);
             Assert.AreEqual("Feed", restored[0].Name);
             Assert.AreEqual("https://example.com/feed", restored[0].Url);
             Assert.IsTrue(restored[0].Enabled);
+            Assert.AreEqual("Disabled custom feed", restored[1].Name);
+            Assert.AreEqual("https://example.com/custom", restored[1].Url);
+            Assert.IsFalse(restored[1].Enabled);
             StringAssert.Contains(File.ReadAllText(filePath), "\"$schema\"");
         }
 

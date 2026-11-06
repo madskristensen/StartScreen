@@ -13,6 +13,46 @@ namespace StartScreen.Test
         [DataRow((int)ServiceHealthState.Healthy)]
         [DataRow((int)ServiceHealthState.Incident)]
         [DataRow((int)ServiceHealthState.Unknown)]
+        public void InitialRefresh_GreenIsVisibleBeforeCompletionAndOnlyChangesForNonGreen(int stateValue)
+        {
+            using var context = CreateContext();
+            var pending = new TaskCompletionSource<ServiceHealthStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var model = new StartScreenViewModel(CancellationToken.None, _ => pending.Task, () => context.Factory);
+            var changed = new List<string?>();
+            model.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+            try
+            {
+                var refresh = context.Factory.RunAsync(() => model.RefreshServiceHealthAsync(CancellationToken.None));
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.IsTrue(model.HasServiceHealthStatus);
+                Assert.IsTrue(model.IsServiceHealthy);
+                Assert.AreEqual("Visual Studio services operational", model.ServiceHealthText);
+                Assert.DoesNotContain(nameof(StartScreenViewModel.ServiceHealthText), changed);
+                Assert.DoesNotContain(nameof(StartScreenViewModel.IsServiceHealthy), changed);
+
+                var status = Status((ServiceHealthState)stateValue);
+                pending.SetResult(status);
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                refresh.Join(timeout.Token);
+
+                Assert.IsTrue(model.HasServiceHealthStatus);
+                Assert.AreEqual(stateValue == (int)ServiceHealthState.Healthy, model.IsServiceHealthy);
+                Assert.AreEqual(status.StatusText, model.ServiceHealthText);
+                Assert.AreEqual(stateValue != (int)ServiceHealthState.Healthy,
+                    changed.Contains(nameof(StartScreenViewModel.ServiceHealthText)));
+                Assert.DoesNotContain(nameof(StartScreenViewModel.HasServiceHealthStatus), changed);
+            }
+            finally
+            {
+                pending.TrySetCanceled();
+                model.Dispose();
+            }
+        }
+
+        [STATestMethod]
+        [DataRow((int)ServiceHealthState.Healthy)]
+        [DataRow((int)ServiceHealthState.Incident)]
+        [DataRow((int)ServiceHealthState.Unknown)]
         public void Refresh_UnchangedStatusStaysVisibleWithoutNotifications(int stateValue)
         {
             using var context = CreateContext();

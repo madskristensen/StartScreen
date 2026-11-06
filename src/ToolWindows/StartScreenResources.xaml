@@ -88,7 +88,8 @@
         </Setter>
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
     </Style>
-    <Style x:Key="StartScreen.FilterSelector" TargetType="ComboBox">
+    <Style x:Key="StartScreen.FilterSelector" TargetType="ComboBox"
+           BasedOn="{StaticResource {x:Static shell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}">
         <Setter Property="local:Typography.Role" Value="Metadata"/>
         <Setter Property="Padding" Value="4 2"/>
         <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>

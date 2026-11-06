@@ -33,7 +33,10 @@ namespace StartScreen.Services.DevHub
         internal static void Warning(string message)
         {
             if (!string.IsNullOrWhiteSpace(message))
+            {
+                OutputLog.Info("Activity", message);
                 _current.Value?._messages.TryAdd(message, 0);
+            }
         }
 
         internal static void Failed(bool unauthorized = false)

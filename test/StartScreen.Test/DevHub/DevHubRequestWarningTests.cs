@@ -65,10 +65,11 @@ namespace StartScreen.Test.DevHub
                 await release.Task;
                 return new[] { "item" };
             }, items => items.Length > 0, CancellationToken.None);
-            await started.Task;
             DevHubActivityResult<string[]> clean;
             try
             {
+                Assert.AreSame(started.Task, await Task.WhenAny(started.Task, warned, Task.Delay(TimeSpan.FromSeconds(10))),
+                    "The warning producer must signal readiness, not fail early or hang.");
                 clean = await DevHubActivityRequest.RunAsync(() => Task.FromResult(Array.Empty<string>()),
                     items => items.Length > 0, CancellationToken.None);
             }

@@ -15,10 +15,10 @@ namespace StartScreen.ToolWindows
     {
         private bool _showSolutionsOnly;
         private string _updateAvailableText = "VS update available";
-        private string _serviceHealthText = "Service status not checked";
-        private string _serviceHealthDetails = "Refresh to check Visual Studio service health.";
-        private bool _isServiceHealthy;
-        private bool _hasServiceHealthStatus;
+        private string _serviceHealthText = "Visual Studio services operational";
+        private string _serviceHealthDetails = "Assuming normal service while the initial background health check completes.";
+        private bool _isServiceHealthy = true;
+        private bool _hasServiceHealthStatus = true;
         private RemoteRepoIdentifier _repositoryScopeOverride;
         private readonly DevHubRepoSummaryService _repositorySummaries;
         private bool _isRefreshingWorkspaceSignals;

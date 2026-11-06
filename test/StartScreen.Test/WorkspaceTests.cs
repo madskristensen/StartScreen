@@ -1,12 +1,165 @@
+using System.Collections.Specialized;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
 using StartScreen.ToolWindows;
+using StartScreen.ToolWindows.Controls;
 
 namespace StartScreen.Test
 {
     [TestClass]
     public class WorkspaceTests
     {
+        [STATestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public void ActivityIssues_ReentryRetainsListCollectionAndGeneratedContainers(bool personal)
+        {
+            var activity = new DevHubActivityViewModel();
+            var issues = Enumerable.Range(0, 3).Select(index => new DevHubIssue
+            {
+                Title = "Task " + index, WebUrl = "https://example.com/issues/" + index,
+                IsAssignedToCurrentUser = personal,
+            }).ToArray();
+            activity.UpdateRepositoryActivity([], issues, [], [], DevHubSortOrder.MostRecent, false);
+            var host = new StackPanel();
+            var original = new ItemsControl
+            {
+                Focusable = false,
+                ItemTemplate = new DataTemplate { VisualTree = new FrameworkElementFactory(typeof(TextBlock)) },
+            };
+            host.Children.Add(original);
+            var presentation = new DevHubActivityList(original);
+            activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
+            activity.SetIncomingFilter(DevHubWorkItemKind.Issue);
+            var items = personal ? activity.MyWorkItems : activity.IncomingItems;
+            var list = presentation.Show(DevHubWorkItemKind.Issue, false, items);
+            LayoutActivity(host);
+            var source = list.ItemsSource;
+            var containers = Enumerable.Range(0, 3).Select(list.ItemContainerGenerator.ContainerFromIndex).ToArray();
+            Assert.IsTrue(containers.All(container => container != null));
+            var changes = new List<NotifyCollectionChangedAction>();
+            ((INotifyCollectionChanged)source).CollectionChanged += (_, e) => changes.Add(e.Action);
+
+            for (var visit = 0; visit < 3; visit++)
+            {
+                activity.SetMyWorkFilter(DevHubWorkItemKind.PullRequest, false);
+                activity.SetIncomingFilter(DevHubWorkItemKind.PullRequest);
+                var other = presentation.Show(DevHubWorkItemKind.PullRequest, false,
+                    personal ? activity.MyWorkItems : activity.IncomingItems);
+                LayoutActivity(host);
+                Assert.AreEqual(Visibility.Collapsed, list.Visibility);
+                activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
+                activity.SetIncomingFilter(DevHubWorkItemKind.Issue);
+                Assert.AreSame(list, presentation.Show(DevHubWorkItemKind.Issue, false, items));
+                LayoutActivity(host);
+                Assert.AreEqual(Visibility.Collapsed, other.Visibility);
+                Assert.AreSame(source, list.ItemsSource);
+                CollectionAssert.AreEqual(containers,
+                    Enumerable.Range(0, 3).Select(list.ItemContainerGenerator.ContainerFromIndex).ToArray());
+            }
+            Assert.IsEmpty(changes);
+            Assert.HasCount(2, host.Children);
+        }
+
+        [STATestMethod]
+        public void ActivityIssues_HiddenListSynchronizesRealUpdatesBeforeReentry()
+        {
+            var activity = new DevHubActivityViewModel();
+            var issue = new DevHubIssue { Title = "Old", WebUrl = "https://example.com/issues/1", IsAssignedToCurrentUser = true };
+            activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
+            activity.UpdateRepositoryActivity([], [issue], [], [], DevHubSortOrder.MostRecent, false);
+            var host = new StackPanel();
+            var original = new ItemsControl();
+            host.Children.Add(original);
+            var presentation = new DevHubActivityList(original);
+            var list = presentation.Show(DevHubWorkItemKind.Issue, false, activity.MyWorkItems);
+            var source = list.ItemsSource;
+            presentation.Show(DevHubWorkItemKind.PullRequest, false, []);
+            activity.SetMyWorkFilter(DevHubWorkItemKind.PullRequest, false);
+            issue.Title = "Updated";
+            activity.UpdateRepositoryActivity([], [issue], [], [], DevHubSortOrder.MostRecent, false);
+            activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
+
+            Assert.AreSame(list, presentation.Show(DevHubWorkItemKind.Issue, false, activity.MyWorkItems));
+            Assert.AreSame(source, list.ItemsSource);
+            Assert.AreEqual("Updated", list.Items.Cast<DevHubWorkItem>().Single().Title);
+
+            presentation.Show(DevHubWorkItemKind.PullRequest, false, []);
+            activity.UpdateRepositoryActivity([], [], [], [], DevHubSortOrder.MostRecent, false);
+            presentation.Show(DevHubWorkItemKind.Issue, false, activity.MyWorkItems);
+            Assert.IsEmpty(list.Items);
+        }
+
+        [STATestMethod]
+        public void ActivityIssues_CachedListsHonorSortCompletedAttentionAndIdentityChanges()
+        {
+            var now = DateTime.UtcNow;
+            var github = new DevHubIssue
+            {
+                Title = "GitHub", WebUrl = "https://github.com/o/r/issues/1", State = "open",
+                RepoIdentifier = RemoteRepoIdentifier.TryParse("https://github.com/o/r.git"),
+                IsAssignedToCurrentUser = true, UpdatedAt = now,
+            };
+            var ado = new DevHubIssue
+            {
+                Title = "ADO", WebUrl = "https://dev.azure.com/o/p/_workitems/edit/1", State = "active",
+                RepoIdentifier = RemoteRepoIdentifier.TryParse("https://dev.azure.com/o/p/_git/r"),
+                IsAssignedToCurrentUser = true, UpdatedAt = now.AddHours(-1),
+            };
+            var completed = new DevHubIssue
+            {
+                Title = "Completed", WebUrl = "https://github.com/o/r/issues/2", IsClosed = true,
+                IsAssignedToCurrentUser = true, UpdatedAt = now.AddHours(-2),
+            };
+            var activity = new DevHubActivityViewModel();
+            activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
+            activity.UpdateRepositoryActivity([], [github, ado, completed], [], [], DevHubSortOrder.MostRecent, false);
+            var host = new StackPanel();
+            var original = new ItemsControl();
+            host.Children.Add(original);
+            var presentation = new DevHubActivityList(original);
+            var list = presentation.Show(DevHubWorkItemKind.Issue, false, activity.MyWorkItems);
+            var source = list.ItemsSource;
+            var cards = list.Items.Cast<DevHubWorkItem>().ToArray();
+            var changes = new List<NotifyCollectionChangedAction>();
+            ((INotifyCollectionChanged)source).CollectionChanged += (_, e) => changes.Add(e.Action);
+            presentation.Show(DevHubWorkItemKind.PullRequest, false, []);
+
+            activity.Refresh([], DevHubSortOrder.AzureDevOpsFirst, true);
+            presentation.Show(DevHubWorkItemKind.Issue, false, activity.MyWorkItems);
+            CollectionAssert.AreEqual(new[] { "ADO", "GitHub", "Completed" }, list.Items.Cast<DevHubWorkItem>().Select(item => item.Title).ToArray());
+            Assert.AreSame(cards[1], list.Items[0]);
+            Assert.AreSame(cards[0], list.Items[1]);
+            Assert.AreSame(source, list.ItemsSource);
+            Assert.DoesNotContain(NotifyCollectionChangedAction.Reset, changes);
+
+            activity.SetMyWorkFilter(DevHubWorkItemKind.All, true);
+            var attention = presentation.Show(DevHubWorkItemKind.All, true, activity.MyWorkItems);
+            CollectionAssert.AreEqual(new[] { "GitHub", "ADO" }, attention.Items.Cast<DevHubWorkItem>().Select(item => item.Title).ToArray());
+            github.IsAssignedToCurrentUser = false;
+            ado.IsAssignedToCurrentUser = false;
+            activity.Refresh([], DevHubSortOrder.AzureDevOpsFirst, false);
+            presentation.Show(DevHubWorkItemKind.All, true, activity.MyWorkItems);
+            Assert.IsEmpty(attention.Items);
+            activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
+            Assert.AreSame(list, presentation.Show(DevHubWorkItemKind.Issue, false, activity.MyWorkItems));
+            Assert.IsEmpty(list.Items);
+            activity.SetIncomingFilter(DevHubWorkItemKind.Issue);
+            CollectionAssert.AreEqual(new[] { "ADO", "GitHub" }, activity.IncomingItems.Select(item => item.Title).ToArray());
+            Assert.AreEqual(DevHubWorkItemKind.Issue, activity.MyWorkKind);
+            Assert.IsFalse(activity.MyWorkAttention);
+        }
+
+        private static void LayoutActivity(FrameworkElement host)
+        {
+            host.Measure(new Size(800, 1000));
+            host.Arrange(new Rect(0, 0, 800, 1000));
+            host.UpdateLayout();
+        }
+
         [TestMethod]
         [DataRow(DevHubDefaultTab.Issues, DevHubDefaultTab.Incoming)]
         [DataRow(DevHubDefaultTab.PullRequests, DevHubDefaultTab.Incoming)]
@@ -452,7 +605,9 @@ namespace StartScreen.Test
             var inventory = DevHubWorkItem.GetMyWork(prs, issues, sessions, DevHubSortOrder.AzureDevOpsFirst,
                 includeCompleted: true, builds: builds);
             var attention = DevHubWorkItem.Filter(inventory, DevHubWorkItemKind.All, true);
-            var view = ToolWindows.Controls.DevHubPanel.CreateWorkItemView(attention);
+            var activity = new DevHubActivityViewModel();
+            activity.UpdateRepositoryActivity(prs, issues.ToArray(), builds, sessions, DevHubSortOrder.AzureDevOpsFirst, true);
+            var view = CollectionViewSource.GetDefaultView(activity.MyWorkItems);
 
             Assert.AreEqual(2, inventory.Count(item => item.IsCompleted));
             Assert.IsFalse(attention.Any(item => item.IsBuild));
@@ -508,7 +663,7 @@ namespace StartScreen.Test
             })) != 0).ToArray();
 
             Assert.IsTrue(items.All(item => !item.NeedsAttention));
-            Assert.AreEqual((DevHubWorkItemKind)expected, ToolWindows.Controls.DevHubPanel.GetInitialMyWorkKind(items));
+            Assert.AreEqual((DevHubWorkItemKind)expected, DevHubActivityViewModel.GetInitialMyWorkKind(items));
         }
 
         [STATestMethod]
@@ -519,22 +674,31 @@ namespace StartScreen.Test
                     WebUrl = "https://example.com/pr/1", UpdatedAt = DateTime.UtcNow }], [],
                 [new CopilotActivitySession { Id = "session", IsResponding = true }]);
 
-            Assert.AreEqual(DevHubWorkItemKind.All, ToolWindows.Controls.DevHubPanel.GetInitialMyWorkKind(items));
+            Assert.AreEqual(DevHubWorkItemKind.All, DevHubActivityViewModel.GetInitialMyWorkKind(items));
         }
 
         [STATestMethod]
         public void WorkViews_DisplayCardsWithoutSectionHeadingsOrLosingItems()
         {
-            var own = DevHubWorkItem.GetMyWork(
-                [new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, WebUrl = "https://example.com/1" }],
-                [new DevHubIssue { IsAssignedToCurrentUser = true, State = "open", WebUrl = "https://example.com/2" }],
-                [new CopilotActivitySession { Id = "session", PendingQuestions = 1 }]);
-
-            var view = ToolWindows.Controls.DevHubPanel.CreateWorkItemView(own);
+            var prs = new[]
+            {
+                new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, WebUrl = "https://example.com/1" }
+            };
+            var issues = new[]
+            {
+                new DevHubIssue { IsAssignedToCurrentUser = true, State = "open", WebUrl = "https://example.com/2" }
+            };
+            var sessions = new[] { new CopilotActivitySession { Id = "session", PendingQuestions = 1 } };
+            var own = DevHubWorkItem.GetMyWork(prs, issues, sessions);
+            var activity = new DevHubActivityViewModel();
+            activity.SetMyWorkFilter(DevHubWorkItemKind.All, false);
+            activity.UpdateRepositoryActivity(prs, issues, [], sessions, DevHubSortOrder.MostRecent, false);
+            var view = CollectionViewSource.GetDefaultView(activity.MyWorkItems);
 
             Assert.IsNull(view.Groups);
-            CollectionAssert.AreEqual(own.ToArray(), view.Cast<DevHubWorkItem>().ToArray());
-            Assert.AreEqual(own.Count, view.Count);
+            CollectionAssert.AreEqual(activity.MyWorkItems.ToArray(), view.Cast<DevHubWorkItem>().ToArray());
+            CollectionAssert.AreEqual(own.Select(item => item.Title).ToArray(), view.Cast<DevHubWorkItem>().Select(item => item.Title).ToArray());
+            Assert.AreEqual(own.Count, view.Cast<DevHubWorkItem>().Count());
         }
 
         [TestMethod]

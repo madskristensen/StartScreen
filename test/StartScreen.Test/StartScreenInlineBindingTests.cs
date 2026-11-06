@@ -542,7 +542,7 @@ namespace StartScreen.Test
         [STATestMethod]
         [DataRow(true)]
         [DataRow(false)]
-        public void ServiceHealth_HidesUncheckedAndCheckingStatusButShowsCompletedResults(bool healthy)
+        public void ServiceHealth_ShowsInitialGreenAndKeepsItVisibleWhileChecking(bool healthy)
         {
             var document = ReadLayoutXaml("StartScreenControl.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -570,17 +570,21 @@ namespace StartScreen.Test
                 TargetNullValue = binding.TargetNullValue,
             });
             expression.UpdateTarget();
-            Assert.IsFalse(model.HasServiceHealthStatus);
-            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+            Assert.IsTrue(model.HasServiceHealthStatus);
+            Assert.IsTrue(model.IsServiceHealthy);
+            Assert.AreEqual("Visual Studio services operational", model.ServiceHealthText);
+            Assert.AreEqual(Visibility.Visible, panel.Visibility);
 
             model.SetServiceHealth("Checking service status...", "Checking", false, isChecking: true);
             expression.UpdateTarget();
-            Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
+            Assert.AreEqual(Visibility.Visible, panel.Visibility);
+            Assert.IsTrue(model.IsServiceHealthy);
+            Assert.IsEmpty(changed);
 
             model.SetServiceHealth("Completed", "Checked recently", healthy);
             expression.UpdateTarget();
             Assert.IsTrue(model.HasServiceHealthStatus);
-            CollectionAssert.Contains(changed, nameof(StartScreenViewModel.HasServiceHealthStatus));
+            Assert.DoesNotContain(nameof(StartScreenViewModel.HasServiceHealthStatus), changed);
             Assert.AreEqual(healthy, model.IsServiceHealthy);
             Assert.AreEqual(Visibility.Visible, panel.Visibility);
 
@@ -876,16 +880,15 @@ namespace StartScreen.Test
                 IsAuthoredByCurrentUser = own, CiStatus = "failure",
                 UpdatedAt = DateTime.UtcNow,
             };
-            var inventory = own ? Models.DevHub.DevHubWorkItem.GetMyWork([pr], [], [])
-                : Models.DevHub.DevHubWorkItem.GetIncoming([pr], [], []);
-            var items = Models.DevHub.DevHubWorkItem.Filter(inventory,
-                attention ? Models.DevHub.DevHubWorkItemKind.All : Models.DevHub.DevHubWorkItemKind.PullRequest, attention);
+            var activity = new ToolWindows.Controls.DevHubActivityViewModel();
+            activity.SetMyWorkFilter(attention ? Models.DevHub.DevHubWorkItemKind.All : Models.DevHub.DevHubWorkItemKind.PullRequest, attention);
+            activity.UpdateRepositoryActivity([pr], [], [], [], Models.DevHub.DevHubSortOrder.MostRecent, false);
             var card = document.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "WorkItemBorder");
             var template = (DataTemplate)XamlReader.Parse(new XElement(p + "DataTemplate",
                 new XElement(p + "Border", new XAttribute("Style", card.Attribute("Style")!.Value),
                     new XAttribute("Margin", card.Attribute("Margin")!.Value),
                     new XElement(p + "TextBlock", new XAttribute("Text", "{Binding DisplayTitle}")))).ToString());
-            var view = ToolWindows.Controls.DevHubPanel.CreateWorkItemView(items);
+            var view = CollectionViewSource.GetDefaultView(own ? activity.MyWorkItems : activity.IncomingItems);
             var list = new ItemsControl { ItemsSource = view, ItemTemplate = template };
             var emptyDefinition = blade.Descendants(p + "TextBlock").Single(element =>
                 element.Attribute(x + "Name")?.Value == (own ? "MyWorkEmpty" : "IncomingEmpty"));

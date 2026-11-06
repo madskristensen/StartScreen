@@ -2,26 +2,37 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 namespace StartScreen.Models
 {
     public sealed class FeedbackTicket
     {
+        [JsonInclude]
         public long Id { get; internal set; }
+        [JsonInclude]
         public string Title { get; internal set; }
+        [JsonInclude]
         public string Url { get; internal set; }
+        [JsonInclude]
         public string State { get; internal set; }
+        [JsonInclude]
         public int Votes { get; internal set; }
+        [JsonInclude]
         public bool IsCreatedByUser { get; internal set; }
+        [JsonInclude]
         public bool IsUpvotedByUser { get; internal set; }
+        [JsonInclude]
         public DateTime UpdatedUtc { get; internal set; }
 
+        [JsonIgnore]
         public string Relationship => IsCreatedByUser
             ? (IsUpvotedByUser ? "Created and upvoted by you" : "Created by you")
             : "Upvoted by you";
 
         private string NormalizedState => new string((State ?? string.Empty).Where(char.IsLetter).ToArray()).ToLowerInvariant();
 
+        [JsonIgnore]
         public string StateText => NormalizedState switch
         {
             "new" => "New",
@@ -37,6 +48,7 @@ namespace StartScreen.Models
             _ => State,
         };
 
+        [JsonIgnore]
         public string StateColor
         {
             get
@@ -55,18 +67,21 @@ namespace StartScreen.Models
             }
         }
 
+        [JsonIgnore]
         public string Details => $"{Relationship} - {Votes} votes";
+        [JsonIgnore]
         public string UpdatedText => $"Updated {UpdatedUtc.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.CurrentCulture)}";
+        [JsonIgnore]
         public string ToolTip => $"#{Id} - {UpdatedUtc.ToLocalTime():F}";
     }
 
     internal sealed class FeedbackSnapshot
     {
-        internal long PrincipalId { get; }
-        internal IReadOnlyList<FeedbackTicket> Tickets { get; }
-        internal DateTime UpdatedUtc { get; }
+        public long PrincipalId { get; }
+        public IReadOnlyList<FeedbackTicket> Tickets { get; }
+        public DateTime UpdatedUtc { get; }
 
-        internal FeedbackSnapshot(long principalId, IReadOnlyList<FeedbackTicket> tickets, DateTime updatedUtc)
+        public FeedbackSnapshot(long principalId, IReadOnlyList<FeedbackTicket> tickets, DateTime updatedUtc)
         {
             PrincipalId = principalId;
             Tickets = tickets;

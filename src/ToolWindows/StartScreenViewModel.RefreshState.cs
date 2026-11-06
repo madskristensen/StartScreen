@@ -6,8 +6,8 @@ namespace StartScreen.ToolWindows
 {
     public partial class StartScreenViewModel
     {
-        internal SectionRefreshState NewsRefreshState { get; } = new SectionRefreshState();
-        internal SectionRefreshState VideoRefreshState { get; } = new SectionRefreshState();
+        internal SectionRefreshState NewsRefreshState => NewsSection.RefreshState;
+        internal SectionRefreshState VideoRefreshState => VideoSection.RefreshState;
         internal SectionRefreshState FeedbackRefreshState { get; } = new SectionRefreshState();
         internal SectionRefreshState DevHubRefreshState { get; } = new SectionRefreshState();
         internal SectionRefreshState WorkspaceRefreshState { get; } = new SectionRefreshState();
@@ -29,6 +29,9 @@ namespace StartScreen.ToolWindows
             state.Message = message;
             if (successfulUtc.HasValue)
                 state.LastSuccessfulRefreshUtc = successfulUtc;
+            string section = ReferenceEquals(state, FeedbackRefreshState) ? "Feedback"
+                : ReferenceEquals(state, DevHubRefreshState) ? "Activity" : "Service status";
+            OutputLog.Info(section, $"{message} (cache={cached}, stale={stale}, partial={partial}, unavailable={unavailable}).");
             NotifyRefreshStatusChanged();
         }
 

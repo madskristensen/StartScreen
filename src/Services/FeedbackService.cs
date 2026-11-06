@@ -29,23 +29,33 @@ namespace StartScreen.Services
             Timeout = TimeSpan.FromSeconds(30),
         };
         private static readonly Regex _htmlTags = new Regex("<[^>]+>", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
-        internal static FeedbackService Instance { get; } = new FeedbackService();
+        internal static FeedbackService Instance { get; } = new FeedbackService(diskCache: new FeedbackCache(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StartScreen", "FeedbackCache")));
         private readonly HttpClient _client;
         private readonly Func<CancellationToken, Task<AccessToken>> _getTokenAsync;
         private readonly Func<DateTime> _utcNow;
+        private readonly FeedbackCache _diskCache;
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
         private FeedbackSnapshot _cached;
         private string _cachedCredentialHash;
 
         internal FeedbackService(HttpClient client = null,
-            Func<CancellationToken, Task<AccessToken>> getTokenAsync = null, Func<DateTime> utcNow = null)
+            Func<CancellationToken, Task<AccessToken>> getTokenAsync = null, Func<DateTime> utcNow = null,
+            FeedbackCache diskCache = null)
         {
             _client = client ?? _httpClient;
             _getTokenAsync = getTokenAsync ?? GetVisualStudioTokenAsync;
             _utcNow = utcNow ?? (() => DateTime.UtcNow);
+            _diskCache = diskCache;
         }
 
-        internal async Task<FeedbackSnapshot> GetTicketsAsync(bool forceRefresh, CancellationToken cancellationToken)
+        internal Task<FeedbackSnapshot> GetTicketsAsync(bool forceRefresh, CancellationToken cancellationToken) =>
+            GetTicketsCoreAsync(forceRefresh, false, cancellationToken);
+
+        internal Task<FeedbackSnapshot> GetCachedTicketsAsync(CancellationToken cancellationToken) =>
+            GetTicketsCoreAsync(false, true, cancellationToken);
+
+        private async Task<FeedbackSnapshot> GetTicketsCoreAsync(bool forceRefresh, bool cacheOnly, CancellationToken cancellationToken)
         {
             await TaskScheduler.Default;
             cancellationToken.ThrowIfCancellationRequested();
@@ -64,19 +74,33 @@ namespace StartScreen.Services
                     credentialHash = Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(token.Token)));
                 // The current credential must match before a cache hit can skip identity HTTP requests.
                 if (HasFreshCache() && _cachedCredentialHash == credentialHash)
+                {
+                    OutputLog.Info("Feedback", $"Using {_cached.Tickets.Count} tickets from the in-memory cache (updated {_cached.UpdatedUtc:u}).");
                     return _cached;
+                }
 
                 using JsonDocument metadata = await SendAsync("userProperties/metadata", token.Token, null, cancellationToken);
                 long principalId = ReadId(metadata.RootElement.GetProperty("Id"));
                 // Confirm identity before reusing data, including after a VS account switch.
                 if (_cached?.PrincipalId != principalId)
                     _cached = null;
+                if (!forceRefresh && _diskCache != null && _cached == null)
+                    _cached = await _diskCache.ReadAsync(principalId, cancellationToken);
                 if (HasFreshCache())
                 {
                     _cachedCredentialHash = credentialHash;
+                    OutputLog.Info("Feedback", $"Using {_cached.Tickets.Count} cached tickets after verifying the current account (updated {_cached.UpdatedUtc:u}).");
                     return _cached;
                 }
 
+                if (cacheOnly)
+                {
+                    OutputLog.Info("Feedback", "No usable cache for the current account. The startup refresh will request the latest tickets.");
+                    return null;
+                }
+
+                OutputLog.Info("Feedback", forceRefresh ? "Refreshing from Developer Community; bypassing the cache."
+                    : "No fresh cache for the current account. Refreshing from Developer Community.");
                 var ids = new HashSet<long>();
                 long read = 0;
                 long total;
@@ -113,9 +137,14 @@ namespace StartScreen.Services
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                _cached = new FeedbackSnapshot(principalId,
+                var snapshot = new FeedbackSnapshot(principalId,
                     tickets.OrderByDescending(ticket => ticket.UpdatedUtc).ThenByDescending(ticket => ticket.Id).ToArray(), _utcNow());
+                if (_diskCache != null)
+                    await _diskCache.WriteAsync(snapshot, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                _cached = snapshot;
                 _cachedCredentialHash = credentialHash;
+                OutputLog.Info("Feedback", $"Refreshed {_cached.Tickets.Count} tickets from Developer Community.");
                 return _cached;
             }
             finally
@@ -125,7 +154,7 @@ namespace StartScreen.Services
         }
 
         private bool HasFreshCache() => _cached != null && _utcNow() >= _cached.UpdatedUtc
-            && _utcNow() - _cached.UpdatedUtc < TimeSpan.FromHours(1);
+            && _utcNow() - _cached.UpdatedUtc < TimeSpan.FromDays(7);
 
         private async Task<FeedbackTicket> GetTicketAsync(long id, long principalId, string token, CancellationToken cancellationToken)
         {

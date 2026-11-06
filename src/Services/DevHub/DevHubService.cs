@@ -352,6 +352,8 @@ namespace StartScreen.Services.DevHub
         {
             var snapshot = await fetch();
             snapshot.FetchedAt = DateTime.UtcNow;
+            OutputLog.Info("Activity", $"{key}: {snapshot.Status}; {snapshot.PullRequests.Count} PRs, {snapshot.Issues.Count} issues, "
+                + $"{snapshot.CiRuns.Count} builds, {snapshot.ActivityRepositories.Count} repositories.");
             return (key, snapshot);
         }
 

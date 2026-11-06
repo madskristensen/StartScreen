@@ -441,6 +441,130 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow(401, false, "Reconnect the GitHub account")]
+        [DataRow(403, false, "Refresh cannot grant missing permissions")]
+        [DataRow(403, true, "rate limit")]
+        [DataRow(429, false, "rate limit")]
+        [DataRow(503, false, "Try again later")]
+        public async Task OptionalMetadataHttpFailure_ExplainsCauseAndRecoveryWithoutStalingInventoryAsync(
+            int status, bool rateLimited, string expectedGuidance)
+        {
+            var fail = true;
+            using var client = Client(request =>
+            {
+                if (request.Method != HttpMethod.Post)
+                    return Query(request).Contains("author:me") ? Search([Item(1, "me")]) : Search([]);
+                if (!fail)
+                    return Json("{\"data\":{\"r0\":{\"pullRequest\":" + Metadata() + "}}}");
+                var response = new HttpResponseMessage((HttpStatusCode)status) { Content = new StringContent("{}") };
+                if (rateLimited)
+                    response.Headers.Add("X-RateLimit-Remaining", "0");
+                return response;
+            });
+            Task<DevHubActivityResult<List<DevHubPullRequest>>> FetchAsync() => DevHubActivityRequest.RunAsync(
+                () => GitHubDevHubProvider.GetUserPullRequestsAsync(client, Credential(), "me", new DevHubActivityOptions(), CancellationToken.None),
+                prs => prs.Count > 0, CancellationToken.None);
+
+            var failed = await FetchAsync();
+
+            Assert.AreEqual(DevHubActivityStatus.Success, failed.Status);
+            Assert.HasCount(1, failed.Value);
+            Assert.IsNull(failed.Value[0].CanMerge);
+            StringAssert.Contains(failed.Message, $"HTTP {status}");
+            StringAssert.Contains(failed.Message, expectedGuidance);
+            Assert.DoesNotContain("Refresh to retry", failed.Message);
+
+            fail = false;
+            var recovered = await FetchAsync();
+            Assert.AreEqual(DevHubActivityStatus.Success, recovered.Status);
+            Assert.IsNull(recovered.Message);
+            Assert.IsTrue(recovered.Value[0].CanMerge);
+        }
+
+        [TestMethod]
+        public async Task OptionalGraphQlError_ReportsReasonAndOnlyInvalidatesAffectedPullRequestAsync()
+        {
+            using var client = Client(request => request.Method == HttpMethod.Post
+                ? Json("{\"errors\":[{\"message\":\"Checks permission denied not-a-real-token\",\"path\":[\"r1\",\"pullRequest\",\"reviewDecision\"]}],"
+                    + "\"data\":{\"r0\":{\"pullRequest\":" + Metadata() + "},\"r1\":{\"pullRequest\":" + Metadata() + "}}}")
+                : Query(request).Contains("author:me") ? Search([Item(1, "me"), Item(2, "me")]) : Search([]));
+
+            var result = await DevHubActivityRequest.RunAsync(() => GitHubDevHubProvider.GetUserPullRequestsAsync(
+                client, Credential(), "me", new DevHubActivityOptions(), CancellationToken.None), prs => prs.Count > 0, CancellationToken.None);
+
+            Assert.AreEqual(DevHubActivityStatus.Success, result.Status);
+            Assert.IsTrue(result.Value.Single(pr => pr.NumericId == 1).CanMerge);
+            Assert.IsNull(result.Value.Single(pr => pr.NumericId == 2).CanMerge);
+            StringAssert.Contains(result.Message, "Checks permission denied");
+            Assert.DoesNotContain("not-a-real-token", result.Message);
+            StringAssert.Contains(result.Message, "[redacted]");
+        }
+
+        [TestMethod]
+        public async Task OptionalSamlRestriction_PreservesInventoryWithoutAPageWarningAsync()
+        {
+            using var client = Client(request => request.Method == HttpMethod.Post
+                ? Json("{\"errors\":[{\"message\":\"Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.\",\"path\":[\"r0\"]}],\"data\":{\"r0\":null}}")
+                : Query(request).Contains("author:me") ? Search([Item(1, "me")]) : Search([]));
+
+            var result = await DevHubActivityRequest.RunAsync(() => GitHubDevHubProvider.GetUserPullRequestsAsync(
+                client, Credential(), "me", new DevHubActivityOptions(), CancellationToken.None), prs => prs.Count > 0, CancellationToken.None);
+
+            Assert.AreEqual(DevHubActivityStatus.Success, result.Status);
+            Assert.HasCount(1, result.Value);
+            Assert.IsNull(result.Value[0].CanMerge);
+            Assert.IsNull(result.Message);
+        }
+
+        [TestMethod]
+        public async Task OptionalSamlRestriction_DoesNotHideOtherMetadataFailuresAsync()
+        {
+            using var client = Client(request => request.Method == HttpMethod.Post
+                ? Json("{\"errors\":[{\"message\":\"Organization SAML enforcement\",\"path\":[\"r0\"]},"
+                    + "{\"message\":\"Checks permission denied\",\"path\":[\"r1\"]}],"
+                    + "\"data\":{\"r0\":null,\"r1\":null,\"r2\":{\"pullRequest\":" + Metadata() + "}}}")
+                : Query(request).Contains("author:me") ? Search([Item(1, "me"), Item(2, "me"), Item(3, "me")]) : Search([]));
+
+            var result = await DevHubActivityRequest.RunAsync(() => GitHubDevHubProvider.GetUserPullRequestsAsync(
+                client, Credential(), "me", new DevHubActivityOptions(), CancellationToken.None), prs => prs.Count > 0, CancellationToken.None);
+
+            Assert.HasCount(3, result.Value);
+            Assert.IsNull(result.Value.Single(pr => pr.NumericId == 1).CanMerge);
+            Assert.IsNull(result.Value.Single(pr => pr.NumericId == 2).CanMerge);
+            Assert.IsTrue(result.Value.Single(pr => pr.NumericId == 3).CanMerge);
+            StringAssert.Contains(result.Message, "Checks permission denied");
+            Assert.DoesNotContain("SAML", result.Message);
+        }
+
+        [TestMethod]
+        public async Task CachedSamlWarning_IsMovedToOutputWithoutHidingOtherWarningsAsync()
+        {
+            var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "StartScreen-Saml-" + Guid.NewGuid().ToString("N"));
+            var cache = new DevHubCacheService(folder);
+            const string legacy = "Pull requests loaded. GitHub is connected. Some organizations restrict review/check details with SAML SSO.";
+            try
+            {
+                var dashboard = new DevHubDashboard();
+                dashboard.Sources["GitHub/pulls"] = new DevHubActivitySnapshot { Message = legacy };
+                dashboard.ActivityWarnings["GitHub/pulls"] = legacy;
+                dashboard.ActivityWarnings["Other"] = "Checks permission denied";
+                await cache.WriteDashboardAsync(dashboard);
+
+                var restored = await cache.ReadDashboardAsync();
+
+                Assert.IsNotNull(restored);
+                Assert.IsNull(restored.Sources["GitHub/pulls"].Message);
+                Assert.IsFalse(restored.ActivityWarnings.ContainsKey("GitHub/pulls"));
+                Assert.AreEqual("Checks permission denied", restored.ActivityWarnings["Other"]);
+            }
+            finally
+            {
+                if (System.IO.Directory.Exists(folder))
+                    System.IO.Directory.Delete(folder, true);
+            }
+        }
+
+        [TestMethod]
         public async Task OptionalGraphQlErrors_PreserveUsableMetadataButNeverClaimReadyAsync()
         {
             using var client = Client(request => request.Method == HttpMethod.Post

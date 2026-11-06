@@ -41,17 +41,28 @@ requests use a shared concurrency limit, including cancellation while queued.
 News, video, dashboard, and Copilot history caches use bounded JSON reads and
 atomic file replacement so interrupted writes preserve the previous snapshot.
 
+News and videos have focused section view models that own their inventories,
+filters, unread markers, and refresh state. Dev Hub activity presentation is
+separate from panel event handling. The screen coordinates these sections while
+preserving its existing bindings and stable item collections.
+
 Hiding the Start Screen cancels refreshes and pauses its automatic refresh timer.
 Closing the tool window permanently releases its event subscriptions, timers,
 and background-work resources; reopening creates a fresh screen instance.
 Visual Studio service health is rechecked automatically every five minutes while
-the screen is visible, including retries after failed checks. Failed or stale
+the screen is visible, including retries after failed checks. The indicator starts
+visible and green while the initial background check is pending, avoiding a layout
+shift when services are healthy. Its tooltip identifies this initial assumption.
+Checking again preserves the current indicator until a result arrives. Failed or stale
 results are shown explicitly rather than continuing to report healthy services.
 Visual Studio shutdown also cancels background work and pending dispatcher waits,
 without waiting for the Start Screen to unload or hiding it synchronously.
 Background Git fetches suppress credential prompts, honor cancellation, and time
 out after five seconds. Reopening the screen does not retry the same repository
 more than once every fifteen minutes, including failed fetch attempts.
+Git status detection uses version-matched native libraries bundled with the
+extension for x64 and ARM64 Visual Studio. No separate libgit2 installation is
+required.
 
 For startup profiling, Debug builds emit `[StartScreen startup]` trace milestones
 for control creation, loading, MRU display, and secondary content. These are
@@ -94,6 +105,8 @@ The action buttons and **All repositories** use Visual Studio's native themed
 button style, including hover, pressed, disabled, and keyboard-focus states.
 Settings disclosure headers use theme-aware text and chevrons, including when
 the Visual Studio theme changes while settings are open.
+Account, default-tab, and sort selectors share Visual Studio's native themed
+ComboBox style rather than the default Windows control template.
 All dashboard sections share semantic typography and spacing resources, scaled
 from Visual Studio's environment font. Card titles, secondary metadata, section
 headings, status badges, filter selectors, and icon actions use common styles
@@ -123,7 +136,10 @@ My work defaults to **Attention**, a mixed-type feed of all loaded
 items with a known action for you, ordered newest updated first without type
 grouping or a separate top-items limit. The count shows how many items need you.
 Type filters show their full inventories independently of Attention. There is
-no separate Needs attention checkbox. Items stay in their ownership view rather
+no separate Needs attention checkbox. Switching filters reuses each filter's
+existing cards when its data is unchanged, instead of rebuilding them on every
+tab visit. Hidden lists synchronize before display when their data changes.
+Items stay in their ownership view rather
 than appearing in a duplicate action blade. The two work blades sit side by side, with News to their right.
 Smaller windows use horizontal scrolling rather than hiding a work blade or
 moving News below it. Both views show colored review/check
@@ -144,6 +160,16 @@ visible. Status colors distinguish failures/conflicts (red), success/approval
 (green), review/discussion attention (amber), in-progress states (blue), and
 drafts or cancelled activity (muted), using Visual Studio theme resources.
 Selecting a workspace scopes these lists to that repository.
+
+If optional GitHub review or check metadata cannot load, the warning includes the
+underlying GitHub error. Credential, permission, and rate-limit failures have
+specific recovery guidance instead of repeatedly recommending Refresh. Available
+PR inventories and unaffected metadata remain visible; a successful refresh clears
+the warning.
+An organization SAML restriction on optional metadata does not mean GitHub is
+disconnected. Authorize the existing OAuth app for that organization under
+**GitHub Settings > Applications > Authorized OAuth Apps**. Refresh alone cannot
+grant organization access; the loaded pull requests remain available meanwhile.
 
 **Load more** shows loading feedback and reports when no additional activity is
 found. With a workspace selected, it refreshes that repository directly.
@@ -172,6 +198,10 @@ and more lives right next to your project list. It refreshes in the
 background and caches locally, so it's always ready and never slows you
 down.
 
+News cards reserve two lines for titles and four for descriptions, with ellipses
+for overflow and full text on hover. Pinned and unpinned cards use the same layout;
+their heights scale with Visual Studio's environment font settings.
+
 The Refresh button checks every enabled blog feed even when its local cache is
 less than four hours old. Unchanged feeds can be validated without downloading
 them again. Automatic refreshes continue to reuse fresh caches.
@@ -187,6 +217,10 @@ fully updated.
 
 Want different sources? Drop your own RSS or Atom feeds into a simple JSON
 file and Start Screen picks them up automatically - no restart needed.
+This file is the source of truth for custom sources and enabled feeds. Unused
+legacy `CustomFeeds`, `FeedSelection`, and `LastFeedRead` options have been
+removed; existing file-based feed preferences, pinned articles, and per-tab
+read timestamps are preserved.
 
 ```txt
 %USERPROFILE%\.vs\StartScreen\newsfeeds.json
@@ -232,23 +266,34 @@ upvoted appear only once. All activity pages are checked; canceled votes and
 comment reactions are excluded unless you also created or currently upvoted the
 ticket. Deleted or inaccessible tickets are omitted.
 
-Feedback loads only after you select its tab, using your signed-in Visual Studio
-account. Choose the same account you use on Developer Community under
+Feedback participates in the normal background startup refresh, without waiting
+for tab activation, using your signed-in Visual Studio account. Choose the same account
+you use on Developer Community under
 **Tools > Options > Azure Service Authentication**. No PAT or separate sign-in
 is needed. Use the main **Refresh** button to reload after changing accounts or
 to retry an unavailable service. Switching away from Feedback and back keeps
 the displayed tickets without reloading. When reopening the Start Screen,
-feedback reuses a shared in-memory cache for up to one hour, including across new
-screen instances in the same Visual Studio session. A matching, valid credential
-avoids Developer Community requests entirely. Renewed credentials recheck identity
-without downloading tickets again unless the account changed or the cache expired.
-The main **Refresh** button bypasses this cache and reloads feedback alongside
-the other data sources. Hiding the screen cancels pending requests.
+feedback first displays a verified account's cached tickets, retained for up to
+seven days across screen instances and Visual Studio sessions. The normal startup
+refresh then always requests the latest tickets and replaces the disk snapshot
+after a successful download. New sessions and renewed credentials verify identity
+before reading the account's disk snapshot. The main **Refresh** button bypasses
+cache-first display and reloads feedback alongside the other data sources.
+Hiding the screen cancels pending requests.
 
-Tokens and feedback are never written to disk. Cached feedback is held only in
-memory, isolated by the authenticated Developer Community identity, and previous
-results are cleared before refreshing. Feedback failures are shown in the tab
-and in the refresh-status details rather than presented as an empty result.
+Feedback tokens are never written to disk. Ticket snapshots are isolated by the
+authenticated Developer Community identity and encrypted on disk for the current
+Windows user. A transient startup refresh failure keeps verified cached tickets
+visible and leaves the disk snapshot intact; authentication failures clear the
+displayed tickets. Feedback failures are shown in the tab and in refresh-status
+details rather than presented as an empty result. Reopening the screen loads
+cached online activity concurrently with the other background refreshes, rather
+than waiting for news, videos, or feedback to finish.
+
+Open **View > Output > Start Screen** for diagnostics. The pane uses `Vsix.Name`
+and records timestamped refresh summaries, source counts, cache decisions,
+handled exceptions, and SAML details without automatically activating the window.
+MRU retrieval is separate and unchanged.
 
 ## Drag and drop
 
@@ -636,3 +681,15 @@ automatically.
 
 Found a bug? Have an idea? Head to the [issue tracker][repo] - pull
 requests are always welcome.
+
+### Running tests
+
+Run the complete test project in Test Explorer; the project automatically selects
+its shared runsettings file. Classes remain parallelized, and normal runs skip
+coverage instrumentation; use Analyze Code Coverage or `--collect "Code Coverage"`
+when coverage is needed. WPF tests run in the
+test-host process without a separate .NET Framework AppDomain, avoiding dispatcher
+shutdown deadlocks when the full suite finishes. Diagnostics buffer until the
+Visual Studio Output pane is initialized and do not require a running VS host.
+CI uses the same settings, stops an inactive test run after two minutes, and
+uploads the test results and hang sequence without collecting memory dumps.

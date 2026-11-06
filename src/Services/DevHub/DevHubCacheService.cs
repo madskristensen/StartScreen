@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -64,7 +65,18 @@ namespace StartScreen.Services.DevHub
 
             try
             {
-                return await AtomicJsonCache.ReadAsync<DevHubDashboard>(filePath, cancellationToken, _jsonOptions).ConfigureAwait(false);
+                var dashboard = await AtomicJsonCache.ReadAsync<DevHubDashboard>(filePath, cancellationToken, _jsonOptions).ConfigureAwait(false);
+                if (dashboard != null)
+                {
+                    foreach (var source in dashboard.Sources.Values.Where(source => IsLegacySamlWarning(source.Message)))
+                        source.Message = null;
+                    foreach (var warning in dashboard.ActivityWarnings.Where(pair => IsLegacySamlWarning(pair.Value)).ToArray())
+                    {
+                        OutputLog.Info("GitHub", warning.Value);
+                        dashboard.ActivityWarnings.Remove(warning.Key);
+                    }
+                }
+                return dashboard;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -76,6 +88,9 @@ namespace StartScreen.Services.DevHub
                 return null;
             }
         }
+
+        private static bool IsLegacySamlWarning(string message) => message?.Contains(
+            "GitHub is connected. Some organizations restrict review/check details with SAML SSO.") == true;
 
         /// <summary>
         /// Writes the dashboard data to disk cache.

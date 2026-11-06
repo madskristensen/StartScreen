@@ -201,7 +201,7 @@ namespace StartScreen.ToolWindows.Controls
             {
                 CopilotActivityStatus = _copilotCacheError ?? (_copilotAdapter.IsReady ? string.Empty : "Discovering local Copilot sessions...");
             }
-            UpdateWorkspaceActivity(_activityPullRequests, _activityIssues, _activityBuilds);
+            RefreshWorkspaceActivity();
             if (_copilotAdapter?.IsReady == true && !_copilotCacheSavedForConnection)
             {
                 _copilotCacheSavedForConnection = true;
@@ -274,7 +274,7 @@ namespace StartScreen.ToolWindows.Controls
             if (_isDisposed)
                 return;
             CopilotActivityStatus = "Local Copilot activity is disconnected.";
-            UpdateWorkspaceActivity(_activityPullRequests, _activityIssues, _activityBuilds);
+            RefreshWorkspaceActivity();
         }
 
         private async Task OpenCopilotSessionAsync(string sessionId)

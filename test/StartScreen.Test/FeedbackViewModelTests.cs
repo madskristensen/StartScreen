@@ -17,7 +17,7 @@ namespace StartScreen.Test
     public class FeedbackViewModelTests
     {
         [STATestMethod]
-        public void Feedback_IsLazyUntilTheTabIsSelected()
+        public void Feedback_StartupRefreshPopulatesTicketsBeforeTabActivation()
         {
             using var context = CreateContext();
             var requests = 0;
@@ -31,7 +31,7 @@ namespace StartScreen.Test
                 model.ForceRefreshFeedback();
                 Assert.AreEqual(0, requests);
 
-                model.EnsureFeedbackLoaded();
+                context.Factory.Run(() => model.RefreshFeedbackInBackgroundAsync());
 
                 Assert.AreEqual(1, requests);
                 Assert.HasCount(1, model.FeedbackTickets);
@@ -58,6 +58,180 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
+        public void Startup_ShowsVerifiedCacheBeforeOnlineRefreshCompletes()
+        {
+            using var context = CreateContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var cached = new FeedbackSnapshot(7, Snapshot(7).Tickets, DateTime.UtcNow.AddDays(-3));
+            var requests = 0;
+            var model = Model(context, (force, _) =>
+            {
+                Assert.IsTrue(force);
+                requests++;
+                return pending.Task;
+            }, _ => Task.FromResult(cached));
+            try
+            {
+                context.Factory.Run(async () =>
+                {
+                    Task refresh = model.RefreshFeedbackInBackgroundAsync();
+                    Assert.AreEqual(7L, model.FeedbackTickets.Single().Id);
+                    Assert.IsTrue(model.FeedbackRefreshState.IsCached);
+                    Assert.IsTrue(model.IsRefreshingFeedback);
+                    Assert.IsFalse(refresh.IsCompleted);
+                    model.EnsureFeedbackLoaded();
+                    Assert.AreEqual(1, requests);
+
+                    pending.SetResult(new FeedbackSnapshot(7, Snapshot(8).Tickets, DateTime.UtcNow));
+                    await refresh.WithCancellation(timeout.Token);
+
+                    Assert.AreEqual(8L, model.FeedbackTickets.Single().Id);
+                    Assert.IsFalse(model.FeedbackRefreshState.IsCached);
+                    Assert.IsFalse(model.IsRefreshingFeedback);
+                });
+            }
+            finally
+            {
+                pending.TrySetCanceled();
+                model.CancelBackgroundWork();
+            }
+        }
+
+        [STATestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public void StartupFailure_RetainsVerifiedCacheOnlyForTransientFailures(bool authentication)
+        {
+            using var context = CreateContext();
+            var cached = Snapshot(7);
+            Exception failure = authentication ? new UnauthorizedAccessException("Test sign-in failure") : new HttpRequestException("Test network failure");
+            var model = Model(context, (_, _) => Task.FromException<FeedbackSnapshot>(failure), _ => Task.FromResult(cached));
+            try
+            {
+                context.Factory.Run(() => model.RefreshFeedbackInBackgroundAsync());
+
+                Assert.AreEqual(!authentication, model.FeedbackRefreshState.IsCached);
+                Assert.AreEqual(!authentication, model.FeedbackRefreshState.IsStale);
+                Assert.AreEqual(authentication, model.FeedbackRefreshState.IsUnavailable);
+                Assert.IsFalse(model.IsRefreshingFeedback);
+                if (authentication)
+                {
+                    Assert.IsEmpty(model.FeedbackTickets);
+                    StringAssert.Contains(model.FeedbackStatus, "Sign in or reauthenticate");
+                }
+                else
+                {
+                    Assert.AreSame(cached.Tickets.Single(), model.FeedbackTickets.Single());
+                    StringAssert.Contains(model.FeedbackStatus, "Showing cached feedback");
+                }
+            }
+            finally
+            {
+                model.CancelBackgroundWork();
+            }
+        }
+
+        [STATestMethod]
+        public void CanceledCacheRead_CannotPublishAfterReopening()
+        {
+            using var context = CreateContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var cacheReads = 0;
+            var onlineRequests = 0;
+            var model = Model(context, (_, _) =>
+            {
+                onlineRequests++;
+                return Task.FromResult(Snapshot(8));
+            }, _ => ++cacheReads == 1 ? pending.Task : Task.FromResult(Snapshot(8)));
+            try
+            {
+                var previous = context.Factory.RunAsync(() => model.RefreshFeedbackInBackgroundAsync());
+                model.CancelBackgroundWork();
+                model.ActivateBackgroundWork();
+                context.Factory.Run(() => model.RefreshFeedbackInBackgroundAsync());
+                pending.SetResult(Snapshot(7));
+                previous.Join(timeout.Token);
+
+                Assert.AreEqual(8L, model.FeedbackTickets.Single().Id);
+                Assert.AreEqual(1, onlineRequests, "A canceled cache read must not start another online request.");
+                Assert.IsFalse(model.IsRefreshingFeedback);
+            }
+            finally
+            {
+                pending.TrySetCanceled();
+                model.CancelBackgroundWork();
+            }
+        }
+
+        [STATestMethod]
+        public void Feedback_TabActivationSharesTheTrackedStartupRefresh()
+        {
+            using var context = CreateContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var requests = 0;
+            var model = Model(context, (force, _) =>
+            {
+                Assert.IsTrue(force);
+                requests++;
+                return pending.Task;
+            });
+            try
+            {
+                context.Factory.Run(async () =>
+                {
+                    Task refresh = model.RefreshFeedbackInBackgroundAsync();
+                    model.EnsureFeedbackLoaded();
+                    Assert.AreSame(refresh, model.RefreshFeedbackInBackgroundAsync());
+
+                    Assert.AreEqual(1, requests);
+                    Assert.IsTrue(model.IsRefreshingFeedback);
+                    Assert.IsFalse(refresh.IsCompleted);
+                    pending.SetResult(Snapshot(7));
+                    await refresh.WithCancellation(timeout.Token);
+
+                    Assert.AreEqual(7L, model.FeedbackTickets.Single().Id);
+                    Assert.IsFalse(model.IsRefreshingFeedback);
+                });
+            }
+            finally
+            {
+                pending.TrySetCanceled();
+                model.CancelBackgroundWork();
+            }
+        }
+
+        [STATestMethod]
+        public void Feedback_ReopeningCanResumeLoadingBeforeStartupRefreshRuns()
+        {
+            using var context = CreateContext();
+            var requests = 0;
+            var model = Model(context, (force, _) =>
+            {
+                Assert.IsTrue(force);
+                return Task.FromResult(Snapshot(++requests));
+            });
+            try
+            {
+                context.Factory.Run(() => model.RefreshFeedbackInBackgroundAsync());
+                model.CancelBackgroundWork();
+                Assert.IsEmpty(model.FeedbackTickets);
+                model.ActivateBackgroundWork();
+                model.EnsureFeedbackLoaded();
+
+                Assert.AreEqual(2, requests);
+                Assert.AreEqual(2L, model.FeedbackTickets.Single().Id);
+                Assert.IsFalse(model.IsRefreshingFeedback);
+            }
+            finally
+            {
+                model.CancelBackgroundWork();
+            }
+        }
+
+        [STATestMethod]
         public void ForceRefreshFeedback_BypassesTheCacheAfterTabActivation()
         {
             using var context = CreateContext();
@@ -76,7 +250,7 @@ namespace StartScreen.Test
                 model.ForceRefreshFeedback();
                 model.EnsureFeedbackLoaded();
 
-                CollectionAssert.AreEqual(new[] { false, true }, requests);
+                CollectionAssert.AreEqual(new[] { true, true }, requests);
                 Assert.AreEqual(2L, model.FeedbackTickets.Single().Id);
                 Assert.IsFalse(model.IsRefreshingFeedback);
             }
@@ -404,8 +578,10 @@ namespace StartScreen.Test
         private static JoinableTaskContext CreateContext() => new JoinableTaskContext(Thread.CurrentThread,
             new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
 
-        private static StartScreenViewModel Model(JoinableTaskContext context, Func<bool, CancellationToken, Task<FeedbackSnapshot>> getFeedbackAsync) =>
-            new StartScreenViewModel(CancellationToken.None, getFeedbackAsync: getFeedbackAsync, getFeedbackTaskFactory: () => context.Factory);
+        private static StartScreenViewModel Model(JoinableTaskContext context, Func<bool, CancellationToken, Task<FeedbackSnapshot>> getFeedbackAsync,
+            Func<CancellationToken, Task<FeedbackSnapshot>>? getCachedFeedbackAsync = null) =>
+            new StartScreenViewModel(CancellationToken.None, getFeedbackAsync: getFeedbackAsync, getFeedbackTaskFactory: () => context.Factory,
+                getCachedFeedbackAsync: getCachedFeedbackAsync);
 
         private static FeedbackSnapshot Snapshot(long id) => new FeedbackSnapshot(id,
             new[] { new FeedbackTicket { Id = id, Title = "Ticket", IsCreatedByUser = true } }, DateTime.UtcNow);

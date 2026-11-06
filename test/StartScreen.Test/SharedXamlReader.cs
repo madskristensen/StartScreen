@@ -20,6 +20,9 @@ namespace StartScreen.Test
         public static object Parse(string xaml, bool localResources = false)
         {
             var resources = ReadResources().Root!;
+            resources.AddFirst(new XElement(_presentation + "Style",
+                new XAttribute(_xaml + "Key", "TestComboBoxStyle"), new XAttribute("TargetType", "ComboBox"),
+                new XElement(_presentation + "Setter", new XAttribute("Property", "MinHeight"), new XAttribute("Value", "24"))));
             var target = XElement.Parse(xaml);
             target.Attribute(_xaml + "Key")?.Remove();
             var wrapper = new XElement(_presentation + "ContentControl",
@@ -50,6 +53,8 @@ namespace StartScreen.Test
                     attribute.Value = "{DynamicResource TestEnvironmentFontFamily}";
                 else if (attribute.Value.Contains("VsFonts.EnvironmentFontSizeKey"))
                     attribute.Value = "{DynamicResource TestEnvironmentFontSize}";
+                else if (attribute.Value == "{StaticResource {x:Static shell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}")
+                    attribute.Value = "{StaticResource TestComboBoxStyle}";
             }
 
             // Only host-owned resources are substituted; all shared styles and their references are parsed by WPF.

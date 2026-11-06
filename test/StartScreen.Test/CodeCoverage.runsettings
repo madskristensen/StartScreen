@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RunSettings>
+  <RunConfiguration>
+    <!-- WPF shutdown can deadlock when unloading an isolated .NET Framework AppDomain. -->
+    <DisableAppDomain>true</DisableAppDomain>
+  </RunConfiguration>
   <DataCollectionRunSettings>
     <DataCollectors>
-      <DataCollector friendlyName="Code Coverage">
+      <DataCollector friendlyName="Code Coverage" enabled="false">
         <Configuration>
           <Format>Cobertura</Format>
           <IncludeTestAssembly>False</IncludeTestAssembly>

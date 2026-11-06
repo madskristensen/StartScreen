@@ -10,41 +10,57 @@ namespace StartScreen.Services
     internal static class AtomicJsonCache
     {
         internal const int MaxBytes = 4 * 1024 * 1024;
-        private static readonly SemaphoreSlim _writeGate = new(1, 1);
+        private static readonly SemaphoreSlim _accessGate = new(1, 1);
 
         internal static async Task<T> ReadAsync<T>(string path, CancellationToken cancellationToken = default, JsonSerializerOptions options = null)
         {
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!File.Exists(path))
-                return default;
-
-            using var stream = OpenRead(path);
-            var bytes = new byte[stream.Length];
-            var offset = 0;
-            while (offset < bytes.Length)
+            await _accessGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                var count = await stream.ReadAsync(bytes, offset, bytes.Length - offset, cancellationToken).ConfigureAwait(false);
-                if (count == 0)
-                    throw new EndOfStreamException("The cache snapshot was truncated.");
-                offset += count;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!File.Exists(path))
+                    return default;
+
+                using var stream = OpenRead(path);
+                var bytes = new byte[stream.Length];
+                var offset = 0;
+                while (offset < bytes.Length)
+                {
+                    var count = await stream.ReadAsync(bytes, offset, bytes.Length - offset, cancellationToken).ConfigureAwait(false);
+                    if (count == 0)
+                        throw new EndOfStreamException("The cache snapshot was truncated.");
+                    offset += count;
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                var value = JsonSerializer.Deserialize<T>(bytes, options);
+                cancellationToken.ThrowIfCancellationRequested();
+                return value;
             }
-            cancellationToken.ThrowIfCancellationRequested();
-            var value = JsonSerializer.Deserialize<T>(bytes, options);
-            cancellationToken.ThrowIfCancellationRequested();
-            return value;
+            finally
+            {
+                _accessGate.Release();
+            }
         }
 
         internal static T Read<T>(string path, JsonSerializerOptions options = null)
         {
-            if (!File.Exists(path))
-                return default;
-            using var stream = OpenRead(path);
-            using var reader = new BinaryReader(stream);
-            var bytes = reader.ReadBytes((int)stream.Length);
-            if (bytes.Length != stream.Length)
-                throw new EndOfStreamException("The cache snapshot was truncated.");
-            return JsonSerializer.Deserialize<T>(bytes, options);
+            _accessGate.Wait();
+            try
+            {
+                if (!File.Exists(path))
+                    return default;
+                using var stream = OpenRead(path);
+                using var reader = new BinaryReader(stream);
+                var bytes = reader.ReadBytes((int)stream.Length);
+                if (bytes.Length != stream.Length)
+                    throw new EndOfStreamException("The cache snapshot was truncated.");
+                return JsonSerializer.Deserialize<T>(bytes, options);
+            }
+            finally
+            {
+                _accessGate.Release();
+            }
         }
 
         private static FileStream OpenRead(string path)
@@ -59,7 +75,7 @@ namespace StartScreen.Services
         internal static async Task WriteAsync<T>(string path, T value, CancellationToken cancellationToken = default, JsonSerializerOptions options = null)
         {
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
-            await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _accessGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             string temporaryFile = null;
             try
             {
@@ -82,7 +98,7 @@ namespace StartScreen.Services
                 }
                 finally
                 {
-                    _writeGate.Release();
+                    _accessGate.Release();
                 }
             }
         }
@@ -90,7 +106,7 @@ namespace StartScreen.Services
         // Retained for existing synchronous consumers. Refresh paths use WriteAsync.
         internal static void Write<T>(string path, T value, JsonSerializerOptions options = null)
         {
-            _writeGate.Wait();
+            _accessGate.Wait();
             string temporaryFile = null;
             try
             {
@@ -113,7 +129,7 @@ namespace StartScreen.Services
                 }
                 finally
                 {
-                    _writeGate.Release();
+                    _accessGate.Release();
                 }
             }
         }

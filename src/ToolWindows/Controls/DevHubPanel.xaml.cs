@@ -37,6 +37,7 @@ namespace StartScreen.ToolWindows.Controls
         public DevHubPanel()
         {
             InitializeComponent();
+            InitializeActivityPresentation();
         }
 
         public void Dispose()
@@ -87,7 +88,7 @@ namespace StartScreen.ToolWindows.Controls
         public void ShowPullRequests()
         {
             _defaultTabApplied = true;
-            _initialMyWorkTabPending = false;
+            _activity.CancelInitialFilterSelection();
             MyWorkPrFilter.IsChecked = true;
             IncomingPrFilter.IsChecked = true;
         }
@@ -95,7 +96,7 @@ namespace StartScreen.ToolWindows.Controls
         public void ShowRequestedReviews()
         {
             _defaultTabApplied = true;
-            _initialMyWorkTabPending = false;
+            _activity.CancelInitialFilterSelection();
             MyWorkAttentionFilter.IsChecked = true;
             SelectDefaultTab(DevHubDefaultTab.MyWork);
         }

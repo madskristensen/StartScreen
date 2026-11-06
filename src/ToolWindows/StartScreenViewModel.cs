@@ -27,10 +27,6 @@ namespace StartScreen.ToolWindows
     public partial class StartScreenViewModel : INotifyPropertyChanged, IDisposable
     {
         private static readonly TimeSpan _autoRefreshInterval = TimeSpan.FromHours(4);
-        private bool _isRefreshingNews;
-        private bool _isNewsUnavailable;
-        private bool _isRefreshingYouTube;
-        private bool _isYouTubeUnavailable;
         private bool _isRefreshingDevHub;
         private bool _isUpdateAvailable;
         private string _searchFilter;
@@ -48,23 +44,13 @@ namespace StartScreen.ToolWindows
         private bool _isMruFiltered;
         private readonly BulkObservableCollection<MruItem> _visibleMruItems =
             new BulkObservableCollection<MruItem>();
-        private readonly List<NewsPost> _allNewsPosts = new List<NewsPost>();
-        private readonly List<YouTubeVideo> _allYouTubeVideos = new List<YouTubeVideo>();
-        private int _newsColumnCount = 2;
-        private int _youTubeColumnCount = 1;
         private Timer _autoRefreshTimer;
         private MruItem _selectedMruItem;
-        private string _lastNewsRefreshText;
-        private string _lastYouTubeRefreshText;
         private string _lastDevHubRefreshText;
         private bool _isRefreshingInBackground;
-        private bool _hasNewBlogs;
-        private bool _hasNewVideos;
         private readonly object _cancellationSync = new object();
         private readonly CancellationToken _shutdownToken;
         private CancellationTokenSource _lifetimeCancellation;
-        private CancellationTokenSource _newsRefreshCancellation;
-        private CancellationTokenSource _youTubeRefreshCancellation;
         private CancellationTokenSource _mruMetadataCancellation;
         private bool _isDeferredContentInitializing;
         private bool _isDeferredContentInitialized;
@@ -77,80 +63,31 @@ namespace StartScreen.ToolWindows
             VisibleMruItems.Where(item => item.IsPinned));
         public ObservableCollection<MruTimeGroup> GroupedMruItems => _groupedMruItems ??= BuildMruTimeGroups();
         public ObservableCollection<MruItem> VisibleMruItems => _visibleMruItems;
-        public ObservableCollection<NewsPost> NewsPosts { get; private set; }
-        public ObservableCollection<NewsPost> PinnedNewsPosts { get; private set; }
+        internal NewsSectionViewModel NewsSection { get; }
+        internal VideoSectionViewModel VideoSection { get; }
+        public ObservableCollection<NewsPost> NewsPosts => NewsSection.NewsPosts;
+        public ObservableCollection<NewsPost> PinnedNewsPosts => NewsSection.PinnedNewsPosts;
         public ObservableCollection<RecentTemplate> RecentTemplates { get; private set; }
-        public ObservableCollection<YouTubeVideo> YouTubeVideos { get; private set; }
-
-        public int NewsColumnCount
-        {
-            get => _newsColumnCount;
-            private set
-            {
-                if (_newsColumnCount != value)
-                {
-                    _newsColumnCount = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        public int YouTubeColumnCount
-        {
-            get => _youTubeColumnCount;
-            private set
-            {
-                if (_youTubeColumnCount != value)
-                {
-                    _youTubeColumnCount = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
+        public ObservableCollection<YouTubeVideo> YouTubeVideos => VideoSection.YouTubeVideos;
+        public int NewsColumnCount => NewsSection.NewsColumnCount;
+        public int YouTubeColumnCount => VideoSection.YouTubeColumnCount;
 
         public bool IsRefreshingNews
         {
-            get => _isRefreshingNews;
-            set
-            {
-                if (_isRefreshingNews != value)
-                {
-                    _isRefreshingNews = value;
-                    NewsRefreshState.IsLoading = value;
-                    OnPropertyChanged();
-                    OnPropertyChanged(nameof(IsRefreshingAny));
-                    NotifyRefreshStatusChanged();
-                }
-            }
+            get => NewsSection.IsRefreshingNews;
+            set => NewsSection.IsRefreshingNews = value;
         }
 
         public bool IsNewsUnavailable
         {
-            get => _isNewsUnavailable;
-            set
-            {
-                if (_isNewsUnavailable != value)
-                {
-                    _isNewsUnavailable = value;
-                    OnPropertyChanged();
-                }
-            }
+            get => NewsSection.IsNewsUnavailable;
+            set => NewsSection.IsNewsUnavailable = value;
         }
 
         public bool IsRefreshingYouTube
         {
-            get => _isRefreshingYouTube;
-            set
-            {
-                if (_isRefreshingYouTube != value)
-                {
-                    _isRefreshingYouTube = value;
-                    VideoRefreshState.IsLoading = value;
-                    OnPropertyChanged();
-                    OnPropertyChanged(nameof(IsRefreshingAny));
-                    NotifyRefreshStatusChanged();
-                }
-            }
+            get => VideoSection.IsRefreshingYouTube;
+            set => VideoSection.IsRefreshingYouTube = value;
         }
 
         public bool IsRefreshingDevHub
@@ -169,48 +106,25 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        public bool IsRefreshingAny => _isRefreshingNews || _isRefreshingYouTube || _isRefreshingDevHub
+        public bool IsRefreshingAny => IsRefreshingNews || IsRefreshingYouTube || _isRefreshingDevHub
             || _isRefreshingWorkspaceSignals || IsRefreshingFeedback || RefreshStates.Any(state => state.IsLoading);
 
         public bool IsYouTubeUnavailable
         {
-            get => _isYouTubeUnavailable;
-            set
-            {
-                if (_isYouTubeUnavailable != value)
-                {
-                    _isYouTubeUnavailable = value;
-                    OnPropertyChanged();
-                }
-            }
+            get => VideoSection.IsYouTubeUnavailable;
+            set => VideoSection.IsYouTubeUnavailable = value;
         }
 
         public string LastNewsRefreshText
         {
-            get => _lastNewsRefreshText;
-            set
-            {
-                if (_lastNewsRefreshText != value)
-                {
-                    _lastNewsRefreshText = value;
-                    OnPropertyChanged();
-                    NotifyRefreshStatusChanged();
-                }
-            }
+            get => NewsSection.LastNewsRefreshText;
+            set => NewsSection.LastNewsRefreshText = value;
         }
 
         public string LastYouTubeRefreshText
         {
-            get => _lastYouTubeRefreshText;
-            set
-            {
-                if (_lastYouTubeRefreshText != value)
-                {
-                    _lastYouTubeRefreshText = value;
-                    OnPropertyChanged();
-                    NotifyRefreshStatusChanged();
-                }
-            }
+            get => VideoSection.LastYouTubeRefreshText;
+            set => VideoSection.LastYouTubeRefreshText = value;
         }
 
         public string LastDevHubRefreshText
@@ -279,15 +193,7 @@ namespace StartScreen.ToolWindows
         /// </summary>
         public bool HasNewBlogs
         {
-            get => _hasNewBlogs;
-            private set
-            {
-                if (_hasNewBlogs != value)
-                {
-                    _hasNewBlogs = value;
-                    OnPropertyChanged();
-                }
-            }
+            get => NewsSection.HasNewBlogs;
         }
 
         /// <summary>
@@ -296,15 +202,7 @@ namespace StartScreen.ToolWindows
         /// </summary>
         public bool HasNewVideos
         {
-            get => _hasNewVideos;
-            private set
-            {
-                if (_hasNewVideos != value)
-                {
-                    _hasNewVideos = value;
-                    OnPropertyChanged();
-                }
-            }
+            get => VideoSection.HasNewVideos;
         }
 
         /// <summary>
@@ -501,19 +399,25 @@ namespace StartScreen.ToolWindows
             Func<CancellationToken, Task<ServiceHealthStatus>> getServiceHealthStatusAsync = null,
             Func<JoinableTaskFactory> getServiceHealthTaskFactory = null,
             Func<bool, CancellationToken, Task<FeedbackSnapshot>> getFeedbackAsync = null,
-            Func<JoinableTaskFactory> getFeedbackTaskFactory = null)
+            Func<JoinableTaskFactory> getFeedbackTaskFactory = null,
+            NewsSectionViewModel newsSection = null,
+            VideoSectionViewModel videoSection = null,
+            Func<CancellationToken, Task<FeedbackSnapshot>> getCachedFeedbackAsync = null)
         {
             _shutdownToken = shutdownToken;
             _repositorySummaries = new Services.DevHub.DevHubRepoSummaryService(shutdownToken);
             _getServiceHealthStatusAsync = getServiceHealthStatusAsync ?? ServiceHealthService.GetStatusAsync;
             _getServiceHealthTaskFactory = getServiceHealthTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
             _getFeedbackAsync = getFeedbackAsync ?? FeedbackService.Instance.GetTicketsAsync;
+            _getCachedFeedbackAsync = getCachedFeedbackAsync ?? (getFeedbackAsync == null
+                ? FeedbackService.Instance.GetCachedTicketsAsync : _ => Task.FromResult<FeedbackSnapshot>(null));
             _getFeedbackTaskFactory = getFeedbackTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
-            NewsPosts = new ObservableCollection<NewsPost>();
-            PinnedNewsPosts = new ObservableCollection<NewsPost>();
+            NewsSection = newsSection ?? new NewsSectionViewModel(GetBackgroundCancellationToken);
+            VideoSection = videoSection ?? new VideoSectionViewModel(GetBackgroundCancellationToken);
+            NewsSection.PropertyChanged += Section_PropertyChanged;
+            VideoSection.PropertyChanged += Section_PropertyChanged;
             RecentTemplates = new ObservableCollection<RecentTemplate>();
-            YouTubeVideos = new ObservableCollection<YouTubeVideo>();
 
             _allMruItems = new ObservableCollection<MruItem>();
             _discoverySectionTitle = "Discover what's new";
@@ -533,6 +437,8 @@ namespace StartScreen.ToolWindows
                 {
                     _lifetimeCancellation.Dispose();
                     _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
+                    NewsSection.Activate();
+                    VideoSection.Activate();
                     _autoRefreshTimer?.Change(_autoRefreshInterval, _autoRefreshInterval);
                 }
             }
@@ -545,8 +451,8 @@ namespace StartScreen.ToolWindows
                 if (_isDisposed)
                     return;
                 _lifetimeCancellation.Cancel();
-                _newsRefreshCancellation?.Cancel();
-                _youTubeRefreshCancellation?.Cancel();
+                NewsSection.Cancel();
+                VideoSection.Cancel();
                 _feedbackRefreshCancellation?.Cancel();
                 _mruMetadataCancellation?.Cancel();
                 _repositorySummaries.CancelPendingRequests();
@@ -569,9 +475,10 @@ namespace StartScreen.ToolWindows
             IsRefreshingDevHub = false;
             DevHubRefreshState.IsLoading = false;
             IsRefreshingFeedback = false;
+            _feedbackRequested = false;
             FeedbackTickets.Clear();
             LastFeedbackRefreshText = null;
-            FeedbackStatus = "Select Feedback to load your Developer Community tickets.";
+            FeedbackStatus = "Feedback loads in the background.";
         }
 
         public void Dispose()
@@ -584,6 +491,10 @@ namespace StartScreen.ToolWindows
                     return;
                 CancelBackgroundWork();
                 _isDisposed = true;
+                NewsSection.PropertyChanged -= Section_PropertyChanged;
+                VideoSection.PropertyChanged -= Section_PropertyChanged;
+                NewsSection.Dispose();
+                VideoSection.Dispose();
                 FeedStore.FeedsChanged -= OnFeedsChanged;
                 if (_selectedMruItem != null)
                     _selectedMruItem.PropertyChanged -= SelectedMruItem_PropertyChanged;
@@ -646,6 +557,20 @@ namespace StartScreen.ToolWindows
 
             // Force refresh news when feeds file changes
             ForceRefreshNews();
+        }
+
+        private void Section_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (_isDisposed)
+                return;
+            if (e.PropertyName != nameof(NewsSectionViewModel.RefreshState))
+                OnPropertyChanged(e.PropertyName);
+            if (e.PropertyName == nameof(IsRefreshingNews) || e.PropertyName == nameof(IsRefreshingYouTube))
+                OnPropertyChanged(nameof(IsRefreshingAny));
+            if (e.PropertyName == nameof(IsRefreshingNews) || e.PropertyName == nameof(IsRefreshingYouTube)
+                || e.PropertyName == nameof(LastNewsRefreshText) || e.PropertyName == nameof(LastYouTubeRefreshText)
+                || e.PropertyName == nameof(NewsSectionViewModel.RefreshState))
+                NotifyRefreshStatusChanged();
         }
 
         internal CancellationToken GetBackgroundCancellationToken()
@@ -793,15 +718,8 @@ namespace StartScreen.ToolWindows
                 return;
 
             // Timer fires on a ThreadPool thread. Check guards before dispatching work.
-            if (FeedService.IsCacheStale() && !IsRefreshingNews)
-            {
-                StartBackgroundFeedRefresh();
-            }
-
-            if (YouTubeService.IsCacheStale() && !IsRefreshingYouTube)
-            {
-                StartBackgroundYouTubeRefresh();
-            }
+            NewsSection.RefreshIfStale();
+            VideoSection.RefreshIfStale();
         }
 
         /// <summary>
@@ -859,15 +777,14 @@ namespace StartScreen.ToolWindows
 
             try
             {
-                if (_feedbackRequested)
-                    StartFeedbackRefresh(false);
-                Task newsTask = RefreshNewsAsync(cancellationToken);
-                Task youtubeTask = RefreshYouTubeAsync(cancellationToken);
+                Task feedbackTask = RefreshFeedbackInBackgroundAsync(cancellationToken);
+                Task newsTask = NewsSection.LoadAsync(cancellationToken);
+                Task youtubeTask = VideoSection.LoadAsync(cancellationToken);
                 Task versionTask = RefreshVersionTitleAsync(cancellationToken);
                 Task mruTask = refreshMru ? RefreshMruAsync(cancellationToken) : Task.CompletedTask;
                 Task updateTask = CheckForUpdateAsync(cancellationToken);
 
-                await Task.WhenAll(newsTask, youtubeTask, versionTask, mruTask, updateTask);
+                await Task.WhenAll(newsTask, youtubeTask, versionTask, mruTask, updateTask, feedbackTask);
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
@@ -914,232 +831,23 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async Task RefreshNewsAsync(CancellationToken cancellationToken)
-        {
-            try
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                // Load from cache asynchronously to avoid blocking
-                List<NewsPost> posts = await FeedService.GetCachedPostsAsync(cancellationToken);
-                var hasCachedItems = posts != null && posts.Count > 0;
-
-                if (hasCachedItems)
-                {
-                    await UpdateNewsPostsOnUIThreadAsync(posts, cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    LastNewsRefreshText = "Showing cached content";
-                    SetRefreshState(NewsRefreshState, LastNewsRefreshText, cached: true);
-                    StartupDiagnostics.Mark("news cache displayed");
-                }
-
-                // Trigger background sync if no cache, empty cache, or stale cache
-                await TaskScheduler.Default;
-                var needsRefresh = !hasCachedItems || FeedService.IsCacheStale();
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                NewsRefreshState.IsStale = hasCachedItems && needsRefresh;
-                if (needsRefresh)
-                {
-                    StartBackgroundFeedRefresh();
-                }
-            }
-            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
-            {
-                await ex.LogAsync();
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-            }
-        }
-
         /// <summary>
         /// Forces a refresh of news feeds regardless of cache state.
         /// </summary>
         public void ForceRefreshNews()
         {
-            if (GetBackgroundCancellationToken().IsCancellationRequested || IsRefreshingNews)
-                return;
-
-            StartBackgroundFeedRefresh(forceRefresh: true);
-        }
-
-        /// <summary>
-        /// Starts a fire-and-forget background refresh of news feeds.
-        /// </summary>
-        private void StartBackgroundFeedRefresh(bool forceRefresh = false)
-        {
-            CancellationToken lifetimeToken = GetBackgroundCancellationToken();
-            if (lifetimeToken.IsCancellationRequested)
-                return;
-
-            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
-            {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (lifetimeToken.IsCancellationRequested || IsRefreshingNews)
-                    return;
-
-                CancellationTokenSource refreshCancellation = ReplaceRefreshCancellation(ref _newsRefreshCancellation);
-                CancellationToken cancellationToken = refreshCancellation.Token;
-                IsRefreshingNews = true;
-                var minDisplay = Task.Delay(1000, cancellationToken);
-                try
-                {
-                    await TaskScheduler.Default;
-                    cancellationToken.ThrowIfCancellationRequested();
-                    List<FeedInfo> feeds = FeedStore.GetFeeds();
-                    FeedRefreshResult result = await FeedService.DownloadFeedsAsync(feeds, cancellationToken, forceRefresh);
-
-                    if (result.Success || result.Posts.Count > 0)
-                    {
-                        await UpdateNewsPostsOnUIThreadAsync(result.Posts, cancellationToken);
-                    }
-
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    UpdateNewsRefreshStatus(result);
-                    StartupDiagnostics.Mark("news refresh completed");
-                }
-                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
-                {
-                    await ex.LogAsync();
-                }
-                catch (Exception ex)
-                {
-                    await ex.LogAsync();
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    if (!cancellationToken.IsCancellationRequested)
-                    {
-                        IsNewsUnavailable = _allNewsPosts.Count == 0;
-                        LastNewsRefreshText = _allNewsPosts.Count == 0
-                            ? "Feed unavailable. Use Refresh to retry."
-                            : "Showing cached content - refresh failed. Use Refresh to retry.";
-                        SetRefreshState(NewsRefreshState, LastNewsRefreshText,
-                            cached: !IsNewsUnavailable, stale: true, unavailable: IsNewsUnavailable);
-                    }
-                }
-                finally
-                {
-                    try
-                    {
-                        await minDisplay;
-                    }
-                    catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
-                    {
-                        await ex.LogAsync();
-                    }
-
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    CompleteRefresh(ref _newsRefreshCancellation, refreshCancellation, () => IsRefreshingNews = false);
-                }
-            }).FileAndForget(nameof(StartScreenViewModel));
+            if (!GetBackgroundCancellationToken().IsCancellationRequested)
+                NewsSection.StartRefresh(force: true);
         }
 
         internal void UpdateNewsRefreshStatus(FeedRefreshResult result)
         {
-            var hasContent = result.Posts.Count > 0 || _allNewsPosts.Count > 0;
-            IsNewsUnavailable = !result.Success && !hasContent;
-
-            if (!result.Success)
-            {
-                var status = result.FailedFeeds.Count < result.FeedCount
-                    ? "Partially refreshed" : "Refresh failed";
-                var cached = result.CachedFeeds.Count > 0
-                    ? $" Showing cached content from {string.Join(", ", result.CachedFeeds)}."
-                    : hasContent && result.Posts.Count == 0 ? " Showing cached content." : string.Empty;
-                LastNewsRefreshText = $"{status} - unavailable: {string.Join(", ", result.FailedFeeds)}.{cached} Use Refresh to retry.";
-            }
-            else if (result.FeedCount == 0)
-            {
-                LastNewsRefreshText = "No news feeds enabled";
-            }
-            else if (result.CachedFeeds.Count > 0)
-            {
-                LastNewsRefreshText = $"Showing cached content from {string.Join(", ", result.CachedFeeds)}";
-            }
-            else
-            {
-                LastNewsRefreshText = "Updated just now";
-            }
-            SetRefreshState(NewsRefreshState, LastNewsRefreshText,
-                cached: result.CachedFeeds.Count > 0 || !result.Success && hasContent,
-                stale: !result.Success, partial: !result.Success && result.FailedFeeds.Count < result.FeedCount,
-                unavailable: IsNewsUnavailable,
-                successfulUtc: result.Success && result.FeedCount > 0 && result.CachedFeeds.Count == 0
-                    ? DateTimeOffset.UtcNow : null);
-        }
-
-        private async Task UpdateNewsPostsOnUIThreadAsync(
-            List<NewsPost> posts,
-            CancellationToken cancellationToken)
-        {
-            Options options = await Options.GetLiveInstanceAsync();
-
-            // Update on UI thread
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            cancellationToken.ThrowIfCancellationRequested();
-
-            UpdateNewsPosts(posts, options);
+            NewsSection.UpdateNewsRefreshStatus(result);
         }
 
         internal void UpdateNewsPosts(IReadOnlyList<NewsPost> posts, Options options)
         {
-            var refreshed = posts.Select(post =>
-            {
-                var existing = _allNewsPosts.FirstOrDefault(item => item.Url == post.Url);
-                if (existing == null)
-                    return post;
-                existing.Title = post.Title;
-                existing.Summary = post.Summary;
-                existing.PublishDate = post.PublishDate;
-                existing.Source = post.Source;
-                existing.ToolTip = post.ToolTip;
-                existing.HasDescription = post.HasDescription;
-                return existing;
-            }).ToList();
-            _allNewsPosts.Clear();
-            _allNewsPosts.AddRange(refreshed);
-            ApplyPinnedStateToNews(options);
-            UpdateNewsCollections();
-            UpdateHasNewBlogs(options);
-        }
-
-        private async Task RefreshYouTubeAsync(CancellationToken cancellationToken)
-        {
-            try
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var videos = await YouTubeService.GetCachedVideosAsync(cancellationToken);
-                var hasCached = videos != null && videos.Count > 0;
-
-                if (hasCached)
-                {
-                    await YouTubeService.LoadThumbnailsAsync(videos, cancellationToken);
-                    await UpdateYouTubeOnUIThreadAsync(videos, cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    LastYouTubeRefreshText = "Showing cached content";
-                    SetRefreshState(VideoRefreshState, LastYouTubeRefreshText, cached: true);
-                    StartupDiagnostics.Mark("video cache displayed");
-                }
-
-                await TaskScheduler.Default;
-                var needsRefresh = !hasCached || YouTubeService.IsCacheStale();
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                VideoRefreshState.IsStale = hasCached && needsRefresh;
-                if (needsRefresh)
-                {
-                    StartBackgroundYouTubeRefresh();
-                }
-            }
-            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
-            {
-                await ex.LogAsync();
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-            }
+            NewsSection.UpdateNewsPosts(posts, options);
         }
 
         /// <summary>
@@ -1147,246 +855,37 @@ namespace StartScreen.ToolWindows
         /// </summary>
         public void ForceRefreshYouTube()
         {
-            if (GetBackgroundCancellationToken().IsCancellationRequested || IsRefreshingYouTube)
-                return;
-
-            StartBackgroundYouTubeRefresh();
-        }
-
-        /// <summary>
-        /// Starts a fire-and-forget background refresh of the YouTube feed.
-        /// </summary>
-        private void StartBackgroundYouTubeRefresh()
-        {
-            CancellationToken lifetimeToken = GetBackgroundCancellationToken();
-            if (lifetimeToken.IsCancellationRequested)
-                return;
-
-            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
-            {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (lifetimeToken.IsCancellationRequested || IsRefreshingYouTube)
-                    return;
-
-                CancellationTokenSource refreshCancellation = ReplaceRefreshCancellation(ref _youTubeRefreshCancellation);
-                CancellationToken cancellationToken = refreshCancellation.Token;
-                IsRefreshingYouTube = true;
-                var minDisplay = Task.Delay(1000, cancellationToken);
-                try
-                {
-                    await TaskScheduler.Default;
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var videos = await YouTubeService.DownloadVideosAsync(cancellationToken);
-
-                    if (videos != null)
-                    {
-                        await YouTubeService.LoadThumbnailsAsync(videos, cancellationToken);
-                        await UpdateYouTubeOnUIThreadAsync(videos, cancellationToken);
-                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-                        cancellationToken.ThrowIfCancellationRequested();
-                        IsYouTubeUnavailable = false;
-                        LastYouTubeRefreshText = "Updated just now";
-                        SetRefreshState(VideoRefreshState, LastYouTubeRefreshText, successfulUtc: DateTimeOffset.UtcNow);
-                        StartupDiagnostics.Mark("video remote refresh completed");
-                    }
-                    else
-                    {
-                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-                        cancellationToken.ThrowIfCancellationRequested();
-                        IsYouTubeUnavailable = _allYouTubeVideos.Count == 0;
-                        LastYouTubeRefreshText = _allYouTubeVideos.Count == 0
-                            ? "Feed unavailable. Use Refresh to retry."
-                            : "Showing cached content - refresh failed. Use Refresh to retry.";
-                        SetRefreshState(VideoRefreshState, LastYouTubeRefreshText,
-                            cached: !IsYouTubeUnavailable, stale: true, unavailable: IsYouTubeUnavailable);
-                    }
-                }
-                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
-                {
-                    await ex.LogAsync();
-                }
-                catch (Exception ex)
-                {
-                    await ex.LogAsync();
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    if (!cancellationToken.IsCancellationRequested)
-                    {
-                        IsYouTubeUnavailable = _allYouTubeVideos.Count == 0;
-                        LastYouTubeRefreshText = _allYouTubeVideos.Count == 0
-                            ? "Feed unavailable. Use Refresh to retry."
-                            : "Showing cached content - refresh failed. Use Refresh to retry.";
-                        SetRefreshState(VideoRefreshState, LastYouTubeRefreshText,
-                            cached: !IsYouTubeUnavailable, stale: true, unavailable: IsYouTubeUnavailable);
-                    }
-                }
-                finally
-                {
-                    try
-                    {
-                        await minDisplay;
-                    }
-                    catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
-                    {
-                        await ex.LogAsync();
-                    }
-
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    CompleteRefresh(ref _youTubeRefreshCancellation, refreshCancellation, () => IsRefreshingYouTube = false);
-                }
-            }).FileAndForget(nameof(StartScreenViewModel));
-        }
-
-        private async Task UpdateYouTubeOnUIThreadAsync(
-            List<YouTubeVideo> videos,
-            CancellationToken cancellationToken)
-        {
-            Options options = await Options.GetLiveInstanceAsync();
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            cancellationToken.ThrowIfCancellationRequested();
-
-            UpdateYouTubeVideos(videos, options);
+            if (!GetBackgroundCancellationToken().IsCancellationRequested)
+                VideoSection.StartRefresh();
         }
 
         internal void UpdateYouTubeVideos(IReadOnlyList<YouTubeVideo> videos, Options options)
         {
-            var refreshed = videos.Select(video =>
-            {
-                var existing = _allYouTubeVideos.FirstOrDefault(item => item.Url == video.Url);
-                if (existing == null)
-                    return video;
-                existing.Title = video.Title;
-                existing.PublishDate = video.PublishDate;
-                if (existing.ThumbnailUrl != video.ThumbnailUrl || existing.Thumbnail == null)
-                    existing.Thumbnail = video.Thumbnail;
-                existing.ThumbnailUrl = video.ThumbnailUrl;
-                return existing;
-            }).ToList();
-            _allYouTubeVideos.Clear();
-            _allYouTubeVideos.AddRange(refreshed);
-            UpdateYouTubeCollections();
-            UpdateHasNewVideos(options);
-        }
-
-        /// <summary>
-        /// Recomputes HasNewBlogs based on the current posts and the persisted last-seen timestamp.
-        /// First-ever load (LastSeen == MinValue) is suppressed so the user is not greeted with
-        /// the indicator on first open.
-        /// </summary>
-        private void UpdateHasNewBlogs(Options options)
-        {
-            DateTime lastSeen = options.LastNewsBlogsSeen;
-            if (lastSeen == DateTime.MinValue || _allNewsPosts.Count == 0)
-            {
-                HasNewBlogs = false;
-                return;
-            }
-
-            HasNewBlogs = _allNewsPosts.Any(p => p.PublishDate > lastSeen);
-        }
-
-        /// <summary>
-        /// Recomputes HasNewVideos based on the current videos and the persisted last-seen timestamp.
-        /// </summary>
-        private void UpdateHasNewVideos(Options options)
-        {
-            DateTime lastSeen = options.LastNewsVideosSeen;
-            if (lastSeen == DateTime.MinValue || _allYouTubeVideos.Count == 0)
-            {
-                HasNewVideos = false;
-                return;
-            }
-
-            HasNewVideos = _allYouTubeVideos.Any(v => v.PublishDate > lastSeen);
+            VideoSection.UpdateYouTubeVideos(videos, options);
         }
 
         /// <summary>
         /// Marks the Blogs tab as seen, persisting the timestamp and clearing the indicator.
         /// </summary>
-        public async Task MarkBlogsAsSeenAsync()
+        public Task MarkBlogsAsSeenAsync()
         {
-            HasNewBlogs = false;
-            Options options = await Options.GetLiveInstanceAsync();
-            options.LastNewsBlogsSeen = DateTime.UtcNow;
-            await options.SaveAsync();
+            return NewsSection.MarkBlogsAsSeenAsync();
         }
 
         /// <summary>
         /// Marks the Videos tab as seen, persisting the timestamp and clearing the indicator.
         /// </summary>
-        public async Task MarkVideosAsSeenAsync()
+        public Task MarkVideosAsSeenAsync()
         {
-            HasNewVideos = false;
-            Options options = await Options.GetLiveInstanceAsync();
-            options.LastNewsVideosSeen = DateTime.UtcNow;
-            await options.SaveAsync();
+            return VideoSection.MarkVideosAsSeenAsync();
         }
 
         /// <summary>
         /// Toggles the pinned state of a news article.
         /// </summary>
-        public async Task ToggleNewsPinAsync(NewsPost post)
+        public Task ToggleNewsPinAsync(NewsPost post)
         {
-            if (post == null)
-                return;
-
-            post.IsPinned = !post.IsPinned;
-
-            Options options = await Options.GetLiveInstanceAsync();
-            IEnumerable<string> pinnedUrls = _allNewsPosts.Where(p => p.IsPinned).Select(p => p.Url);
-            options.PinnedArticles = string.Join(";", pinnedUrls);
-            await options.SaveAsync();
-
-            UpdateNewsCollections();
-        }
-
-        /// <summary>
-        /// Applies the persisted pinned state to the current news posts.
-        /// </summary>
-        private void ApplyPinnedStateToNews(Options options)
-        {
-            var pinnedUrls = new HashSet<string>(
-                (options.PinnedArticles ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries),
-                StringComparer.OrdinalIgnoreCase);
-
-            foreach (NewsPost post in _allNewsPosts)
-            {
-                post.IsPinned = pinnedUrls.Contains(post.Url);
-            }
-        }
-
-        /// <summary>
-        /// Synchronizes the pinned and unpinned news collections with the master list.
-        /// Limits visible unpinned items to 10 per column.
-        /// </summary>
-        private void UpdateNewsCollections()
-        {
-            SynchronizeCollection(PinnedNewsPosts, _allNewsPosts.Where(p => p.IsPinned).ToList());
-            SynchronizeCollection(NewsPosts, _allNewsPosts.Where(p => !p.IsPinned).Take(NewsColumnCount * 10).ToList());
-        }
-
-        /// <summary>
-        /// Rebuilds the visible YouTube collection from the master list.
-        /// Updates items in-place to avoid a brief empty-collection state that causes layout shifts.
-        /// </summary>
-        private void UpdateYouTubeCollections()
-        {
-            SynchronizeCollection(YouTubeVideos, _allYouTubeVideos.Take(YouTubeColumnCount * 5).ToList());
-        }
-
-        private static void SynchronizeCollection<T>(ObservableCollection<T> collection, IReadOnlyList<T> items)
-        {
-            for (var i = 0; i < items.Count; i++)
-            {
-                if (i < collection.Count && ReferenceEquals(collection[i], items[i]))
-                    continue;
-                var existingIndex = collection.IndexOf(items[i]);
-                if (existingIndex >= 0)
-                    collection.Move(existingIndex, i);
-                else
-                    collection.Insert(i, items[i]);
-            }
-            for (var i = collection.Count - 1; i >= items.Count; i--)
-                collection.RemoveAt(i);
+            return NewsSection.ToggleNewsPinAsync(post);
         }
 
         /// <summary>
@@ -1395,21 +894,8 @@ namespace StartScreen.ToolWindows
         /// </summary>
         public void UpdateColumnCounts(int newsColumns, int youTubeColumns)
         {
-            bool newsChanged = _newsColumnCount != newsColumns;
-            bool ytChanged = _youTubeColumnCount != youTubeColumns;
-
-            NewsColumnCount = newsColumns;
-            YouTubeColumnCount = youTubeColumns;
-
-            if (newsChanged)
-            {
-                UpdateNewsCollections();
-            }
-
-            if (ytChanged)
-            {
-                UpdateYouTubeCollections();
-            }
+            NewsSection.NewsColumnCount = newsColumns;
+            VideoSection.YouTubeColumnCount = youTubeColumns;
         }
 
         private async Task RefreshVersionTitleAsync(CancellationToken cancellationToken)

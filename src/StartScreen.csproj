@@ -128,6 +128,7 @@
     <Reference Include="System.ComponentModel.Composition" />
     <Reference Include="System.Design" />
     <Reference Include="System.Net.Http" />
+    <Reference Include="System.Security" />
     <Reference Include="System.ServiceModel" />
     <Reference Include="System.Xaml" />
     <Reference Include="WindowsBase" />
@@ -154,6 +155,16 @@
     <ItemGroup>
       <SuppressFromVsix Remove="Microsoft.Bcl.AsyncInterfaces.dll;System.Diagnostics.DiagnosticSource.dll;System.Memory.dll;System.Runtime.CompilerServices.Unsafe.dll;System.Security.AccessControl.dll;System.Security.Principal.Windows.dll;System.Text.Json.dll;System.Threading.Tasks.Extensions.dll" />
     </ItemGroup>
+  </Target>
+
+  <!-- NuGet copies native Git libraries to bin, but the VSIX does not include them automatically. -->
+  <Target Name="IncludeLibGit2NativeLibraries" BeforeTargets="GetVsixSourceItems">
+    <ItemGroup>
+      <_LibGit2NativeLibrary Include="@(ContentWithTargetPath)"
+                             Condition="'%(ContentWithTargetPath.Filename)' == '$(libgit2_filename)' And '%(ContentWithTargetPath.Extension)' == '.dll'" />
+      <VSIXSourceItem Include="@(_LibGit2NativeLibrary)" />
+    </ItemGroup>
+    <Error Condition="'@(_LibGit2NativeLibrary)' == ''" Text="The LibGit2Sharp native Windows libraries are missing from the package inputs." />
   </Target>
 
 </Project>

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
 using StartScreen.Services.DevHub.Providers;
@@ -44,6 +45,50 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual(expected, failed.Status);
             Assert.IsEmpty(failed.Value);
             Assert.AreEqual(DevHubActivityStatus.Success, empty.Status);
+        }
+
+        [TestMethod]
+        public async Task Cache_ReopenedServiceDisplaysActivityWhileOnlineRequestsArePendingAsync()
+        {
+            var provider = new Provider("GitHub")
+            {
+                Issues = _ => Task.FromResult<IReadOnlyList<DevHubIssue>>([Issue("cached issue")]),
+                Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("cached pull")]),
+                Builds = _ => Task.FromResult<IReadOnlyList<DevHubCiRun>>([new DevHubCiRun { Name = "cached build", WebUrl = "https://example.com/build/1" }]),
+            };
+            await Service(provider).RefreshAsync(CancellationToken.None);
+            var reopened = Service(provider);
+            var cached = await reopened.LoadFromCacheAsync();
+            Assert.IsNotNull(cached);
+            Assert.AreEqual("cached pull", cached.PullRequests.Single().Title);
+            Assert.AreEqual("cached issue", cached.Issues.Single().Title);
+            Assert.AreEqual("cached build", cached.CiRuns.Single().Name);
+
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = new TaskCompletionSource<IReadOnlyList<DevHubPullRequest>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            provider.Pulls = _ => { started.TrySetResult(true); return pending.Task; };
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var refresh = reopened.RefreshAsync(timeout.Token);
+            try
+            {
+                await started.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.IsNotNull(reopened.CurrentDashboard);
+                Assert.AreEqual("cached pull", reopened.CurrentDashboard.PullRequests.Single().Title);
+                Assert.AreEqual("cached issue", reopened.CurrentDashboard.Issues.Single().Title);
+                Assert.AreEqual("cached build", reopened.CurrentDashboard.CiRuns.Single().Name);
+                Assert.IsTrue(reopened.CurrentDashboard.IsRefreshing);
+            }
+            finally
+            {
+                pending.TrySetResult([PullRequest("latest pull")]);
+            }
+            var latest = await refresh;
+            Assert.AreEqual("latest pull", latest.PullRequests.Single().Title);
+            Assert.IsFalse(latest.IsRefreshing);
+            var restoredAgain = await reopened.LoadFromCacheAsync();
+            Assert.IsNotNull(restoredAgain);
+            Assert.AreEqual("latest pull", restoredAgain.PullRequests.Single().Title);
         }
 
         [TestMethod]
@@ -467,6 +512,7 @@ namespace StartScreen.Test.DevHub
             public bool Authenticated { get; set; } = true;
             public Func<CancellationToken, Task<IReadOnlyList<DevHubIssue>>> Issues { get; set; } = _ => Task.FromResult<IReadOnlyList<DevHubIssue>>([]);
             public Func<CancellationToken, Task<IReadOnlyList<DevHubPullRequest>>> Pulls { get; set; } = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([]);
+            public Func<CancellationToken, Task<IReadOnlyList<DevHubCiRun>>> Builds { get; set; } = _ => Task.FromResult<IReadOnlyList<DevHubCiRun>>([]);
             public Func<CancellationToken, Task<DevHubRepoDetail>> Detail { get; set; } = _ => Task.FromResult(new DevHubRepoDetail());
             public bool CanHandle(string remoteUrl) => true;
             public RemoteRepoIdentifier ParseRemoteUrl(string remoteUrl) => RemoteRepoIdentifier.TryParse(remoteUrl);
@@ -476,7 +522,7 @@ namespace StartScreen.Test.DevHub
             private DevHubUser User() => new DevHubUser { Username = Username, IdentityId = IdentityId, Host = "github.com", ProviderName = name };
             public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken) => Issues(cancellationToken);
             public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken) => Pulls(cancellationToken);
-            public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<DevHubCiRun>>([]);
+            public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken) => Builds(cancellationToken);
             public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> urls, CancellationToken cancellationToken)
                 => Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>([]);
             public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken) => Detail(cancellationToken);

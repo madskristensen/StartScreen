@@ -10,12 +10,14 @@ namespace StartScreen.ToolWindows
     public partial class StartScreenViewModel
     {
         private readonly Func<bool, CancellationToken, Task<FeedbackSnapshot>> _getFeedbackAsync;
+        private readonly Func<CancellationToken, Task<FeedbackSnapshot>> _getCachedFeedbackAsync;
         private readonly Func<JoinableTaskFactory> _getFeedbackTaskFactory;
         private CancellationTokenSource _feedbackRefreshCancellation;
+        private Task _feedbackRefreshTask = Task.CompletedTask;
         private bool _feedbackRequested;
         private bool _isRefreshingFeedback;
         private string _lastFeedbackRefreshText;
-        private string _feedbackStatus = "Select Feedback to load your Developer Community tickets.";
+        private string _feedbackStatus = "Feedback loads in the background.";
 
         public ObservableCollection<FeedbackTicket> FeedbackTickets { get; } = new ObservableCollection<FeedbackTicket>();
 
@@ -61,18 +63,24 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        internal Task RefreshFeedbackInBackgroundAsync(CancellationToken cancellationToken = default)
+        {
+            _feedbackRequested = true;
+            return StartFeedbackRefreshAsync(false, cancellationToken);
+        }
+
         public void EnsureFeedbackLoaded()
         {
             if (_feedbackRequested)
                 return;
             _feedbackRequested = true;
-            StartFeedbackRefresh(false);
+            StartFeedbackRefreshAsync(false).Forget();
         }
 
         public void ForceRefreshFeedback()
         {
             if (_feedbackRequested)
-                StartFeedbackRefresh(true);
+                StartFeedbackRefreshAsync(true).Forget();
         }
 
         internal void ReportFeedbackNavigationFailure()
@@ -80,12 +88,13 @@ namespace StartScreen.ToolWindows
             FeedbackStatus = "The ticket could not be opened in your browser. Try the link again.";
         }
 
-        private void StartFeedbackRefresh(bool force)
+        private Task StartFeedbackRefreshAsync(bool force, CancellationToken cancellationToken = default)
         {
-            if (GetBackgroundCancellationToken().IsCancellationRequested || IsRefreshingFeedback)
-                return;
-            _getFeedbackTaskFactory().RunAsync(() => RefreshFeedbackAsync(force))
-                .Task.Forget();
+            if (GetBackgroundCancellationToken().IsCancellationRequested)
+                return Task.CompletedTask;
+            if (IsRefreshingFeedback)
+                return _feedbackRefreshTask;
+            return _feedbackRefreshTask = _getFeedbackTaskFactory().RunAsync(() => RefreshFeedbackAsync(force, cancellationToken)).Task;
         }
 
         internal async Task RefreshFeedbackAsync(bool force, CancellationToken cancellationToken = default)
@@ -101,20 +110,22 @@ namespace StartScreen.ToolWindows
             FeedbackTickets.Clear();
             LastFeedbackRefreshText = null;
             FeedbackStatus = "Feedback loading...";
+            FeedbackSnapshot cached = null;
             try
             {
-                FeedbackSnapshot snapshot = await _getFeedbackAsync(force, token);
+                if (!force)
+                {
+                    cached = await _getCachedFeedbackAsync(token);
+                    await factory.SwitchToMainThreadAsync(token);
+                    token.ThrowIfCancellationRequested();
+                    if (cached != null)
+                        ApplyFeedbackSnapshot(cached, cached: true);
+                }
+
+                FeedbackSnapshot snapshot = await _getFeedbackAsync(true, token);
                 await factory.SwitchToMainThreadAsync(token);
                 token.ThrowIfCancellationRequested();
-                foreach (FeedbackTicket ticket in snapshot.Tickets)
-                    FeedbackTickets.Add(ticket);
-                LastFeedbackRefreshText = DateTime.UtcNow - snapshot.UpdatedUtc < TimeSpan.FromMinutes(1)
-                    ? "Updated just now" : $"Updated at {snapshot.UpdatedUtc.ToLocalTime():t}";
-                FeedbackStatus = snapshot.Tickets.Count == 0
-                    ? "No created or currently upvoted tickets found for this Visual Studio account."
-                    : null;
-                SetRefreshState(FeedbackRefreshState, FeedbackStatus ?? LastFeedbackRefreshText,
-                    successfulUtc: new DateTimeOffset(snapshot.UpdatedUtc));
+                ApplyFeedbackSnapshot(snapshot, cached: false);
             }
             catch (OperationCanceledException ex) when (token.IsCancellationRequested)
             {
@@ -126,11 +137,17 @@ namespace StartScreen.ToolWindows
                 await factory.SwitchToMainThreadAsync();
                 if (!token.IsCancellationRequested)
                 {
-                    LastFeedbackRefreshText = "Feedback unavailable";
-                    FeedbackStatus = ex is UnauthorizedAccessException || ex is CredentialUnavailableException || ex is AuthenticationFailedException
+                    var authentication = ex is UnauthorizedAccessException || ex is CredentialUnavailableException || ex is AuthenticationFailedException;
+                    var retainCache = cached != null && !authentication;
+                    if (!retainCache)
+                        FeedbackTickets.Clear();
+                    LastFeedbackRefreshText = retainCache ? "Showing cached feedback" : "Feedback unavailable";
+                    FeedbackStatus = authentication
                         ? "Sign in or reauthenticate in Visual Studio, select your account under Tools > Options > Azure Service Authentication, then use Refresh."
+                        : retainCache ? "Showing cached feedback - Developer Community is unavailable. Use Refresh to retry."
                         : "Developer Community is unavailable. Use Refresh to retry.";
-                    SetRefreshState(FeedbackRefreshState, FeedbackStatus, unavailable: true);
+                    SetRefreshState(FeedbackRefreshState, FeedbackStatus, cached: retainCache,
+                        stale: retainCache, unavailable: !retainCache);
                 }
             }
             finally
@@ -138,6 +155,19 @@ namespace StartScreen.ToolWindows
                 await factory.SwitchToMainThreadAsync();
                 CompleteRefresh(ref _feedbackRefreshCancellation, refresh, () => IsRefreshingFeedback = false);
             }
+        }
+
+        private void ApplyFeedbackSnapshot(FeedbackSnapshot snapshot, bool cached)
+        {
+            FeedbackTickets.Clear();
+            foreach (FeedbackTicket ticket in snapshot.Tickets)
+                FeedbackTickets.Add(ticket);
+            LastFeedbackRefreshText = DateTime.UtcNow - snapshot.UpdatedUtc < TimeSpan.FromMinutes(1)
+                ? "Updated just now" : $"Updated at {snapshot.UpdatedUtc.ToLocalTime():t}";
+            FeedbackStatus = cached ? "Showing cached feedback. Refreshing from Developer Community..."
+                : snapshot.Tickets.Count == 0 ? "No created or currently upvoted tickets found for this Visual Studio account." : null;
+            SetRefreshState(FeedbackRefreshState, FeedbackStatus ?? LastFeedbackRefreshText,
+                cached: cached, successfulUtc: new DateTimeOffset(snapshot.UpdatedUtc));
         }
     }
 }

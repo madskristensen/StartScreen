@@ -65,6 +65,7 @@ jobs:
       run: msbuild ${{ env.Solution }} /v:m /m /p:Configuration=${{ env.Configuration }} /p:DeployExtension=${{ env.DeployExtension }}
 
     - name: Run tests
+      timeout-minutes: 10
       run: >
         dotnet test ${{ env.TestProject }}
         --configuration ${{ env.Configuration }}
@@ -74,6 +75,7 @@ jobs:
         --settings test\StartScreen.Test\CodeCoverage.runsettings
         --results-directory "${{ env.TestResultsDirectory }}"
         --logger "trx;LogFileName=test-results.trx"
+        --blame-hang --blame-hang-timeout 2m --blame-hang-dump-type none
         --collect "Code Coverage;Format=Cobertura"
 
     - name: Report test results
@@ -114,7 +116,9 @@ jobs:
       if: ${{ !cancelled() }}
       with:
         name: test-results
-        path: TestResults/**/*.trx
+        path: |
+          TestResults\**\*.trx
+          TestResults\**\Sequence_*.xml
         if-no-files-found: error
         retention-days: 14
 

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -12,6 +13,15 @@ namespace StartScreen.Test
     [TestClass]
     public class FeedbackServiceTests
     {
+        private readonly string _cacheFolder = Path.Combine(Path.GetTempPath(), "StartScreen-Feedback-" + Guid.NewGuid().ToString("N"));
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            if (Directory.Exists(_cacheFolder))
+                Directory.Delete(_cacheFolder, true);
+        }
+
         [TestMethod]
         public async Task Load_PagesAllActivityDeduplicatesAndChecksCurrentOwnershipAndVotesAsync()
         {
@@ -100,7 +110,7 @@ namespace StartScreen.Test
             Assert.AreEqual(1, activityRequests);
             Assert.AreEqual(3, handler.RequestCount);
 
-            now = now.AddMinutes(59);
+            now = now.AddDays(6).AddHours(23).AddMinutes(59);
             Assert.AreSame(first, await service.GetTicketsAsync(false, CancellationToken.None));
             Assert.AreEqual(1, metadataRequests);
             Assert.AreEqual(1, activityRequests);
@@ -109,7 +119,7 @@ namespace StartScreen.Test
             Assert.AreNotSame(first, forced);
             Assert.AreEqual(now, forced.UpdatedUtc);
             Assert.AreEqual(2, activityRequests);
-            now = now.AddMinutes(59).AddSeconds(59);
+            now = now.AddDays(7).AddSeconds(-1);
             Assert.AreSame(forced, await service.GetTicketsAsync(false, CancellationToken.None));
             Assert.AreEqual(2, activityRequests);
 
@@ -168,6 +178,197 @@ namespace StartScreen.Test
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetTicketsAsync(true, CancellationToken.None));
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetTicketsAsync(false, CancellationToken.None));
             Assert.AreEqual(4, handler.RequestCount);
+        }
+
+        [TestMethod]
+        public async Task DiskCache_NewServiceReusesAllTicketFieldsWithoutDownloadingActivityAsync()
+        {
+            using var handler = TicketHandler(Ticket(10, 7, true));
+            using var client = new HttpClient(handler);
+            var diskCache = new FeedbackCache(_cacheFolder);
+            var first = await Service(client, diskCache: diskCache).GetTicketsAsync(false, CancellationToken.None);
+
+            var restored = await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.AreEqual(4, handler.RequestCount, "A new session must verify identity but not fetch activity or hydrate tickets.");
+            Assert.AreEqual(first.PrincipalId, restored.PrincipalId);
+            Assert.AreEqual(first.UpdatedUtc, restored.UpdatedUtc, "Reading the cache must not extend its freshness.");
+            var expected = first.Tickets.Single();
+            var actual = restored.Tickets.Single();
+            Assert.AreEqual(expected.Id, actual.Id);
+            Assert.AreEqual(expected.Title, actual.Title);
+            Assert.AreEqual(expected.Url, actual.Url);
+            Assert.AreEqual(expected.State, actual.State);
+            Assert.AreEqual(expected.Votes, actual.Votes);
+            Assert.AreEqual(expected.IsCreatedByUser, actual.IsCreatedByUser);
+            Assert.AreEqual(expected.IsUpvotedByUser, actual.IsUpvotedByUser);
+            Assert.AreEqual(expected.UpdatedUtc, actual.UpdatedUtc);
+            var stored = File.ReadAllText(Path.Combine(_cacheFolder, "7.json"));
+            Assert.DoesNotContain(expected.Title, stored);
+            Assert.DoesNotContain("test-token", stored);
+            Assert.DoesNotContain("PrincipalId", stored);
+        }
+
+        [TestMethod]
+        public async Task DiskCache_EmptySnapshotSurvivesANewServiceInstanceAsync()
+        {
+            using var handler = new Handler((path, _) => path == "metadata" ? Json(new { Id = 7 })
+                : Json(new { totalCount = 0, activities = Array.Empty<object>() }));
+            using var client = new HttpClient(handler);
+            await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+
+            var restored = await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.IsEmpty(restored.Tickets);
+            Assert.AreEqual(3, handler.RequestCount);
+        }
+
+        [TestMethod]
+        public async Task DiskCache_ExpiresAfterSevenDaysAcrossServiceInstancesAsync()
+        {
+            var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            using var handler = TicketHandler(Ticket(10, 7, false));
+            using var client = new HttpClient(handler);
+            await Service(client, () => now, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+            now = now.AddDays(7);
+
+            var refreshed = await Service(client, () => now, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.AreEqual(now, refreshed.UpdatedUtc);
+            Assert.AreEqual(6, handler.RequestCount);
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task DiskCache_DoesNotReuseAnotherAccountsSnapshotAsync(bool copyWrongAccountFile)
+        {
+            var principal = 7L;
+            using var handler = new Handler((path, _) => path == "metadata" ? Json(new { Id = principal })
+                : path == "getActivity" ? Json(new { totalCount = 1, activities = new[] { Action("posted", principal) } })
+                : Json(new { results = new[] { Ticket(principal, principal, false) } }));
+            using var client = new HttpClient(handler);
+            await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+            if (copyWrongAccountFile)
+                File.Copy(Path.Combine(_cacheFolder, "7.json"), Path.Combine(_cacheFolder, "8.json"));
+            principal = 8;
+
+            var current = await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.AreEqual(8L, current.PrincipalId);
+            Assert.AreEqual(8L, current.Tickets.Single().Id);
+            Assert.AreEqual(6, handler.RequestCount);
+            Assert.HasCount(2, Directory.GetFiles(_cacheFolder, "*.json"));
+        }
+
+        [TestMethod]
+        public async Task DiskCache_CorruptEncryptedDataIsReplacedByACompleteOnlineSnapshotAsync()
+        {
+            await AtomicJsonCache.WriteAsync(Path.Combine(_cacheFolder, "7.json"), new byte[] { 1, 2, 3 });
+            using var handler = TicketHandler(Ticket(10, 7, false));
+            using var client = new HttpClient(handler);
+            var cache = new FeedbackCache(_cacheFolder);
+
+            var result = await Service(client, diskCache: cache).GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.AreEqual(10L, result.Tickets.Single().Id);
+            Assert.AreEqual(3, handler.RequestCount);
+            Assert.AreEqual(10L, (await cache.ReadAsync(7, CancellationToken.None))!.Tickets.Single().Id);
+        }
+
+        [TestMethod]
+        public async Task DiskCache_ForcedRefreshPreservesLastSnapshotWithoutSavingFailedHydrationAsync()
+        {
+            var fail = false;
+            using var handler = new Handler((path, _) => path == "metadata" ? Json(new { Id = 7 })
+                : path == "getActivity" ? Json(new { totalCount = 1, activities = new[] { Action("posted", 10) } })
+                : fail ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                : Json(new { results = new[] { Ticket(10, 7, false) } }));
+            using var client = new HttpClient(handler);
+            await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+            fail = true;
+
+            await Assert.ThrowsAsync<HttpRequestException>(() => Service(client, diskCache: new FeedbackCache(_cacheFolder))
+                .GetTicketsAsync(true, CancellationToken.None));
+
+            var retained = await new FeedbackCache(_cacheFolder).ReadAsync(7, CancellationToken.None);
+            Assert.IsNotNull(retained);
+            Assert.AreEqual(10L, retained.Tickets.Single().Id);
+            fail = false;
+            var recovered = await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+            Assert.HasCount(1, recovered.Tickets);
+            Assert.AreEqual(7, handler.RequestCount);
+        }
+
+        [TestMethod]
+        [DataRow(604799, true)]
+        [DataRow(604800, false)]
+        [DataRow(-1, false)]
+        public async Task CacheOnly_EnforcesSevenDayBoundaryWithoutDownloadingActivityAsync(int ageSeconds, bool usable)
+        {
+            var now = DateTime.UtcNow;
+            var cache = new FeedbackCache(_cacheFolder);
+            await cache.WriteAsync(new FeedbackSnapshot(7,
+                [new FeedbackTicket { Id = 10, Title = "Cached ticket" }], now.AddSeconds(-ageSeconds)), CancellationToken.None);
+            using var handler = new Handler((path, _) =>
+            {
+                Assert.AreEqual("metadata", path, "A cache-only read must never download activity or hydrate tickets.");
+                return Json(new { Id = 7 });
+            });
+            using var client = new HttpClient(handler);
+
+            var restored = await Service(client, () => now, diskCache: cache).GetCachedTicketsAsync(CancellationToken.None);
+
+            Assert.AreEqual(usable, restored != null);
+            if (usable)
+            {
+                Assert.AreEqual(10L, restored!.Tickets.Single().Id);
+                Assert.AreEqual(now.AddSeconds(-ageSeconds), restored.UpdatedUtc);
+            }
+            Assert.AreEqual(1, handler.RequestCount);
+        }
+
+        [TestMethod]
+        public async Task StartupRefresh_ReplacesRetainedCacheWithLatestTicketsAndTimestampAsync()
+        {
+            var now = DateTime.UtcNow;
+            var cache = new FeedbackCache(_cacheFolder);
+            await cache.WriteAsync(new FeedbackSnapshot(7,
+                [new FeedbackTicket { Id = 1, Title = "Old ticket" }], now.AddDays(-3)), CancellationToken.None);
+            using var handler = TicketHandler(Ticket(10, 7, false));
+            using var client = new HttpClient(handler);
+            var service = Service(client, () => now, diskCache: cache);
+
+            var cached = await service.GetCachedTicketsAsync(CancellationToken.None);
+            Assert.IsNotNull(cached);
+            Assert.AreEqual(1L, cached.Tickets.Single().Id);
+            Assert.AreEqual(1, handler.RequestCount);
+
+            var latest = await service.GetTicketsAsync(true, CancellationToken.None);
+            var persisted = await cache.ReadAsync(7, CancellationToken.None);
+
+            Assert.AreEqual(10L, latest.Tickets.Single().Id);
+            Assert.AreEqual(now, latest.UpdatedUtc);
+            Assert.IsNotNull(persisted);
+            Assert.AreEqual(10L, persisted.Tickets.Single().Id);
+            Assert.AreEqual(now, persisted.UpdatedUtc);
+            Assert.AreEqual(4, handler.RequestCount);
+        }
+
+        [TestMethod]
+        public async Task DiskCache_WriteFailureDoesNotDiscardValidDownloadedTicketsAsync()
+        {
+            Directory.CreateDirectory(_cacheFolder);
+            var blockedFolder = Path.Combine(_cacheFolder, "not-a-folder");
+            File.WriteAllText(blockedFolder, "Test path obstruction");
+            using var handler = TicketHandler(Ticket(10, 7, false));
+            using var client = new HttpClient(handler);
+
+            var result = await Service(client, diskCache: new FeedbackCache(blockedFolder)).GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.AreEqual(10L, result.Tickets.Single().Id);
+            Assert.AreEqual(3, handler.RequestCount);
+            Assert.AreEqual("Test path obstruction", File.ReadAllText(blockedFolder));
         }
 
         [TestMethod]
@@ -294,7 +495,7 @@ namespace StartScreen.Test
                 return Json(new { results = new[] { Ticket(10, 7, false) } });
             });
             using var client = new HttpClient(handler);
-            var service = Service(client);
+            var service = Service(client, diskCache: new FeedbackCache(_cacheFolder));
 
             await Assert.ThrowsAsync<OperationCanceledException>(() => service.GetTicketsAsync(false, cancellation.Token));
             cancel = false;
@@ -339,8 +540,9 @@ namespace StartScreen.Test
             Assert.AreEqual(0, active);
         }
 
-        private static FeedbackService Service(HttpClient client, Func<DateTime>? utcNow = null, Func<string>? getToken = null) => new FeedbackService(client,
-            _ => Task.FromResult(new AccessToken(getToken?.Invoke() ?? "test-token", DateTimeOffset.UtcNow.AddHours(1))), utcNow);
+        private static FeedbackService Service(HttpClient client, Func<DateTime>? utcNow = null, Func<string>? getToken = null,
+            FeedbackCache? diskCache = null) => new FeedbackService(client,
+            _ => Task.FromResult(new AccessToken(getToken?.Invoke() ?? "test-token", new DateTimeOffset(utcNow?.Invoke() ?? DateTime.UtcNow).AddHours(1))), utcNow, diskCache);
 
         private static object Action(string activity, long rootPostId) => new { activity, rootPostId };
 

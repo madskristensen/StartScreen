@@ -28,26 +28,6 @@ namespace StartScreen
         public string PinnedArticles { get; set; } = "";
 
         /// <summary>
-        /// JSON string containing user-added custom feeds.
-        /// </summary>
-        [Browsable(false)]
-        [DefaultValue("")]
-        public string CustomFeeds { get; set; } = "";
-
-        /// <summary>
-        /// Serialized feed selection state (which feeds are enabled).
-        /// </summary>
-        [Browsable(false)]
-        [DefaultValue("")]
-        public string FeedSelection { get; set; } = "";
-
-        /// <summary>
-        /// Timestamp of the last time the user read the news feed.
-        /// </summary>
-        [Browsable(false)]
-        public DateTime LastFeedRead { get; set; } = DateTime.MinValue;
-
-        /// <summary>
         /// Timestamp of the last time the user viewed the Dev Hub Issues tab.
         /// Items with UpdatedAt newer than this are flagged as "new".
         /// </summary>
