@@ -201,7 +201,7 @@ namespace StartScreen.Test
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
             var icon = document.Descendants().Single(element => element.Attribute(x + "Name")?.Value == "CopilotActivityIcon");
             Assert.AreEqual("WorkItemDetails", icon.Parent!.Attribute(x + "Name")?.Value);
-            Assert.AreEqual("{x:Static helpers:CopilotMonikers.GitHubCopilot}", icon.Attribute("Moniker")?.Value);
+            Assert.AreEqual("{Binding CopilotMoniker}", icon.Attribute("Moniker")?.Value);
             var row = new XElement(icon.Parent);
             var image = row.Elements().Single(element => element.Attribute(x + "Name")?.Value == "CopilotActivityIcon");
             image.ReplaceWith(new XElement(p + "Border", image.Attributes().Where(attribute => attribute.Name.LocalName != "Moniker")

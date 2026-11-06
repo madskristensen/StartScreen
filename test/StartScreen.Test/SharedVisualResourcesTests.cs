@@ -219,7 +219,7 @@ namespace StartScreen.Test
             var panel = Read("DevHubPanel.xaml");
             Assert.IsFalse(panel.Descendants(_presentation + "ProgressBar").Any());
             Assert.IsFalse(panel.Descendants().Any(element => element.Attribute(_xaml + "Name")?.Value is "LoadingPanel" or "LoadingText"));
-            Assert.AreEqual(string.Empty, DevHubPanel.CopilotActivityStatusProperty.DefaultMetadata.DefaultValue);
+            Assert.IsFalse(panel.Descendants().Attributes().Any(attribute => attribute.Value.Contains("CopilotActivityStatus")));
         }
 
         [STATestMethod]

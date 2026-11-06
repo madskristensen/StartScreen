@@ -942,61 +942,25 @@ namespace StartScreen.Test
             Assert.AreEqual(footer.TranslatePoint(new Point(), root).X, title.TranslatePoint(new Point(), root).X, 0.01);
         }
 
-        [STATestMethod]
-        public void CopilotStatus_CollapsesEmptyGapButPreservesErrorMessages()
-        {
-            using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
-            Assert.IsNotNull(stream);
-            var document = XDocument.Load(stream);
-            XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-            XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var status = document.Descendants(presentation + "Run")
-                .Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotActivityStatusText");
-            var gap = document.Descendants(presentation + "Border")
-                .Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotActivityStatusGap");
-            var border = (Border)XamlReader.Parse(new XElement(gap).ToString());
-            border.Tag = string.Empty;
-            Assert.AreEqual(Visibility.Collapsed, border.Visibility);
-            border.Tag = "Local Copilot activity unavailable.";
-            Assert.AreEqual(Visibility.Visible, border.Visibility);
-
-            var fragment = new XElement(status);
-            fragment.Element(presentation + "Run.Foreground")!.Remove();
-            var run = (Run)XamlReader.Parse(fragment.ToString());
-            var binding = BindingOperations.GetBinding(run, Run.TextProperty)!;
-            Assert.AreEqual(BindingMode.OneWay, binding.Mode);
-            BindingOperations.SetBinding(run, Run.TextProperty, new Binding(binding.Path.Path)
-            {
-                Mode = binding.Mode,
-                Source = new { CopilotActivityStatus = (string)border.Tag },
-            }).UpdateTarget();
-            Assert.AreEqual(border.Tag, run.Text);
-        }
-
         [TestMethod]
-        public void CopilotStatus_IsBesideWorkHeadingUsingSharedHeaderCountTypography()
+        public void CopilotDiagnostics_AreNotDisplayedInTheWorkHeading()
         {
             using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
             var document = XDocument.Load(stream);
             XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var status = document.Descendants(presentation + "Run")
-                .Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotActivityStatusText");
             var heading = document.Descendants(presentation + "TextBlock")
                 .Single(element => element.Attribute("Text")?.Value == "My work");
 
-            Assert.AreSame(heading.Parent!.Parent, status.Parent);
-            Assert.AreEqual(presentation + "TextBlock", status.Parent!.Name);
-            Assert.AreEqual("Baseline", heading.Parent.Attribute("BaselineAlignment")?.Value);
-            Assert.AreEqual("Baseline", status.Attribute("BaselineAlignment")?.Value);
-            Assert.AreEqual("{StaticResource StartScreen.HeaderCount}", status.Attribute("Style")?.Value);
-            Assert.AreEqual("Metadata", SharedXamlReader.Setter("StartScreen.HeaderCount", "local:Typography.Role"));
-            Assert.AreEqual("{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}", status.Attribute("Text")?.Value);
+            Assert.IsNotNull(heading);
+            Assert.IsFalse(document.Descendants().Any(element => element.Attribute(xaml + "Name")?.Value
+                is "CopilotActivityStatusText" or "CopilotActivityStatusGap"));
+            Assert.IsFalse(document.Descendants().Attributes().Any(attribute => attribute.Value.Contains("CopilotActivityStatus")));
         }
 
         [STATestMethod]
-        public void CopilotStatus_SharesTheMeasuredHeadingBaseline()
+        public void WorkHeading_PreservesItsMeasuredBaselineWithoutDiagnostics()
         {
             using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
@@ -1007,8 +971,6 @@ namespace StartScreen.Test
                 .Single(element => element.Attribute(xaml + "Name")?.Value == "WorkHeadingLine"));
             line.SetAttributeValue(XNamespace.Xmlns + "x", xaml.NamespaceName);
             line.Descendants(presentation + "TextBlock").Single().SetAttributeValue("Text", "Your work");
-            var status = line.Elements(presentation + "Run").Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotActivityStatusText");
-            status.SetAttributeValue("Text", "Discovering local Copilot sessions...");
             line.Descendants(presentation + "Run.Foreground").Remove();
             var textBlock = (TextBlock)XamlReader.Parse(line.ToString());
             var heading = (TextBlock)textBlock.Inlines.OfType<InlineUIContainer>().First().Child;
@@ -1426,7 +1388,7 @@ namespace StartScreen.Test
                 .Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotMetadata");
             var icon = document.Descendants()
                 .Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotActivityIcon");
-            Assert.AreEqual("{x:Static helpers:CopilotMonikers.GitHubCopilot}", icon.Attribute("Moniker")?.Value);
+            Assert.AreEqual("{Binding CopilotMoniker}", icon.Attribute("Moniker")?.Value);
             Assert.AreEqual("{Binding IsCopilot, Converter={StaticResource BoolToVisibilityConverter}}", icon.Attribute("Visibility")?.Value);
             Assert.AreSame(title.Parent, metadata.Parent);
             var siblings = title.Parent!.Elements().ToList();

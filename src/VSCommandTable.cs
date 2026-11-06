@@ -32,5 +32,11 @@ namespace StartScreen
         public const int ClearAllButPinnedCommand = 0x0102;
         public const int ClearMissingRecentCommand = 0x0103;
         public const int ClearRecentMenu = 0x1000;
+        public const int CopilotSessionMenu = 0x1001;
+        public const int CopilotSessionGroup = 0x0003;
+        public const int OpenCopilotInVisualStudio = 0x0110;
+        public const int OpenCopilotInCode = 0x0111;
+        public const int OpenCopilotInCli = 0x0112;
+        public const int OpenCopilotOnGitHub = 0x0113;
     }
 }

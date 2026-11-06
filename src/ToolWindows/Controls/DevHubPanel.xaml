@@ -128,7 +128,9 @@
         <DataTemplate x:Key="WorkItemTemplate">
             <Border x:Name="WorkItemBorder" Style="{StaticResource StartScreen.CardSurface}" Margin="0 0 0 4" Focusable="True"
                     Cursor="Hand" AutomationProperties.Name="{Binding Title}" AutomationProperties.HelpText="{Binding ActionText}"
-                    MouseUp="WorkItem_MouseUp" Loaded="DevHubItemBorder_Loaded">
+                    MouseUp="WorkItem_MouseUp" Loaded="DevHubItemBorder_Loaded"
+                    PreviewMouseRightButtonDown="CopilotItem_RightButtonDown" PreviewMouseRightButtonUp="CopilotItem_RightButtonUp"
+                    PreviewKeyDown="CopilotItem_PreviewKeyDown">
                 <Border.ContextMenu>
                     <ContextMenu Opened="DevHubContextMenu_Opened">
                         <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
@@ -161,7 +163,7 @@
                         <TextBlock Grid.Column="2" Text="{Binding ActivityDateText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
                                    HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
                         <imaging:CrispImage x:Name="CopilotActivityIcon" Width="16" Height="16" Margin="0 0 6 0" VerticalAlignment="Center"
-                                            Moniker="{x:Static helpers:CopilotMonikers.GitHubCopilot}"
+                                            Moniker="{Binding CopilotMoniker}" ToolTip="{Binding CopilotSourceName}"
                                             Visibility="{Binding IsCopilot, Converter={StaticResource BoolToVisibilityConverter}}"/>
                     </Grid>
                     <StackPanel x:Name="CopilotMetadata" Orientation="Horizontal"
@@ -890,28 +892,6 @@
                                 </Run.Style>
                                 <Run.Foreground>
                                     <SolidColorBrush Color="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextColorKey}}" Opacity="0.65"/>
-                                </Run.Foreground>
-                            </Run>
-                            <InlineUIContainer BaselineAlignment="Baseline">
-                                <Border x:Name="CopilotActivityStatusGap" Width="12" Height="0"
-                                        Tag="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Style.Triggers>
-                                                <Trigger Property="Tag" Value="">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                </Border>
-                            </InlineUIContainer>
-                            <Run x:Name="CopilotActivityStatusText" BaselineAlignment="Baseline" FontWeight="Normal"
-                                 Text="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                                 Style="{StaticResource StartScreen.HeaderCount}"
-                                 ToolTip="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}">
-                                <Run.Foreground>
-                                    <SolidColorBrush Color="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextColorKey}}" Opacity="0.7"/>
                                 </Run.Foreground>
                             </Run>
                         </TextBlock>

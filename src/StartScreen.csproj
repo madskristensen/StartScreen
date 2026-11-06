@@ -141,6 +141,9 @@
       <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.7" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" GeneratePathProperty="true" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
     <!--<PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.0.32112.339" ExcludeAssets="runtime">
       <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>-->
@@ -149,6 +152,23 @@
     </PackageReference>
     <PackageReference Include="System.Text.Json" Version="8.0.6" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="$(PkgSQLitePCLRaw_lib_e_sqlite3)\runtimes\win-x64\native\e_sqlite3.dll">
+      <Link>runtimes\win-x64\native\e_sqlite3.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="$(PkgSQLitePCLRaw_lib_e_sqlite3)\runtimes\win-arm64\native\e_sqlite3.dll">
+      <Link>runtimes\win-arm64\native\e_sqlite3.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="IncludeCopilotSessionRuntimeDependencies" BeforeTargets="GetVsixSourceItems">
+    <ItemGroup>
+      <SuppressFromVsix Remove="Microsoft.Data.Sqlite.dll;SQLitePCLRaw.core.dll;SQLitePCLRaw.batteries_v2.dll;SQLitePCLRaw.provider.dynamic_cdecl.dll;YamlDotNet.dll" />
+    </ItemGroup>
+  </Target>
 
   <!-- Older VS 2022 hosts may not provide the runtime versions required by Azure Identity. -->
   <Target Name="IncludeAzureIdentityRuntimeDependencies" BeforeTargets="GetVsixSourceItems">

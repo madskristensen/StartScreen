@@ -233,7 +233,7 @@ namespace StartScreen.Test
             Assert.HasCount(1, needsYou);
             Assert.AreEqual("waiting", needsYou[0].CopilotSessionId);
             Assert.IsFalse(overview.Any(item => item.CopilotSessionId == "waiting"));
-            Assert.IsTrue(overview.All(item => item.ActionText == "Open in Copilot" && item.WebUrl == null));
+            Assert.IsTrue(overview.All(item => item.ActionText == "Open in Visual Studio" && item.WebUrl == null));
         }
 
         private static CopilotHarnessAdapter CreateAdapter(List<Exception>? errors = null)

@@ -16,16 +16,6 @@ namespace StartScreen.ToolWindows.Controls
 {
     public partial class DevHubPanel
     {
-        public static readonly DependencyProperty CopilotActivityStatusProperty = DependencyProperty.Register(
-            nameof(CopilotActivityStatus), typeof(string), typeof(DevHubPanel),
-            new PropertyMetadata(string.Empty));
-
-        public string CopilotActivityStatus
-        {
-            get => (string)GetValue(CopilotActivityStatusProperty);
-            private set => SetValue(CopilotActivityStatusProperty, value);
-        }
-
         private CopilotHarnessAdapter _copilotAdapter;
         private readonly CopilotActivityCache _copilotCache = new();
         private IComponentModel _copilotComponentModel;
@@ -72,7 +62,10 @@ namespace StartScreen.ToolWindows.Controls
         private void StartCopilotActivity()
         {
             if (_isDisposed || StartScreenPackage.ShutdownToken.IsCancellationRequested
-                || !_copilotLoaded || !IsVisible || _copilotAdapter != null || _copilotConnecting)
+                || !_copilotLoaded || !IsVisible)
+                return;
+            StartCopilotSources();
+            if (_copilotAdapter != null || _copilotConnecting)
                 return;
             ConnectCopilotActivityAsync().FileAndForget(nameof(DevHubPanel));
         }
@@ -85,7 +78,7 @@ namespace StartScreen.ToolWindows.Controls
                 _copilotDiskCacheLoaded ? "Connecting to local Copilot..." : "Reading cached Copilot activity...");
             _copilotProgress?.Report((0, totalSteps));
             _copilotConnecting = true;
-            CopilotActivityStatus = string.Empty;
+            _copilotConnectionError = null;
             RenderCopilotActivity();
             try
             {
@@ -114,7 +107,7 @@ namespace StartScreen.ToolWindows.Controls
                         if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                             return;
                         _copilotCacheError = "Copilot history cache could not be loaded.";
-                        CopilotActivityStatus = _copilotCacheError;
+                        UpdateCopilotStatus();
                     }
                 }
                 _copilotProgress?.Report((totalSteps - 2, totalSteps));
@@ -203,8 +196,12 @@ namespace StartScreen.ToolWindows.Controls
         {
             var sessions = _copilotAdapter == null ? _copilotCache.Sessions
                 : _copilotCache.Update(_copilotAdapter.Sessions, _copilotAdapter.IsReady);
-            return sessions.Where(session => !_copilotScoped
-                || _copilotWorkspaceRoots.Any(session.MatchesWorkspace)).ToArray();
+            return sessions.Concat(_localCopilotSessions).Concat(CurrentCloudCopilotSessions)
+                .GroupBy(session => session.Key, StringComparer.OrdinalIgnoreCase).Select(group => group.First())
+                .Where(session => !_copilotScoped || (session.Origin == CopilotSessionOrigin.GitHub
+                    ? string.Equals(_currentFilterRepo?.Host, "github.com", StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(session.Repository, _currentFilterRepo.DisplayName, StringComparison.OrdinalIgnoreCase)
+                    : _copilotWorkspaceRoots.Any(session.MatchesWorkspace))).ToArray();
         }
 
         private void RenderCopilotActivity()
@@ -217,10 +214,7 @@ namespace StartScreen.ToolWindows.Controls
                 _copilotProgress?.Complete();
                 _copilotProgress = null;
             }
-            if (_copilotAdapter != null)
-            {
-                CopilotActivityStatus = _copilotCacheError ?? string.Empty;
-            }
+            UpdateCopilotStatus();
             RefreshWorkspaceActivity();
             if (_copilotAdapter?.IsReady == true && !_copilotCacheSavedForConnection)
             {
@@ -241,8 +235,7 @@ namespace StartScreen.ToolWindows.Controls
                     if (_isDisposed)
                         return;
                     _copilotCacheError = null;
-                    if (_copilotAdapter != null)
-                        CopilotActivityStatus = string.Empty;
+                    UpdateCopilotStatus();
                 }
                 catch (OperationCanceledException ex) when (StartScreenPackage.ShutdownToken.IsCancellationRequested)
                 {
@@ -253,7 +246,7 @@ namespace StartScreen.ToolWindows.Controls
                     await ex.LogAsync();
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
                     _copilotCacheError = "Copilot history cache could not be saved.";
-                    CopilotActivityStatus = _copilotCacheError;
+                    UpdateCopilotStatus();
                 }
             }).FileAndForget(nameof(DevHubPanel));
         }
@@ -261,12 +254,15 @@ namespace StartScreen.ToolWindows.Controls
         private void ReportCopilotFailure(Exception ex)
         {
             ex.LogAsync().FileAndForget(nameof(DevHubPanel));
-            StopCopilotActivity();
-            CopilotActivityStatus = "Local Copilot activity unavailable. Open Copilot Chat and refresh. This experimental integration requires compatible VS harness contracts.";
+            StopCopilotActivity(stopSources: false);
+            _copilotConnectionError = "Visual Studio Copilot activity unavailable. Open Copilot Chat and refresh. This experimental integration requires compatible VS harness contracts.";
+            UpdateCopilotStatus();
         }
 
-        private void StopCopilotActivity()
+        private void StopCopilotActivity(bool stopSources = true)
         {
+            if (stopSources)
+                StopCopilotSources();
             _copilotGeneration++;
             _copilotConnecting = false;
             _copilotProgress?.Dispose();
@@ -295,7 +291,6 @@ namespace StartScreen.ToolWindows.Controls
             _copilotComponentModel = null;
             if (_isDisposed)
                 return;
-            CopilotActivityStatus = string.Empty;
             UpdateBusyState();
             RefreshWorkspaceActivity();
         }

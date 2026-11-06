@@ -53,6 +53,11 @@ the preview version required by the connection-data endpoint.
 Each dashboard refresh discovers its repository context once and shares that
 snapshot between personal and repository activity queries. Repository-detail
 requests use a shared concurrency limit, including cancellation while queued.
+Each provider starts fetching and publishing fresh activity as soon as its own
+authentication finishes. GitHub does not wait for Azure DevOps or other providers
+to sign in, and repository-scoped refreshes authenticate only the owning provider.
+The final dashboard cache is saved after all providers finish; interim results
+remain available while other providers are still connecting.
 Cached personal and team activity is restored independently for each provider as
 its current identity is verified, without waiting for other providers to finish
 signing in. A slow or signed-out provider does not discard another provider's
@@ -442,7 +447,12 @@ Work cards show the title first, with the repository or Copilot workspace direct
 below it. Work and Feedback dates align at the far right. Blog and video dates
 stay on the left with their source metadata, and their titles use the normal theme text color.
 Blog cards use the same padding as work cards and do not stretch to fill taller rows.
-The Copilot logo sits beside the workspace name rather than occupying its own row.
+Copilot source icons sit beside the workspace name rather than occupying their own row:
+Agent for Visual Studio (GitHubCopilot on older VS hosts), VisualStudioCode for VS Code (VisualStudioOnline on older VS hosts),
+Console for CLI, and GitHub for cloud agents.
+Hover over a source icon for its app name (Terminal, VS Code, Visual Studio, or GitHub).
+VS Code sessions use the native workspace folder name; chats without a workspace show
+**No workspace** instead of the internal chat-folder GUID.
 Work card titles stay on one line with ellipsis; hover to read the full title.
 Work card titles reserve extra space on the right to separate the blades visually.
 Assigned issues/tasks show an **Assigned to you** pill below the repository row.
@@ -471,7 +481,9 @@ permissions, discovered projects, and provider availability still limit coverage
 **Recently completed** optionally adds a separate My work group for your merged
 PRs and completed created/assigned issues or tasks from the last 14 days. It does
 not replace the active-work queries or add completed work to Attention.
-Cloud-agent sessions and sessions in other VS/CLI processes are not included.
+Copilot also discovers recent CLI and supported native VS Code sessions from their
+local metadata. GitHub cloud-agent tasks use the configured GitHub account when that
+provider is enabled. These sources refresh independently once a minute while the page is visible.
 
 PRs open in Visual Studio's native review experience when the installed Git
 tooling supports it. **Open in Browser** remains available from the PR context
@@ -481,19 +493,30 @@ can be opened from the Start Screen before a repository is active.
 Opening a review does not silently check out a branch.
 
 An experimental, optional Copilot integration observes the installed VS harness
-through its in-process MEF contracts. My work includes running and recent local
+through its in-process MEF contracts. My work includes running and recent
 conversations; its Attention feed includes sessions with unresolved
 permission requests or questions, including requests from subagents. Clicking a conversation, or pressing
-Enter on it, opens it in Copilot so requests are answered in Copilot's own UI. It does not
-send prompts, resume sessions in another process, or answer requests automatically.
+Enter on it, opens it in the app where it was created. Visual Studio conversations
+open in its Copilot Chat, supported VS Code conversations open in its native Agents
+window, CLI conversations resume in an interactive CLI console, and cloud tasks open
+on GitHub. No prompts are sent and requests are never answered automatically.
+Right-click, the Menu key, or Shift+F10 opens native Visual Studio session actions.
+Only Visual Studio-to-CLI and VS Code-to-CLI alternatives are offered. There are no
+destination buttons on cards and no unverified cross-IDE or CLI-to-IDE actions.
+CLI opening requires an explicit final shutdown, no ownership markers, and no known
+live activity. VS Code-to-CLI also requires VS Code to be closed. The checks run again
+immediately before launch. Unknown ownership disables the action; locks are never
+deleted, sessions are never forcibly taken over or silently forked. Active CLI
+sessions cannot be focused externally and must be closed normally before resuming.
+An idle session is not considered released. CLI must be installed as copilot.exe on PATH.
 Conversation titles occupy a single line with an ellipsis; hover to see the full
-title. The native Copilot icon appears beside the workspace below the title,
+title. The source icon appears beside the workspace below the title,
 with the date aligned to the right. A compact, theme-aware status badge appears
 below the workspace. Running uses the accent color, Waiting uses the warning color, and Idle
 is muted. Conversations without a known live state show no state badge rather
 than claiming to be idle. These signals do not describe work in
 another Visual Studio instance or a separate CLI process.
-Loading and error status appears beside the work-section heading.
+Background Copilot diagnostics appear in the Start Screen Output pane, not beside the work heading.
 Sessions appear as they are discovered, without waiting for the entire catalog.
 Reopening the page reuses up to 100 conversation metadata entries while reconnecting.
 Metadata is also saved locally under `%LOCALAPPDATA%\StartScreen\CopilotCache` after
@@ -504,7 +527,7 @@ Copilot service initialization, with a dispatcher yield to allow rendering first
 The first launch without a cache still depends on VS discovery. Cached entries show
 no state badge and never retain old running or permission state. Completed discovery
 replaces stale entries, including deleting history when the catalog is empty.
-Cache errors are logged and surfaced beside the work heading without disabling
+Cache errors are logged to Output without disabling
 live discovery. Opening a cached entry requires the current backend to confirm
 that the conversation still exists.
 Workspace selection filters sessions by their reported working directory; sessions
@@ -518,8 +541,17 @@ produce an explicit unavailable status; discovery
 in progress is not reported as an empty successful result. Refresh retries the
 connection. Subscriptions are removed while the page is hidden or closed. Copilot
 activity remains accessible without a GitHub/Azure DevOps dashboard connection.
-Only sessions exposed by this VS instance's current backend are shown, not cloud
-agents or agents in other processes. Chat files and open-session counts are never
+Local discovery reads at most 100 recent CLI/VS Code metadata directories from
+`%USERPROFILE%\.copilot\session-state`. VS Code's read-only native session catalog
+must map the backing runtime ID to a native Agents session ID; unsupported legacy
+formats and unmapped sessions are not shown. Creator metadata determines the icon,
+not the last app that resumed a session. No transcripts are scanned for discovery.
+GitHub cloud discovery requires Agent tasks read permission and queries up to 100
+recent tasks. Synced local tasks are not treated as cloud agents. If the preview API
+omits cloud-origin metadata, unverified tasks are omitted with a diagnostic in Output.
+Cloud metadata is held only in memory and scoped to the current account. Cloud tasks
+filter by repository; local sessions filter by working directory. Failure of one
+source does not disable the others. Local files and open-session counts are never
 treated as proof that an agent is running. No Copilot implementation assemblies are
 shipped or required to build the extension.
 

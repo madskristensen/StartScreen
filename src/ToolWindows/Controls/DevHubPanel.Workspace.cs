@@ -201,7 +201,7 @@ namespace StartScreen.ToolWindows.Controls
                 return;
 
             if (item.CopilotSessionId != null)
-                OpenCopilotSessionAsync(item.CopilotSessionId).FileAndForget(nameof(DevHubPanel));
+                OpenCopilotSessionAsync(item.CopilotSession, item.CopilotSession.Origin).FileAndForget(nameof(DevHubPanel));
             else if (item.IsPullRequest)
                 StartScreenPackage.BackgroundTaskFactory.RunAsync(() => Services.PullRequestNavigationService.OpenAsync(item.WebUrl))
                     .FileAndForget(nameof(DevHubPanel));

@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.VisualStudio.Imaging.Interop;
+using StartScreen.Helpers;
 
 namespace StartScreen.Models.DevHub
 {
@@ -34,8 +36,11 @@ namespace StartScreen.Models.DevHub
         public string ActivityText => IsCopilot ? $"{UpdatedAt.ToLocalTime():MMM d} in {Detail}" : string.Empty;
         public string ActivityDateText => DevHubPullRequest.FormatActivityDate(UpdatedAt, DateTime.Now);
         public string ActivityDateToolTip => UpdatedAt == default ? string.Empty : UpdatedAt.ToLocalTime().ToString("f");
-        public string ActionText => CopilotSessionId != null ? "Open in Copilot" : IsPullRequest ? "Open pull request" : "Open in browser";
+        public string ActionText => IsCopilot ? "Open in " + CopilotSession.OriginName : IsPullRequest ? "Open pull request" : "Open in browser";
         public string CopilotSessionId { get; private set; }
+        public CopilotActivitySession CopilotSession { get; private set; }
+        public string CopilotSourceName => CopilotSession?.Origin == CopilotSessionOrigin.Cli ? "Terminal" : CopilotSession?.OriginName;
+        public ImageMoniker CopilotMoniker => CopilotMonikers.ForOrigin(CopilotSession?.Origin ?? CopilotSessionOrigin.VisualStudio);
         public string WebUrl { get; private set; }
         public bool IsPullRequest { get; private set; }
         public DateTime UpdatedAt { get; private set; }
@@ -50,11 +55,14 @@ namespace StartScreen.Models.DevHub
             return visible.Select(session => new DevHubWorkItem
             {
                 Title = session.Title,
-                Detail = string.IsNullOrEmpty(session.WorkingDirectory) ? "Workspace not yet known"
+                Detail = session.Origin == CopilotSessionOrigin.GitHub ? session.Repository
+                    : session.IsWorkspaceless ? "No workspace"
+                    : string.IsNullOrEmpty(session.WorkingDirectory) ? "Workspace not yet known"
                     : Path.GetFileName(session.WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar)),
                 CopilotStatus = session.StatusBadge,
                 CopilotStatusDetails = session.Status,
                 CopilotSessionId = session.Id,
+                CopilotSession = session,
                 AttentionReason = session.NeedsAttention ? session.Status : null,
                 Section = "Copilot sessions",
                 UpdatedAt = session.LastActivity.UtcDateTime,
