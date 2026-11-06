@@ -10,11 +10,13 @@ namespace StartScreen.Models.DevHub
         public bool IsCopilot => CopilotSessionId != null;
         public string DisplayTitle => string.Join(" ", (Title ?? string.Empty).Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
         public string Detail { get; private set; }
+        public string DetailToolTip => IsBuild && !string.IsNullOrEmpty(StatusDetails) ? StatusDetails : Detail;
         public string StatusText { get; private set; }
         public string StatusCategory => DevHubPullRequest.GetStatusCategory(StatusText);
         public string AttentionReason { get; private set; }
         public string NextActionText { get; private set; }
         public string AuthorText { get; private set; }
+        public string DurationText { get; private set; }
         public string StatusDetails { get; private set; }
         public bool IsCompleted { get; private set; }
         public bool IsAssignedToCurrentUser { get; private set; }
@@ -161,6 +163,7 @@ namespace StartScreen.Models.DevHub
                 Title = build.Name,
                 Detail = build.RepoDisplayName,
                 StatusText = $"Build {build.Status}",
+                DurationText = build.DurationText,
                 NextActionText = build.Status == "failure" ? build.FailureSummary : null,
                 StatusDetails = string.IsNullOrWhiteSpace(build.Branch) ? build.FailureSummary
                     : string.Join(Environment.NewLine, new[] { $"Branch: {build.Branch}", build.FailureSummary }

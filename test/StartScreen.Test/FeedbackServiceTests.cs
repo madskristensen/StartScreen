@@ -92,15 +92,17 @@ namespace StartScreen.Test
                 return Json(new { results = new[] { Ticket(principal, principal, false) } });
             });
             using var client = new HttpClient(handler);
-            var service = Service(client, () => now);
+            var service = Service(client, () => now, () => handler.ExpectedToken);
 
             var first = await service.GetTicketsAsync(false, CancellationToken.None);
             Assert.AreSame(first, await service.GetTicketsAsync(false, CancellationToken.None));
-            Assert.AreEqual(2, metadataRequests);
+            Assert.AreEqual(1, metadataRequests);
             Assert.AreEqual(1, activityRequests);
+            Assert.AreEqual(3, handler.RequestCount);
 
             now = now.AddMinutes(59);
             Assert.AreSame(first, await service.GetTicketsAsync(false, CancellationToken.None));
+            Assert.AreEqual(1, metadataRequests);
             Assert.AreEqual(1, activityRequests);
 
             var forced = await service.GetTicketsAsync(true, CancellationToken.None);
@@ -118,10 +120,19 @@ namespace StartScreen.Test
             Assert.AreEqual(3, activityRequests);
 
             principal = 8;
+            handler.ExpectedToken = "other-account-token";
             var switched = await service.GetTicketsAsync(false, CancellationToken.None);
             Assert.AreEqual(8L, switched.PrincipalId);
             Assert.AreEqual(8L, switched.Tickets.Single().Id);
             Assert.AreEqual(4, activityRequests);
+            Assert.AreEqual(4, metadataRequests);
+
+            handler.ExpectedToken = "renewed-account-token";
+            Assert.AreSame(switched, await service.GetTicketsAsync(false, CancellationToken.None));
+            Assert.AreEqual(5, metadataRequests);
+            Assert.AreEqual(4, activityRequests, "Token renewal for the same account must not reload tickets.");
+            Assert.AreSame(switched, await service.GetTicketsAsync(false, CancellationToken.None));
+            Assert.AreEqual(5, metadataRequests);
         }
 
         [TestMethod]
@@ -134,11 +145,44 @@ namespace StartScreen.Test
                 ? (fail ? new HttpResponseMessage((HttpStatusCode)status) : Json(new { Id = 7 }))
                 : Json(new { totalCount = 0, activities = Array.Empty<object>() }));
             using var client = new HttpClient(handler);
+            var service = Service(client, getToken: () => handler.ExpectedToken);
+            await service.GetTicketsAsync(false, CancellationToken.None);
+            fail = true;
+            handler.ExpectedToken = "other-account-token";
+
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetTicketsAsync(false, CancellationToken.None));
+        }
+
+        [TestMethod]
+        public async Task ForcedRefreshFailure_DoesNotLeaveAReusableCachedSuccessAsync()
+        {
+            var fail = false;
+            using var handler = new Handler((path, _) => fail ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : path == "metadata" ? Json(new { Id = 7 })
+                : Json(new { totalCount = 0, activities = Array.Empty<object>() }));
+            using var client = new HttpClient(handler);
             var service = Service(client);
             await service.GetTicketsAsync(false, CancellationToken.None);
             fail = true;
 
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetTicketsAsync(true, CancellationToken.None));
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetTicketsAsync(false, CancellationToken.None));
+            Assert.AreEqual(4, handler.RequestCount);
+        }
+
+        [TestMethod]
+        public async Task ConcurrentCacheReaders_ReuseTheCompleteSnapshotWithoutMoreRequestsAsync()
+        {
+            using var handler = TicketHandler(Ticket(10, 7, false));
+            using var client = new HttpClient(handler);
+            var service = Service(client);
+
+            var snapshots = await Task.WhenAll(Enumerable.Range(0, 8)
+                .Select(_ => service.GetTicketsAsync(false, CancellationToken.None)));
+
+            Assert.HasCount(1, snapshots[0].Tickets);
+            Assert.IsTrue(snapshots.All(snapshot => ReferenceEquals(snapshots[0], snapshot)));
+            Assert.AreEqual(3, handler.RequestCount);
         }
 
         [TestMethod]
@@ -295,8 +339,8 @@ namespace StartScreen.Test
             Assert.AreEqual(0, active);
         }
 
-        private static FeedbackService Service(HttpClient client, Func<DateTime>? utcNow = null) => new FeedbackService(client,
-            _ => Task.FromResult(new AccessToken("test-token", DateTimeOffset.UtcNow.AddHours(1))), utcNow);
+        private static FeedbackService Service(HttpClient client, Func<DateTime>? utcNow = null, Func<string>? getToken = null) => new FeedbackService(client,
+            _ => Task.FromResult(new AccessToken(getToken?.Invoke() ?? "test-token", DateTimeOffset.UtcNow.AddHours(1))), utcNow);
 
         private static object Action(string activity, long rootPostId) => new { activity, rootPostId };
 
@@ -327,6 +371,7 @@ namespace StartScreen.Test
         {
             private int _requests;
             internal int RequestCount => Volatile.Read(ref _requests);
+            internal string ExpectedToken { get; set; } = "test-token";
             internal Func<JsonElement?, CancellationToken, Task<HttpResponseMessage>>? HydrateAsync { get; set; }
 
             protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -334,7 +379,7 @@ namespace StartScreen.Test
                 Interlocked.Increment(ref _requests);
                 Assert.AreEqual("https://sendvsfeedback2.azurewebsites.net", request.RequestUri!.GetLeftPart(UriPartial.Authority));
                 Assert.AreEqual("Bearer", request.Headers.Authorization?.Scheme);
-                Assert.AreEqual("test-token", request.Headers.Authorization?.Parameter);
+                Assert.AreEqual(ExpectedToken, request.Headers.Authorization?.Parameter);
                 var path = request.RequestUri.Segments.Last();
                 Assert.AreEqual(path == "metadata" ? HttpMethod.Get : HttpMethod.Post, request.Method);
                 using var body = request.Content == null ? null : JsonDocument.Parse(await request.Content.ReadAsStringAsync());

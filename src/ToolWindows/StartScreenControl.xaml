@@ -624,8 +624,8 @@
                                 </TabItem>
 
                                 <TabItem x:Name="FeedbackTab" Header="Feedback" Style="{StaticResource NewsTabItemStyle}">
-                                    <StackPanel Margin="8 24 0 0">
-                                        <TextBlock Text="{Binding FeedbackStatus}" TextWrapping="Wrap" Margin="0 0 0 12"
+                                    <StackPanel Margin="0 24 0 0">
+                                        <TextBlock Text="{Binding FeedbackStatus}" TextWrapping="Wrap" Margin="8 0 0 12"
                                                    Visibility="{Binding FeedbackStatus, Converter={StaticResource NullToCollapsedConverter}}"
                                                    AutomationProperties.LiveSetting="Polite"/>
                                         <ItemsControl x:Name="FeedbackItems" ItemsSource="{Binding FeedbackTickets}" Focusable="False"
@@ -637,46 +637,52 @@
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <StackPanel Margin="0 0 12 16" MaxWidth="360" HorizontalAlignment="Left">
-                                                        <TextBlock TextWrapping="Wrap" FontSize="13" FontWeight="SemiBold">
-                                                            <Hyperlink NavigateUri="{Binding Url}" RequestNavigate="FeedbackTicket_RequestNavigate"
-                                                                       ToolTip="{Binding Url}" TextDecorations="None"
-                                                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}">
-                                                                <Run Text="{Binding Title, Mode=OneWay}"/>
-                                                            </Hyperlink>
-                                                        </TextBlock>
-                                                        <WrapPanel Margin="0 6 0 4">
-                                                            <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
-                                                                    Tag="{DynamicResource {x:Static SystemParameters.HighContrastKey}}">
-                                                                <Border.Style>
-                                                                    <Style TargetType="Border">
-                                                                        <Setter Property="Background" Value="{Binding StateColor, Converter={StaticResource FeedbackStateBrushConverter}}"/>
-                                                                        <Setter Property="BorderBrush" Value="{Binding StateColor, Converter={StaticResource FeedbackStateBrushConverter}}"/>
-                                                                        <Style.Triggers>
-                                                                            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
-                                                                                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
-                                                                                <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
-                                                                            </DataTrigger>
-                                                                        </Style.Triggers>
-                                                                    </Style>
-                                                                </Border.Style>
-                                                                <TextBlock Text="{Binding StateText}" FontSize="10" FontWeight="Bold">
-                                                                    <TextBlock.Style>
-                                                                        <Style TargetType="TextBlock">
-                                                                            <Setter Property="Foreground" Value="{Binding StateColor, Converter={StaticResource FeedbackStateForegroundConverter}}"/>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" MaxWidth="360"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel Margin="8 0 20 16" HorizontalAlignment="Stretch">
+                                                            <TextBlock TextWrapping="Wrap" FontSize="13" FontWeight="SemiBold">
+                                                                <Hyperlink NavigateUri="{Binding Url}" RequestNavigate="FeedbackTicket_RequestNavigate"
+                                                                           ToolTip="{Binding Url}" TextDecorations="None"
+                                                                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}">
+                                                                    <Run Text="{Binding Title, Mode=OneWay}"/>
+                                                                </Hyperlink>
+                                                            </TextBlock>
+                                                            <WrapPanel Margin="0 6 0 4">
+                                                                <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
+                                                                        Tag="{DynamicResource {x:Static SystemParameters.HighContrastKey}}">
+                                                                    <Border.Style>
+                                                                        <Style TargetType="Border">
+                                                                            <Setter Property="Background" Value="{Binding StateColor, Converter={StaticResource FeedbackStateBrushConverter}}"/>
+                                                                            <Setter Property="BorderBrush" Value="{Binding StateColor, Converter={StaticResource FeedbackStateBrushConverter}}"/>
                                                                             <Style.Triggers>
-                                                                                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
-                                                                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                                                                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                                                                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
+                                                                                    <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
                                                                                 </DataTrigger>
                                                                             </Style.Triggers>
                                                                         </Style>
-                                                                    </TextBlock.Style>
-                                                                </TextBlock>
-                                                            </Border>
-                                                            <TextBlock Text="{Binding Details}" TextWrapping="Wrap" FontSize="11" Opacity="0.65" VerticalAlignment="Center"/>
-                                                        </WrapPanel>
-                                                        <TextBlock Text="{Binding UpdatedText}" ToolTip="{Binding ToolTip}" FontSize="11" Opacity="0.65"/>
-                                                    </StackPanel>
+                                                                    </Border.Style>
+                                                                    <TextBlock Text="{Binding StateText}" FontSize="10" FontWeight="Bold">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="Foreground" Value="{Binding StateColor, Converter={StaticResource FeedbackStateForegroundConverter}}"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                                                        <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
+                                                                </Border>
+                                                                <TextBlock Text="{Binding Details}" TextWrapping="Wrap" FontSize="11" Opacity="0.65" VerticalAlignment="Center"/>
+                                                            </WrapPanel>
+                                                            <TextBlock Text="{Binding UpdatedText}" ToolTip="{Binding ToolTip}" FontSize="11" Opacity="0.65"
+                                                                       HorizontalAlignment="Right"/>
+                                                        </StackPanel>
+                                                    </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>

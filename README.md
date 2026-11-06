@@ -118,9 +118,9 @@ your browser or Visual Studio. These action icons appear only while their entire
 card is hovered or contains keyboard focus; their space stays reserved to avoid
 layout shifts. When a workspace is selected, its name and **All repositories**
 sit beside the My work heading, keeping both blades' filter rows aligned.
-PR authors appear beside the status, before the date; PRs have no separate
+PR authors appear beside the status, with dates right-aligned on the repository row; PRs have no separate
 action-text line or check-details link. Issues and tasks assigned to you have a
-themed **Assigned to you** pill below the title, beside the date. Labels use solid
+themed **Assigned to you** pill below the repository row. Labels use solid
 rounded pills with their GitHub colors and contrasting text, with system colors
 in High Contrast mode. All labels, including priority and type labels, appear
 together in one row, wrapping only when needed; there is no separate priority/type row.
@@ -220,7 +220,10 @@ account. Choose the same account you use on Developer Community under
 is needed. Use the main **Refresh** button to reload after changing accounts or
 to retry an unavailable service. Switching away from Feedback and back keeps
 the displayed tickets without reloading. When reopening the Start Screen,
-feedback reuses cached results for up to one hour, after confirming the account.
+feedback reuses a shared in-memory cache for up to one hour, including across new
+screen instances in the same Visual Studio session. A matching, valid credential
+avoids Developer Community requests entirely. Renewed credentials recheck identity
+without downloading tickets again unless the account changed or the cache expired.
 The main **Refresh** button bypasses this cache and reloads feedback alongside
 the other data sources. Hiding the screen cancels pending requests.
 
@@ -277,14 +280,26 @@ My work orders its tabs as Attention, Copilot, PRs, Issues, and Builds. On initi
 load, empty Attention falls back to the first non-empty tab in that order. Later
 refreshes preserve your selection. If every tab is empty, Attention stays selected.
 
-Card titles stay on one line with ellipsis; hover to read the full title.
+Work cards show the title first, with the repository or Copilot workspace directly
+below it. Work and Feedback dates align at the far right. Blog and video dates
+stay on the left with their source metadata, and their titles use the normal theme text color.
+Blog cards use the same padding as work cards and do not stretch to fill taller rows.
+The Copilot logo sits beside the workspace name rather than occupying its own row.
+Work card titles stay on one line with ellipsis; hover to read the full title.
 Work card titles reserve extra space on the right to separate the blades visually.
-Assigned issues/tasks show an **Assigned to you** pill below the title with the date
-immediately to its right. Cards keep one primary status without a separate PR action-text line. Hover for simultaneous
-review/check blockers, approvals, discussion counts, and authorship. Issue label pills stay
-together in one row, wrapping when needed; task type, priority, assignment, and iteration details are on hover.
+Assigned issues/tasks show an **Assigned to you** pill below the repository row.
+Cards keep one primary status without a separate PR action-text line or large,
+redundant metadata tooltips. Open the item for complete provider details.
+Issue label pills stay together in one row, wrapping when needed, directly beneath
+the repository or status row without an empty action row. Click a card to open it;
+PR cards also retain their browser and Visual Studio action icons.
 The workflow state remains visible even when the item is assigned to you.
-Build headings show the repository without branch names; the full branch remains available on hover.
+Build headings show the repository without branch names; hover over the repository
+name for the full build branch and failure details.
+Completed builds show compact durations when timing data is available. Azure DevOps
+uses start and finish times, excluding queue time; Bitbucket uses its reported elapsed
+duration rather than billed build seconds. GitHub shows elapsed time from the run's
+start to its last completed update. Missing, invalid, and unfinished timings are hidden.
 A PR is only called
 **Ready to merge** when the provider supplies verified readiness; approval or a
 passing build by itself is not enough. Missing or incomplete policy/discussion
@@ -314,9 +329,9 @@ permission requests or questions, including requests from subagents. Clicking a 
 Enter on it, opens it in Copilot so requests are answered in Copilot's own UI. It does not
 send prompts, resume sessions in another process, or answer requests automatically.
 Conversation titles occupy a single line with an ellipsis; hover to see the full
-title. The native Copilot icon identifies conversation cards. A compact,
-theme-aware status badge and news-style date appear below the
-title. Running uses the accent color, Waiting uses the warning color, and Idle
+title. The native Copilot icon appears beside the workspace below the title,
+with the date aligned to the right. A compact, theme-aware status badge appears
+below the workspace. Running uses the accent color, Waiting uses the warning color, and Idle
 is muted. Conversations without a known live state show no state badge rather
 than claiming to be idle. These signals do not describe work in
 another Visual Studio instance or a separate CLI process.

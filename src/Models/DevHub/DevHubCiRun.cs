@@ -48,6 +48,15 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public DateTime Timestamp { get; set; }
 
+        public TimeSpan? Duration { get; set; }
+
+        [JsonIgnore]
+        public string DurationText => !Duration.HasValue || Duration.Value < TimeSpan.Zero ? null
+            : Duration.Value.TotalSeconds < 1 ? "<1s"
+            : Duration.Value.TotalMinutes < 1 ? $"{(int)Duration.Value.TotalSeconds}s"
+            : Duration.Value.TotalHours < 1 ? $"{(int)Duration.Value.TotalMinutes}m {Duration.Value.Seconds}s"
+            : $"{(int)Duration.Value.TotalHours}h {Duration.Value.Minutes}m";
+
         /// <summary>
         /// Direct URL to view this run in a browser.
         /// </summary>

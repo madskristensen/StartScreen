@@ -115,7 +115,7 @@ namespace StartScreen.ToolWindows.Controls
                 ActivityOptions.IncludeCompleted, builds);
             var incoming = DevHubWorkItem.GetIncoming(prs, issues, builds, Options.Instance.DevHubSortOrder);
             string signature = string.Join("\n", myWork.Concat(incoming)
-                .Select(item => $"{item.Section}|{item.CopilotSessionId}|{item.WebUrl}|{item.Title}|{item.Detail}|{item.StatusText}|{item.AttentionReason}|{item.NextActionText}|{item.AuthorText}|{item.IsAssignedToCurrentUser}|{item.StatusDetails}|{item.CopilotStatus}|{item.CopilotStatusDetails}|{item.UpdatedAt.Ticks}|{item.BranchDisplayText}|{string.Join(",", item.Labels.Select(label => label.Name + ":" + label.Color))}"));
+                .Select(item => $"{item.Section}|{item.CopilotSessionId}|{item.WebUrl}|{item.Title}|{item.Detail}|{item.StatusText}|{item.DurationText}|{item.AttentionReason}|{item.NextActionText}|{item.AuthorText}|{item.IsAssignedToCurrentUser}|{item.StatusDetails}|{item.CopilotStatus}|{item.CopilotStatusDetails}|{item.UpdatedAt.Ticks}|{item.BranchDisplayText}|{string.Join(",", item.Labels.Select(label => label.Name + ":" + label.Color))}"));
             if (_workspaceActivitySignature != signature)
             {
                 _workspaceActivitySignature = signature;

@@ -295,7 +295,7 @@ namespace StartScreen.Test
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
             var tab = document.Descendants(p + "TabItem").Single(item => item.Attribute(x + "Name")?.Value == "FeedbackTab");
-            var definition = new XElement(tab.Descendants(p + "DataTemplate").Single().Elements().Single());
+            var definition = new XElement(tab.Descendants(p + "DataTemplate").Single().Element(p + "Grid")!.Element(p + "StackPanel")!);
             definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
             XNamespace controls = "clr-namespace:StartScreen.ToolWindows.Controls;assembly=StartScreen";
             definition.AddFirst(new XElement(p + "StackPanel.Resources",
@@ -344,6 +344,9 @@ namespace StartScreen.Test
             Assert.AreEqual("Upvoted by you - 12 votes", details.Text);
             Assert.AreEqual(ticket.UpdatedText, date.Text);
             Assert.AreEqual(ticket.ToolTip, date.ToolTip);
+            Assert.AreEqual(HorizontalAlignment.Stretch, card.HorizontalAlignment);
+            Assert.AreEqual(HorizontalAlignment.Right, date.HorizontalAlignment);
+            Assert.AreEqual(card.ActualWidth, date.TranslatePoint(new Point(date.ActualWidth, 0), card).X, 0.01);
             Assert.AreEqual(11d, details.FontSize);
             Assert.AreEqual(date.FontSize, details.FontSize);
             Assert.AreEqual(0.65, details.Opacity);

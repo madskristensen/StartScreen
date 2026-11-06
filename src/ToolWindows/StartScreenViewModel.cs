@@ -506,7 +506,7 @@ namespace StartScreen.ToolWindows
             _repositorySummaries = new Services.DevHub.DevHubRepoSummaryService(shutdownToken);
             _getServiceHealthStatusAsync = getServiceHealthStatusAsync ?? ServiceHealthService.GetStatusAsync;
             _getServiceHealthTaskFactory = getServiceHealthTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
-            _getFeedbackAsync = getFeedbackAsync ?? new FeedbackService().GetTicketsAsync;
+            _getFeedbackAsync = getFeedbackAsync ?? FeedbackService.Instance.GetTicketsAsync;
             _getFeedbackTaskFactory = getFeedbackTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             NewsPosts = new ObservableCollection<NewsPost>();

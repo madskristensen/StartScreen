@@ -1162,6 +1162,15 @@ namespace StartScreen.Services.DevHub.Providers
                         : null;
 
                     var status = run.GetProperty("status").GetString();
+                    var timestamp = run.GetProperty("updated_at").GetDateTime().ToUniversalTime();
+                    TimeSpan? duration = null;
+                    if (status == "completed" && run.TryGetProperty("run_started_at", out var started)
+                        && started.ValueKind != JsonValueKind.Null)
+                    {
+                        var startedAt = started.GetDateTime().ToUniversalTime();
+                        if (timestamp >= startedAt)
+                            duration = timestamp - startedAt;
+                    }
 
                     results.Add(new DevHubCiRun
                     {
@@ -1171,7 +1180,8 @@ namespace StartScreen.Services.DevHub.Providers
                         Name = run.GetProperty("name").GetString(),
                         Branch = run.TryGetProperty("head_branch", out var branch) ? branch.GetString() : null,
                         Status = MapGitHubCiStatus(status, conclusion),
-                        Timestamp = run.GetProperty("updated_at").GetDateTime().ToUniversalTime(),
+                        Timestamp = timestamp,
+                        Duration = duration,
                         WebUrl = run.GetProperty("html_url").GetString(),
                         IsTriggeredByCurrentUser = !string.IsNullOrEmpty(currentUser)
                             && string.Equals(GetRunActor(run), currentUser, StringComparison.OrdinalIgnoreCase),

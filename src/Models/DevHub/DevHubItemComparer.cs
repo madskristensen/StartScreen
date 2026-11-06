@@ -119,6 +119,7 @@ namespace StartScreen.Models.DevHub
                 && StringEquals(left.FailureSummary, right.FailureSummary)
                 && StringEquals(left.FailureUrl, right.FailureUrl)
                 && left.Timestamp == right.Timestamp
+                && left.Duration == right.Duration
                 && StringEquals(left.WebUrl, right.WebUrl);
         }
 

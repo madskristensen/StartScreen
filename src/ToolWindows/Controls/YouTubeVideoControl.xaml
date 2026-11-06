@@ -54,7 +54,7 @@
                  TextTrimming="WordEllipsis"
                  MaxHeight="36"
                  Margin="0 6 0 0"
-                 Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                 Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
 
       <!-- Date and NEW badge -->
       <StackPanel Orientation="Horizontal" Margin="0 4 0 0">

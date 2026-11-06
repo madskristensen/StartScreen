@@ -1,3 +1,4 @@
+using System.Text.Json;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub.Providers;
 
@@ -73,6 +74,63 @@ namespace StartScreen.Test.DevHub
 
             Assert.AreEqual(expected, result[0].Status);
             Assert.AreEqual("main", result[0].Branch);
+        }
+
+        [TestMethod]
+        [DataRow("completed", "2026-09-12T09:57:45Z", 135d)]
+        [DataRow("completed", "2026-09-12T11:57:45+02:00", 135d)]
+        [DataRow("completed", null, null)]
+        [DataRow("completed", "2026-09-12T10:01:00Z", null)]
+        [DataRow("queued", "2026-09-12T09:57:45Z", null)]
+        [DataRow("in_progress", "2026-09-12T09:57:45Z", null)]
+        public void GitHubCiRuns_DurationRequiresCompletedRunAndValidStart(string status, string? started, double? seconds)
+        {
+            var json = JsonSerializer.Serialize(new { workflow_runs = new[] { new
+            {
+                name = "Build", status, conclusion = "success", run_started_at = started,
+                updated_at = "2026-09-12T10:00:00Z", html_url = "https://github.com/owner/repo/actions/runs/1",
+            } } });
+
+            var run = GitHubDevHubProvider.ParseCiRuns(json, _gitHubRepo).Single();
+
+            Assert.AreEqual(seconds.HasValue ? TimeSpan.FromSeconds(seconds.Value) : (TimeSpan?)null, run.Duration);
+        }
+
+        [TestMethod]
+        [DataRow("completed", "2026-09-12T09:57:45Z", "2026-09-12T10:00:00Z", 135d)]
+        [DataRow("completed", null, "2026-09-12T10:00:00Z", null)]
+        [DataRow("completed", "2026-09-12T09:57:45Z", null, null)]
+        [DataRow("completed", "2026-09-12T10:01:00Z", "2026-09-12T10:00:00Z", null)]
+        [DataRow("inProgress", "2026-09-12T09:57:45Z", "2026-09-12T10:00:00Z", null)]
+        [DataRow("notStarted", null, null, null)]
+        public void AzureDevOpsBuilds_DurationExcludesQueueTimeAndUnfinishedRuns(string status, string? start, string? finish, double? seconds)
+        {
+            var json = JsonSerializer.Serialize(new { value = new[] { new
+            {
+                status, result = "succeeded", startTime = start, finishTime = finish, queueTime = "2026-09-12T09:00:00Z",
+            } } });
+
+            var run = AzureDevOpsDevHubProvider.ParseAdoBuilds(json, _azureDevOpsRepo).Single();
+
+            Assert.AreEqual(seconds.HasValue ? TimeSpan.FromSeconds(seconds.Value) : (TimeSpan?)null, run.Duration);
+        }
+
+        [TestMethod]
+        [DataRow("COMPLETED", 135d, 135d)]
+        [DataRow("COMPLETED", null, null)]
+        [DataRow("COMPLETED", -1d, null)]
+        [DataRow("IN_PROGRESS", 135d, null)]
+        public void BitbucketPipelines_DurationUsesReportedElapsedTimeNotBilledSeconds(string status, double? duration, double? seconds)
+        {
+            var json = JsonSerializer.Serialize(new { values = new[] { new
+            {
+                state = new { name = status }, build_number = 42, completed_on = "2026-09-12T10:00:00Z",
+                duration_in_seconds = duration, build_seconds_used = 9999,
+            } } });
+
+            var run = BitbucketDevHubProvider.ParsePipelines(json, _bitbucketRepo).Single();
+
+            Assert.AreEqual(seconds.HasValue ? TimeSpan.FromSeconds(seconds.Value) : (TimeSpan?)null, run.Duration);
         }
 
         [TestMethod]

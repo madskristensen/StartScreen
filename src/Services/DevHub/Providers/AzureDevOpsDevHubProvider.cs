@@ -1213,6 +1213,16 @@ namespace StartScreen.Services.DevHub.Providers
                                 ? queued.GetDateTime().ToUniversalTime()
                                 : throw new JsonException("Azure DevOps did not return a finish, start, or queue time for a build.");
 
+                    TimeSpan? duration = null;
+                    if (status == "completed" && build.TryGetProperty("startTime", out var durationStart)
+                        && durationStart.ValueKind != JsonValueKind.Null
+                        && build.TryGetProperty("finishTime", out var durationFinish) && durationFinish.ValueKind != JsonValueKind.Null)
+                    {
+                        var elapsed = durationFinish.GetDateTime().ToUniversalTime() - durationStart.GetDateTime().ToUniversalTime();
+                        if (elapsed >= TimeSpan.Zero)
+                            duration = elapsed;
+                    }
+
                     results.Add(new DevHubCiRun
                     {
                         ProviderName = "Azure DevOps",
@@ -1225,6 +1235,7 @@ namespace StartScreen.Services.DevHub.Providers
                             : null,
                         Status = MapAdoBuildStatus(status, result),
                         Timestamp = timestamp,
+                        Duration = duration,
                         WebUrl = build.TryGetProperty("_links", out var links) && links.ValueKind == JsonValueKind.Object
                             && links.TryGetProperty("web", out var web) && web.ValueKind == JsonValueKind.Object
                             && web.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String

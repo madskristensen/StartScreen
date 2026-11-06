@@ -142,6 +142,39 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow(0d, "<1s")]
+        [DataRow(0.5d, "<1s")]
+        [DataRow(12d, "12s")]
+        [DataRow(60d, "1m 0s")]
+        [DataRow(135d, "2m 15s")]
+        [DataRow(3600d, "1h 0m")]
+        [DataRow(90061d, "25h 1m")]
+        [DataRow(-1d, null)]
+        public void BuildDuration_UsesCompactElapsedUnits(double seconds, string? expected)
+        {
+            Assert.AreEqual(expected, new DevHubCiRun { Duration = TimeSpan.FromSeconds(seconds) }.DurationText);
+        }
+
+        [TestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public void BuildDuration_ReachesBothWorkBladesAndSurvivesCacheSerialization(bool personal)
+        {
+            var build = new DevHubCiRun
+            {
+                Name = "Build", Duration = TimeSpan.FromSeconds(135), IsTriggeredByCurrentUser = personal,
+                WebUrl = "https://example.com/build/1",
+            };
+            var cached = JsonSerializer.Deserialize<DevHubCiRun>(JsonSerializer.Serialize(build))!;
+            var item = (personal ? DevHubWorkItem.GetMyWork([], [], [], builds: [cached])
+                : DevHubWorkItem.GetIncoming([], [], [cached])).Single();
+
+            Assert.AreEqual(build.Duration, cached.Duration);
+            Assert.AreEqual("2m 15s", item.DurationText);
+            Assert.IsNull(new DevHubCiRun().DurationText);
+        }
+
+        [TestMethod]
         public void RecentCompletion_IsOptionalPersonalBoundedAndNeverNeedsAttention()
         {
             var merged = OwnPullRequest();
@@ -339,7 +372,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public void AssignmentPill_IsBelowTitleWithDateToItsRightAndLabelsUseSolidPills()
+        public void AssignmentPill_IsBelowTitleAndLabelsUseSolidPills()
         {
             using var stream = typeof(DevHubActivityPresentationTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
@@ -355,7 +388,7 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual("Assigned to you", pill.Element(p + "TextBlock")?.Attribute("Text")?.Value);
             Assert.AreEqual("Bold", pill.Element(p + "TextBlock")?.Attribute("FontWeight")?.Value);
             Assert.AreEqual("Horizontal", pill.Parent!.Attribute("Orientation")?.Value);
-            Assert.AreEqual("{Binding ActivityDateText}", pill.ElementsAfterSelf(p + "TextBlock").Single().Attribute("Text")?.Value);
+            Assert.IsFalse(pill.Parent.Elements(p + "TextBlock").Any(element => element.Attribute("Text")?.Value == "{Binding ActivityDateText}"));
             Assert.IsFalse(document.Descendants().Any(element => element.Attribute(x + "Name")?.Value == "AssignmentBanner"));
             var card = document.Descendants(p + "DataTemplate").Single(element => element.Attribute(x + "Key")?.Value == "WorkItemTemplate");
             var title = card.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding DisplayTitle}");
@@ -374,49 +407,38 @@ namespace StartScreen.Test.DevHub
         }
 
         [STATestMethod]
-        [DataRow(200d, true)]
-        [DataRow(400d, true)]
-        [DataRow(200d, false)]
-        [DataRow(400d, false)]
-        public void AssignmentPill_KeepsTheDateToItsRightAndCollapsesWithoutAGap(double width, bool assigned)
+        [DataRow(200d, "Short repository")]
+        [DataRow(400d, "Short repository")]
+        [DataRow(200d, "A very long repository or workspace name that must never push the date out of the card")]
+        [DataRow(400d, "A very long repository or workspace name that must never push the date out of the card")]
+        public void WorkCardDates_StayAtTheFarRightBelowTheTitle(double width, string detail)
         {
             using var stream = typeof(DevHubActivityPresentationTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             var document = XDocument.Load(stream!);
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var pillDefinition = document.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "AssignmentPill");
-            var row = new XElement(pillDefinition.Parent!);
-            foreach (var attribute in row.DescendantsAndSelf().Attributes().Where(attribute =>
-                attribute.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)))
-                attribute.Value = "{DynamicResource TestAssignmentBrush}";
-            var root = (StackPanel)XamlReader.Parse(new XElement(p + "StackPanel",
-                new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
-                new XElement(p + "StackPanel.Resources", new XElement(p + "BooleanToVisibilityConverter",
-                    new XAttribute(x + "Key", "BoolToVisibilityConverter"))), row).ToString());
-            root.Resources["TestAssignmentBrush"] = SystemColors.ControlTextBrush;
-            root.DataContext = new { IsAssignedToCurrentUser = assigned, ActivityDateText = "today", ActivityDateToolTip = "Updated today" };
+            var definition = document.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "WorkItemDetails");
+            Assert.AreEqual("{Binding DisplayTitle}", definition.ElementsBeforeSelf(p + "TextBlock").Single().Attribute("Text")?.Value);
+            Assert.IsFalse(definition.Descendants(p + "DataTrigger").Any(), "Repository/workspace details must be visible for every card kind.");
+            var row = new XElement(definition);
+            row.Elements().Single(element => element.Attribute(x + "Name")?.Value == "CopilotActivityIcon").Remove();
+            row.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
+            var root = (Grid)XamlReader.Parse(row.ToString());
+            root.DataContext = new { Detail = detail, DetailToolTip = detail, ActivityDateText = "today", ActivityDateToolTip = "Updated today" };
             root.Measure(new Size(width, double.PositiveInfinity));
             root.Arrange(new Rect(0, 0, width, root.DesiredSize.Height));
             root.UpdateLayout();
-            var content = (StackPanel)root.Children[0];
-            var pill = (Border)content.Children[0];
-            var date = (TextBlock)content.Children[1];
+            var repository = (TextBlock)root.Children[0];
+            var date = (TextBlock)root.Children[1];
 
-            Assert.AreEqual(assigned ? Visibility.Visible : Visibility.Collapsed, pill.Visibility);
+            Assert.AreEqual(detail, repository.Text);
+            Assert.AreEqual(TextTrimming.CharacterEllipsis, repository.TextTrimming);
             Assert.AreEqual("today", date.Text);
             Assert.AreEqual("Updated today", date.ToolTip);
-            Assert.IsLessThanOrEqualTo(width, date.TranslatePoint(new Point(date.ActualWidth, 0), root).X);
-            if (assigned)
-            {
-                Assert.AreEqual(new CornerRadius(9), pill.CornerRadius);
-                Assert.IsGreaterThan(pill.TranslatePoint(new Point(pill.ActualWidth, 0), root).X, date.TranslatePoint(new Point(), root).X);
-                Assert.IsLessThan(date.TranslatePoint(new Point(0, date.ActualHeight), root).Y, pill.TranslatePoint(new Point(), root).Y);
-                Assert.IsLessThan(pill.TranslatePoint(new Point(0, pill.ActualHeight), root).Y, date.TranslatePoint(new Point(), root).Y);
-            }
-            else
-            {
-                Assert.AreEqual(0d, date.TranslatePoint(new Point(), root).X, 0.01);
-            }
+            Assert.AreEqual(HorizontalAlignment.Right, date.HorizontalAlignment);
+            Assert.AreEqual(width, date.TranslatePoint(new Point(date.ActualWidth, 0), root).X, 0.01);
+            Assert.IsLessThanOrEqualTo(date.TranslatePoint(new Point(), root).X,
+                repository.TranslatePoint(new Point(repository.ActualWidth, 0), root).X);
         }
 
         [TestMethod]

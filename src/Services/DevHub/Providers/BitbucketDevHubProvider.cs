@@ -495,6 +495,9 @@ namespace StartScreen.Services.DevHub.Providers
                         Branch = StripRefsPrefix(branch),
                         Status = MapBitbucketPipelineStatus(stageName, resultName),
                         Timestamp = timestamp,
+                        Duration = stageName == "COMPLETED" && item.TryGetProperty("duration_in_seconds", out var duration)
+                            && duration.ValueKind == JsonValueKind.Number && duration.GetDouble() >= 0
+                            ? TimeSpan.FromSeconds(duration.GetDouble()) : (TimeSpan?)null,
                         WebUrl = webUrl,
                     });
                 }

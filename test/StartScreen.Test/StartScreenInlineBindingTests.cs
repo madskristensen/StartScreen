@@ -797,6 +797,11 @@ namespace StartScreen.Test
                     var padding = cardDocument.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "RootBorder").Attribute("Padding")!.Value;
                     content = new XElement(p + "Border", new XAttribute("Padding", padding), content);
                 }
+                else if (name == "FeedbackTab")
+                {
+                    var status = item.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding FeedbackStatus}");
+                    content.SetAttributeValue("Margin", status.Attribute("Margin")!.Value);
+                }
                 item.RemoveNodes();
                 item.SetAttributeValue("Header", header);
                 item.Add(new XElement(p + "StackPanel", new XAttribute("Margin", margin),
@@ -1272,7 +1277,7 @@ namespace StartScreen.Test
         [DataRow(520d, "madskristensen")]
         [DataRow(200d, "A very long author display name that must fit within the available card width")]
         [DataRow(520d, "A very long author display name that must fit within the available card width")]
-        public void PullRequestMetadata_PillsAndDatesFitAndRespondToThemeChanges(double width, string? authorName)
+        public void PullRequestMetadata_PillsAndRightAlignedDatesFitAndRespondToThemeChanges(double width, string? authorName)
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -1283,6 +1288,9 @@ namespace StartScreen.Test
                 setter.SetAttributeValue("Value", "{DynamicResource TestStatusBrush}");
             var metadata = new XElement(document.Descendants(p + "DataTemplate")
                 .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestMetadataTemplate").Elements().Single());
+            var details = new XElement(document.Descendants(p + "Grid")
+                .Single(element => element.Attribute(x + "Name")?.Value == "WorkItemDetails"));
+            details.Elements().Single(element => element.Attribute(x + "Name")?.Value == "CopilotActivityIcon").Remove();
             metadata.Element(p + "ContentControl")!.ReplaceWith(new XElement(p + "Border",
                 new XAttribute("DockPanel.Dock", "Right"), new XAttribute("Width", "52"),
                 new XAttribute("Height", "24"), new XAttribute("Margin", "8 0 0 0")));
@@ -1291,20 +1299,24 @@ namespace StartScreen.Test
             pillDefinition.SetAttributeValue("Background", "{DynamicResource TestPillBackground}");
             var root = (StackPanel)XamlReader.Parse(new XElement(p + "StackPanel",
                 new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
-                new XElement(p + "StackPanel.Resources", style), metadata).ToString());
+                new XElement(p + "StackPanel.Resources", style), details, metadata).ToString());
             root.Resources["TestStatusBrush"] = SystemColors.HighlightBrush;
             root.Resources["TestPillBackground"] = SystemColors.ControlBrush;
-            root.DataContext = new Models.DevHub.DevHubPullRequest { Author = authorName, UpdatedAt = DateTime.UtcNow };
+            root.DataContext = Models.DevHub.DevHubWorkItem.GetMyWork([new Models.DevHub.DevHubPullRequest
+            {
+                Author = authorName, UpdatedAt = DateTime.UtcNow, RepoDisplayName = "owner/repo", Number = "#1",
+                Status = "open", IsAuthoredByCurrentUser = true, WebUrl = "https://example.com/pull/1",
+            }], [], []).Single();
             root.Measure(new Size(width, double.PositiveInfinity));
             root.Arrange(new Rect(0, 0, width, root.DesiredSize.Height));
             root.UpdateLayout();
 
-            var row = (DockPanel)root.Children[0];
+            var row = (DockPanel)root.Children[1];
             var content = (WrapPanel)row.Children[1];
             var pill = (Border)content.Children[0];
             var badge = (TextBlock)pill.Child;
             var author = (TextBlock)content.Children[1];
-            var date = (TextBlock)content.Children[2];
+            var date = (TextBlock)((Grid)root.Children[0]).Children[1];
             Assert.AreEqual(new CornerRadius(9), pill.CornerRadius);
             Assert.AreEqual(new Thickness(7, 2, 7, 2), pill.Padding);
             Assert.AreEqual(new Thickness(1), pill.BorderThickness);
@@ -1316,14 +1328,9 @@ namespace StartScreen.Test
                 Assert.AreEqual($"by {authorName}", author.Text);
                 Assert.AreEqual(author.Text, author.ToolTip);
                 Assert.IsLessThanOrEqualTo(width - 60 + 0.1, author.TranslatePoint(new Point(), root).X + author.ActualWidth);
-                if (width == 520 && authorName == "madskristensen")
-                {
-                    Assert.AreEqual(author.TranslatePoint(new Point(), root).Y, date.TranslatePoint(new Point(), root).Y);
-                    Assert.IsLessThanOrEqualTo(date.TranslatePoint(new Point(), root).X, author.TranslatePoint(new Point(), root).X + author.ActualWidth);
-                }
             }
             Assert.IsNotNull(date.ToolTip);
-            Assert.IsLessThanOrEqualTo(width - 60 + 0.1, date.TranslatePoint(new Point(), root).X + date.ActualWidth);
+            Assert.AreEqual(width, date.TranslatePoint(new Point(), root).X + date.ActualWidth, 0.01);
             Assert.IsGreaterThan(badge.ActualWidth, pill.ActualWidth);
             Assert.AreSame(badge.Foreground, pill.BorderBrush);
             root.Resources["TestStatusBrush"] = SystemColors.WindowTextBrush;
@@ -1390,7 +1397,11 @@ namespace StartScreen.Test
             var siblings = title.Parent!.Elements().ToList();
             Assert.IsGreaterThan(siblings.IndexOf(title), siblings.IndexOf(metadata));
             Assert.AreEqual("{Binding IsCopilot, Converter={StaticResource BoolToVisibilityConverter}}", metadata.Attribute("Visibility")?.Value);
-            Assert.IsTrue(metadata.Elements(presentation + "TextBlock").Any(element => element.Attribute("Text")?.Value == "{Binding ActivityText}"));
+            var details = title.ElementsAfterSelf(presentation + "Grid").Single();
+            Assert.AreEqual("{Binding Detail}", details.Elements(presentation + "TextBlock").First().Attribute("Text")?.Value);
+            var date = details.Elements(presentation + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding ActivityDateText}");
+            Assert.AreEqual("Right", date.Attribute("HorizontalAlignment")?.Value);
+            Assert.IsFalse(metadata.Elements(presentation + "TextBlock").Any(element => element.Attribute("Text")?.Value == "{Binding ActivityText}"));
             var badge = metadata.Elements(presentation + "TextBlock")
                 .Single(element => element.Attribute("Text")?.Value == "{Binding CopilotStatus}");
             Assert.AreEqual("10", badge.Attribute("FontSize")?.Value);

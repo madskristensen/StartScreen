@@ -91,6 +91,18 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public void SameCiRuns_WithChangedDuration_ReturnsFalse()
+        {
+            var left = CreateCiRun("build");
+            var right = CreateCiRun("build");
+            right.Duration = TimeSpan.FromMinutes(2);
+
+            Assert.IsFalse(DevHubItemComparer.SameCiRuns([left], [right]));
+            left.Duration = right.Duration;
+            Assert.IsTrue(DevHubItemComparer.SameCiRuns([left], [right]));
+        }
+
+        [TestMethod]
         public void SameCiRuns_WithChangedTimestamp_ReturnsFalse()
         {
             var left = new List<DevHubCiRun>

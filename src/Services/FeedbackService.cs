@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -28,11 +29,13 @@ namespace StartScreen.Services
             Timeout = TimeSpan.FromSeconds(30),
         };
         private static readonly Regex _htmlTags = new Regex("<[^>]+>", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+        internal static FeedbackService Instance { get; } = new FeedbackService();
         private readonly HttpClient _client;
         private readonly Func<CancellationToken, Task<AccessToken>> _getTokenAsync;
         private readonly Func<DateTime> _utcNow;
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
         private FeedbackSnapshot _cached;
+        private string _cachedCredentialHash;
 
         internal FeedbackService(HttpClient client = null,
             Func<CancellationToken, Task<AccessToken>> getTokenAsync = null, Func<DateTime> utcNow = null)
@@ -49,18 +52,30 @@ namespace StartScreen.Services
             await _gate.WaitAsync(cancellationToken);
             try
             {
+                if (forceRefresh)
+                    _cached = null;
                 AccessToken token = await _getTokenAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (string.IsNullOrEmpty(token.Token) || token.ExpiresOn <= new DateTimeOffset(_utcNow()))
                     throw new UnauthorizedAccessException("Visual Studio did not return a valid Developer Community credential.");
+
+                string credentialHash;
+                using (var hash = SHA256.Create())
+                    credentialHash = Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(token.Token)));
+                // The current credential must match before a cache hit can skip identity HTTP requests.
+                if (HasFreshCache() && _cachedCredentialHash == credentialHash)
+                    return _cached;
 
                 using JsonDocument metadata = await SendAsync("userProperties/metadata", token.Token, null, cancellationToken);
                 long principalId = ReadId(metadata.RootElement.GetProperty("Id"));
                 // Confirm identity before reusing data, including after a VS account switch.
                 if (_cached?.PrincipalId != principalId)
                     _cached = null;
-                if (!forceRefresh && _cached != null && _utcNow() - _cached.UpdatedUtc < TimeSpan.FromHours(1))
+                if (HasFreshCache())
+                {
+                    _cachedCredentialHash = credentialHash;
                     return _cached;
+                }
 
                 var ids = new HashSet<long>();
                 long read = 0;
@@ -100,6 +115,7 @@ namespace StartScreen.Services
                 cancellationToken.ThrowIfCancellationRequested();
                 _cached = new FeedbackSnapshot(principalId,
                     tickets.OrderByDescending(ticket => ticket.UpdatedUtc).ThenByDescending(ticket => ticket.Id).ToArray(), _utcNow());
+                _cachedCredentialHash = credentialHash;
                 return _cached;
             }
             finally
@@ -107,6 +123,9 @@ namespace StartScreen.Services
                 _gate.Release();
             }
         }
+
+        private bool HasFreshCache() => _cached != null && _utcNow() >= _cached.UpdatedUtc
+            && _utcNow() - _cached.UpdatedUtc < TimeSpan.FromHours(1);
 
         private async Task<FeedbackTicket> GetTicketAsync(long id, long principalId, string token, CancellationToken cancellationToken)
         {

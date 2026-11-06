@@ -126,45 +126,34 @@
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
-                    <TextBlock Text="{Binding ActivityDateText}" FontSize="11" Opacity="0.65" Margin="0 2 0 2"
-                               VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
                 </WrapPanel>
             </DockPanel>
         </DataTemplate>
         <DataTemplate x:Key="RepositoryItemMetadataTemplate">
-            <DockPanel>
-                <Button DockPanel.Dock="Right" Click="OpenPullRequestInBrowser_Click"
-                        Style="{StaticResource PullRequestActionButtonStyle}" Width="24" Height="24" Margin="8 0 0 0"
-                        ToolTip="Open in browser" AutomationProperties.Name="Open activity in browser"
-                        AutomationProperties.HelpText="{Binding Title}">
-                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Web}" Width="16" Height="16"/>
-                </Button>
-                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
-                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
-                            BorderBrush="{Binding Foreground, ElementName=RepositoryItemStatus}"
-                            Visibility="{Binding StatusText, Converter={StaticResource NullToCollapsedConverter}}">
-                        <TextBlock x:Name="RepositoryItemStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
-                    </Border>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border x:Name="AssignmentPill" CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
-                                BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                                Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
-                                Visibility="{Binding IsAssignedToCurrentUser, Converter={StaticResource BoolToVisibilityConverter}}"
-                                ToolTip="This issue or task is currently assigned to you.">
-                            <TextBlock Text="Assigned to you" FontSize="10" FontWeight="Bold"
-                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
-                        </Border>
-                        <TextBlock Text="{Binding ActivityDateText}" FontSize="11" Opacity="0.65" Margin="0 2 0 2"
-                                   VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
-                    </StackPanel>
-                </WrapPanel>
-            </DockPanel>
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
+                        Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
+                        BorderBrush="{Binding Foreground, ElementName=RepositoryItemStatus}"
+                        Visibility="{Binding StatusText, Converter={StaticResource NullToCollapsedConverter}}">
+                    <TextBlock x:Name="RepositoryItemStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
+                </Border>
+                <Border x:Name="AssignmentPill" CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
+                        BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                        Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
+                        Visibility="{Binding IsAssignedToCurrentUser, Converter={StaticResource BoolToVisibilityConverter}}"
+                        ToolTip="This issue or task is currently assigned to you.">
+                    <TextBlock Text="Assigned to you" FontSize="10" FontWeight="Bold"
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                </Border>
+                <TextBlock Text="{Binding DurationText}" FontSize="11" Opacity="0.65" Margin="0 2 8 2"
+                           VerticalAlignment="Center" ToolTip="Build duration"
+                           Visibility="{Binding DurationText, Converter={StaticResource NullToCollapsedConverter}}"/>
+            </WrapPanel>
         </DataTemplate>
         <DataTemplate x:Key="WorkItemTemplate">
             <Border x:Name="WorkItemBorder" Padding="8 10" Margin="0 0 0 4" CornerRadius="4" Focusable="True"
                     Cursor="Hand" AutomationProperties.Name="{Binding Title}" AutomationProperties.HelpText="{Binding ActionText}"
-                    MouseUp="WorkItem_MouseUp" Loaded="DevHubItemBorder_Loaded" ToolTip="{Binding StatusDetails}">
+                    MouseUp="WorkItem_MouseUp" Loaded="DevHubItemBorder_Loaded">
                 <Border.ContextMenu>
                     <ContextMenu Opened="DevHubContextMenu_Opened">
                         <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
@@ -189,37 +178,32 @@
                     </Style>
                 </Border.Style>
                 <StackPanel>
-                    <TextBlock Text="{Binding Detail}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}" Opacity="0.65" FontSize="11">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsCopilot}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
                     <TextBlock Text="{Binding DisplayTitle}" FontSize="13" FontWeight="SemiBold">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
-                                <Setter Property="Margin" Value="0 3 24 5"/>
+                                <Setter Property="Margin" Value="0 0 24 3"/>
                                 <Setter Property="TextWrapping" Value="NoWrap"/>
                                 <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                                 <Setter Property="ToolTip" Value="{Binding Title}"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsCopilot}" Value="True">
-                                        <Setter Property="Margin" Value="0 0 24 6"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
-                    <StackPanel x:Name="CopilotMetadata" Orientation="Horizontal"
-                                Visibility="{Binding IsCopilot, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Grid x:Name="WorkItemDetails" Margin="0 0 0 3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="1" Text="{Binding Detail}" TextTrimming="CharacterEllipsis" ToolTip="{Binding DetailToolTip}"
+                                   Opacity="0.65" FontSize="11" Margin="0 0 8 0" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="{Binding ActivityDateText}" FontSize="11" Opacity="0.65"
+                                   HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
                         <imaging:CrispImage x:Name="CopilotActivityIcon" Width="16" Height="16" Margin="0 0 6 0" VerticalAlignment="Center"
                                             Moniker="{x:Static helpers:CopilotMonikers.GitHubCopilot}"
                                             Visibility="{Binding IsCopilot, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                    </Grid>
+                    <StackPanel x:Name="CopilotMetadata" Orientation="Horizontal"
+                                Visibility="{Binding IsCopilot, Converter={StaticResource BoolToVisibilityConverter}}">
                         <TextBlock Text="{Binding CopilotStatus}" FontWeight="Bold" FontSize="10" Margin="0 0 6 0"
                                    VerticalAlignment="Center" ToolTip="{Binding CopilotStatusDetails}">
                             <TextBlock.Style>
@@ -242,8 +226,6 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock Text="{Binding ActivityText}" FontSize="11" Opacity="0.5" VerticalAlignment="Center"
-                                   ToolTip="{Binding ActivityDateToolTip}"/>
                     </StackPanel>
                     <ContentControl Content="{Binding}" Focusable="False"
                                     Visibility="{Binding IsRepositoryItem, Converter={StaticResource BoolToVisibilityConverter}}">
@@ -263,7 +245,7 @@
                                Visibility="{Binding BranchDisplayText, Converter={StaticResource NullToCollapsedConverter}}"/>
                     <TextBlock Text="{Binding NextActionText}" FontSize="11" Margin="0 2 0 0" TextWrapping="Wrap"
                                Visibility="{Binding NextActionText, Converter={StaticResource NullToCollapsedConverter}}"/>
-                    <ItemsControl ItemsSource="{Binding Labels}" Margin="0 4 0 0" Focusable="False">
+                    <ItemsControl ItemsSource="{Binding Labels}" Margin="0 2 0 0" Focusable="False">
                         <ItemsControl.Style>
                             <Style TargetType="ItemsControl">
                                 <Style.Triggers>

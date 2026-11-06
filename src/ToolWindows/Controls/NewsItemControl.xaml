@@ -9,6 +9,7 @@
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              toolkit:Themes.UseVsTheme="True"
              Background="Transparent"
+             VerticalAlignment="Top"
              Focusable="False"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True"
@@ -21,7 +22,7 @@
     <Border x:Name="RootBorder"
             BorderThickness="0"
             Background="Transparent"
-            Padding="8"
+            Padding="8 10"
             CornerRadius="4"
             Focusable="True"
             FocusVisualStyle="{x:Null}"
@@ -38,7 +39,7 @@
                 <!-- Title -->
                 <TextBlock Text="{Binding Title}"
                           FontWeight="SemiBold"
-                          Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                          Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"
                           TextWrapping="Wrap"
                           FontSize="13"/>
 
