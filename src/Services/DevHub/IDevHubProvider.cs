@@ -47,19 +47,20 @@ namespace StartScreen.Services.DevHub
 
         /// <summary>
         /// Fetches all open pull requests authored by or assigned to the authenticated user.
-        /// Returns an empty list if the user is not authenticated or on error.
+        /// Low-level helper. Application callers use IDevHubActivitySource.FetchActivityAsync
+        /// to distinguish successful empty data from reported failures.
         /// </summary>
         Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken);
 
         /// <summary>
         /// Fetches personal and incoming issues or work items for the authenticated user.
-        /// Returns an empty list if the user is not authenticated or on error.
+        /// Low-level helper; use IDevHubActivitySource for an explicit outcome.
         /// </summary>
         Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken);
 
         /// <summary>
         /// Fetches recent CI/build failures for the authenticated user's repositories.
-        /// Returns an empty list if the user is not authenticated or on error.
+        /// Low-level helper; use IDevHubActivitySource for an explicit outcome.
         /// </summary>
         Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken);
 
@@ -77,7 +78,7 @@ namespace StartScreen.Services.DevHub
         /// <summary>
         /// Fetches detailed PR, issue, and CI data for a specific repository.
         /// <paramref name="maxItems"/> caps how many of each category are requested.
-        /// Returns null if the user is not authenticated or on error.
+        /// Low-level helper; use IDevHubActivitySource for an explicit outcome.
         /// </summary>
         Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken);
 

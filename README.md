@@ -243,15 +243,26 @@ a visual indicator shows exactly where the item will land.
 The Dev Hub panel shows your open pull requests, assigned issues, and
 recent builds from GitHub and Azure DevOps - right next to your project
 list. Data loads in the background and is cached locally so the UI stays
-responsive. On later opens, the saved authenticated dashboard populates both work
-blades before any network refresh. A cache older than 15 minutes refreshes in the
-background while its content stays visible. First use without a cache still needs
-to fetch data. Additional repository-scoped details are not persisted as separate
-snapshots; the saved aggregate dashboard supplies the initial content.
+responsive. On later opens, the saved dashboard populates both work blades only
+after the current provider identities and activity query/options have been verified.
+Account, repository-context, query, item-limit, or completed-item setting changes
+discard mismatched snapshots, including ownership flags. Older unpartitioned caches
+are ignored and rebuilt. A cache older than 15 minutes, or one containing failed
+sources, refreshes in the background. First use without a matching cache still needs
+to fetch data. Additional repository-scoped details are retained in memory only and
+never replace the aggregate dashboard or its disk cache.
+
+Each source reports success, partial, unavailable, or unauthorized separately. A
+successful empty category clears its old items; failed sources retain previously
+loaded items only for the same verified identities and query context. Repository
+categories are independent, so a failed issues request cannot keep successfully
+emptied PRs or builds. Warnings and the refresh status identify stale or incomplete
+activity, and these outcomes survive cache reloads. If authentication cannot be
+verified, activity from a previous identity is not displayed.
 
 Completed Dev Hub categories appear without waiting for slower per-repository
 activity. GitHub CI queries run with at most three repository requests in flight.
-Verified identities are shared across repository summaries for up to five minutes,
+Verified identities are shared across activity and repository summaries for up to five minutes,
 scoped by credentials and identity endpoint, and invalidated when authentication
 changes. Failed identity lookups are retried rather than cached as signed-in users.
 

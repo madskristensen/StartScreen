@@ -197,7 +197,11 @@ namespace StartScreen.Test.DevHub
 
             var result = await Provider(client, Credential(true)).GetRepoDetailAsync(Repo(), 10, CancellationToken.None);
 
-            Assert.IsNull(result);
+            Assert.IsNotNull(result);
+            Assert.AreEqual(DevHubActivityStatus.Partial, result.Status);
+            Assert.AreEqual(DevHubActivityStatus.Success, result.PullRequestsStatus);
+            Assert.AreEqual(DevHubActivityStatus.Unavailable, result.CiRunsStatus);
+            Assert.AreEqual(DevHubActivityStatus.Unavailable, result.IssuesStatus);
         }
 
         [TestMethod]

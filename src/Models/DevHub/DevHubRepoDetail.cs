@@ -36,6 +36,11 @@ namespace StartScreen.Models.DevHub
         public DateTime FetchedAt { get; set; }
 
         public string ActivityWarning { get; set; }
+        public DevHubActivityStatus Status { get; set; }
+        public bool HasCategoryOutcomes { get; set; }
+        public DevHubActivityStatus PullRequestsStatus { get; set; }
+        public DevHubActivityStatus IssuesStatus { get; set; }
+        public DevHubActivityStatus CiRunsStatus { get; set; }
 
         /// <summary>
         /// Whether this repo has any data to display.

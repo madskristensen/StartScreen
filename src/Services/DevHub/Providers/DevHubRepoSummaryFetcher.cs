@@ -106,12 +106,13 @@ namespace StartScreen.Services.DevHub.Providers
 
         internal static async Task<string> GetIdentityAsync(DevHubCredential credential, string url,
             Func<DevHubCredential, string, CancellationToken, Task<HttpResponseMessage>> send,
-            bool gitHub, CancellationToken cancellationToken)
+            bool gitHub, CancellationToken cancellationToken, string identityProperty = null)
         {
             try
             {
                 using (var response = await send(credential, url, cancellationToken))
                 {
+                    DevHubActivityRequest.Observe(response);
                     if (!response.IsSuccessStatusCode)
                         return null;
                     using (var stream = await response.Content.ReadAsStreamAsync())
@@ -119,7 +120,7 @@ namespace StartScreen.Services.DevHub.Providers
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var identity = gitHub ? doc.RootElement : doc.RootElement.GetProperty("authenticatedUser");
-                        var value = identity.GetProperty(gitHub ? "login" : "id").GetString();
+                        var value = identity.GetProperty(identityProperty ?? (gitHub ? "login" : "id")).GetString();
                         return string.IsNullOrWhiteSpace(value) ? null : value;
                     }
                 }
@@ -127,6 +128,7 @@ namespace StartScreen.Services.DevHub.Providers
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return null;
             }
         }

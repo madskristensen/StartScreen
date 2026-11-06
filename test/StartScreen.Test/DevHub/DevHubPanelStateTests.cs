@@ -10,6 +10,20 @@ namespace StartScreen.Test.DevHub
     [TestClass]
     public class DevHubPanelStateTests
     {
+        [TestMethod]
+        [DataRow(DevHubActivityStatus.Partial, "partial")]
+        [DataRow(DevHubActivityStatus.Unavailable, "unavailable")]
+        [DataRow(DevHubActivityStatus.Unauthorized, "unauthorized")]
+        public void ActivityRefreshStatus_FailuresNeverClaimFreshSuccess(DevHubActivityStatus status, string text)
+        {
+            var dashboard = new DevHubDashboard { Sources = { ["source"] = new DevHubActivitySnapshot { Status = status } } };
+            StringAssert.Contains(DevHubPanel.GetActivityRefreshStatus(dashboard), text);
+            StringAssert.Contains(DevHubPanel.GetActivityRefreshStatus(dashboard), "stale");
+            dashboard.IsRefreshing = true;
+            Assert.AreEqual("Refreshing activity...", DevHubPanel.GetActivityRefreshStatus(dashboard));
+            Assert.IsNull(DevHubPanel.GetActivityRefreshStatus(new DevHubDashboard()));
+        }
+
         [STATestMethod]
         [DataRow(Visibility.Visible, Visibility.Collapsed, Visibility.Collapsed)]
         [DataRow(Visibility.Collapsed, Visibility.Visible, Visibility.Collapsed)]

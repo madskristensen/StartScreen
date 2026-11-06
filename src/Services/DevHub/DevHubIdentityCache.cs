@@ -23,25 +23,46 @@ namespace StartScreen.Services.DevHub
 
         internal async Task<string> GetAsync(DevHubCredential credential, string url,
             Func<DevHubCredential, string, CancellationToken, Task<HttpResponseMessage>> send,
-            bool gitHub, CancellationToken cancellationToken)
+            bool gitHub, CancellationToken cancellationToken, string identityProperty = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (credential.ExpiresOn <= _utcNow())
+            {
+                DevHubActivityRequest.Failed(unauthorized: true);
+                return null;
+            }
+            var generation = _credentialGeneration();
             Entry entry = GetEntry(credential, url);
             await entry.Gate.WaitAsync(cancellationToken);
             try
             {
                 lock (_gate)
                 {
+                    if (_credentialGeneration() != generation || credential.ExpiresOn <= _utcNow())
+                    {
+                        DevHubActivityRequest.Failed(unauthorized: true);
+                        return null;
+                    }
                     if (entry.Identity != null && _utcNow() < entry.ExpiresAt)
                         return entry.Identity;
                 }
 
-                var identity = await DevHubRepoSummaryFetcher.GetIdentityAsync(credential, url, send, gitHub, cancellationToken);
+                var identity = await DevHubRepoSummaryFetcher.GetIdentityAsync(credential, url, send, gitHub, cancellationToken, identityProperty);
                 cancellationToken.ThrowIfCancellationRequested();
+                if (_credentialGeneration() != generation || credential.ExpiresOn <= _utcNow())
+                {
+                    DevHubActivityRequest.Failed(unauthorized: true);
+                    return null;
+                }
+                if (string.IsNullOrEmpty(identity))
+                    DevHubActivityRequest.Failed();
                 lock (_gate)
                 {
-                    entry.Identity = identity;
-                    entry.ExpiresAt = GetExpiration(credential);
+                    if (credential.ExpiresOn > _utcNow())
+                    {
+                        entry.Identity = identity;
+                        entry.ExpiresAt = GetExpiration(credential);
+                    }
                 }
                 return identity;
             }

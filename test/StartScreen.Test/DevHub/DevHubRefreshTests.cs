@@ -36,7 +36,7 @@ namespace StartScreen.Test.DevHub
             };
             var cache = new DevHubCacheService(_cacheFolder);
             var service = new DevHubService(cache, [provider], _ => Task.FromResult<IReadOnlyList<string>>(["https://example.com/repo"]),
-                () => DevHubSortOrder.MostRecent);
+                () => DevHubSortOrder.MostRecent, () => string.Empty, () => 0);
             var detail = new DevHubRepoDetail { RepoIdentifier = repo, PullRequests = [enriched, incoming] };
             var progress = new InlineProgress(dashboard =>
             {
@@ -173,7 +173,10 @@ namespace StartScreen.Test.DevHub
                 ? Task.FromException<IReadOnlyList<DevHubUser>>(new InvalidOperationException("Authentication failed."))
                 : Task.FromResult<IReadOnlyList<DevHubUser>>(Array.Empty<DevHubUser>()));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => service.RefreshAsync(CancellationToken.None));
+            var failed = await service.RefreshAsync(CancellationToken.None);
+            Assert.AreEqual(DevHubActivityStatus.Unavailable, failed.Status);
+            Assert.IsFalse(failed.HasAuthentication);
+            Assert.IsFalse(failed.HasData);
             Assert.IsFalse(service.IsRefreshing);
             await service.RefreshAsync(CancellationToken.None, forceRefresh: true);
 
@@ -203,7 +206,7 @@ namespace StartScreen.Test.DevHub
                 Issues = [new DevHubIssue { Title = "Old GitHub", RepoIdentifier = github }, new DevHubIssue { Title = "Old ADO", RepoIdentifier = ado }],
             });
             var service = new DevHubService(cache, [provider], _ => Task.FromResult<IReadOnlyList<string>>(["https://example.com/repo"]),
-                () => DevHubSortOrder.MostRecent);
+                () => DevHubSortOrder.MostRecent, () => string.Empty, () => 0);
             await service.LoadFromCacheAsync();
             var freshIssue = new DevHubIssue { Title = "Fresh GitHub", RepoIdentifier = github };
             var aggregateIssue = new DevHubIssue { Title = "Project ADO", WebUrl = "https://dev.azure.com/org/project/_workitems/edit/1" };
@@ -256,7 +259,8 @@ namespace StartScreen.Test.DevHub
 
         private DevHubService Service(Func<CancellationToken, Task<IReadOnlyList<DevHubUser>>> authenticate)
         {
-            return new DevHubService(new DevHubCacheService(_cacheFolder), [new AuthenticationProvider(authenticate)]);
+            return new DevHubService(new DevHubCacheService(_cacheFolder), [new AuthenticationProvider(authenticate)],
+                _ => Task.FromResult<IReadOnlyList<string>>([]), () => DevHubSortOrder.MostRecent, () => string.Empty, () => 0);
         }
 
         private static TaskCompletionSource<bool> Signal() => new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

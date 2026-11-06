@@ -248,7 +248,7 @@ namespace StartScreen.Test.DevHub
                 var provider = new ActivityProvider();
                 var cache = new DevHubCacheService(path);
                 var service = new DevHubService(cache, [provider], _ => Task.FromResult<IReadOnlyList<string>>(["https://example.com/repo"]),
-                    () => DevHubSortOrder.MostRecent);
+                    () => DevHubSortOrder.MostRecent, () => string.Empty, () => 0);
                 var options = new DevHubActivityOptions(120, true);
                 var dashboard = await service.RefreshAsync(CancellationToken.None, options: options);
 

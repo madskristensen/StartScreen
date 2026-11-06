@@ -10,6 +10,8 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public string Username { get; set; }
 
+        public string IdentityId { get; set; }
+
         /// <summary>
         /// The display name (e.g., "Mads Kristensen").
         /// </summary>

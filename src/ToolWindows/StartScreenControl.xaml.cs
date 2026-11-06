@@ -407,6 +407,13 @@ namespace StartScreen.ToolWindows
             }
 
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
+            if (_devHubService.CurrentDashboard == null)
+            {
+                _workspaceDashboard = null;
+                _workspaceError = null;
+                _workspaceCancellation?.Cancel();
+                DevHubPanelControl.UpdateView(null, ViewModel.SelectedRepository);
+            }
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 if (ViewModel != null)
@@ -705,7 +712,7 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 var progress = new Progress<DevHubDashboard>(dashboard =>
                 {
-                    if (!cancellationToken.IsCancellationRequested)
+                    if (!cancellationToken.IsCancellationRequested && ReferenceEquals(dashboard, _devHubService.CurrentDashboard))
                         UpdateDevHubPanel(dashboard);
                 });
 
@@ -757,6 +764,14 @@ namespace StartScreen.ToolWindows
 
         private void UpdateDevHubPanel(DevHubDashboard dashboard, string error = null)
         {
+            if (_workspaceDashboard != null && (_workspaceDashboard.CredentialGeneration != DevHubCredentialHelper.CredentialGeneration
+                || _workspaceDashboard.QueryContext != (Options.Instance.DevHubSearchQuery ?? string.Empty)
+                || dashboard?.IdentityContext != null && dashboard.IdentityContext != _workspaceDashboard.IdentityContext))
+            {
+                _workspaceDashboard = null;
+                _workspaceError = null;
+                _workspaceCancellation?.Cancel();
+            }
             DevHubPanelControl.SetCopilotWorkspace(ViewModel.GetCopilotWorkspaceRoots(),
                 ViewModel.SelectedMruItem != null || ViewModel.SelectedRepository != null);
             if (ViewModel.HasSelectedMruItem && ViewModel.SelectedRepository == null)

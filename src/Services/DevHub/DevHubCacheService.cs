@@ -111,7 +111,7 @@ namespace StartScreen.Services.DevHub
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
             }
         }
 
@@ -129,7 +129,7 @@ namespace StartScreen.Services.DevHub
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
             }
         }
 

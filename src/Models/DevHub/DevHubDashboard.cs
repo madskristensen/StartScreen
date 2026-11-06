@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 namespace StartScreen.Models.DevHub
 {
@@ -37,6 +38,20 @@ namespace StartScreen.Models.DevHub
 
         public int ActivityLimit { get; set; } = 30;
         public bool IncludesCompleted { get; set; }
+
+        [JsonIgnore]
+        public bool IsRefreshing { get; set; }
+
+        public string CacheContext { get; set; }
+        public string IdentityContext { get; set; }
+        internal int CredentialGeneration { get; set; }
+        internal string QueryContext { get; set; }
+        public Dictionary<string, DevHubActivitySnapshot> Sources { get; set; } = new Dictionary<string, DevHubActivitySnapshot>();
+
+        public DevHubActivityStatus Status => Sources.Values.All(source => !source.IsStale) ? DevHubActivityStatus.Success
+            : HasData || Sources.Values.Any(source => !source.IsStale || source.Status == DevHubActivityStatus.Partial) ? DevHubActivityStatus.Partial
+            : Sources.Values.Any(source => source.Status == DevHubActivityStatus.Unauthorized) ? DevHubActivityStatus.Unauthorized
+            : DevHubActivityStatus.Unavailable;
 
         public Dictionary<string, string> ActivityWarnings { get; set; } = new Dictionary<string, string>();
 
@@ -88,6 +103,9 @@ namespace StartScreen.Models.DevHub
             if (repo == null)
                 return null;
 
+            var warnings = ActivityWarnings.Where(pair => pair.Key == repo.ToString().ToLowerInvariant()
+                || Sources.TryGetValue(pair.Key, out var source) && source.RepoIdentifier == null).Select(pair => pair.Value).Distinct().ToArray();
+
             return new DevHubRepoDetail
             {
                 RepoIdentifier = repo,
@@ -104,7 +122,8 @@ namespace StartScreen.Models.DevHub
                     .OrderByDescending(r => r.Timestamp)
                     .ToList(),
                 FetchedAt = FetchedAt,
-                ActivityWarning = ActivityWarnings.TryGetValue(repo.ToString().ToLowerInvariant(), out var warning) ? warning : null,
+                Status = Status,
+                ActivityWarning = warnings.Length == 0 ? null : string.Join("\n", warnings),
             };
         }
     }

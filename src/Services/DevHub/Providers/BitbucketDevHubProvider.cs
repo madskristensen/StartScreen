@@ -12,13 +12,29 @@ namespace StartScreen.Services.DevHub.Providers
     /// Bitbucket Cloud provider for the Dev Hub.
     /// Fetches PRs, issues, and pipeline status from the Bitbucket REST API v2.
     /// </summary>
-    internal sealed class BitbucketDevHubProvider : IDevHubProvider
+    internal sealed class BitbucketDevHubProvider : IDevHubProvider, IDevHubActivitySource
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
         // The Authorization header is per-request because the credential token can change at runtime
         // and DefaultRequestHeaders is not safe to mutate while parallel requests are in flight.
         private static readonly HttpClient _httpClient = CreateSharedHttpClient();
+        private readonly HttpClient _client;
+        private readonly Func<CancellationToken, Task<DevHubCredential>> _acquireCredential;
+        private readonly DevHubIdentityCache _identityCache;
+
+        public BitbucketDevHubProvider() : this(_httpClient,
+            token => DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", token))
+        {
+        }
+
+        internal BitbucketDevHubProvider(HttpClient client, Func<CancellationToken, Task<DevHubCredential>> acquireCredential,
+            DevHubIdentityCache identityCache = null)
+        {
+            _client = client ?? throw new ArgumentNullException(nameof(client));
+            _acquireCredential = acquireCredential ?? throw new ArgumentNullException(nameof(acquireCredential));
+            _identityCache = identityCache ?? new DevHubIdentityCache();
+        }
 
         private static HttpClient CreateSharedHttpClient()
         {
@@ -31,16 +47,21 @@ namespace StartScreen.Services.DevHub.Providers
             return client;
         }
 
-        private static Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken)
+        private async Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken, bool observe = true)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {credential.Token}");
-            return _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return observe ? DevHubActivityRequest.Observe(response) : response;
         }
 
-        private string _cachedUsername;
-
         public string DisplayName => "Bitbucket";
+
+        public Task<DevHubActivitySnapshot> FetchActivityAsync(DevHubActivityKind kind, DevHubActivityOptions options,
+            RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        {
+            return DevHubActivityRequest.FetchAsync(this, kind, options, repo, cancellationToken);
+        }
 
         public Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
@@ -68,25 +89,28 @@ namespace StartScreen.Services.DevHub.Providers
 
         public async Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", cancellationToken);
+            var credential = await _acquireCredential(cancellationToken);
             if (credential == null)
                 return null;
 
             try
             {
-                var response = await SendGetAsync(credential, "https://api.bitbucket.org/2.0/user", cancellationToken);
+                var response = await SendGetAsync(credential, "https://api.bitbucket.org/2.0/user", cancellationToken, observe: false);
 
                 // Token expired - invalidate cache and retry once with a fresh credential.
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
+                    response.Dispose();
                     DevHubCredentialHelper.InvalidateCachedCredential("bitbucket.org");
-                    credential = await DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", cancellationToken);
+                    credential = await _acquireCredential(cancellationToken);
                     if (credential == null)
                         return null;
 
                     response = await SendGetAsync(credential, "https://api.bitbucket.org/2.0/user", cancellationToken);
                 }
 
+                using var finalResponse = response;
+                DevHubActivityRequest.Observe(response);
                 if (!response.IsSuccessStatusCode)
                     return null;
 
@@ -102,11 +126,12 @@ namespace StartScreen.Services.DevHub.Providers
                             ? href.GetString()
                             : null;
 
-                    _cachedUsername = username;
+                    _identityCache.Remember(credential, "https://api.bitbucket.org/2.0/user", username);
 
                     return new DevHubUser
                     {
                         Username = username ?? credential.Username,
+                        IdentityId = root.TryGetProperty("uuid", out var uuid) ? uuid.GetString() : username,
                         DisplayName = displayName ?? credential.Username,
                         AvatarUrl = avatarUrl,
                         ProviderName = DisplayName,
@@ -117,6 +142,7 @@ namespace StartScreen.Services.DevHub.Providers
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return null;
             }
         }
@@ -130,27 +156,19 @@ namespace StartScreen.Services.DevHub.Providers
         /// <summary>
         /// Gets the cached Bitbucket username, or fetches it from the API if not yet cached.
         /// </summary>
-        private async Task<(DevHubCredential credential, string username)> GetCredentialAndUsernameAsync(CancellationToken cancellationToken)
+        internal async Task<(DevHubCredential credential, string username)> GetCredentialAndUsernameAsync(CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", cancellationToken);
+            var credential = await _acquireCredential(cancellationToken);
             if (credential == null)
-                return (null, null);
-
-            if (_cachedUsername != null)
-                return (credential, _cachedUsername);
-
-            var response = await SendGetAsync(credential, "https://api.bitbucket.org/2.0/user", cancellationToken);
-            if (!response.IsSuccessStatusCode)
-                return (credential, null);
-
-            var json = await response.Content.ReadAsStringAsync();
-            using (var doc = JsonDocument.Parse(json))
             {
-                _cachedUsername = doc.RootElement.TryGetProperty("username", out var uname)
-                    ? uname.GetString()
-                    : null;
-                return (credential, _cachedUsername);
+                DevHubActivityRequest.Failed(unauthorized: true);
+                return (null, null);
             }
+            var username = await _identityCache.GetAsync(credential, "https://api.bitbucket.org/2.0/user",
+                (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken, identityProperty: "username");
+            if (string.IsNullOrEmpty(username))
+                DevHubActivityRequest.Failed();
+            return (credential, username);
         }
 
         public async Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken)
@@ -167,12 +185,13 @@ namespace StartScreen.Services.DevHub.Providers
                 if (!response.IsSuccessStatusCode)
                     return Array.Empty<DevHubPullRequest>();
 
-                var json = await response.Content.ReadAsStringAsync();
+                var json = await ReadPageAsync(response);
                 return ParsePullRequests(json, username);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return Array.Empty<DevHubPullRequest>();
             }
         }
@@ -207,9 +226,12 @@ namespace StartScreen.Services.DevHub.Providers
 
             var pageLen = NormalizeMaxItems(maxItems);
 
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", cancellationToken);
+            var credential = await _acquireCredential(cancellationToken);
             if (credential == null)
+            {
+                DevHubActivityRequest.Failed(unauthorized: true);
                 return null;
+            }
 
             try
             {
@@ -223,42 +245,60 @@ namespace StartScreen.Services.DevHub.Providers
 
                 // Fetch open PRs
                 var prUrl = $"https://api.bitbucket.org/2.0/repositories/{repoSlug}/pullrequests?state=OPEN&pagelen={pageLen}";
-                var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
-                if (prResponse.IsSuccessStatusCode)
+                detail.PullRequests = await DevHubActivityRequest.ReadCategoryAsync(detail, DevHubActivityKind.PullRequests, async () =>
                 {
-                    var prJson = await prResponse.Content.ReadAsStringAsync();
-                    detail.PullRequests = ParseRepoPullRequests(prJson, repo, credential.Username);
-                }
+                    using var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
+                    if (!prResponse.IsSuccessStatusCode)
+                        return new List<DevHubPullRequest>();
+                    var prJson = await ReadPageAsync(prResponse);
+                    var username = await _identityCache.GetAsync(credential, "https://api.bitbucket.org/2.0/user",
+                        (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken, identityProperty: "username");
+                    return ParseRepoPullRequests(prJson, repo, username);
+                }, cancellationToken);
 
                 // Fetch open issues (only if the repo has the issue tracker enabled)
                 var issueUrl = $"https://api.bitbucket.org/2.0/repositories/{repoSlug}/issues?q=state%3D%22open%22&pagelen={pageLen}";
-                var issueResponse = await SendGetAsync(credential, issueUrl, cancellationToken);
-                if (issueResponse.IsSuccessStatusCode)
+                detail.Issues = await DevHubActivityRequest.ReadCategoryAsync(detail, DevHubActivityKind.Issues, async () =>
                 {
-                    var issueJson = await issueResponse.Content.ReadAsStringAsync();
-                    detail.Issues = ParseRepoIssues(issueJson, repo);
-                }
+                    using var issueResponse = await SendGetAsync(credential, issueUrl, cancellationToken);
+                    if (!issueResponse.IsSuccessStatusCode)
+                        return new List<DevHubIssue>();
+                    var issueJson = await ReadPageAsync(issueResponse);
+                    return ParseRepoIssues(issueJson, repo);
+                }, cancellationToken);
 
                 // Fetch recent pipelines
                 var pipeUrl = $"https://api.bitbucket.org/2.0/repositories/{repoSlug}/pipelines/?sort=-created_on&pagelen={pageLen}";
-                var pipeResponse = await SendGetAsync(credential, pipeUrl, cancellationToken);
-                if (pipeResponse.IsSuccessStatusCode)
+                detail.CiRuns = await DevHubActivityRequest.ReadCategoryAsync(detail, DevHubActivityKind.CiRuns, async () =>
                 {
-                    var pipeJson = await pipeResponse.Content.ReadAsStringAsync();
-                    detail.CiRuns = ParsePipelines(pipeJson, repo);
-                }
+                    using var pipeResponse = await SendGetAsync(credential, pipeUrl, cancellationToken);
+                    if (!pipeResponse.IsSuccessStatusCode)
+                        return new List<DevHubCiRun>();
+                    var pipeJson = await ReadPageAsync(pipeResponse);
+                    return ParsePipelines(pipeJson, repo);
+                }, cancellationToken);
 
                 return detail;
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return null;
             }
         }
 
         public string GetRepoWebUrl(RemoteRepoIdentifier repo) =>
             $"https://bitbucket.org/{repo.Owner}/{repo.Repo}";
+
+        private static async Task<string> ReadPageAsync(HttpResponseMessage response)
+        {
+            var json = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("values", out var values) || values.ValueKind != JsonValueKind.Array)
+                throw new JsonException("Bitbucket did not return an activity collection.");
+            return json;
+        }
 
         public string GetPullRequestsWebUrl(RemoteRepoIdentifier repo) =>
             $"https://bitbucket.org/{repo.Owner}/{repo.Repo}/pull-requests";

@@ -99,6 +99,7 @@ namespace StartScreen.ToolWindows.Controls
 
             if (dashboard == null)
             {
+                LastRefreshChanged?.Invoke(this, string.Empty);
                 if (dashboardChanged || filterChanged || ErrorPanel.Visibility == Visibility.Visible || LoadingPanel.Visibility == Visibility.Visible)
                 {
                     ShowNotConnected(hasGitHub: false, hasAdo: false);
@@ -112,6 +113,9 @@ namespace StartScreen.ToolWindows.Controls
             if (!dashboard.HasAuthentication)
             {
                 ShowNotConnected(hasGitHub, hasAdo);
+                if (dashboard.ActivityWarnings.Count > 0)
+                    ShowActivityError(string.Join("\n", dashboard.ActivityWarnings.Values.Distinct()));
+                LastRefreshChanged?.Invoke(this, GetActivityRefreshStatus(dashboard) ?? string.Empty);
                 return;
             }
 
@@ -140,7 +144,16 @@ namespace StartScreen.ToolWindows.Controls
             UpdateSettingsAccountStatus(hasGitHub, hasAdo);
             UpdateWorkspaceActivity(prs, issues, ciRuns);
             UpdateLastRefresh(dashboard.FetchedAt);
+            var refreshStatus = GetActivityRefreshStatus(dashboard);
+            if (refreshStatus != null)
+                LastRefreshChanged?.Invoke(this, refreshStatus);
             ShowDashboard();
+        }
+
+        internal static string GetActivityRefreshStatus(DevHubDashboard dashboard)
+        {
+            return dashboard.IsRefreshing ? "Refreshing activity..." : dashboard.Status == DevHubActivityStatus.Success ? null
+                : $"Activity {dashboard.Status.ToString().ToLowerInvariant()} - some sources may be stale";
         }
 
         /// <summary>
@@ -617,6 +630,7 @@ namespace StartScreen.ToolWindows.Controls
                 return;
 
             Options.Instance.DevHubGitHubAccount = selectedAccount;
+            Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
             Options.Instance.SaveAsync().FireAndForget();
             RefreshRequested?.Invoke(this, EventArgs.Empty);
         }

@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using StartScreen.Models.DevHub;
@@ -17,8 +20,12 @@ namespace StartScreen.Services.DevHub
         private readonly IReadOnlyList<IDevHubProvider> _providers;
         private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _getCandidateRemoteUrls;
         private readonly Func<DevHubSortOrder> _getSortOrder;
+        private readonly Func<string> _getQueryContext;
+        private readonly Func<int> _getCredentialGeneration;
+        private readonly Dictionary<string, DevHubActivitySnapshot> _scopedSources = new Dictionary<string, DevHubActivitySnapshot>();
+        private readonly object _scopeGate = new object();
         private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
-        private DevHubDashboard _currentDashboard;
+        private volatile DevHubDashboard _currentDashboard;
         private volatile bool _isRefreshing;
 
         public DevHubService() : this(new DevHubCacheService())
@@ -27,12 +34,14 @@ namespace StartScreen.Services.DevHub
 
         public DevHubService(DevHubCacheService cache, IReadOnlyList<IDevHubProvider> providers = null,
             Func<CancellationToken, Task<IReadOnlyList<string>>> getCandidateRemoteUrls = null,
-            Func<DevHubSortOrder> getSortOrder = null)
+            Func<DevHubSortOrder> getSortOrder = null, Func<string> getQueryContext = null, Func<int> getCredentialGeneration = null)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _providers = providers ?? DevHubProviderRegistry.GetAllProviders();
             _getCandidateRemoteUrls = getCandidateRemoteUrls ?? GetCandidateRemoteUrlsAsync;
             _getSortOrder = getSortOrder ?? (() => Options.Instance.DevHubSortOrder);
+            _getQueryContext = getQueryContext ?? (() => Options.Instance.DevHubSearchQuery ?? string.Empty);
+            _getCredentialGeneration = getCredentialGeneration ?? (() => DevHubCredentialHelper.CredentialGeneration);
         }
 
         /// <summary>
@@ -43,22 +52,46 @@ namespace StartScreen.Services.DevHub
         /// <summary>
         /// The current dashboard data (may be from cache).
         /// </summary>
-        public DevHubDashboard CurrentDashboard => _currentDashboard;
+        public DevHubDashboard CurrentDashboard
+        {
+            get
+            {
+                var dashboard = _currentDashboard;
+                return dashboard != null && dashboard.CredentialGeneration == _getCredentialGeneration()
+                    && dashboard.QueryContext == _getQueryContext() ? dashboard : null;
+            }
+        }
 
         /// <summary>
         /// Loads the dashboard from cache for immediate display.
         /// Returns null if no cache exists.
         /// </summary>
-        public async Task<DevHubDashboard> LoadFromCacheAsync(CancellationToken cancellationToken = default)
+        public async Task<DevHubDashboard> LoadFromCacheAsync(CancellationToken cancellationToken = default, DevHubActivityOptions options = null)
         {
-            _currentDashboard = await _cache.ReadDashboardAsync(cancellationToken);
-            return _currentDashboard;
+            var cached = await _cache.ReadDashboardAsync(cancellationToken);
+            if (cached == null || string.IsNullOrEmpty(cached.CacheContext))
+                return _currentDashboard = null;
+            var generation = _getCredentialGeneration();
+            var queryContext = _getQueryContext();
+            var users = await Task.WhenAll(_providers.Select(provider => AuthenticateAsync(provider, cancellationToken)));
+            var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken), urls => urls.Count > 0, cancellationToken);
+            if (candidates.Status != DevHubActivityStatus.Success || generation != _getCredentialGeneration() || queryContext != _getQueryContext())
+                return _currentDashboard = null;
+            var context = CreateContext(users.SelectMany(value => value.Value ?? Array.Empty<DevHubUser>()), options ?? new DevHubActivityOptions(), candidates.Value);
+            cached.CredentialGeneration = generation;
+            cached.QueryContext = queryContext;
+            SetCurrentDashboard(cached.CacheContext == context ? cached : null);
+            return CurrentDashboard;
         }
 
         /// <summary>
         /// Returns true if the cache is stale and a refresh should be triggered.
         /// </summary>
-        public bool IsCacheStale() => _cache.IsCacheStale();
+        public bool IsCacheStale()
+        {
+            var current = CurrentDashboard;
+            return current == null || current.Status != DevHubActivityStatus.Success || _cache.IsCacheStale();
+        }
 
         /// <summary>
         /// Fetches fresh data from all authenticated providers and updates the dashboard.
@@ -73,18 +106,23 @@ namespace StartScreen.Services.DevHub
             options = options ?? new DevHubActivityOptions();
 
             if (!await _refreshGate.WaitAsync(forceRefresh ? Timeout.Infinite : 0, cancellationToken))
-                return _currentDashboard;
+                return CurrentDashboard;
 
             _isRefreshing = true;
 
             try
             {
                 var previousDashboard = _currentDashboard;
+                var authenticationGeneration = _getCredentialGeneration();
+                var queryContext = _getQueryContext();
                 var dashboard = new DevHubDashboard
                 {
                     FetchedAt = DateTime.UtcNow,
                     ActivityLimit = options.MaxItems,
                     IncludesCompleted = options.IncludeCompleted,
+                    IsRefreshing = true,
+                    CredentialGeneration = authenticationGeneration,
+                    QueryContext = queryContext,
                 };
 
                 // Phase 1: Authenticate all providers in parallel. A single provider may
@@ -92,112 +130,268 @@ namespace StartScreen.Services.DevHub
                 // Azure DevOps cloud + on-premises Server).
                 var authTasks = _providers.Select(async provider =>
                 {
-                    var users = await provider.GetAuthenticatedUsersAsync(cancellationToken);
-                    return (provider, users);
+                    var result = await AuthenticateAsync(provider, cancellationToken);
+                    return (provider, result);
                 }).ToList();
 
                 var authResults = await Task.WhenAll(authTasks);
                 cancellationToken.ThrowIfCancellationRequested();
+                if (authenticationGeneration != _getCredentialGeneration())
+                    return InvalidateContext(progress);
                 var authenticated = new List<IDevHubProvider>();
 
-                foreach (var (provider, users) in authResults)
+                foreach (var (provider, result) in authResults)
                 {
+                    var users = result.Value;
                     if (users != null && users.Count > 0)
                     {
                         dashboard.Users.AddRange(users);
                         authenticated.Add(provider);
                     }
+                    if (result.Status != DevHubActivityStatus.Success)
+                    {
+                        var key = provider.DisplayName + "/authentication";
+                        dashboard.Sources[key] = new DevHubActivitySnapshot { Status = result.Status };
+                        dashboard.ActivityWarnings[key] = $"{provider.DisplayName}: authentication {result.Status.ToString().ToLowerInvariant()}. Activity cannot be verified. Sign in or refresh to retry.";
+                    }
                 }
+
+                dashboard.IdentityContext = CreateIdentityContext(dashboard.Users);
+
+                var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken),
+                    urls => urls.Count > 0, cancellationToken);
+                if (authenticationGeneration != _getCredentialGeneration() || queryContext != _getQueryContext())
+                    return InvalidateContext(progress);
+                var candidateUrls = candidates.Value ?? Array.Empty<string>();
+                dashboard.CacheContext = candidates.Status == DevHubActivityStatus.Success
+                    ? CreateContext(dashboard.Users, options, candidateUrls) : null;
+                if (candidates.Status != DevHubActivityStatus.Success)
+                {
+                    dashboard.Sources["repositories/discovery"] = new DevHubActivitySnapshot { Status = candidates.Status };
+                    dashboard.ActivityWarnings["repositories/discovery"] = "Repository discovery is unavailable. Refresh to retry.";
+                }
+                if (string.IsNullOrEmpty(dashboard.CacheContext) || previousDashboard?.CacheContext != dashboard.CacheContext)
+                    previousDashboard = null;
+                var generation = authenticationGeneration;
 
                 if (authenticated.Count == 0)
                 {
+                    dashboard.IsRefreshing = false;
                     _cache.WriteDashboard(dashboard);
-                    _currentDashboard = dashboard;
+                    SetCurrentDashboard(dashboard);
                     progress?.Report(dashboard);
                     return dashboard;
                 }
 
-                if (previousDashboard != null)
+                foreach (var pair in previousDashboard?.Sources ?? new Dictionary<string, DevHubActivitySnapshot>())
                 {
-                    dashboard.Issues = previousDashboard.Issues?.ToList() ?? new List<DevHubIssue>();
-                    dashboard.PullRequests = previousDashboard.PullRequests?.ToList() ?? new List<DevHubPullRequest>();
-                    dashboard.CiRuns = previousDashboard.CiRuns?.ToList() ?? new List<DevHubCiRun>();
+                    if (!pair.Key.EndsWith("/authentication", StringComparison.Ordinal))
+                        dashboard.Sources[pair.Key] = pair.Value;
+                }
+                Publish(dashboard, progress);
+
+                var remaining = new List<Task<(string Key, DevHubActivitySnapshot Snapshot)>>();
+                foreach (var provider in authenticated)
+                {
+                    remaining.Add(FetchSourceAsync(provider.DisplayName + "/issues",
+                        () => FetchActivityAsync(provider, DevHubActivityKind.Issues, options, null, cancellationToken)));
+                    remaining.Add(FetchSourceAsync(provider.DisplayName + "/pulls",
+                        () => FetchActivityAsync(provider, DevHubActivityKind.PullRequests, options, null, cancellationToken)));
+                    remaining.Add(FetchSourceAsync(provider.DisplayName + "/builds",
+                        () => FetchActivityAsync(provider, DevHubActivityKind.CiRuns, options, null, cancellationToken)));
+                    remaining.Add(FetchSourceAsync(provider.DisplayName + "/discovery", async () =>
+                    {
+                        var result = await DevHubActivityRequest.RunAsync(() => provider.GetActivityReposAsync(candidateUrls, cancellationToken),
+                            items => items.Count > 0, cancellationToken);
+                        return new DevHubActivitySnapshot { Status = result.Status,
+                            ActivityRepositories = result.Value?.ToList() ?? new List<RemoteRepoIdentifier>() };
+                    }));
                 }
 
-                // Show the dashboard shell immediately once we know auth state
-                _currentDashboard = dashboard;
-                progress?.Report(dashboard);
-
-                // Fetch issues, PRs, and CI runs in parallel; report each as it arrives
-                DevHubSortOrder sortOrder = _getSortOrder();
-
-                // Repository-wide feeds supplement personal activity without replacing older authored items.
-                var perRepoActivityTask = FetchPerRepoActivityAsync(authenticated, options, cancellationToken);
-                var issueTask = Task.WhenAll(authenticated.Select(
-                    p => p is IDevHubActivityProvider activity ? activity.GetUserIssuesAsync(options, cancellationToken) : p.GetUserIssuesAsync(cancellationToken)));
-                var prTask = Task.WhenAll(authenticated.Select(
-                    p => p is IDevHubActivityProvider activity ? activity.GetUserPullRequestsAsync(options, cancellationToken) : p.GetUserPullRequestsAsync(cancellationToken)));
-                var ciTask = Task.WhenAll(authenticated.Select(
-                    p => p is IDevHubActivityProvider activity ? activity.GetUserCiRunsAsync(options, cancellationToken) : p.GetUserCiRunsAsync(cancellationToken)));
-
-                IReadOnlyList<DevHubRepoDetail> perRepo = Array.Empty<DevHubRepoDetail>();
-                IEnumerable<DevHubIssue> issues = dashboard.Issues;
-                IEnumerable<DevHubPullRequest> pullRequests = dashboard.PullRequests;
-                IEnumerable<DevHubCiRun> ciRuns = dashboard.CiRuns;
-
-                var remaining = new List<Task> { issueTask, prTask, ciTask, perRepoActivityTask };
                 while (remaining.Count > 0)
                 {
                     var completed = await Task.WhenAny(remaining);
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (generation != _getCredentialGeneration() || queryContext != _getQueryContext())
+                        return InvalidateContext(progress);
                     remaining.Remove(completed);
+                    var (key, snapshot) = await completed;
+                    dashboard.Sources.TryGetValue(key, out var previous);
+                    dashboard.Sources[key] = RetainFailedSource(snapshot, previous);
+                    if (key.EndsWith("/discovery", StringComparison.Ordinal))
+                    {
+                        var provider = authenticated.First(candidate => key == candidate.DisplayName + "/discovery");
+                        var prefix = provider.DisplayName + "/repo/";
+                        var validKeys = new HashSet<string>(snapshot.ActivityRepositories.Select(repo => prefix + repo.ToString().ToLowerInvariant()));
+                        foreach (var pair in dashboard.Sources.Where(pair => pair.Key.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+                        {
+                            if (snapshot.IsStale)
+                                dashboard.Sources[pair.Key] = RetainFailedSource(new DevHubActivitySnapshot
+                                {
+                                    RepoIdentifier = pair.Value.RepoIdentifier,
+                                    Status = snapshot.Status,
+                                }, pair.Value);
+                            else if (!validKeys.Contains(pair.Key))
+                                dashboard.Sources.Remove(pair.Key);
+                        }
 
-                    if (completed == issueTask)
-                    {
-                        issues = (await issueTask).SelectMany(r => r).ToList();
+                        foreach (var repo in snapshot.ActivityRepositories)
+                        {
+                            var repoOptions = new DevHubActivityOptions(options.MaxItems == DevHubActivityOptions.DefaultLimit
+                                ? _dashboardRepoItemCount : options.MaxItems, options.IncludeCompleted);
+                            remaining.Add(FetchSourceAsync(prefix + repo.ToString().ToLowerInvariant(),
+                                () => FetchActivityAsync(provider, DevHubActivityKind.Repository, repoOptions, repo, cancellationToken)));
+                        }
                     }
-                    else if (completed == prTask)
-                    {
-                        pullRequests = (await prTask).SelectMany(r => r).ToList();
-                    }
-                    else if (completed == ciTask)
-                    {
-                        ciRuns = (await ciTask).SelectMany(r => r).ToList();
-                    }
-                    else
-                    {
-                        perRepo = await perRepoActivityTask;
-                        dashboard.ActivityWarnings = perRepo.Where(detail => !string.IsNullOrEmpty(detail.ActivityWarning))
-                            .ToDictionary(detail => detail.RepoIdentifier.ToString().ToLowerInvariant(), detail => detail.ActivityWarning);
-                    }
-
-                    var replacedRepos = new HashSet<RemoteRepoIdentifier>(perRepo.Select(detail => detail.RepoIdentifier));
-                    dashboard.Issues = DevHubItemSorter.Sort(
-                        MergeIssues(issues.Where(item => !replacedRepos.Contains(item.RepoIdentifier)), perRepo.SelectMany(detail => detail.Issues)),
-                        sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
-                    dashboard.PullRequests = DevHubItemSorter.Sort(
-                        MergePullRequests(pullRequests.Where(item => item.IsAuthoredByCurrentUser || item.IsAssignedToCurrentUser || item.IsReviewRequestedForCurrentUser
-                                || item.IsMentioned || !replacedRepos.Contains(item.RepoIdentifier)),
-                            perRepo.SelectMany(detail => detail.PullRequests)),
-                        sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
-                    dashboard.CiRuns = ciRuns.Where(item => !replacedRepos.Contains(item.RepoIdentifier))
-                        .Concat(perRepo.SelectMany(detail => detail.CiRuns)).OrderByDescending(item => item.Timestamp).ToList();
-
-                    _currentDashboard = dashboard;
-                    progress?.Report(dashboard);
+                    Publish(dashboard, progress);
                 }
 
                 // Cache the final result
                 cancellationToken.ThrowIfCancellationRequested();
-                _cache.WriteDashboard(dashboard);
+                dashboard.IsRefreshing = false;
+                dashboard.FetchedAt = DateTime.UtcNow;
+                var final = Publish(dashboard, progress);
+                _cache.WriteDashboard(final);
 
-                return dashboard;
+                return final;
             }
             finally
             {
                 _isRefreshing = false;
                 _refreshGate.Release();
             }
+        }
+
+        private string CreateContext(IEnumerable<DevHubUser> users, DevHubActivityOptions options, IEnumerable<string> urls)
+        {
+            return HashContext(JsonSerializer.Serialize(new
+            {
+                Version = 3,
+                Identities = CreateIdentityContext(users),
+                options.MaxItems,
+                options.IncludeCompleted,
+                Query = _getQueryContext(),
+                Repositories = urls.Distinct().OrderBy(value => value, StringComparer.Ordinal).ToArray(),
+            }));
+        }
+
+        private static string CreateIdentityContext(IEnumerable<DevHubUser> users)
+        {
+            return HashContext(JsonSerializer.Serialize(users.Select(user => new { user.ProviderName, user.Host, user.IdentityId, user.Username })
+                .OrderBy(user => user.ProviderName, StringComparer.Ordinal).ThenBy(user => user.Host, StringComparer.Ordinal)
+                .ThenBy(user => user.IdentityId, StringComparer.Ordinal).ThenBy(user => user.Username, StringComparer.Ordinal).ToArray()));
+        }
+
+        private static string HashContext(string text)
+        {
+            using var sha = SHA256.Create();
+            return Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes(text)));
+        }
+
+        private void SetCurrentDashboard(DevHubDashboard dashboard)
+        {
+            _currentDashboard = dashboard;
+        }
+
+        private DevHubDashboard InvalidateContext(IProgress<DevHubDashboard> progress = null)
+        {
+            var dashboard = new DevHubDashboard { CredentialGeneration = _getCredentialGeneration(), QueryContext = _getQueryContext() };
+            dashboard.Sources["authentication"] = new DevHubActivitySnapshot { Status = DevHubActivityStatus.Unauthorized };
+            dashboard.ActivityWarnings["authentication"] = "The account or activity settings changed during refresh. Refresh again to load the current account.";
+            SetCurrentDashboard(dashboard);
+            progress?.Report(dashboard);
+            return dashboard;
+        }
+
+        private static Task<DevHubActivityResult<IReadOnlyList<DevHubUser>>> AuthenticateAsync(IDevHubProvider provider, CancellationToken cancellationToken)
+        {
+            return DevHubActivityRequest.RunAsync(async () =>
+            {
+                var users = await provider.GetAuthenticatedUsersAsync(cancellationToken);
+                if ((users == null || users.Count == 0) && !DevHubActivityRequest.HasFailure)
+                    DevHubActivityRequest.Failed(unauthorized: true);
+                return users;
+            }, users => users.Count > 0, cancellationToken);
+        }
+
+        private static async Task<(string Key, DevHubActivitySnapshot Snapshot)> FetchSourceAsync(string key, Func<Task<DevHubActivitySnapshot>> fetch)
+        {
+            var snapshot = await fetch();
+            snapshot.FetchedAt = DateTime.UtcNow;
+            return (key, snapshot);
+        }
+
+        internal static DevHubActivitySnapshot RetainFailedSource(DevHubActivitySnapshot fresh, DevHubActivitySnapshot previous)
+        {
+            if (!fresh.IsStale || previous == null)
+                return fresh;
+            if (!fresh.HasCategoryOutcomes || fresh.PullRequestsStatus != DevHubActivityStatus.Success)
+                fresh.PullRequests = MergePullRequests(previous.PullRequests, fresh.PullRequests).ToList();
+            if (!fresh.HasCategoryOutcomes || fresh.IssuesStatus != DevHubActivityStatus.Success)
+                fresh.Issues = MergeIssues(previous.Issues, fresh.Issues).ToList();
+            if (!fresh.HasCategoryOutcomes || fresh.CiRunsStatus != DevHubActivityStatus.Success)
+                fresh.CiRuns = fresh.CiRuns.Concat(previous.CiRuns)
+                    .GroupBy(run => run.WebUrl ?? $"{run.RepoIdentifier}/{run.Timestamp:o}/{run.Name}")
+                    .Select(group => group.First()).ToList();
+            fresh.ActivityRepositories = fresh.ActivityRepositories.Concat(previous.ActivityRepositories).Distinct().ToList();
+            fresh.FetchedAt = previous.FetchedAt;
+            return fresh;
+        }
+
+        private DevHubDashboard Publish(DevHubDashboard dashboard, IProgress<DevHubDashboard> progress)
+        {
+            dashboard.ActivityWarnings.Clear();
+            var repos = dashboard.Sources.Values.Where(source => source.RepoIdentifier != null).ToList();
+            var personal = dashboard.Sources.Values.Where(source => source.RepoIdentifier == null).ToList();
+            var replacedRepos = new HashSet<RemoteRepoIdentifier>(repos.Select(source => source.RepoIdentifier));
+            var sortOrder = _getSortOrder();
+            dashboard.Issues = DevHubItemSorter.Sort(MergeIssues(personal.SelectMany(source => source.Issues)
+                .Where(item => !replacedRepos.Contains(item.RepoIdentifier)), repos.SelectMany(source => source.Issues)),
+                sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
+            dashboard.PullRequests = DevHubItemSorter.Sort(MergePullRequests(personal.SelectMany(source => source.PullRequests)
+                .Where(item => item.IsAuthoredByCurrentUser || item.IsAssignedToCurrentUser || item.IsReviewRequestedForCurrentUser
+                    || item.IsMentioned || !replacedRepos.Contains(item.RepoIdentifier)), repos.SelectMany(source => source.PullRequests)),
+                sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
+            dashboard.CiRuns = personal.SelectMany(source => source.CiRuns).Where(item => !replacedRepos.Contains(item.RepoIdentifier))
+                .Concat(repos.SelectMany(source => source.CiRuns)).OrderByDescending(item => item.Timestamp).ToList();
+            foreach (var pair in dashboard.Sources)
+            {
+                var source = pair.Value;
+                var key = source.RepoIdentifier?.ToString().ToLowerInvariant() ?? pair.Key;
+                if (source.IsStale)
+                    dashboard.ActivityWarnings[key] = source.Message ?? $"{pair.Key}: {source.Status}. Showing stale activity where available. Refresh to retry.";
+                else if (!string.IsNullOrEmpty(source.Message))
+                    dashboard.ActivityWarnings[key] = source.Message;
+                else
+                    dashboard.ActivityWarnings.Remove(key);
+            }
+            var published = new DevHubDashboard
+            {
+                Users = dashboard.Users.ToList(),
+                PullRequests = dashboard.PullRequests.ToList(),
+                Issues = dashboard.Issues.ToList(),
+                CiRuns = dashboard.CiRuns.ToList(),
+                Sources = dashboard.Sources.ToDictionary(pair => pair.Key, pair => pair.Value),
+                ActivityWarnings = dashboard.ActivityWarnings.ToDictionary(pair => pair.Key, pair => pair.Value),
+                FetchedAt = dashboard.FetchedAt,
+                ActivityLimit = dashboard.ActivityLimit,
+                IncludesCompleted = dashboard.IncludesCompleted,
+                IsRefreshing = dashboard.IsRefreshing,
+                CacheContext = dashboard.CacheContext,
+                IdentityContext = dashboard.IdentityContext,
+                CredentialGeneration = dashboard.CredentialGeneration,
+                QueryContext = dashboard.QueryContext,
+            };
+            SetCurrentDashboard(published);
+            progress?.Report(published);
+            return published;
+        }
+
+        private static Task<DevHubActivitySnapshot> FetchActivityAsync(IDevHubProvider provider, DevHubActivityKind kind,
+            DevHubActivityOptions options, RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        {
+            return provider is IDevHubActivitySource source ? source.FetchActivityAsync(kind, options, repo, cancellationToken)
+                : DevHubActivityRequest.FetchAsync(provider, kind, options, repo, cancellationToken);
         }
 
         /// <summary>
@@ -221,15 +415,8 @@ namespace StartScreen.Services.DevHub
             if (repo == null)
                 return null;
 
-            // First check if we can filter from the current dashboard data
-            if (_currentDashboard != null)
-            {
-                var filtered = _currentDashboard.FilterByRepo(repo);
-                if (filtered != null && filtered.HasData)
-                    return filtered;
-            }
-
-            return await FetchRepoDetailFromProviderAsync(repo, _dashboardRepoItemCount, cancellationToken);
+            var dashboard = await ScopeToRepoAsync(repo, cancellationToken, new DevHubActivityOptions(_dashboardRepoItemCount));
+            return dashboard?.FilterByRepo(repo);
         }
 
         /// <summary>
@@ -241,21 +428,58 @@ namespace StartScreen.Services.DevHub
             DevHubActivityOptions options = null)
         {
             if (repo == null)
-                return _currentDashboard;
+                return CurrentDashboard;
 
-            var detail = await FetchRepoDetailFromProviderAsync(repo, ScopedRepoItemCount, cancellationToken, options);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (detail == null)
-                return null;
-
+            options = options ?? new DevHubActivityOptions(ScopedRepoItemCount);
+            var authenticationGeneration = _getCredentialGeneration();
+            var queryContext = _getQueryContext();
+            var authResults = await Task.WhenAll(_providers.Select(async provider => (Provider: provider, Result: await AuthenticateAsync(provider, cancellationToken))));
+            if (authenticationGeneration != _getCredentialGeneration() || queryContext != _getQueryContext())
+                return InvalidateContext();
+            var users = authResults.SelectMany(pair => pair.Result.Value ?? Array.Empty<DevHubUser>()).ToList();
+            var context = CreateContext(users, options, new[] { repo.ToString() });
+            var generation = _getCredentialGeneration();
             var dashboard = new DevHubDashboard
             {
-                Users = _currentDashboard?.Users.ToList() ?? new List<DevHubUser>(),
-                FetchedAt = detail.FetchedAt,
-                ActivityLimit = options?.MaxItems ?? ScopedRepoItemCount,
-                IncludesCompleted = options?.IncludeCompleted ?? false,
+                Users = users,
+                IdentityContext = CreateIdentityContext(users),
+                CredentialGeneration = authenticationGeneration,
+                QueryContext = queryContext,
+                FetchedAt = DateTime.UtcNow,
+                ActivityLimit = options.MaxItems,
+                IncludesCompleted = options.IncludeCompleted,
+                CacheContext = context,
             };
-            MergeRepoDetail(dashboard, repo, detail);
+            var matching = authResults.FirstOrDefault(pair => pair.Provider.CanHandle(GetLookupUrl(repo)));
+            var verified = matching.Provider != null && matching.Result.Value?.Any(user => string.IsNullOrEmpty(user.Host)
+                || string.Equals(user.Host, repo.Host, StringComparison.OrdinalIgnoreCase)) == true;
+            var snapshot = verified ? await FetchActivityAsync(matching.Provider, DevHubActivityKind.Repository, options, repo, cancellationToken)
+                : new DevHubActivitySnapshot
+                {
+                    Status = matching.Provider == null ? DevHubActivityStatus.Unavailable
+                        : matching.Result.Status == DevHubActivityStatus.Success || matching.Result.Status == DevHubActivityStatus.Partial
+                            ? DevHubActivityStatus.Unauthorized : matching.Result.Status,
+                    RepoIdentifier = repo,
+                };
+            cancellationToken.ThrowIfCancellationRequested();
+            if (generation != _getCredentialGeneration() || context != CreateContext(users, options, new[] { repo.ToString() }))
+                return InvalidateContext();
+            lock (_scopeGate)
+            {
+                DevHubActivitySnapshot previous = null;
+                if (verified)
+                    _scopedSources.TryGetValue(context, out previous);
+                snapshot = RetainFailedSource(snapshot, previous);
+                if (verified)
+                    _scopedSources[context] = snapshot;
+            }
+            dashboard.Sources[repo.ToString().ToLowerInvariant()] = snapshot;
+            dashboard.PullRequests = snapshot.PullRequests;
+            dashboard.Issues = snapshot.Issues;
+            dashboard.CiRuns = snapshot.CiRuns;
+            if (snapshot.IsStale)
+                dashboard.ActivityWarnings[repo.ToString().ToLowerInvariant()] = snapshot.Message
+                    ?? $"Repository activity {snapshot.Status.ToString().ToLowerInvariant()}. Showing stale activity where available. Refresh to retry.";
             return dashboard;
         }
 
@@ -264,20 +488,12 @@ namespace StartScreen.Services.DevHub
         /// the "/_git/" segment for ADO so on-prem servers route to the Azure DevOps provider) and
         /// fetches repo detail from the matching provider.
         /// </summary>
-        private async Task<DevHubRepoDetail> FetchRepoDetailFromProviderAsync(RemoteRepoIdentifier repo, int maxItems,
-            CancellationToken cancellationToken, DevHubActivityOptions options = null)
+        private static string GetLookupUrl(RemoteRepoIdentifier repo)
         {
-            var lookupUrl = !string.IsNullOrEmpty(repo.Project) && !string.IsNullOrEmpty(repo.BaseUrl)
+            return !string.IsNullOrEmpty(repo.Project) && !string.IsNullOrEmpty(repo.BaseUrl)
                 ? $"{repo.BaseUrl}/{repo.Project}/_git/{repo.Repo}"
+                : !string.IsNullOrEmpty(repo.Project) ? $"https://{repo.Host}/{repo.Owner}/{repo.Project}/_git/{repo.Repo}"
                 : $"https://{repo.Host}/{repo.Owner}/{repo.Repo}";
-
-            var provider = _providers.FirstOrDefault(candidate => candidate.CanHandle(lookupUrl));
-            if (provider == null)
-                return null;
-
-            return options != null && provider is IDevHubActivityProvider activity
-                ? await activity.GetRepoDetailAsync(repo, options, cancellationToken)
-                : await provider.GetRepoDetailAsync(repo, maxItems, cancellationToken);
         }
 
         /// <summary>
@@ -341,54 +557,6 @@ namespace StartScreen.Services.DevHub
         }
 
         /// <summary>
-        /// Fetches repository-wide activity alongside personal queries (currently Azure DevOps).
-        /// The repos are taken from the user's MRU list, so the
-        /// number of requests stays proportional to what the user is actually working on.
-        /// </summary>
-        private async Task<IReadOnlyList<DevHubRepoDetail>> FetchPerRepoActivityAsync(
-            IReadOnlyList<IDevHubProvider> providers, DevHubActivityOptions options, CancellationToken cancellationToken)
-        {
-            try
-            {
-                var candidateUrls = await _getCandidateRemoteUrls(cancellationToken);
-                if (candidateUrls.Count == 0)
-                    return Array.Empty<DevHubRepoDetail>();
-
-                var detailTasks = new List<Task<DevHubRepoDetail>>();
-                foreach (var provider in providers)
-                {
-                    var repos = await provider.GetActivityReposAsync(candidateUrls, cancellationToken);
-                    if (repos == null)
-                        continue;
-
-                    foreach (var repo in repos)
-                    {
-                        var repoOptions = new DevHubActivityOptions(options.MaxItems == DevHubActivityOptions.DefaultLimit
-                            ? _dashboardRepoItemCount : options.MaxItems, options.IncludeCompleted);
-                        detailTasks.Add(provider is IDevHubActivityProvider activity
-                            ? activity.GetRepoDetailAsync(repo, repoOptions, cancellationToken)
-                            : provider.GetRepoDetailAsync(repo, _dashboardRepoItemCount, cancellationToken));
-                    }
-                }
-
-                if (detailTasks.Count == 0)
-                    return Array.Empty<DevHubRepoDetail>();
-
-                var details = await Task.WhenAll(detailTasks);
-                return details.Where(d => d != null).ToList();
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-                return Array.Empty<DevHubRepoDetail>();
-            }
-        }
-
-        /// <summary>
         /// Reads distinct git remote URLs from the MRU list to use as the candidate set of
         /// repositories for per-repo activity fetching.
         /// </summary>
@@ -405,6 +573,7 @@ namespace StartScreen.Services.DevHub
             catch (Exception ex)
             {
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return Array.Empty<string>();
             }
         }
@@ -416,6 +585,8 @@ namespace StartScreen.Services.DevHub
         {
             _cache.ClearCache();
             _currentDashboard = null;
+            lock (_scopeGate)
+                _scopedSources.Clear();
         }
     }
 }

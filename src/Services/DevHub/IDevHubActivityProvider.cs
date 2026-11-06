@@ -5,6 +5,21 @@ using StartScreen.Models.DevHub;
 
 namespace StartScreen.Services.DevHub
 {
+    internal enum DevHubActivityKind
+    {
+        Issues,
+        PullRequests,
+        CiRuns,
+        Repository,
+    }
+
+    /// <summary>The application-facing activity contract. Empty success and failed sources are distinct.</summary>
+    internal interface IDevHubActivitySource
+    {
+        Task<DevHubActivitySnapshot> FetchActivityAsync(DevHubActivityKind kind, DevHubActivityOptions options,
+            RemoteRepoIdentifier repo, CancellationToken cancellationToken);
+    }
+
     internal sealed class DevHubActivityOptions
     {
         public const int DefaultLimit = 30;

@@ -15,7 +15,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// GitHub provider for the Dev Hub.
     /// Fetches PRs, issues, and CI status from the GitHub REST API.
     /// </summary>
-    internal sealed class GitHubDevHubProvider : IDevHubProvider, IDevHubActivityProvider
+    internal sealed class GitHubDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -35,14 +35,14 @@ namespace StartScreen.Services.DevHub.Providers
             return client;
         }
 
-        private static async Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken, HttpClient httpClient = null)
+        private static async Task<HttpResponseMessage> SendGetAsync(DevHubCredential credential, string url, CancellationToken cancellationToken, HttpClient httpClient = null, bool observe = true)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {credential.Token}");
-            return await (httpClient ?? _httpClient).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var response = await (httpClient ?? _httpClient).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return observe ? DevHubActivityRequest.Observe(response) : response;
         }
 
-        private Tuple<DevHubCredential, string> _cachedIdentity;
         private readonly DevHubIdentityCache _identityCache = new DevHubIdentityCache();
 
         private static string GetPreferredGitHubAccount()
@@ -52,6 +52,12 @@ namespace StartScreen.Services.DevHub.Providers
         }
 
         public string DisplayName => "GitHub";
+
+        public Task<DevHubActivitySnapshot> FetchActivityAsync(DevHubActivityKind kind, DevHubActivityOptions options,
+            RemoteRepoIdentifier repo, CancellationToken cancellationToken)
+        {
+            return DevHubActivityRequest.FetchAsync(this, kind, options, repo, cancellationToken);
+        }
 
         public Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
@@ -98,11 +104,12 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
-                var response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken, httpClient);
+                var response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken, httpClient, observe: false);
 
                 // Token expired - invalidate cache and retry once with a fresh credential.
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
+                    response.Dispose();
                     DevHubCredentialHelper.InvalidateCachedCredential("github.com");
                     credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
                     if (credential == null)
@@ -111,6 +118,8 @@ namespace StartScreen.Services.DevHub.Providers
                     response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken, httpClient);
                 }
 
+                using var finalResponse = response;
+                DevHubActivityRequest.Observe(response);
                 if (!response.IsSuccessStatusCode)
                     return null;
 
@@ -119,12 +128,12 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     var root = doc.RootElement;
                     var login = root.GetProperty("login").GetString();
-                    _cachedIdentity = Tuple.Create(credential, login);
                     _identityCache.Remember(credential, "https://api.github.com/user", login);
 
                     return new DevHubUser
                     {
                         Username = login,
+                        IdentityId = root.TryGetProperty("id", out var id) ? id.ToString() : login,
                         DisplayName = root.TryGetProperty("name", out var name) && name.ValueKind != System.Text.Json.JsonValueKind.Null
                             ? name.GetString()
                             : login,
@@ -139,6 +148,7 @@ namespace StartScreen.Services.DevHub.Providers
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return null;
             }
         }
@@ -156,37 +166,15 @@ namespace StartScreen.Services.DevHub.Providers
         {
             var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
             if (credential == null)
+            {
+                DevHubActivityRequest.Failed(unauthorized: true);
                 return (null, null);
-
-            var cachedIdentity = _cachedIdentity;
-            if (cachedIdentity != null && ReferenceEquals(cachedIdentity.Item1, credential))
-                return (credential, cachedIdentity.Item2);
-
-            // Fetch login from API if not yet cached
-            var response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken);
-
-            // Token expired - invalidate cache and retry once.
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-            {
-                DevHubCredentialHelper.InvalidateCachedCredential("github.com");
-                credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
-                if (credential == null)
-                    return (null, null);
-
-                response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken);
             }
-
-            if (!response.IsSuccessStatusCode)
-                return (credential, null);
-
-            var json = await response.Content.ReadAsStringAsync();
-            using (var doc = System.Text.Json.JsonDocument.Parse(json))
-            {
-                var login = doc.RootElement.GetProperty("login").GetString();
-                _cachedIdentity = Tuple.Create(credential, login);
-                _identityCache.Remember(credential, "https://api.github.com/user", login);
-                return (credential, login);
-            }
+            var login = await _identityCache.GetAsync(credential, "https://api.github.com/user",
+                (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken);
+            if (string.IsNullOrEmpty(login))
+                DevHubActivityRequest.Failed();
+            return (credential, login);
         }
 
         public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken)
@@ -208,6 +196,7 @@ namespace StartScreen.Services.DevHub.Providers
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return Array.Empty<DevHubPullRequest>();
             }
         }
@@ -231,6 +220,7 @@ namespace StartScreen.Services.DevHub.Providers
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return Array.Empty<DevHubIssue>();
             }
         }
@@ -253,6 +243,7 @@ namespace StartScreen.Services.DevHub.Providers
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return Array.Empty<DevHubCiRun>();
             }
         }
@@ -326,7 +317,10 @@ namespace StartScreen.Services.DevHub.Providers
                 return null;
             var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
             if (credential == null)
+            {
+                DevHubActivityRequest.Failed(unauthorized: true);
                 return null;
+            }
             var login = await _identityCache.GetAsync(credential, "https://api.github.com/user",
                 (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken);
             return await GetRepoDetailAsync(_httpClient, credential, login, repo, options, cancellationToken,
@@ -343,40 +337,48 @@ namespace StartScreen.Services.DevHub.Providers
             var hasCustomQuery = !string.IsNullOrWhiteSpace(customQuery);
             // REST repository lists cannot enforce GitHub search syntax. Use the same scoped
             // activity searches as the dashboard, keeping personal work independent of the filter.
-            var prs = hasCustomQuery
-                ? new List<DevHubPullRequest>()
-                : await ReadPagesAsync(client, credential, root + "/pulls?state=open&sort=updated&direction=desc",
-                    null, options.MaxItems, item => ParseRepoPullRequests("[" + item.GetRawText() + "]", repo, login), cancellationToken);
-            detail.PullRequests = prs;
-            if (!string.IsNullOrEmpty(login))
+            detail.PullRequests = await DevHubActivityRequest.ReadCategoryAsync(detail, DevHubActivityKind.PullRequests, async () =>
             {
-                var personal = await GetUserPullRequestsAsync(client, credential, login, options, cancellationToken, repo,
-                    customQuery, populateMetadata: false);
-                MergePullRequests(prs, personal);
-            }
-            else if (hasCustomQuery)
+                var prs = hasCustomQuery
+                    ? new List<DevHubPullRequest>()
+                    : await ReadPagesAsync(client, credential, root + "/pulls?state=open&sort=updated&direction=desc",
+                        null, options.MaxItems, item => ParseRepoPullRequests("[" + item.GetRawText() + "]", repo, login), cancellationToken);
+                if (!string.IsNullOrEmpty(login))
+                {
+                    var personal = await GetUserPullRequestsAsync(client, credential, login, options, cancellationToken, repo,
+                        customQuery, populateMetadata: false);
+                    MergePullRequests(prs, personal);
+                }
+                else if (hasCustomQuery)
+                {
+                    var incoming = await SearchPullRequestsAsync(client, credential,
+                        BuildActivitySearchQuery("is:pr", login, customQuery, repo), login, options.MaxItems, cancellationToken);
+                    MergePullRequests(prs, incoming.Where(pr => pr.IsOpen));
+                }
+                await PopulateActivityMetadataAsync(client, credential, prs, cancellationToken);
+                return prs;
+            }, cancellationToken);
+            detail.Issues = await DevHubActivityRequest.ReadCategoryAsync(detail, DevHubActivityKind.Issues, async () =>
             {
-                var incoming = await SearchPullRequestsAsync(client, credential,
-                    BuildActivitySearchQuery("is:pr", login, customQuery, repo), login, options.MaxItems, cancellationToken);
-                MergePullRequests(prs, incoming.Where(pr => pr.IsOpen));
-            }
-            await PopulateActivityMetadataAsync(client, credential, prs, cancellationToken);
-            detail.Issues = hasCustomQuery
-                ? new List<DevHubIssue>()
-                : await ReadPagesAsync(client, credential, root + "/issues?state=open&sort=updated&direction=desc",
-                    null, options.MaxItems, item => ParseRepoIssues("[" + item.GetRawText() + "]", repo, login), cancellationToken);
-            if (!string.IsNullOrEmpty(login))
-            {
-                var personal = await GetUserIssuesAsync(client, credential, login, options, cancellationToken, repo, customQuery);
-                MergeIssues(detail.Issues, personal);
-            }
-            else if (hasCustomQuery)
-            {
-                var incoming = await SearchIssuesAsync(client, credential,
-                    BuildActivitySearchQuery("is:issue", login, customQuery, repo), login, options.MaxItems, cancellationToken);
-                MergeIssues(detail.Issues, incoming.Where(issue => !issue.IsClosed));
-            }
-            detail.CiRuns = await ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken);
+                var issues = hasCustomQuery
+                    ? new List<DevHubIssue>()
+                    : await ReadPagesAsync(client, credential, root + "/issues?state=open&sort=updated&direction=desc",
+                        null, options.MaxItems, item => ParseRepoIssues("[" + item.GetRawText() + "]", repo, login), cancellationToken);
+                if (!string.IsNullOrEmpty(login))
+                {
+                    var personal = await GetUserIssuesAsync(client, credential, login, options, cancellationToken, repo, customQuery);
+                    MergeIssues(issues, personal);
+                }
+                else if (hasCustomQuery)
+                {
+                    var incoming = await SearchIssuesAsync(client, credential,
+                        BuildActivitySearchQuery("is:issue", login, customQuery, repo), login, options.MaxItems, cancellationToken);
+                    MergeIssues(issues, incoming.Where(issue => !issue.IsClosed));
+                }
+                return issues;
+            }, cancellationToken);
+            detail.CiRuns = await DevHubActivityRequest.ReadCategoryAsync(detail, DevHubActivityKind.CiRuns,
+                () => ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken), cancellationToken);
             return detail;
         }
 
@@ -555,6 +557,7 @@ namespace StartScreen.Services.DevHub.Providers
                 catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
                 {
                     await ex.LogAsync();
+                    DevHubActivityRequest.Failed();
                     cancellationToken.ThrowIfCancellationRequested();
                     break;
                 }
@@ -645,6 +648,7 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
             }
         }
 
@@ -677,6 +681,7 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await ex.LogAsync();
+                DevHubActivityRequest.Failed();
                 return "Some issue activity could not be loaded. Refresh to retry.";
             }
         }
@@ -694,6 +699,7 @@ namespace StartScreen.Services.DevHub.Providers
                 catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
                 {
                     await ex.LogAsync();
+                    DevHubActivityRequest.Failed();
                     cancellationToken.ThrowIfCancellationRequested();
                 }
             }
