@@ -7,7 +7,6 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.VisualStudio.Imaging;
-using Microsoft.VisualStudio.PlatformUI;
 using StartScreen.Helpers;
 using StartScreen.Models;
 using StartScreen.Services;
@@ -39,27 +38,24 @@ namespace StartScreen.ToolWindows.Controls
             // Only show tooltip on mouse hover, not keyboard focus
             ToolTipService.SetIsEnabled(RootBorder, false);
 
-            ContextMenu menu = RootBorder.ContextMenu;
+            var menu = new ContextMenu();
+            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("Open", "Open", OpenMenuItem_Click, KnownMonikers.Open, "Enter"));
+            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("OpenInNewInstance", "Open in New Instance", OpenInNewInstanceMenuItem_Click, KnownMonikers.NewWindow, "Ctrl+Enter"));
+            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("OpenFolder", "Open Containing Folder", OpenFolderMenuItem_Click, KnownMonikers.FolderOpened, "O"));
+            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("OpenTerminal", "Open in Terminal", OpenTerminalMenuItem_Click, KnownMonikers.Console, "T"));
+            _gitPullMenuItem = ThemedContextMenuHelper.CreateMenuItem("GitPull", "Git Pull", GitPullMenuItem_Click, KnownMonikers.GitRepository, "G");
+            menu.Items.Add(_gitPullMenuItem);
+            _deleteCopilotChatMenuItem = ThemedContextMenuHelper.CreateMenuItem("DeleteCopilotChat", "Delete Copilot Chat Sessions", DeleteCopilotChatMenuItem_Click, CopilotMonikers.GitHubCopilot);
+            menu.Items.Add(_deleteCopilotChatMenuItem);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("CopyPath", "Copy Path", CopyPathMenuItem_Click, KnownMonikers.Copy, "Ctrl+C"));
+            menu.Items.Add(new Separator());
+            _pinMenuItem = ThemedContextMenuHelper.CreateMenuItem("Pin", "Pin", PinMenuItem_Click, KnownMonikers.Pin, "P");
+            menu.Items.Add(_pinMenuItem);
+            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("Remove", "Remove from List", RemoveMenuItem_Click, KnownMonikers.Cancel, "Del"));
             ThemedContextMenuHelper.ApplyVsTheme(menu);
-
-            if (menu != null)
-            {
-                ((MenuItem)menu.Items[0]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Open);
-                ((MenuItem)menu.Items[1]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.NewWindow);
-                ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.FolderOpened);
-                ((MenuItem)menu.Items[3]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Console);
-                _gitPullMenuItem = (MenuItem)menu.Items[4];
-                _gitPullMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.GitRepository);
-                _deleteCopilotChatMenuItem = (MenuItem)menu.Items[5];
-                _deleteCopilotChatMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(CopilotMonikers.GitHubCopilot);
-                // Items[6] is Separator
-                ((MenuItem)menu.Items[7]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
-                // Items[8] is Separator
-                _pinMenuItem = (MenuItem)menu.Items[9];
-                _pinMenuItem.Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Pin);
-                ((MenuItem)menu.Items[10]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Cancel);
-                menu.Opened += ContextMenu_Opened;
-            }
+            menu.Opened += ContextMenu_Opened;
+            RootBorder.ContextMenu = menu;
         }
 
         private void RepositoryReviews_Click(object sender, RoutedEventArgs e)
@@ -86,25 +82,19 @@ namespace StartScreen.ToolWindows.Controls
 
         private void RootBorder_MouseEnter(object sender, MouseEventArgs e)
         {
-            RootBorder.SetResourceReference(Border.BackgroundProperty,
-                EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey);
+            CardInteractionHelper.UpdateHighlight(RootBorder);
             ToolTipService.SetIsEnabled(RootBorder, true);
         }
 
         private void RootBorder_MouseLeave(object sender, MouseEventArgs e)
         {
-            if (!RootBorder.IsKeyboardFocused)
-            {
-                // Clear local value so the DataTrigger for IsSelected can take effect
-                RootBorder.ClearValue(Border.BackgroundProperty);
-            }
+            CardInteractionHelper.UpdateHighlight(RootBorder);
             ToolTipService.SetIsEnabled(RootBorder, false);
         }
 
         private void RootBorder_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         {
-            RootBorder.SetResourceReference(Border.BackgroundProperty,
-                EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey);
+            CardInteractionHelper.UpdateHighlight(RootBorder);
             if (MruItem != null)
             {
                 SelectionRequested?.Invoke(this, MruItem);
@@ -113,11 +103,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private void RootBorder_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         {
-            if (!RootBorder.IsMouseOver)
-            {
-                // Clear local value so the DataTrigger for IsSelected can take effect
-                RootBorder.ClearValue(Border.BackgroundProperty);
-            }
+            CardInteractionHelper.UpdateHighlight(RootBorder);
         }
 
         /// <summary>
@@ -126,10 +112,7 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         internal void UpdateSelectionVisual()
         {
-            if (MruItem?.IsSelected != true && !RootBorder.IsMouseOver && !RootBorder.IsKeyboardFocused)
-            {
-                RootBorder.ClearValue(Border.BackgroundProperty);
-            }
+            CardInteractionHelper.UpdateHighlight(RootBorder);
         }
 
         private void RootBorder_MouseUp(object sender, MouseButtonEventArgs e)

@@ -12,6 +12,7 @@
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:shell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              toolkit:Themes.UseVsTheme="True"
+             Style="{StaticResource StartScreen.Root}"
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="1400"
              UseLayoutRounding="True"
@@ -25,6 +26,10 @@
              GotKeyboardFocus="UserControl_GotKeyboardFocus">
 
     <UserControl.Resources>
+        <ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary Source="StartScreenResources.xaml"/>
+        </ResourceDictionary.MergedDictionaries>
         <!-- Converters -->
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
@@ -55,14 +60,7 @@
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
 
-        <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
-            <Setter Property="Width" Value="24"/>
-            <Setter Property="Height" Value="24"/>
-            <Setter Property="MinWidth" Value="24"/>
-            <Setter Property="MinHeight" Value="24"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="BorderThickness" Value="0"/>
-        </Style>
+        <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource StartScreen.IconActionButton}"/>
 
         <Style x:Key="ScrollTrackButtonStyle" TargetType="RepeatButton">
             <Setter Property="Focusable" Value="False"/>
@@ -117,7 +115,7 @@
         <!-- Tab item style for News sub-tabs -->
         <Style x:Key="NewsTabItemStyle" TargetType="TabItem">
             <Setter Property="Padding" Value="0 4"/>
-            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="local:Typography.Role" Value="Body"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
             <Setter Property="Background" Value="Transparent"/>
@@ -160,7 +158,7 @@
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxTextBrushKey}}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="local:Typography.Role" Value="Body"/>
             <Setter Property="CaretBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxTextBrushKey}}"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -196,6 +194,16 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+        <DataTemplate x:Key="NewsCardTemplate">
+            <controls:NewsItemControl Margin="0 0 12 12" MaxWidth="360" HorizontalAlignment="Left"
+                                      PinToggleRequested="NewsItemControl_PinToggleRequested"
+                                      FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
+                                      FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
+        </DataTemplate>
+        <ItemsPanelTemplate x:Key="NewsCardsPanel">
+            <UniformGrid Columns="{Binding NewsColumnCount}"/>
+        </ItemsPanelTemplate>
+        </ResourceDictionary>
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}">
@@ -279,7 +287,7 @@
                                 </Style>
                             </imaging:CrispImage.Style>
                         </imaging:CrispImage>
-                        <TextBlock FontSize="12">
+                        <TextBlock Style="{StaticResource StartScreen.Body}">
                             <Hyperlink Click="ServiceStatusLink_Click" Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                                 <Run Text="{Binding ServiceHealthText, Mode=OneWay}"/>
                             </Hyperlink>
@@ -321,7 +329,7 @@
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}" Width="16" Height="16"/>
                         </Button>
                     </StackPanel>
-                    <TextBlock x:Name="LastRefreshText" Text="{Binding UnifiedRefreshStatus}" FontSize="11" Opacity="0.65"
+                    <TextBlock x:Name="LastRefreshText" Text="{Binding UnifiedRefreshStatus}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
                                TextWrapping="NoWrap" MaxWidth="420" ToolTip="{Binding UnifiedRefreshDetails}"
                                HorizontalAlignment="Right" Margin="0 10 0 0"/>
                 </StackPanel>
@@ -352,7 +360,7 @@
                               Margin="32 0 0 0"
                               IsHitTestVisible="False"
                               VerticalAlignment="Center"
-                               FontSize="13"
+                               Style="{StaticResource StartScreen.Body}"
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxTextBrushKey}}"
                                Opacity="0.6"
                               Visibility="{Binding Text.IsEmpty, ElementName=SearchBox, Converter={StaticResource BoolToVisibilityConverter}}"/>
@@ -373,7 +381,7 @@
                             AutomationProperties.Name="Recent items options">
                         <TextBlock Text="..."
                                   Margin="0 -5 0 0"
-                                  FontSize="16"
+                                  Style="{StaticResource StartScreen.Body}"
                                   FontWeight="SemiBold"
                                   HorizontalAlignment="Center"
                                   VerticalAlignment="Center"/>
@@ -381,7 +389,7 @@
                 </Grid>
 
                 <TextBlock DockPanel.Dock="Top" Text="Select to preview / Double-click or Enter to open"
-                           FontSize="11" Opacity="0.65" Margin="0 0 0 10" TextWrapping="Wrap"/>
+                           Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" Margin="0 0 0 10" TextWrapping="Wrap"/>
                 <!-- MRU Section -->
                 <Grid>
                     <ListBox x:Name="MruPanel"
@@ -414,8 +422,7 @@
                                 <GroupStyle.HeaderTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding Name}"
-                                                   FontSize="13"
-                                                   FontWeight="SemiBold"
+                                                   Style="{StaticResource StartScreen.CardTitle}"
                                                    Opacity="0.7"
                                                    Margin="0 12 0 4"
                                                    Focusable="False"/>
@@ -459,7 +466,7 @@
 
                     <TextBlock Text="No matching projects or solutions found."
                                Opacity="0.5"
-                               FontSize="13"
+                               Style="{StaticResource StartScreen.Body}"
                                Margin="0 16 0 0"
                                VerticalAlignment="Top"
                                Visibility="{Binding HasNoSearchResults, Converter={StaticResource BoolToVisibilityConverter}}"/>
@@ -503,7 +510,7 @@
                                         <RowDefinition Height="*"/>
                                     </Grid.RowDefinitions>
                                     <DockPanel MinHeight="28" Margin="8 0 0 12">
-                                        <TextBlock Text="News &amp; updates" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="News &amp; updates" Style="{StaticResource StartScreen.Heading}" VerticalAlignment="Center"/>
                                     </DockPanel>
                             <TabControl Grid.Row="1"
                                         x:Name="NewsTabs"
@@ -544,47 +551,20 @@
 
                                         <!-- Pinned News Articles -->
                                         <TextBlock Text="Pinned"
-                                                  FontSize="13"
-                                                  FontWeight="SemiBold"
+                                                  Style="{StaticResource StartScreen.CardTitle}"
                                                   Opacity="0.7"
                                                   Margin="8 0 0 4"
                                                   Focusable="False"
                                                   Visibility="{Binding PinnedNewsPosts.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
                                         <ItemsControl ItemsSource="{Binding PinnedNewsPosts}" Focusable="False"
-                                                      Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <UniformGrid Columns="{Binding NewsColumnCount}"/>
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <controls:NewsItemControl Margin="0 0 12 12" MaxWidth="360" HorizontalAlignment="Left"
-                                                                              PinToggleRequested="NewsItemControl_PinToggleRequested"
-                                                                              FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
-                                                                              FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
+                                                      ItemTemplate="{StaticResource NewsCardTemplate}" ItemsPanel="{StaticResource NewsCardsPanel}"
+                                                      Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}"/>
 
                                         <!-- News Cards -->
                                         <ItemsControl ItemsSource="{Binding NewsPosts}" Focusable="False"
                                                       HorizontalAlignment="Stretch"
-                                                      Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <UniformGrid Columns="{Binding NewsColumnCount}"/>
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <controls:NewsItemControl Margin="0 0 12 12" MaxWidth="360" HorizontalAlignment="Left"
-                                                                              PinToggleRequested="NewsItemControl_PinToggleRequested"
-                                                                              FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
-                                                                              FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
+                                                      ItemTemplate="{StaticResource NewsCardTemplate}" ItemsPanel="{StaticResource NewsCardsPanel}"
+                                                      Opacity="{Binding IsRefreshingNews, Converter={StaticResource RefreshingToOpacityConverter}}"/>
                                     </StackPanel>
                                 </TabItem>
 
@@ -642,7 +622,7 @@
                                                             <ColumnDefinition Width="*" MaxWidth="360"/>
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Margin="8 0 20 16" HorizontalAlignment="Stretch">
-                                                            <TextBlock TextWrapping="Wrap" FontSize="13" FontWeight="SemiBold">
+                                                            <TextBlock TextWrapping="Wrap" Style="{StaticResource StartScreen.CardTitle}">
                                                                 <Hyperlink NavigateUri="{Binding Url}" RequestNavigate="FeedbackTicket_RequestNavigate"
                                                                            ToolTip="{Binding Url}" TextDecorations="None"
                                                                            Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}">
@@ -650,10 +630,10 @@
                                                                 </Hyperlink>
                                                             </TextBlock>
                                                             <WrapPanel Margin="0 6 0 4">
-                                                                <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
+                                                                <Border
                                                                         Tag="{DynamicResource {x:Static SystemParameters.HighContrastKey}}">
                                                                     <Border.Style>
-                                                                        <Style TargetType="Border">
+                                                                        <Style TargetType="Border" BasedOn="{StaticResource StartScreen.StatusBadge}">
                                                                             <Setter Property="Background" Value="{Binding StateColor, Converter={StaticResource FeedbackStateBrushConverter}}"/>
                                                                             <Setter Property="BorderBrush" Value="{Binding StateColor, Converter={StaticResource FeedbackStateBrushConverter}}"/>
                                                                             <Style.Triggers>
@@ -664,9 +644,9 @@
                                                                             </Style.Triggers>
                                                                         </Style>
                                                                     </Border.Style>
-                                                                    <TextBlock Text="{Binding StateText}" FontSize="10" FontWeight="Bold">
+                                                                    <TextBlock Text="{Binding StateText}">
                                                                         <TextBlock.Style>
-                                                                            <Style TargetType="TextBlock">
+                                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.StatusText}">
                                                                                 <Setter Property="Foreground" Value="{Binding StateColor, Converter={StaticResource FeedbackStateForegroundConverter}}"/>
                                                                                 <Style.Triggers>
                                                                                     <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
@@ -677,9 +657,9 @@
                                                                         </TextBlock.Style>
                                                                     </TextBlock>
                                                                 </Border>
-                                                                <TextBlock Text="{Binding Details}" TextWrapping="Wrap" FontSize="11" Opacity="0.65" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="{Binding Details}" TextWrapping="Wrap" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" VerticalAlignment="Center"/>
                                                             </WrapPanel>
-                                                            <TextBlock Text="{Binding UpdatedText}" ToolTip="{Binding ToolTip}" FontSize="11" Opacity="0.65"
+                                                            <TextBlock Text="{Binding UpdatedText}" ToolTip="{Binding ToolTip}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
                                                                        HorizontalAlignment="Right"/>
                                                         </StackPanel>
                                                     </Grid>

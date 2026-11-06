@@ -8,6 +8,7 @@
              xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              toolkit:Themes.UseVsTheme="True"
+             Style="{StaticResource StartScreen.Root}"
              Background="Transparent"
              VerticalAlignment="Top"
              Focusable="False"
@@ -17,13 +18,17 @@
              d:DesignHeight="100" d:DesignWidth="380"
              MinWidth="300">
     <UserControl.Resources>
+        <ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary Source="../StartScreenResources.xaml"/>
+        </ResourceDictionary.MergedDictionaries>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        </ResourceDictionary>
     </UserControl.Resources>
     <Border x:Name="RootBorder"
             BorderThickness="0"
             Background="Transparent"
-            Padding="8 10"
-            CornerRadius="4"
+            Style="{StaticResource StartScreen.CardSurface}"
             Focusable="True"
             FocusVisualStyle="{x:Null}"
             MouseEnter="RootBorder_MouseEnter"
@@ -38,37 +43,35 @@
             <StackPanel Orientation="Vertical" Margin="0 0 24 0">
                 <!-- Title -->
                 <TextBlock Text="{Binding Title}"
-                          FontWeight="SemiBold"
+                          Style="{StaticResource StartScreen.CardTitle}"
                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"
-                          TextWrapping="Wrap"
-                          FontSize="13"/>
+                          TextWrapping="Wrap"/>
 
                 <!-- Summary -->
                 <TextBlock Text="{Binding Summary}"
                           Opacity="0.7"
                           TextWrapping="Wrap"
                           TextTrimming="WordEllipsis"
-                          MaxHeight="40"
                           Margin="0 6 0 6"/>
 
                 <!-- Source and Date -->
-                <StackPanel Orientation="Horizontal" Margin="0 4 0 0">
+                <StackPanel Orientation="Horizontal" Margin="{StaticResource StartScreen.MetadataSpacing}">
                     <TextBlock Text="NEW"
-                               FontWeight="Bold"
-                               FontSize="10"
-                               Foreground="#FF4CAF50"
+                               Style="{StaticResource StartScreen.StatusText}"
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
                                Margin="0 0 6 0"
                                VerticalAlignment="Center"
                                Visibility="{Binding IsNew, Converter={StaticResource BoolToVisibilityConverter}}"/>
                     <TextBlock Text="{Binding Source}"
                               Opacity="0.5"
-                              FontSize="11"
+                              Style="{StaticResource StartScreen.Metadata}"
                               VerticalAlignment="Center"/>
                 </StackPanel>
             </StackPanel>
 
             <!-- Pin Button (bottom right, visible on hover or when pinned) -->
             <Button x:Name="PinButton"
+                    Style="{StaticResource StartScreen.IconActionButton}"
                     Width="24" Height="24"
                     MinWidth="0" MinHeight="0" Padding="0"
                     Background="Transparent"

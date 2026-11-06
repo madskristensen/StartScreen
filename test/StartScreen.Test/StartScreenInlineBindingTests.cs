@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Markup;
+using XamlReader = StartScreen.Test.SharedXamlReader;
 using System.Xml.Linq;
 using StartScreen.ToolWindows;
 
@@ -77,7 +78,7 @@ namespace StartScreen.Test
             panelDefinition.Descendants(p + "Button").Attributes("Click").Remove();
             foreach (var image in panelDefinition.Descendants().Where(element => element.Name.LocalName == "CrispImage").ToArray())
                 image.ReplaceWith(new XElement(p + "Border", new XAttribute("Width", "16"), new XAttribute("Height", "16")));
-            var styles = document.Root!.Element(p + "UserControl.Resources")!.Elements(p + "Style")
+            var styles = document.Root!.Element(p + "UserControl.Resources")!.Element(p + "ResourceDictionary")!.Elements(p + "Style")
                 .Where(element => new[] { "ActionButtonStyle", "IconButtonStyle" }.Contains(element.Attribute(x + "Key")?.Value))
                 .Select(element => new XElement(element)).ToArray();
             styles.Single(element => element.Attribute(x + "Key")?.Value == "ActionButtonStyle").Attribute("BasedOn")!.Remove();
@@ -210,7 +211,7 @@ namespace StartScreen.Test
                 {
                     "Width", "Height", "Margin", "VerticalAlignment",
                 }.Contains(attribute.Name.LocalName)).Select(attribute => new XAttribute(attribute))));
-            var styles = document.Root!.Element(p + "UserControl.Resources")!.Elements(p + "Style")
+            var styles = document.Root!.Element(p + "UserControl.Resources")!.Element(p + "ResourceDictionary")!.Elements(p + "Style")
                 .Select(element => new XElement(element)).ToArray();
             styles.SelectMany(element => element.Descendants(p + "Setter")).Where(element =>
                 element.Attribute("Property")?.Value == "Foreground").Remove();
@@ -255,7 +256,7 @@ namespace StartScreen.Test
             Assert.AreEqual("RepositoryReviews_Click", rowDefinition.Elements(p + "Button").First().Attribute("Click")!.Value);
             foreach (var click in badgeDefinition.DescendantsAndSelf().Concat(rowDefinition.DescendantsAndSelf()).Attributes("Click").ToArray())
                 click.Remove();
-            var styles = document.Root!.Element(p + "UserControl.Resources")!.Elements(p + "Style")
+            var styles = document.Root!.Element(p + "UserControl.Resources")!.Element(p + "ResourceDictionary")!.Elements(p + "Style")
                 .Select(element => new XElement(element)).ToArray();
             foreach (var setter in styles.SelectMany(element => element.Elements(p + "Setter"))
                 .Where(element => element.Attribute("Property")?.Value == "Foreground").ToArray())
@@ -347,7 +348,7 @@ namespace StartScreen.Test
                 attribute.Remove();
             definition.Element(p + "ListBox.ItemTemplate")!.ReplaceWith(new XElement(p + "ListBox.ItemTemplate",
                 new XElement(p + "DataTemplate", new XElement(p + "Border", new XAttribute("Height", "32")))));
-            var styles = document.Root!.Element(p + "UserControl.Resources")!.Elements(p + "Style")
+            var styles = document.Root!.Element(p + "UserControl.Resources")!.Element(p + "ResourceDictionary")!.Elements(p + "Style")
                 .Where(element => new[] { "ScrollTrackButtonStyle", "DiscreetVerticalScrollBarStyle" }.Contains(element.Attribute(x + "Key")?.Value))
                 .Select(element => new XElement(element)).ToArray();
             foreach (var attribute in styles.SelectMany(element => element.DescendantsAndSelf().Attributes())
@@ -794,7 +795,9 @@ namespace StartScreen.Test
                 if (name == "BlogsTab" || name == "VideosTab")
                 {
                     var cardDocument = ReadLayoutXaml(name == "BlogsTab" ? "NewsItemControl.xaml" : "YouTubeVideoControl.xaml");
-                    var padding = cardDocument.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "RootBorder").Attribute("Padding")!.Value;
+                    var card = cardDocument.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "RootBorder");
+                    var padding = card.Attribute("Padding")?.Value ?? SharedXamlReader.ReadResources().Descendants(p + "Thickness")
+                        .Single(element => element.Attribute(x + "Key")?.Value == "StartScreen.CardPadding").Value;
                     content = new XElement(p + "Border", new XAttribute("Padding", padding), content);
                 }
                 else if (name == "FeedbackTab")
@@ -879,7 +882,7 @@ namespace StartScreen.Test
                 attention ? Models.DevHub.DevHubWorkItemKind.All : Models.DevHub.DevHubWorkItemKind.PullRequest, attention);
             var card = document.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "WorkItemBorder");
             var template = (DataTemplate)XamlReader.Parse(new XElement(p + "DataTemplate",
-                new XElement(p + "Border", new XAttribute("Padding", card.Attribute("Padding")!.Value),
+                new XElement(p + "Border", new XAttribute("Style", card.Attribute("Style")!.Value),
                     new XAttribute("Margin", card.Attribute("Margin")!.Value),
                     new XElement(p + "TextBlock", new XAttribute("Text", "{Binding DisplayTitle}")))).ToString());
             var view = ToolWindows.Controls.DevHubPanel.CreateWorkItemView(items);
@@ -941,7 +944,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void CopilotStatus_IsBesideWorkHeadingAtOriginalFontSize()
+        public void CopilotStatus_IsBesideWorkHeadingUsingSharedHeaderCountTypography()
         {
             using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
@@ -957,7 +960,8 @@ namespace StartScreen.Test
             Assert.AreEqual(presentation + "TextBlock", status.Parent!.Name);
             Assert.AreEqual("Baseline", heading.Parent.Attribute("BaselineAlignment")?.Value);
             Assert.AreEqual("Baseline", status.Attribute("BaselineAlignment")?.Value);
-            Assert.AreEqual("{Binding FontSize, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}", status.Attribute("FontSize")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.HeaderCount}", status.Attribute("Style")?.Value);
+            Assert.AreEqual("Metadata", SharedXamlReader.Setter("StartScreen.HeaderCount", "local:Typography.Role"));
             Assert.AreEqual("{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}", status.Attribute("Text")?.Value);
         }
 
@@ -975,7 +979,6 @@ namespace StartScreen.Test
             line.Descendants(presentation + "TextBlock").Single().SetAttributeValue("Text", "Your work");
             var status = line.Elements(presentation + "Run").Single(element => element.Attribute(xaml + "Name")?.Value == "CopilotActivityStatusText");
             status.SetAttributeValue("Text", "Discovering local Copilot sessions...");
-            status.SetAttributeValue("FontSize", "12");
             line.Descendants(presentation + "Run.Foreground").Remove();
             var textBlock = (TextBlock)XamlReader.Parse(line.ToString());
             var heading = (TextBlock)textBlock.Inlines.OfType<InlineUIContainer>().First().Child;
@@ -985,7 +988,7 @@ namespace StartScreen.Test
             var headingBaseline = heading.TranslatePoint(new Point(0, heading.BaselineOffset), textBlock).Y;
             Assert.AreEqual(textBlock.BaselineOffset, headingBaseline, 0.01);
             Assert.AreEqual(BaselineAlignment.Baseline, textBlock.Inlines.OfType<Run>().Last().BaselineAlignment);
-            Assert.AreEqual(12d, textBlock.Inlines.OfType<Run>().Last().FontSize);
+            Assert.AreEqual(11d, textBlock.Inlines.OfType<Run>().Last().FontSize);
         }
 
         [STATestMethod]
@@ -1155,12 +1158,14 @@ namespace StartScreen.Test
                 .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestActionButtonStyle"));
             definition.Attribute(x + "Key")!.Remove();
             definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
-            var focus = definition.Descendants(p + "Trigger").Single(element => element.Attribute("Property")?.Value == "IsKeyboardFocused");
+            Assert.AreEqual("{StaticResource StartScreen.IconActionButton}", definition.Attribute("BasedOn")?.Value);
+            var shared = SharedXamlReader.ReadResources().Descendants(p + "Style")
+                .Single(element => element.Attribute(x + "Key")?.Value == "StartScreen.IconActionButton");
+            var focus = shared.Descendants(p + "Trigger").Single(element => element.Attribute("Property")?.Value == "IsKeyboardFocused");
             Assert.AreEqual("BorderBrush", focus.Element(p + "Setter")?.Attribute("Property")?.Value);
             Assert.IsTrue(focus.Element(p + "Setter")!.Attribute("Value")!.Value.StartsWith("{DynamicResource", StringComparison.Ordinal));
-            Assert.IsFalse(definition.Descendants(p + "Trigger").Descendants(p + "Setter")
-                .Any(element => element.Attribute("Property")?.Value == "Background"));
-            focus.Element(p + "Setter")!.SetAttributeValue("Value", "{DynamicResource TestFocusBrush}");
+            Assert.IsTrue(shared.Descendants(p + "Trigger").Any(element => element.Attribute("Property")?.Value == "IsMouseOver"
+                && element.Elements(p + "Setter").Any(setter => setter.Attribute("Property")?.Value == "Background")));
             var style = (Style)XamlReader.Parse(definition.ToString());
             var interactionTriggers = style.Triggers.OfType<DataTrigger>().ToArray();
             CollectionAssert.AreEquivalent(new[] { "IsMouseOver", "IsKeyboardFocusWithin" },
@@ -1212,10 +1217,10 @@ namespace StartScreen.Test
             var style = document.Descendants(p + "Style")
                 .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestStatusStyle");
 
-            Assert.IsTrue(style.Elements(p + "Setter").Any(element => element.Attribute("Property")?.Value == "FontSize"
-                && element.Attribute("Value")?.Value == "10"));
-            Assert.IsTrue(style.Elements(p + "Setter").Any(element => element.Attribute("Property")?.Value == "FontWeight"
-                && element.Attribute("Value")?.Value == "Bold"));
+            Assert.AreEqual("{StaticResource StartScreen.StatusText}", style.Attribute("BasedOn")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.Metadata}", SharedXamlReader.ReadResources().Descendants(p + "Style")
+                .Single(element => element.Attribute(x + "Key")?.Value == "StartScreen.StatusText").Attribute("BasedOn")?.Value);
+            Assert.AreEqual("Bold", SharedXamlReader.Setter("StartScreen.StatusText", "FontWeight"));
             var colors = new Dictionary<string, string>
             {
                 ["Error"] = "ProgressBarColors.IndicatorFillCriticalBrushKey",
@@ -1294,8 +1299,8 @@ namespace StartScreen.Test
             metadata.Element(p + "ContentControl")!.ReplaceWith(new XElement(p + "Border",
                 new XAttribute("DockPanel.Dock", "Right"), new XAttribute("Width", "52"),
                 new XAttribute("Height", "24"), new XAttribute("Margin", "8 0 0 0")));
-            var pillDefinition = metadata.Descendants(p + "Border").Single(element => element.Attribute("CornerRadius") != null);
-            Assert.IsTrue(pillDefinition.Attribute("Background")!.Value.StartsWith("{DynamicResource", StringComparison.Ordinal));
+            var pillDefinition = metadata.Descendants(p + "Border").Single(element => element.Attribute("Style")?.Value == "{StaticResource StartScreen.StatusBadge}");
+            Assert.IsTrue(SharedXamlReader.Setter("StartScreen.StatusBadge", "Background").StartsWith("{DynamicResource", StringComparison.Ordinal));
             pillDefinition.SetAttributeValue("Background", "{DynamicResource TestPillBackground}");
             var root = (StackPanel)XamlReader.Parse(new XElement(p + "StackPanel",
                 new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
@@ -1404,7 +1409,8 @@ namespace StartScreen.Test
             Assert.IsFalse(metadata.Elements(presentation + "TextBlock").Any(element => element.Attribute("Text")?.Value == "{Binding ActivityText}"));
             var badge = metadata.Elements(presentation + "TextBlock")
                 .Single(element => element.Attribute("Text")?.Value == "{Binding CopilotStatus}");
-            Assert.AreEqual("10", badge.Attribute("FontSize")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.StatusText}", badge.Element(presentation + "TextBlock.Style")!
+                .Element(presentation + "Style")!.Attribute("BasedOn")?.Value);
             foreach (var state in new[] { "Running", "Waiting" })
             {
                 var trigger = badge.Descendants(presentation + "DataTrigger")
@@ -1416,7 +1422,8 @@ namespace StartScreen.Test
                 .Any(element => element.Attribute("Text")?.Value == "{Binding ActionText}"));
             var card = title.Ancestors(presentation + "Border").First();
             Assert.AreEqual("WorkItem_MouseUp", card.Attribute("MouseUp")?.Value);
-            Assert.AreEqual("4", card.Attribute("CornerRadius")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.CardSurface}", card.Attribute("Style")?.Value);
+            Assert.AreEqual("4", SharedXamlReader.Setter("StartScreen.CardSurface", "CornerRadius"));
             Assert.IsFalse(document.Descendants().Any(element => element.Attribute(xaml + "Name")?.Value == "ChangesHeading"));
         }
 

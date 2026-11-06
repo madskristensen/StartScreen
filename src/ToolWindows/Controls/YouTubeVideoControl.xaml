@@ -6,6 +6,7 @@
              xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              toolkit:Themes.UseVsTheme="True"
+             Style="{StaticResource StartScreen.Root}"
              Background="Transparent"
              Focusable="False"
              UseLayoutRounding="True"
@@ -13,13 +14,18 @@
              mc:Ignorable="d" 
              d:DesignHeight="200" d:DesignWidth="280">
   <UserControl.Resources>
+    <ResourceDictionary>
+    <ResourceDictionary.MergedDictionaries>
+      <ResourceDictionary Source="../StartScreenResources.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
     <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+    </ResourceDictionary>
   </UserControl.Resources>
   <Border x:Name="RootBorder"
           BorderThickness="0"
           Background="Transparent"
           Padding="8"
-          CornerRadius="4"
+          Style="{StaticResource StartScreen.CardSurface}"
           Focusable="True"
           FocusVisualStyle="{x:Null}"
           MouseEnter="RootBorder_MouseEnter"
@@ -48,26 +54,23 @@
 
       <!-- Title -->
       <TextBlock Text="{Binding Title}"
-                 FontSize="12"
-                 FontWeight="SemiBold"
+                 Style="{StaticResource StartScreen.CardTitle}"
                  TextWrapping="Wrap"
                  TextTrimming="WordEllipsis"
-                 MaxHeight="36"
                  Margin="0 6 0 0"
                  Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
 
       <!-- Date and NEW badge -->
-      <StackPanel Orientation="Horizontal" Margin="0 4 0 0">
+      <StackPanel Orientation="Horizontal" Margin="{StaticResource StartScreen.MetadataSpacing}">
         <TextBlock Text="NEW"
-                   FontWeight="Bold"
-                   FontSize="10"
-                   Foreground="#FF4CAF50"
+                   Style="{StaticResource StartScreen.StatusText}"
+                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
                    Margin="0 0 6 0"
                    VerticalAlignment="Center"
                    Visibility="{Binding IsNew, Converter={StaticResource BoolToVisibilityConverter}}"/>
         <TextBlock Text="{Binding PublishDate, StringFormat='{}{0:MMM d}'}"
                    Opacity="0.5"
-                   FontSize="11"
+                   Style="{StaticResource StartScreen.Metadata}"
                    VerticalAlignment="Center"/>
       </StackPanel>
     </StackPanel>

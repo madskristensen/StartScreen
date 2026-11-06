@@ -1,12 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.VisualStudio.Imaging;
-using Microsoft.VisualStudio.PlatformUI;
 using StartScreen.Models;
 
 namespace StartScreen.ToolWindows.Controls
@@ -15,7 +13,7 @@ namespace StartScreen.ToolWindows.Controls
     {
         private NewsPost NewsPost => DataContext as NewsPost;
 
-        private bool _mouseDownHere;
+        private readonly CardClickGesture _clickGesture;
 
         public event EventHandler<NewsPost> PinToggleRequested;
         public event EventHandler FocusDevHubRequested;
@@ -25,16 +23,8 @@ namespace StartScreen.ToolWindows.Controls
         {
             InitializeComponent();
             DataContextChanged += OnDataContextChanged;
-
-            ContextMenu menu = RootBorder.ContextMenu;
-            ThemedContextMenuHelper.ApplyVsTheme(menu);
-
-            if (menu != null)
-            {
-                ((MenuItem)menu.Items[0]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.BrowserLink);
-                // Items[1] is Separator
-                ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
-            }
+            _clickGesture = CardInteractionHelper.TrackPress(RootBorder);
+            RootBorder.ContextMenu = ThemedContextMenuHelper.CreateLinkMenu(() => NewsPost?.Url);
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -44,72 +34,58 @@ namespace StartScreen.ToolWindows.Controls
 
         private void RootBorder_MouseEnter(object sender, MouseEventArgs e)
         {
-            RootBorder.SetResourceReference(Border.BackgroundProperty,
-                EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey);
-
-            if (NewsPost != null && !NewsPost.IsPinned)
-            {
-                PinButton.Visibility = Visibility.Visible;
-            }
+            CardInteractionHelper.UpdateHighlight(RootBorder);
+            UpdatePinState();
         }
 
         private void RootBorder_MouseLeave(object sender, MouseEventArgs e)
         {
-            _mouseDownHere = false;
-
-            if (!RootBorder.IsKeyboardFocused)
-            {
-                RootBorder.Background = Brushes.Transparent;
-            }
-
-            if (NewsPost != null && !NewsPost.IsPinned)
-            {
-                PinButton.Visibility = Visibility.Collapsed;
-            }
+            CardInteractionHelper.UpdateHighlight(RootBorder);
+            UpdatePinState();
         }
 
         private void RootBorder_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         {
-            RootBorder.SetResourceReference(Border.BackgroundProperty,
-                EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey);
+            CardInteractionHelper.UpdateHighlight(RootBorder);
+            UpdatePinState();
         }
 
         private void RootBorder_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         {
-            if (!RootBorder.IsMouseOver)
-            {
-                RootBorder.Background = Brushes.Transparent;
-            }
+            CardInteractionHelper.UpdateHighlight(RootBorder);
+            UpdatePinState();
         }
 
         private void RootBorder_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            _mouseDownHere = true;
+            if (CardInteractionHelper.IsCardSurface(RootBorder, e.OriginalSource as DependencyObject))
+                RootBorder.Focus();
         }
 
         private void RootBorder_MouseUp(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton == MouseButton.Left && _mouseDownHere)
+            if (CardInteractionHelper.CompleteClick(_clickGesture, RootBorder, e))
             {
-                _mouseDownHere = false;
+                e.Handled = true;
                 OpenInBrowser();
             }
         }
 
         private void RootBorder_KeyDown(object sender, KeyEventArgs e)
         {
-            if (NewsPost == null)
+            if (NewsPost == null || !RootBorder.IsKeyboardFocused)
                 return;
 
-            if (e.Key == Key.Enter && RootBorder.IsKeyboardFocused)
+            if ((e.Key == Key.Enter || e.Key == Key.Space) && Keyboard.Modifiers == ModifierKeys.None)
             {
-                OpenInBrowser();
                 e.Handled = true;
+                if (!e.IsRepeat)
+                    OpenInBrowser();
             }
             else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                CopyUrlMenuItem_Click(sender, null);
                 e.Handled = true;
+                ThemedContextMenuHelper.CopyLink(NewsPost.Url);
             }
             else if (e.Key == Key.Down || e.Key == Key.Up)
             {
@@ -173,7 +149,7 @@ namespace StartScreen.ToolWindows.Controls
                 return false;
 
             var columnsPerRow = GetColumnsPerRow(allItems);
-            return index % columnsPerRow == columnsPerRow - 1;
+            return index == allItems.Count - 1 || index % columnsPerRow == columnsPerRow - 1;
         }
 
         private void MoveVertically(bool down)
@@ -224,7 +200,6 @@ namespace StartScreen.ToolWindows.Controls
                 return 1;
 
             // Compare the Y position of consecutive items to find how many fit in one row
-            var firstY = items[0].TranslatePoint(new Point(0, 0), items[0]).Y;
             Point firstItemPos = items[0].PointToScreen(new Point(0, 0));
 
             for (var i = 1; i < items.Count; i++)
@@ -289,17 +264,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private void OpenInBrowser()
         {
-            if (NewsPost != null && !string.IsNullOrWhiteSpace(NewsPost.Url))
-            {
-                try
-                {
-                    Process.Start(NewsPost.Url);
-                }
-                catch (Exception ex)
-                {
-                    ex.Log();
-                }
-            }
+            ThemedContextMenuHelper.OpenLink(NewsPost?.Url);
         }
 
         private void OpenInBrowserMenuItem_Click(object sender, RoutedEventArgs e)
@@ -309,14 +274,13 @@ namespace StartScreen.ToolWindows.Controls
 
         private void CopyUrlMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (NewsPost != null && !string.IsNullOrWhiteSpace(NewsPost.Url))
-            {
-                Clipboard.SetText(NewsPost.Url);
-            }
+            ThemedContextMenuHelper.CopyLink(NewsPost?.Url);
         }
 
         private void PinButton_Click(object sender, RoutedEventArgs e)
         {
+            _clickGesture.Cancel();
+            e.Handled = true;
             PinToggleRequested?.Invoke(this, NewsPost);
             UpdatePinState();
         }
@@ -329,7 +293,7 @@ namespace StartScreen.ToolWindows.Controls
                     ? KnownMonikers.Unpin
                     : KnownMonikers.Pin;
                 PinButton.ToolTip = NewsPost.IsPinned ? "Unpin" : "Pin";
-                PinButton.Visibility = NewsPost.IsPinned
+                PinButton.Visibility = NewsPost.IsPinned || RootBorder.IsMouseOver || RootBorder.IsKeyboardFocusWithin
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }

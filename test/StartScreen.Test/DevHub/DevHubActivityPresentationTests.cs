@@ -7,6 +7,7 @@ using System.Windows.Markup;
 using System.Xml.Linq;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
+using XamlReader = StartScreen.Test.SharedXamlReader;
 
 namespace StartScreen.Test.DevHub
 {
@@ -382,11 +383,13 @@ namespace StartScreen.Test.DevHub
             var pill = document.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "AssignmentPill");
             Assert.AreEqual("{Binding IsAssignedToCurrentUser, Converter={StaticResource BoolToVisibilityConverter}}", pill.Attribute("Visibility")?.Value);
             StringAssert.StartsWith(pill.Attribute("BorderBrush")!.Value, "{DynamicResource");
-            StringAssert.StartsWith(pill.Attribute("Background")!.Value, "{DynamicResource");
-            Assert.AreEqual("1", pill.Attribute("BorderThickness")?.Value);
-            Assert.AreEqual("9", pill.Attribute("CornerRadius")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.StatusBadge}", pill.Attribute("Style")?.Value);
+            StringAssert.StartsWith(SharedXamlReader.Setter("StartScreen.StatusBadge", "Background"), "{DynamicResource");
+            Assert.AreEqual("1", SharedXamlReader.Setter("StartScreen.StatusBadge", "BorderThickness"));
+            Assert.AreEqual("9", SharedXamlReader.Setter("StartScreen.StatusBadge", "CornerRadius"));
             Assert.AreEqual("Assigned to you", pill.Element(p + "TextBlock")?.Attribute("Text")?.Value);
-            Assert.AreEqual("Bold", pill.Element(p + "TextBlock")?.Attribute("FontWeight")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.StatusText}", pill.Element(p + "TextBlock")?.Attribute("Style")?.Value);
+            Assert.AreEqual("Bold", SharedXamlReader.Setter("StartScreen.StatusText", "FontWeight"));
             Assert.AreEqual("Horizontal", pill.Parent!.Attribute("Orientation")?.Value);
             Assert.IsFalse(pill.Parent.Elements(p + "TextBlock").Any(element => element.Attribute("Text")?.Value == "{Binding ActivityDateText}"));
             Assert.IsFalse(document.Descendants().Any(element => element.Attribute(x + "Name")?.Value == "AssignmentBanner"));
@@ -395,7 +398,8 @@ namespace StartScreen.Test.DevHub
             Assert.IsTrue(title.ElementsAfterSelf(p + "ContentControl").Any());
             var labels = document.Descendants(p + "ItemsControl").Single(element => element.Attribute("ItemsSource")?.Value == "{Binding Labels}");
             var labelPill = labels.Descendants(p + "Border").Single();
-            Assert.AreEqual("9", labelPill.Attribute("CornerRadius")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.StatusBadge}", labelPill.Element(p + "Border.Style")!.Element(p + "Style")!.Attribute("BasedOn")?.Value);
+            Assert.AreEqual("9", SharedXamlReader.Setter("StartScreen.StatusBadge", "CornerRadius"));
             Assert.IsTrue(labelPill.Descendants(p + "Setter").Any(setter =>
                 setter.Attribute("Property")?.Value == "Background"
                 && setter.Attribute("Value")?.Value == "{Binding Color, Converter={StaticResource HexColorToBrushConverter}}"));

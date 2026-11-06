@@ -1,64 +1,60 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using Microsoft.VisualStudio.Imaging;
-using Microsoft.VisualStudio.PlatformUI;
 using StartScreen.Models;
 
 namespace StartScreen.ToolWindows.Controls
 {
     public partial class YouTubeVideoControl : UserControl
     {
+        private readonly CardClickGesture _clickGesture;
+
         public event EventHandler FocusNewsRequested;
 
         public YouTubeVideoControl()
         {
             InitializeComponent();
-
-            ContextMenu menu = RootBorder.ContextMenu;
-            ThemedContextMenuHelper.ApplyVsTheme(menu);
-
-            if (menu != null)
+            _clickGesture = CardInteractionHelper.TrackPress(RootBorder);
+            RootBorder.ContextMenu = ThemedContextMenuHelper.CreateLinkMenu(() => (DataContext as YouTubeVideo)?.Url);
+            RootBorder.MouseLeftButtonDown += (sender, e) =>
             {
-                ((MenuItem)menu.Items[0]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.BrowserLink);
-                // Items[1] is Separator
-                ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(KnownMonikers.Copy);
-            }
+                if (CardInteractionHelper.IsCardSurface(RootBorder, e.OriginalSource as DependencyObject))
+                    RootBorder.Focus();
+            };
         }
 
         private void RootBorder_MouseEnter(object sender, MouseEventArgs e)
         {
-            RootBorder.Background = new SolidColorBrush(
-                (Color)FindResource(EnvironmentColors.CommandBarMouseOverBackgroundBeginColorKey));
+            CardInteractionHelper.UpdateHighlight(RootBorder);
         }
 
         private void RootBorder_MouseLeave(object sender, MouseEventArgs e)
         {
-            if (!RootBorder.IsKeyboardFocusWithin)
-            {
-                RootBorder.Background = Brushes.Transparent;
-            }
+            CardInteractionHelper.UpdateHighlight(RootBorder);
         }
 
         private void RootBorder_MouseUp(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton == MouseButton.Left && DataContext is YouTubeVideo video)
+            if (CardInteractionHelper.CompleteClick(_clickGesture, RootBorder, e) && DataContext is YouTubeVideo video)
             {
-                OpenVideo(video);
                 e.Handled = true;
+                ThemedContextMenuHelper.OpenLink(video.Url);
             }
         }
 
         private void RootBorder_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Enter && DataContext is YouTubeVideo video)
+            if (!RootBorder.IsKeyboardFocused)
+                return;
+
+            if ((e.Key == Key.Enter || e.Key == Key.Space) && Keyboard.Modifiers == ModifierKeys.None && DataContext is YouTubeVideo video)
             {
-                OpenVideo(video);
                 e.Handled = true;
+                if (!e.IsRepeat)
+                    ThemedContextMenuHelper.OpenLink(video.Url);
             }
             else if (e.Key == Key.Up || e.Key == Key.Down)
             {
@@ -72,23 +68,19 @@ namespace StartScreen.ToolWindows.Controls
             }
             else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                CopyUrlMenuItem_Click(sender, null);
                 e.Handled = true;
+                ThemedContextMenuHelper.CopyLink((DataContext as YouTubeVideo)?.Url);
             }
         }
 
         private void RootBorder_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         {
-            RootBorder.Background = new SolidColorBrush(
-                (Color)FindResource(EnvironmentColors.CommandBarMouseOverBackgroundBeginColorKey));
+            CardInteractionHelper.UpdateHighlight(RootBorder);
         }
 
         private void RootBorder_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         {
-            if (!RootBorder.IsMouseOver)
-            {
-                RootBorder.Background = Brushes.Transparent;
-            }
+            CardInteractionHelper.UpdateHighlight(RootBorder);
         }
 
         private void MoveVertically(bool down)
@@ -141,28 +133,14 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
-        private static void OpenVideo(YouTubeVideo video)
-        {
-            if (!string.IsNullOrEmpty(video.Url))
-            {
-                Process.Start(video.Url);
-            }
-        }
-
         private void OpenInBrowserMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (DataContext is YouTubeVideo video)
-            {
-                OpenVideo(video);
-            }
+            ThemedContextMenuHelper.OpenLink((DataContext as YouTubeVideo)?.Url);
         }
 
         private void CopyUrlMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (DataContext is YouTubeVideo video && !string.IsNullOrEmpty(video.Url))
-            {
-                Clipboard.SetText(video.Url);
-            }
+            ThemedContextMenuHelper.CopyLink((DataContext as YouTubeVideo)?.Url);
         }
     }
 }

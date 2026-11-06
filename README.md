@@ -94,6 +94,13 @@ The action buttons and **All repositories** use Visual Studio's native themed
 button style, including hover, pressed, disabled, and keyboard-focus states.
 Settings disclosure headers use theme-aware text and chevrons, including when
 the Visual Studio theme changes while settings are open.
+All dashboard sections share semantic typography and spacing resources, scaled
+from Visual Studio's environment font. Card titles, secondary metadata, section
+headings, status badges, filter selectors, and icon actions use common styles
+while recent projects, activity, news, videos, and feedback keep their distinct
+layouts. News and video cards share click and keyboard activation rules and
+live-themed hover/focus behavior. Recent projects retain selection and
+double-click opening.
 
 **See real repository activity.** A small PR icon and count beside the branch show
 repository-wide open pull requests for supported GitHub and Azure DevOps repositories.

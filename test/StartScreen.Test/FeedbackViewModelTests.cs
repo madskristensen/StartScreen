@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Markup;
+using XamlReader = StartScreen.Test.SharedXamlReader;
 using System.Windows.Threading;
 using System.Xml.Linq;
 using Microsoft.VisualStudio.Threading;

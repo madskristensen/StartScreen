@@ -1,3 +1,5 @@
+using System;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -16,6 +18,70 @@ namespace StartScreen.ToolWindows.Controls
         private static Style _contextMenuStyle;
         private static Style _menuItemStyle;
         private static Style _separatorStyle;
+
+        internal static MenuItem CreateMenuItem(string name, string header, RoutedEventHandler handler,
+            ImageMoniker moniker, string gesture = null)
+        {
+            return CreateCommandMenuItem(name, header, handler, CreateMenuIcon(moniker), gesture);
+        }
+
+        internal static MenuItem CreateCommandMenuItem(string name, string header, RoutedEventHandler handler,
+            object icon, string gesture = null)
+        {
+            var item = new MenuItem
+            {
+                Name = name,
+                Header = header,
+                InputGestureText = gesture ?? string.Empty,
+                Icon = icon,
+            };
+            item.Click += handler;
+            return item;
+        }
+
+        internal static ContextMenu CreateLinkMenu(Func<string> getUrl)
+        {
+            var menu = new ContextMenu();
+            menu.Items.Add(CreateMenuItem("OpenInBrowser", "Open in Browser",
+                (sender, e) => OpenLink(getUrl()), KnownMonikers.BrowserLink, "Enter"));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(CreateMenuItem("CopyUrl", "Copy URL",
+                (sender, e) => CopyLink(getUrl()), KnownMonikers.Copy, "Ctrl+C"));
+            ApplyVsTheme(menu);
+            return menu;
+        }
+
+        internal static void OpenLink(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+
+            try
+            {
+                Process.Start(url);
+            }
+            catch (Exception ex)
+            {
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => ex.LogAsync())
+                    .FileAndForget(nameof(ThemedContextMenuHelper));
+            }
+        }
+
+        internal static void CopyLink(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
+
+            try
+            {
+                Clipboard.SetText(url);
+            }
+            catch (Exception ex)
+            {
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => ex.LogAsync())
+                    .FileAndForget(nameof(ThemedContextMenuHelper));
+            }
+        }
 
         public static void ApplyVsTheme(ContextMenu menu)
         {

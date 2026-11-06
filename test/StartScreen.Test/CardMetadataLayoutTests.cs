@@ -4,6 +4,7 @@ using System.Windows.Data;
 using System.Windows.Markup;
 using System.Xml.Linq;
 using StartScreen.Models.DevHub;
+using XamlReader = StartScreen.Test.SharedXamlReader;
 
 namespace StartScreen.Test
 {
@@ -234,11 +235,14 @@ namespace StartScreen.Test
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
             var newsBorder = news.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "RootBorder");
             var workBorder = work.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "WorkItemBorder");
-            Assert.AreEqual(workBorder.Attribute("Padding")!.Value, newsBorder.Attribute("Padding")!.Value);
+            Assert.AreEqual("{StaticResource StartScreen.CardSurface}", workBorder.Attribute("Style")?.Value);
+            Assert.AreEqual(workBorder.Attribute("Style")!.Value, newsBorder.Attribute("Style")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.CardPadding}", SharedXamlReader.Setter("StartScreen.CardSurface", "Padding"));
+            var padding = ((Border)XamlReader.Parse("<Border xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Style=\"{StaticResource StartScreen.CardSurface}\"/>")).Padding;
             var card = new UserControl
             {
                 VerticalAlignment = (VerticalAlignment)Enum.Parse(typeof(VerticalAlignment), news.Root!.Attribute("VerticalAlignment")!.Value),
-                Content = new Border { Padding = (Thickness)new ThicknessConverter().ConvertFromString(newsBorder.Attribute("Padding")!.Value)!, Child = new Border { Height = 30 } },
+                Content = new Border { Padding = padding, Child = new Border { Height = 30 } },
             };
             var row = new Grid { Height = 160 };
             row.Children.Add(card);

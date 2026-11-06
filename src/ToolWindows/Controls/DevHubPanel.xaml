@@ -10,7 +10,9 @@
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:controls="clr-namespace:StartScreen.ToolWindows.Controls"
              xmlns:helpers="clr-namespace:StartScreen.Helpers"
+             xmlns:typography="clr-namespace:StartScreen.ToolWindows"
              toolkit:Themes.UseVsTheme="True"
+             Style="{StaticResource StartScreen.Root}"
              Background="Transparent"
              Focusable="True"
              IsTabStop="True"
@@ -22,15 +24,16 @@
              mc:Ignorable="d"
              d:DesignHeight="400" d:DesignWidth="520">
     <UserControl.Resources>
+        <ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary Source="../StartScreenResources.xaml"/>
+        </ResourceDictionary.MergedDictionaries>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <controls:NullToCollapsedConverter x:Key="NullToCollapsedConverter"/>
         <controls:HexColorToBrushConverter x:Key="HexColorToBrushConverter"/>
         <controls:HexColorToForegroundConverter x:Key="HexColorToForegroundConverter"/>
         <controls:CiStatusToMonikerConverter x:Key="CiStatusToMonikerConverter"/>
-        <Style x:Key="PullRequestStatusStyle" TargetType="TextBlock">
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="FontSize" Value="10"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
+        <Style x:Key="PullRequestStatusStyle" TargetType="TextBlock" BasedOn="{StaticResource StartScreen.StatusText}">
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding StatusCategory}" Value="Muted">
@@ -51,33 +54,8 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="PullRequestActionButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Style x:Key="PullRequestActionButtonStyle" TargetType="Button" BasedOn="{StaticResource StartScreen.IconActionButton}">
             <Setter Property="Visibility" Value="Hidden"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="ActionBorder" Background="Transparent" BorderBrush="Transparent"
-                                BorderThickness="1" CornerRadius="2">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="ActionBorder" Property="BorderBrush"
-                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Opacity" Value="0.7"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
                     <Setter Property="Visibility" Value="Visible"/>
@@ -108,16 +86,15 @@
                 <ContentControl DockPanel.Dock="Right" Content="{Binding}" Focusable="False" Margin="8 0 0 0"
                                 ContentTemplate="{StaticResource PullRequestActionsTemplate}"/>
                 <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
-                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
+                    <Border Style="{StaticResource StartScreen.StatusBadge}"
                             BorderBrush="{Binding Foreground, ElementName=PullRequestStatus}">
                         <TextBlock x:Name="PullRequestStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
                     </Border>
-                    <TextBlock Text="{Binding AuthorText}" FontSize="11" Opacity="0.65" Margin="0 2 0 2" Padding="0 0 8 0"
+                    <TextBlock Text="{Binding AuthorText}" Opacity="0.65" Margin="0 2 0 2" Padding="0 0 8 0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding AuthorText}"
                                MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=WrapPanel}}">
                         <TextBlock.Style>
-                            <Style TargetType="TextBlock">
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding AuthorText}" Value="{x:Null}">
                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -131,27 +108,25 @@
         </DataTemplate>
         <DataTemplate x:Key="RepositoryItemMetadataTemplate">
             <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
-                        Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
+                <Border Style="{StaticResource StartScreen.StatusBadge}"
                         BorderBrush="{Binding Foreground, ElementName=RepositoryItemStatus}"
                         Visibility="{Binding StatusText, Converter={StaticResource NullToCollapsedConverter}}">
                     <TextBlock x:Name="RepositoryItemStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
                 </Border>
-                <Border x:Name="AssignmentPill" CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
+                <Border x:Name="AssignmentPill" Style="{StaticResource StartScreen.StatusBadge}"
                         BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                        Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
                         Visibility="{Binding IsAssignedToCurrentUser, Converter={StaticResource BoolToVisibilityConverter}}"
                         ToolTip="This issue or task is currently assigned to you.">
-                    <TextBlock Text="Assigned to you" FontSize="10" FontWeight="Bold"
+                    <TextBlock Text="Assigned to you" Style="{StaticResource StartScreen.StatusText}"
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                 </Border>
-                <TextBlock Text="{Binding DurationText}" FontSize="11" Opacity="0.65" Margin="0 2 8 2"
+                <TextBlock Text="{Binding DurationText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" Margin="0 2 8 2"
                            VerticalAlignment="Center" ToolTip="Build duration"
                            Visibility="{Binding DurationText, Converter={StaticResource NullToCollapsedConverter}}"/>
             </WrapPanel>
         </DataTemplate>
         <DataTemplate x:Key="WorkItemTemplate">
-            <Border x:Name="WorkItemBorder" Padding="8 10" Margin="0 0 0 4" CornerRadius="4" Focusable="True"
+            <Border x:Name="WorkItemBorder" Style="{StaticResource StartScreen.CardSurface}" Margin="0 0 0 4" Focusable="True"
                     Cursor="Hand" AutomationProperties.Name="{Binding Title}" AutomationProperties.HelpText="{Binding ActionText}"
                     MouseUp="WorkItem_MouseUp" Loaded="DevHubItemBorder_Loaded">
                 <Border.ContextMenu>
@@ -164,23 +139,10 @@
                         <MenuItem Header="Show all repositories" Click="ClearFilter_Click"/>
                     </ContextMenu>
                 </Border.ContextMenu>
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="Background" Value="Transparent"/>
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
                 <StackPanel>
-                    <TextBlock Text="{Binding DisplayTitle}" FontSize="13" FontWeight="SemiBold">
+                    <TextBlock Text="{Binding DisplayTitle}">
                         <TextBlock.Style>
-                            <Style TargetType="TextBlock">
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.CardTitle}">
                                 <Setter Property="Margin" Value="0 0 24 3"/>
                                 <Setter Property="TextWrapping" Value="NoWrap"/>
                                 <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -195,8 +157,8 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="1" Text="{Binding Detail}" TextTrimming="CharacterEllipsis" ToolTip="{Binding DetailToolTip}"
-                                   Opacity="0.65" FontSize="11" Margin="0 0 8 0" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="2" Text="{Binding ActivityDateText}" FontSize="11" Opacity="0.65"
+                                   Opacity="0.65" Style="{StaticResource StartScreen.Metadata}" Margin="0 0 8 0" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="{Binding ActivityDateText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
                                    HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
                         <imaging:CrispImage x:Name="CopilotActivityIcon" Width="16" Height="16" Margin="0 0 6 0" VerticalAlignment="Center"
                                             Moniker="{x:Static helpers:CopilotMonikers.GitHubCopilot}"
@@ -204,10 +166,10 @@
                     </Grid>
                     <StackPanel x:Name="CopilotMetadata" Orientation="Horizontal"
                                 Visibility="{Binding IsCopilot, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <TextBlock Text="{Binding CopilotStatus}" FontWeight="Bold" FontSize="10" Margin="0 0 6 0"
+                        <TextBlock Text="{Binding CopilotStatus}" Margin="0 0 6 0"
                                    VerticalAlignment="Center" ToolTip="{Binding CopilotStatusDetails}">
                             <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.StatusText}">
                                     <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
                                     <Setter Property="Opacity" Value="0.6"/>
                                     <Style.Triggers>
@@ -240,10 +202,10 @@
                             </Style>
                         </ContentControl.Style>
                     </ContentControl>
-                    <TextBlock Text="{Binding BranchDisplayText}" FontSize="10.5" Opacity="0.5" Margin="0 2 0 0"
+                    <TextBlock Text="{Binding BranchDisplayText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.5" Margin="0 2 0 0"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding BranchDisplayText}"
                                Visibility="{Binding BranchDisplayText, Converter={StaticResource NullToCollapsedConverter}}"/>
-                    <TextBlock Text="{Binding NextActionText}" FontSize="11" Margin="0 2 0 0" TextWrapping="Wrap"
+                    <TextBlock Text="{Binding NextActionText}" Style="{StaticResource StartScreen.Metadata}" Margin="0 2 0 0" TextWrapping="Wrap"
                                Visibility="{Binding NextActionText, Converter={StaticResource NullToCollapsedConverter}}"/>
                     <ItemsControl ItemsSource="{Binding Labels}" Margin="0 2 0 0" Focusable="False">
                         <ItemsControl.Style>
@@ -260,10 +222,11 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border x:Name="LabelPill" CornerRadius="9" Padding="7 2" Margin="0 0 6 2"
+                                <Border x:Name="LabelPill" Margin="0 0 6 2"
                                         Tag="{DynamicResource {x:Static SystemParameters.HighContrastKey}}">
                                     <Border.Style>
-                                        <Style TargetType="Border">
+                                        <Style TargetType="Border" BasedOn="{StaticResource StartScreen.StatusBadge}">
+                                            <Setter Property="BorderThickness" Value="0"/>
                                             <Setter Property="Background" Value="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
@@ -274,9 +237,9 @@
                                             </Style.Triggers>
                                         </Style>
                                     </Border.Style>
-                                    <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="SemiBold">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold">
                                         <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
                                                 <Setter Property="Foreground" Value="{Binding Color, Converter={StaticResource HexColorToForegroundConverter}}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
@@ -325,18 +288,7 @@
                 </Setter.Value>
             </Setter>
         </Style>
-        <!-- Hover style for list item borders -->
-        <Style x:Key="HoverItemBorderStyle" TargetType="Border">
-            <Setter Property="Background" Value="Transparent"/>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
-                </Trigger>
-                <Trigger Property="IsKeyboardFocused" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
+        </ResourceDictionary>
     </UserControl.Resources>
 
     <Grid>
@@ -438,12 +390,12 @@
                 <StackPanel>
                 <!-- Accounts section -->
                 <TextBlock Text="Accounts"
-                           FontSize="12"
+                           typography:Typography.Role="Body"
                            FontWeight="SemiBold"
                            Margin="0 0 24 12"/>
                 <StackPanel x:Name="ConnectedGitHubStatus" Margin="0 0 0 12">
                     <DockPanel LastChildFill="True">
-                        <TextBlock DockPanel.Dock="Right" FontSize="11" Margin="12 0 0 0">
+                        <TextBlock DockPanel.Dock="Right" typography:Typography.Role="Metadata" Margin="12 0 0 0">
                             <Hyperlink Click="GitHubSignOut_Click"
                                        Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                                 Sign out
@@ -455,26 +407,23 @@
                                             VerticalAlignment="Center"/>
                         <TextBlock x:Name="GitHubConnectedStatusText"
                                    Text="GitHub: connected"
-                                   FontSize="11"
+                                   typography:Typography.Role="Metadata"
                                    TextTrimming="CharacterEllipsis"/>
                     </DockPanel>
                     <StackPanel x:Name="GitHubAccountSelectionPanel" Orientation="Horizontal" Margin="18 8 0 0">
                         <TextBlock Text="Use account"
-                                   FontSize="10"
+                                   typography:Typography.Role="Metadata"
                                    Opacity="0.6"
                                    VerticalAlignment="Center"
                                    Margin="0 0 6 0"/>
                         <ComboBox x:Name="GitHubAccountsComboBox"
                                   MinWidth="180"
-                                  FontSize="11"
-                                  Padding="4 2"
+                                  Style="{StaticResource StartScreen.FilterSelector}"
                                   SelectionChanged="GitHubAccountsComboBox_SelectionChanged"
-                                  Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
-                                  Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                                  BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}"/>
+                                  />
                     </StackPanel>
                 </StackPanel>
-                <TextBlock x:Name="SettingsConnectGitHubTextBlock" FontSize="11" Margin="0 0 0 4">
+                <TextBlock x:Name="SettingsConnectGitHubTextBlock" typography:Typography.Role="Metadata" Margin="0 0 0 4">
                     <Hyperlink Click="ConnectGitHub_Click"
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                         Connect GitHub account...
@@ -487,19 +436,19 @@
                 </TextBlock>
                 <TextBlock x:Name="GitHubCredentialSettingsHelpTextBlock"
                            Visibility="Collapsed"
-                           FontSize="10"
+                           typography:Typography.Role="Metadata"
                            Opacity="0.6"
                            TextWrapping="Wrap"
                            Margin="0 0 0 4"
                            Text="Git Credential Manager did not provide a GitHub credential. Sign in with Git Credential Manager or enter a token."/>
                 <StackPanel x:Name="GitHubPatEntryPanel" Visibility="Collapsed" Margin="0 0 0 4">
                     <TextBlock Text="GitHub personal access token"
-                               FontSize="10"
+                               typography:Typography.Role="Metadata"
                                Opacity="0.6"
                                Margin="0 0 0 3"/>
                     <Grid>
                         <PasswordBox x:Name="GitHubPatBox"
-                                     FontSize="11"
+                                     typography:Typography.Role="Metadata"
                                      Padding="4 3"
                                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                                      Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
@@ -508,13 +457,13 @@
                                      PasswordChanged="GitHubPatBox_PasswordChanged"/>
                         <TextBlock x:Name="GitHubPatPlaceholder"
                                    Text="Paste your PAT and press Enter"
-                                   FontSize="11"
+                                   typography:Typography.Role="Metadata"
                                    Padding="6 4"
                                    Opacity="0.4"
                                    IsHitTestVisible="False"
                                    VerticalAlignment="Center"/>
                     </Grid>
-                    <TextBlock FontSize="10" Opacity="0.5" Margin="0 3 0 0" TextWrapping="Wrap">
+                    <TextBlock typography:Typography.Role="Metadata" Opacity="0.5" Margin="0 3 0 0" TextWrapping="Wrap">
                         <Run Text="Use this if Git Credential Manager is not installed or not signed in. "/>
                         <Hyperlink Click="OpenGitHubPatPage_Click"
                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
@@ -525,7 +474,7 @@
                 </StackPanel>
                 <!-- Azure DevOps section: cloud + on-prem servers -->
                 <TextBlock x:Name="AdoAuthenticationHelpText" Visibility="Collapsed"
-                           FontSize="11" Opacity="0.8" TextWrapping="Wrap" Margin="0 0 0 6"/>
+                           typography:Typography.Role="Metadata" Opacity="0.8" TextWrapping="Wrap" Margin="0 0 0 6"/>
                 <ItemsControl x:Name="AdoServersList" Focusable="False">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
@@ -542,32 +491,32 @@
                                                     VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="1"
                                            Text="{Binding DisplayText}"
-                                           FontSize="11"
+                                           typography:Typography.Role="Metadata"
                                            VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis"/>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                    <TextBlock FontSize="11" Margin="6 0 0 0"
+                                    <TextBlock typography:Typography.Role="Metadata" Margin="6 0 0 0"
                                                Visibility="{Binding SignInVisibility}">
                                         <Hyperlink Click="AdoServer_SignIn_Click" Tag="{Binding Host}"
                                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                                             <Run Text="{Binding SignInText}"/>
                                         </Hyperlink>
                                     </TextBlock>
-                                    <TextBlock FontSize="11" Margin="6 0 0 0"
+                                    <TextBlock typography:Typography.Role="Metadata" Margin="6 0 0 0"
                                                Visibility="{Binding ChangeVisibility}">
                                         <Hyperlink Click="AdoServer_SignIn_Click" Tag="{Binding Host}"
                                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                                             Change
                                         </Hyperlink>
                                     </TextBlock>
-                                    <TextBlock FontSize="11" Margin="6 0 0 0"
+                                    <TextBlock typography:Typography.Role="Metadata" Margin="6 0 0 0"
                                                Visibility="{Binding DisconnectVisibility}">
                                         <Hyperlink Click="AdoServer_Disconnect_Click" Tag="{Binding Host}"
                                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                                             Disconnect
                                         </Hyperlink>
                                     </TextBlock>
-                                    <TextBlock FontSize="11" Margin="6 0 0 0"
+                                    <TextBlock typography:Typography.Role="Metadata" Margin="6 0 0 0"
                                                Visibility="{Binding RemoveVisibility}">
                                         <Hyperlink Click="AdoServer_Remove_Click" Tag="{Binding Host}"
                                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
@@ -581,9 +530,9 @@
                 </ItemsControl>
 
                 <Expander x:Name="AdoConnectionOptions" Header="Connection options" IsExpanded="False"
-                          FontSize="11" Margin="0 4 0 0">
+                          typography:Typography.Role="Metadata" Margin="0 4 0 0">
                     <StackPanel Margin="18 10 0 0">
-                <TextBlock FontSize="11" Margin="0 0 0 10" TextWrapping="Wrap">
+                <TextBlock typography:Typography.Role="Metadata" Margin="0 0 0 10" TextWrapping="Wrap">
                     <Hyperlink Click="ConnectAdo_Click"
                                ToolTip="Use the account selected in Visual Studio's Azure Service Authentication settings. No PAT is required."
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
@@ -599,13 +548,13 @@
                 <!-- PAT entry for an existing server (revealed when "Sign in" / "Change" is clicked) -->
                 <StackPanel x:Name="AdoPatEntryPanel" Visibility="Collapsed" Margin="0 4 0 4">
                     <TextBlock x:Name="AdoPatHostLabel"
-                               FontSize="10"
+                               typography:Typography.Role="Metadata"
                                Opacity="0.6"
                                Margin="0 0 0 3"
                                Text="Azure DevOps personal access token"/>
                     <Grid>
                         <PasswordBox x:Name="AdoPatBox"
-                                     FontSize="11"
+                                     typography:Typography.Role="Metadata"
                                      Padding="4 3"
                                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                                      Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
@@ -614,13 +563,13 @@
                                      PasswordChanged="AdoPatBox_PasswordChanged"/>
                         <TextBlock x:Name="AdoPatPlaceholder"
                                    Text="Paste your PAT"
-                                   FontSize="11"
+                                   typography:Typography.Role="Metadata"
                                    Padding="6 4"
                                    Opacity="0.4"
                                    IsHitTestVisible="False"
                                    VerticalAlignment="Center"/>
                     </Grid>
-                    <TextBlock FontSize="10" Opacity="0.5" Margin="0 3 0 0" TextWrapping="Wrap">
+                    <TextBlock typography:Typography.Role="Metadata" Opacity="0.5" Margin="0 3 0 0" TextWrapping="Wrap">
                         <Hyperlink Click="OpenAdoPatPage_Click"
                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                             Learn how to create a personal access token
@@ -630,12 +579,12 @@
                     <StackPanel Orientation="Horizontal" Margin="0 6 0 0" HorizontalAlignment="Left">
                         <Button Content="Save" Click="SaveAdoPat_Click"
                                 Style="{DynamicResource ActionButtonStyle}"
-                                FontSize="11"
+                                typography:Typography.Role="Metadata"
                                 MinWidth="0" MinHeight="0"
                                 Padding="8 2"/>
                         <Button Content="Cancel" Click="CancelAdoPat_Click"
                                 Style="{DynamicResource ActionButtonStyle}"
-                                FontSize="11"
+                                typography:Typography.Role="Metadata"
                                 MinWidth="0" MinHeight="0"
                                 Padding="8 2"
                                 Margin="6 0 0 0"/>
@@ -643,7 +592,7 @@
                 </StackPanel>
 
                 <!-- Manually add an Azure DevOps Server -->
-                <TextBlock x:Name="AddAdoServerLink" FontSize="11" Margin="0 2 0 4">
+                <TextBlock x:Name="AddAdoServerLink" typography:Typography.Role="Metadata" Margin="0 2 0 4">
                     <Hyperlink Click="ShowAddAdoServer_Click"
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                         Add Azure DevOps Server...
@@ -651,10 +600,10 @@
                 </TextBlock>
                 <StackPanel x:Name="AddAdoServerPanel" Visibility="Collapsed" Margin="0 0 0 4">
                     <TextBlock Text="Server URL or host (e.g. https://tfs.contoso.com)"
-                               FontSize="10" Opacity="0.6" Margin="0 0 0 3"/>
+                               typography:Typography.Role="Metadata" Opacity="0.6" Margin="0 0 0 3"/>
                     <Grid Margin="0 0 0 4">
                         <TextBox x:Name="AddAdoServerUrlBox"
-                                 FontSize="11"
+                                 typography:Typography.Role="Metadata"
                                  Padding="4 3"
                                  Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                                  Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
@@ -663,17 +612,17 @@
                                  TextChanged="AddAdoServerUrlBox_TextChanged"/>
                         <TextBlock x:Name="AddAdoServerUrlPlaceholder"
                                    Text="https://tfs.contoso.com"
-                                   FontSize="11"
+                                   typography:Typography.Role="Metadata"
                                    Padding="6 4"
                                    Opacity="0.4"
                                    IsHitTestVisible="False"
                                    VerticalAlignment="Center"/>
                     </Grid>
                     <TextBlock Text="Personal access token"
-                               FontSize="10" Opacity="0.6" Margin="0 0 0 3"/>
+                               typography:Typography.Role="Metadata" Opacity="0.6" Margin="0 0 0 3"/>
                     <Grid>
                         <PasswordBox x:Name="AddAdoServerPatBox"
-                                     FontSize="11"
+                                     typography:Typography.Role="Metadata"
                                      Padding="4 3"
                                      Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                                      Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
@@ -682,7 +631,7 @@
                                      PasswordChanged="AddAdoServerPatBox_PasswordChanged"/>
                         <TextBlock x:Name="AddAdoServerPatPlaceholder"
                                    Text="Paste your PAT"
-                                   FontSize="11"
+                                   typography:Typography.Role="Metadata"
                                    Padding="6 4"
                                    Opacity="0.4"
                                    IsHitTestVisible="False"
@@ -691,12 +640,12 @@
                     <StackPanel Orientation="Horizontal" Margin="0 6 0 0" HorizontalAlignment="Left">
                         <Button Content="Add" Click="AddAdoServer_Click"
                                 Style="{DynamicResource ActionButtonStyle}"
-                                FontSize="11"
+                                typography:Typography.Role="Metadata"
                                 MinWidth="0" MinHeight="0"
                                 Padding="8 2"/>
                         <Button Content="Cancel" Click="CancelAddAdoServer_Click"
                                 Style="{DynamicResource ActionButtonStyle}"
-                                FontSize="11"
+                                typography:Typography.Role="Metadata"
                                 MinWidth="0" MinHeight="0"
                                 Padding="8 2"
                                 Margin="6 0 0 0"/>
@@ -713,11 +662,11 @@
 
                 <!-- Search query section -->
                 <Expander x:Name="SearchQueryOptions" Header="Team activity search query (GitHub)" IsExpanded="False"
-                          FontSize="11" Margin="0 0 0 16">
+                          typography:Typography.Role="Metadata" Margin="0 0 0 16">
                     <StackPanel Margin="18 10 0 0">
                 <Grid>
                     <TextBox x:Name="SearchQueryTextBox"
-                             FontSize="11"
+                             typography:Typography.Role="Metadata"
                              Padding="4 3"
                              Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
                              Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
@@ -727,14 +676,14 @@
                              TextChanged="SearchQueryTextBox_TextChanged"/>
                     <TextBlock x:Name="SearchQueryPlaceholder"
                                Text="e.g. state:open archived:false (user:octocat OR org:MyOrg)"
-                               FontSize="11"
+                               typography:Typography.Role="Metadata"
                                Padding="6 4"
                                Opacity="0.4"
                                IsHitTestVisible="False"
                                VerticalAlignment="Center"/>
                 </Grid>
                 <TextBlock Text="Filters team activity, not your personal work. Use {login} for your username. Leave empty for issues and PRs involving you. is:issue or is:pr is added automatically."
-                           FontSize="10"
+                           typography:Typography.Role="Metadata"
                            Opacity="0.5"
                            TextWrapping="Wrap"
                            Margin="0 8 0 0"/>
@@ -743,7 +692,7 @@
 
                 <!-- Display section -->
                 <TextBlock Text="Display"
-                           FontSize="12"
+                           typography:Typography.Role="Body"
                            FontWeight="SemiBold"
                            Margin="0 0 0 12"/>
 
@@ -757,37 +706,33 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                 <TextBlock Text="Initial keyboard focus"
-                           FontSize="11"
+                           typography:Typography.Role="Metadata"
                            VerticalAlignment="Center"
                            Margin="0 0 16 12"/>
                 <ComboBox x:Name="DefaultTabComboBox"
                           Grid.Column="1"
-                          FontSize="11"
+                          Style="{StaticResource StartScreen.FilterSelector}"
                           Padding="4 2"
                           Margin="0 0 0 12"
                           HorizontalAlignment="Stretch"
                           SelectionChanged="DefaultTabComboBox_SelectionChanged"
-                          Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
-                          Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                          BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}">
+                          >
                     <ComboBoxItem Content="My work"/>
                     <ComboBoxItem Content="Team activity"/>
                 </ComboBox>
 
                 <TextBlock Text="Sort issues and pull requests by"
                            Grid.Row="1"
-                           FontSize="11"
+                           typography:Typography.Role="Metadata"
                            VerticalAlignment="Center"
                            Margin="0 0 16 0"/>
                 <ComboBox x:Name="SortOrderComboBox"
                           Grid.Row="1" Grid.Column="1"
-                          FontSize="11"
+                          Style="{StaticResource StartScreen.FilterSelector}"
                           Padding="4 2"
                           HorizontalAlignment="Stretch"
                           SelectionChanged="SortOrderComboBox_SelectionChanged"
-                          Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
-                          Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"
-                          BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBorderBrushKey}}">
+                          >
                     <ComboBoxItem Content="Most recent first"/>
                     <ComboBoxItem Content="GitHub first"/>
                     <ComboBoxItem Content="Azure DevOps first"/>
@@ -809,15 +754,15 @@
                                 HorizontalAlignment="Left"
                                 Margin="0 0 0 12"/>
             <TextBlock Text="Connect your accounts"
-                       FontSize="15"
+                       typography:Typography.Role="Body"
                        FontWeight="SemiBold"
                        Margin="0 0 0 8"/>
             <TextBlock Text="Sign in to GitHub or Azure DevOps to see your pull requests, issues, and CI status here."
-                       FontSize="13"
+                       typography:Typography.Role="Body"
                        Opacity="0.7"
                        TextWrapping="Wrap"
                        Margin="0 0 0 16"/>
-            <TextBlock x:Name="ConnectGitHubTextBlock" FontSize="13" Margin="0 0 0 8">
+            <TextBlock x:Name="ConnectGitHubTextBlock" typography:Typography.Role="Body" Margin="0 0 0 8">
                 <Hyperlink x:Name="ConnectGitHubLink" Click="ConnectGitHub_Click"
                            Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                     Connect GitHub account...
@@ -825,7 +770,7 @@
             </TextBlock>
             <TextBlock x:Name="GitHubCredentialHelpTextBlock"
                        Visibility="Collapsed"
-                       FontSize="12"
+                       typography:Typography.Role="Body"
                        Opacity="0.7"
                        TextWrapping="Wrap"
                        Margin="0 0 0 12">
@@ -836,7 +781,7 @@
                 </Hyperlink>
                 <Run Text="."/>
             </TextBlock>
-            <TextBlock x:Name="ConnectAdoTextBlock" FontSize="13">
+            <TextBlock x:Name="ConnectAdoTextBlock" typography:Typography.Role="Body">
                 <Hyperlink x:Name="ConnectAdoLink" Click="ConnectAdo_Click"
                            Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                     Connect Azure DevOps with Visual Studio account...
@@ -854,7 +799,7 @@
                          Margin="0 0 0 12"/>
             <TextBlock x:Name="LoadingText"
                        Text="Loading your activity..."
-                       FontSize="13"
+                       typography:Typography.Role="Body"
                        Opacity="0.5"/>
         </StackPanel>
 
@@ -862,20 +807,20 @@
         <DockPanel x:Name="DashboardPanel" Grid.Row="1">
 
             <TextBlock x:Name="ActivityWarningText" DockPanel.Dock="Top" Visibility="Collapsed"
-                       Margin="8 0 0 8" TextWrapping="Wrap" FontSize="12"
+                       Margin="8 0 0 8" TextWrapping="Wrap" typography:Typography.Role="Body"
                        Foreground="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
 
             <StackPanel x:Name="ActivityCoveragePanel" DockPanel.Dock="Bottom" Margin="8 10 0 0" Visibility="Collapsed">
                 <WrapPanel>
-                    <TextBlock x:Name="CoverageText" FontSize="11" Opacity="0.65" Margin="0 0 10 4" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="LoadMoreText" FontSize="11" Margin="0 0 0 4">
+                    <TextBlock x:Name="CoverageText" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" Margin="0 0 10 4" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="LoadMoreText" Style="{StaticResource StartScreen.Metadata}" Margin="0 0 0 4">
                         <Hyperlink x:Name="LoadMoreLink" Click="LoadMoreActivity_Click"
                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                             <Run x:Name="LoadMoreLabel" Text="Load more"/>
                         </Hyperlink>
                     </TextBlock>
                 </WrapPanel>
-                <TextBlock x:Name="ActivityLoadStatus" FontSize="11" Opacity="0.65" TextWrapping="Wrap" Visibility="Collapsed"/>
+                <TextBlock x:Name="ActivityLoadStatus" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" TextWrapping="Wrap" Visibility="Collapsed"/>
             </StackPanel>
 
             <Grid x:Name="WorkBlades">
@@ -889,16 +834,16 @@
                                 Style="{DynamicResource ActionButtonStyle}" MinWidth="0" MinHeight="24" Padding="6 2" Margin="8 0 0 0"
                                 VerticalAlignment="Center"
                                 Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                        <TextBlock x:Name="WorkHeadingLine" FontSize="20" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                        <TextBlock x:Name="WorkHeadingLine" Style="{StaticResource StartScreen.Heading}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                                    Focusable="True" FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
                                    VerticalAlignment="Center" AutomationProperties.Name="My work">
                             <InlineUIContainer BaselineAlignment="Baseline">
-                                <TextBlock Text="My work" FontSize="20" FontWeight="SemiBold"/>
+                                <TextBlock Text="My work" Style="{StaticResource StartScreen.Heading}"/>
                             </InlineUIContainer>
-                            <Run x:Name="MyWorkCount" FontSize="11"/>
-                            <Run FontSize="11" FontWeight="Normal" ToolTip="{Binding WorkSectionTitle}">
+                            <Run x:Name="MyWorkCount" Style="{StaticResource StartScreen.HeaderCount}"/>
+                            <Run ToolTip="{Binding WorkSectionTitle}">
                                 <Run.Style>
-                                    <Style TargetType="Run">
+                                    <Style TargetType="Run" BasedOn="{StaticResource StartScreen.HeaderCount}">
                                         <Setter Property="Text" Value=""/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding HasSelectedMruItem}" Value="True">
@@ -927,7 +872,7 @@
                             </InlineUIContainer>
                             <Run x:Name="CopilotActivityStatusText" BaselineAlignment="Baseline" FontWeight="Normal"
                                  Text="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
-                                 FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}"
+                                 Style="{StaticResource StartScreen.HeaderCount}"
                                  ToolTip="{Binding CopilotActivityStatus, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=OneWay}">
                                 <Run.Foreground>
                                     <SolidColorBrush Color="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextColorKey}}" Opacity="0.7"/>
@@ -962,7 +907,7 @@
                                     </Style.Triggers>
                                 </Style>
                             </StackPanel.Style>
-                            <CheckBox x:Name="IncludeCompletedItems" Content="Include completed work (14 days)" FontSize="11" Margin="8 8 0 0"
+                            <CheckBox x:Name="IncludeCompletedItems" Content="Include completed work (14 days)" typography:Typography.Role="Metadata" Margin="8 8 0 0"
                                       Checked="IncludeCompletedItems_Changed" Unchecked="IncludeCompletedItems_Changed"
                                       ToolTip="Include your merged PRs and completed issues/tasks from the last 14 days."/>
                         </StackPanel>
@@ -970,11 +915,11 @@
                 </StackPanel>
                 <StackPanel x:Name="IncomingBlade" Grid.Column="1">
                     <DockPanel MinHeight="28" Margin="8 0 0 20">
-                        <TextBlock x:Name="IncomingHeading" FontSize="20" FontWeight="SemiBold" Focusable="True"
+                        <TextBlock x:Name="IncomingHeading" Style="{StaticResource StartScreen.Heading}" Focusable="True"
                                    FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
                                    VerticalAlignment="Center" AutomationProperties.Name="Team activity">
                             <Run Text="Team activity"/>
-                            <Run x:Name="IncomingCount" FontSize="11" FontWeight="Normal"/>
+                            <Run x:Name="IncomingCount" Style="{StaticResource StartScreen.HeaderCount}"/>
                         </TextBlock>
                     </DockPanel>
                     <StackPanel>
@@ -997,11 +942,11 @@
         <!-- Error State -->
         <StackPanel x:Name="ErrorPanel" Visibility="Collapsed">
             <TextBlock Text="Something went wrong"
-                       FontSize="13"
+                       typography:Typography.Role="Body"
                        FontWeight="SemiBold"
                        Margin="0 0 0 8"/>
             <TextBlock x:Name="ErrorMessageText"
-                       FontSize="12"
+                       typography:Typography.Role="Body"
                        Opacity="0.7"
                        TextWrapping="Wrap"
                        Margin="0 0 0 12"/>
