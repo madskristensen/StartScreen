@@ -16,7 +16,17 @@ namespace StartScreen.ToolWindows.Controls
 {
     public partial class DevHubPanel : UserControl, IDisposable
     {
+        public static readonly DependencyProperty IsBusyProperty = DependencyProperty.Register(
+            nameof(IsBusy), typeof(bool), typeof(DevHubPanel), new PropertyMetadata(false));
+
+        public bool IsBusy
+        {
+            get => (bool)GetValue(IsBusyProperty);
+            private set => SetValue(IsBusyProperty, value);
+        }
+
         private bool _isDisposed;
+        private bool _isConnectionLoading;
         private DevHubDashboard _currentDashboard;
         private RemoteRepoIdentifier _currentFilterRepo;
 
@@ -52,6 +62,7 @@ namespace StartScreen.ToolWindows.Controls
             if (_isDisposed)
                 return;
             _isDisposed = true;
+            IsBusy = false;
             _lifetimeCancellation.Cancel();
             _lifetimeCancellation.Dispose();
             _copilotLoaded = false;
@@ -133,7 +144,7 @@ namespace StartScreen.ToolWindows.Controls
             if (dashboard == null)
             {
                 LastRefreshChanged?.Invoke(this, string.Empty);
-                if (dashboardChanged || filterChanged || ErrorPanel.Visibility == Visibility.Visible || LoadingPanel.Visibility == Visibility.Visible)
+                if (dashboardChanged || filterChanged || ErrorPanel.Visibility == Visibility.Visible || _isConnectionLoading)
                 {
                     ShowNotConnected(hasGitHub: false, hasAdo: false);
                 }
@@ -221,10 +232,11 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public void ShowLoading(string message = null)
         {
-            LoadingText.Text = message ?? "Loading your activity...";
-            ResetStatusPanels(NotConnectedPanel, LoadingPanel, ErrorPanel);
+            OutputLog.Info("Activity", message ?? "Loading your activity...");
+            _isConnectionLoading = true;
+            ResetStatusPanels(NotConnectedPanel, ErrorPanel);
             DashboardPanel.Visibility = Visibility.Visible;
-            LoadingPanel.Visibility = Visibility.Visible;
+            UpdateBusyState();
         }
 
         /// <summary>
@@ -232,11 +244,13 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public void ShowError(string message)
         {
-            ResetStatusPanels(NotConnectedPanel, LoadingPanel, ErrorPanel);
+            _isConnectionLoading = false;
+            ResetStatusPanels(NotConnectedPanel, ErrorPanel);
             DashboardPanel.Visibility = Visibility.Visible;
             ErrorPanel.Visibility = Visibility.Visible;
             ErrorMessageText.Text = message;
             ClearRepositoryActivity();
+            UpdateBusyState();
         }
 
         internal void ShowActivityError(string message)
@@ -256,7 +270,8 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ShowNotConnected(bool hasGitHub, bool hasAdo)
         {
-            ResetStatusPanels(NotConnectedPanel, LoadingPanel, ErrorPanel);
+            _isConnectionLoading = false;
+            ResetStatusPanels(NotConnectedPanel, ErrorPanel);
             DashboardPanel.Visibility = Visibility.Visible;
             NotConnectedPanel.Visibility = Options.Instance.DevHubGitHubEnabled || Options.Instance.DevHubAzureDevOpsEnabled
                 ? Visibility.Visible : Visibility.Collapsed;
@@ -265,6 +280,7 @@ namespace StartScreen.ToolWindows.Controls
             GitHubCredentialHelpTextBlock.Visibility = _showGitHubCredentialHelp && !hasGitHub ? Visibility.Visible : Visibility.Collapsed;
             ConnectAdoTextBlock.Visibility = hasAdo || !Options.Instance.DevHubAzureDevOpsEnabled ? Visibility.Collapsed : Visibility.Visible;
             ClearRepositoryActivity();
+            UpdateBusyState();
         }
 
         private void ClearRepositoryActivity()
@@ -344,17 +360,24 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ShowDashboard()
         {
-            ResetStatusPanels(NotConnectedPanel, LoadingPanel, ErrorPanel);
+            _isConnectionLoading = false;
+            ResetStatusPanels(NotConnectedPanel, ErrorPanel);
             DashboardPanel.Visibility = Visibility.Visible;
 
+            UpdateBusyState();
             ApplyDefaultTab();
         }
 
-        internal static void ResetStatusPanels(UIElement notConnected, UIElement loading, UIElement error)
+        private void UpdateBusyState()
         {
-            notConnected.Visibility = Visibility.Collapsed;
-            loading.Visibility = Visibility.Collapsed;
-            error.Visibility = Visibility.Collapsed;
+            IsBusy = !_isDisposed && (_isConnectionLoading || _activityLoadCount > 0 || _loadMoreStartingItemCount.HasValue
+                || _copilotConnecting || _copilotAdapter != null && !_copilotAdapter.IsReady);
+        }
+
+        internal static void ResetStatusPanels(params UIElement[] panels)
+        {
+            foreach (var panel in panels)
+                panel.Visibility = Visibility.Collapsed;
         }
 
         // Keeps the stored preference as the initial keyboard focus destination.

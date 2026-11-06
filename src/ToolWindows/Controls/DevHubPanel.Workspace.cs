@@ -24,6 +24,8 @@ namespace StartScreen.ToolWindows.Controls
         internal void SetActivityLoading(bool loading)
         {
             _activityLoadCount = Math.Max(0, _activityLoadCount + (loading ? 1 : -1));
+            if (_activityLoadCount == 0)
+                _isConnectionLoading = false;
             if (_activityLoadCount == 0 && _loadMoreStartingItemCount.HasValue)
             {
                 ActivityLoadStatus.Text = (_currentDashboard?.ActivityLimit ?? 0) < ActivityOptions.MaxItems
@@ -70,10 +72,11 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateActivityLoadingState()
         {
+            UpdateBusyState();
             var loading = _activityLoadCount > 0 || _loadMoreStartingItemCount.HasValue;
             LoadMoreLink.IsEnabled = !loading;
             IncludeCompletedItems.IsEnabled = !loading;
-            LoadMoreLabel.Text = loading ? (_loadMoreStartingItemCount.HasValue ? "Loading..." : "Updating...") : "Load more";
+            LoadMoreLabel.Text = "Load more";
             LoadMoreText.Visibility = loading || Math.Max(ActivityOptions.MaxItems, _currentDashboard?.ActivityLimit ?? 0) < DevHubActivityOptions.MaximumLimit
                 ? Visibility.Visible : Visibility.Collapsed;
         }

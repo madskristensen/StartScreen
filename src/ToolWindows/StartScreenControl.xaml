@@ -327,12 +327,43 @@
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}" Width="16" Height="16"/>
                         </Button>
                     </StackPanel>
-                    <TextBlock x:Name="LastRefreshText" Text="{Binding UnifiedRefreshStatus}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
+                    <TextBlock x:Name="LastRefreshText" Text="{Binding UnifiedRefreshStatus}" Opacity="0.65"
                                TextWrapping="NoWrap" MaxWidth="420" ToolTip="{Binding UnifiedRefreshDetails}"
-                               HorizontalAlignment="Right" Margin="0 10 0 0"/>
+                               HorizontalAlignment="Right" Margin="0 10 0 0">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsRefreshingAny}" Value="True">
+                                        <Setter Property="Visibility" Value="Hidden"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </StackPanel>
             </Grid>
         </Border>
+            <ProgressBar x:Name="UnifiedProgressBar" Grid.Row="0" Height="2" VerticalAlignment="Bottom"
+                         Margin="24 0 24 20" Panel.ZIndex="1" BorderThickness="0" Background="Transparent"
+                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                         IsHitTestVisible="False" Focusable="False" AutomationProperties.Name="Start Screen background activity">
+                <ProgressBar.Style>
+                    <Style TargetType="ProgressBar">
+                        <Setter Property="Visibility" Value="Hidden"/>
+                        <Setter Property="IsIndeterminate" Value="False"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsRefreshingAny}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Setter Property="IsIndeterminate" Value="True"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsBusy, ElementName=DevHubPanelControl}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Setter Property="IsIndeterminate" Value="True"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ProgressBar.Style>
+            </ProgressBar>
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition x:Name="LeftColumn" Width="360" MinWidth="280"/>
@@ -493,10 +524,6 @@
                                     <RowDefinition Height="*"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
-                                <ProgressBar Grid.Row="0" Grid.ColumnSpan="2" Height="2" VerticalAlignment="Top" IsIndeterminate="True"
-                                             BorderThickness="0" Background="Transparent" Margin="0 -8 0 0"
-                                             Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                                             Visibility="{Binding IsRefreshingAny, Converter={StaticResource BoolToHiddenVisibilityConverter}}"/>
                                 <controls:DevHubPanel x:Name="DevHubPanelControl" Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Margin="0 0 24 0" VerticalAlignment="Top"
                                                       RefreshRequested="DevHubPanel_RefreshRequested" LastRefreshChanged="DevHubPanel_LastRefreshChanged"
                                                       ActivityOptionsChanged="DevHubPanel_ActivityOptionsChanged"

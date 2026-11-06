@@ -820,20 +820,6 @@
             </TextBlock>
         </StackPanel>
 
-        <!-- Loading State -->
-        <StackPanel x:Name="LoadingPanel" Visibility="Collapsed" VerticalAlignment="Top">
-            <ProgressBar IsIndeterminate="True"
-                         Height="2"
-                         Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
-                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                         BorderThickness="0"
-                         Margin="0 0 0 12"/>
-            <TextBlock x:Name="LoadingText"
-                       Text="Loading your activity..."
-                       typography:Typography.Role="Body"
-                       Opacity="0.5"/>
-        </StackPanel>
-
         <!-- Dashboard Content -->
         <DockPanel x:Name="DashboardPanel" Grid.Row="1">
 

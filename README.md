@@ -19,8 +19,12 @@ gets you into code immediately - no clicking through menus, no waiting.
 
 ### Startup and background work
 
-The action bar and search are available before secondary content loads. Recent
-projects become clickable without waiting for filesystem timestamps, existence
+The action bar and search are available before secondary content loads.
+One themed progress bar overlays the action-bar separator across the screen for
+Dev Hub, provider sign-in, Copilot connection, news, and other background refreshes.
+Its space does not change when work starts or finishes. Transient connecting and
+updating labels are omitted; actionable failures and sign-in recovery links remain.
+Recent projects become clickable without waiting for filesystem timestamps, existence
 checks, Git metadata, or history writes. Those details are filled in afterward;
 Your Work can load independently. Repository summaries, dashboard refreshes, and
 news start after the UI has yielded to rendering and user input. Cache reads, feed parsing, and thumbnail

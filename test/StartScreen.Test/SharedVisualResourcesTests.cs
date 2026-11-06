@@ -2,8 +2,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Threading;
 using System.Xml.Linq;
 using StartScreen.ToolWindows;
+using StartScreen.ToolWindows.Controls;
 
 namespace StartScreen.Test
 {
@@ -190,6 +192,122 @@ namespace StartScreen.Test
                     StringAssert.StartsWith(trigger.Descendants(_presentation + "Setter").Single().Attribute("Value")!.Value, "{DynamicResource {x:Static platformui:");
                 }
             }
+        }
+
+        [TestMethod]
+        public void SharedProgress_OverlaysTheHeaderOutsideScrollableContent()
+        {
+            var document = Read("StartScreenControl.xaml");
+            var progress = document.Descendants(_presentation + "ProgressBar").Single();
+            var layout = document.Root!.Element(_presentation + "Grid")!;
+            Assert.AreSame(layout, progress.Parent);
+            Assert.AreEqual("UnifiedProgressBar", progress.Attribute(_xaml + "Name")?.Value);
+            Assert.AreEqual("0", progress.Attribute("Grid.Row")?.Value);
+            Assert.AreEqual("Bottom", progress.Attribute("VerticalAlignment")?.Value);
+            Assert.AreEqual("24 0 24 20", progress.Attribute("Margin")?.Value);
+            Assert.AreEqual("False", progress.Attribute("IsHitTestVisible")?.Value);
+            Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}",
+                progress.Attribute("Foreground")?.Value);
+            var triggers = progress.Descendants(_presentation + "DataTrigger").ToArray();
+            CollectionAssert.AreEquivalent(new[] { "{Binding IsRefreshingAny}", "{Binding IsBusy, ElementName=DevHubPanelControl}" },
+                triggers.Select(trigger => trigger.Attribute("Binding")!.Value).ToArray());
+
+            var panel = Read("DevHubPanel.xaml");
+            Assert.IsFalse(panel.Descendants(_presentation + "ProgressBar").Any());
+            Assert.IsFalse(panel.Descendants().Any(element => element.Attribute(_xaml + "Name")?.Value is "LoadingPanel" or "LoadingText"));
+            Assert.AreEqual(string.Empty, DevHubPanel.CopilotActivityStatusProperty.DefaultMetadata.DefaultValue);
+        }
+
+        [STATestMethod]
+        [DataRow(12d)]
+        [DataRow(18d)]
+        [DataRow(24d)]
+        public void SharedProgress_RemoteAndProviderWorkNeverMoveContent(double environmentSize)
+        {
+            var layout = Read("StartScreenControl.xaml").Root!.Element(_presentation + "Grid")!;
+            var progressElement = new XElement(layout.Elements(_presentation + "ProgressBar").Single());
+            // The standalone surface substitutes only the VS-hosted panel's busy-state source.
+            progressElement.Descendants(_presentation + "DataTrigger").Single(trigger =>
+                trigger.Attribute("Binding")?.Value == "{Binding IsBusy, ElementName=DevHubPanelControl}")
+                .SetAttributeValue("Binding", "{Binding IsBusy}");
+            var header = new XElement(_presentation + "Border", layout.Elements(_presentation + "Border").First().Attributes(),
+                new XAttribute(_xaml + "Name", "TestHeader"), new XElement(_presentation + "TextBlock",
+                    new XAttribute("Style", "{StaticResource StartScreen.Heading}"), new XAttribute("Text", "Start Screen")));
+            var surface = (UserControl)SharedXamlReader.Parse(new XElement(_presentation + "UserControl",
+                new XAttribute("Style", "{StaticResource StartScreen.Root}"),
+                new XElement(_presentation + "Grid", new XElement(layout.Element(_presentation + "Grid.RowDefinitions")!), header, progressElement,
+                    new XElement(_presentation + "Border", new XAttribute("Grid.Row", "1"), new XAttribute(_xaml + "Name", "TestContent")))).ToString());
+            var root = (Grid)surface.Content;
+            surface.Resources["TestEnvironmentFontSize"] = environmentSize;
+            root.DataContext = new { IsRefreshingAny = false, IsBusy = false };
+            UpdateBindings(root);
+            surface.Measure(new Size(900, 400));
+            surface.Arrange(new Rect(0, 0, 900, 400));
+            surface.UpdateLayout();
+            var progress = (ProgressBar)root.FindName("UnifiedProgressBar");
+            var content = (Border)root.FindName("TestContent");
+            var toolbar = (Border)root.FindName("TestHeader");
+            var contentOrigin = content.TranslatePoint(new Point(), root);
+            var contentSize = content.RenderSize;
+            var headerHeight = root.RowDefinitions[0].ActualHeight;
+            var surfaceSize = root.RenderSize;
+            var toolbarSize = toolbar.RenderSize;
+
+            foreach (var state in new[] { (false, false), (true, false), (false, true), (true, true), (false, false) })
+            {
+                root.DataContext = new { IsRefreshingAny = state.Item1, IsBusy = state.Item2 };
+                foreach (var brush in new[] { Brushes.DodgerBlue, Brushes.DarkBlue, SystemColors.HighlightBrush })
+                {
+                    surface.Resources["TestThemeBrush"] = brush;
+                    UpdateBindings(root);
+                    surface.Measure(new Size(900, 400));
+                    surface.Arrange(new Rect(0, 0, 900, 400));
+                    root.UpdateLayout();
+                    var busy = state.Item1 || state.Item2;
+                    Assert.AreEqual(busy ? Visibility.Visible : Visibility.Hidden, progress.Visibility);
+                    Assert.AreEqual(busy, progress.IsIndeterminate);
+                    Assert.AreSame(brush, progress.Foreground);
+                    Assert.AreEqual(toolbar.ActualWidth, progress.ActualWidth);
+                    Assert.AreEqual(contentOrigin, content.TranslatePoint(new Point(), root));
+                    Assert.AreEqual(contentSize, content.RenderSize);
+                    Assert.AreEqual(headerHeight, root.RowDefinitions[0].ActualHeight);
+                    Assert.AreEqual(surfaceSize, root.RenderSize);
+                    Assert.AreEqual(toolbarSize, toolbar.RenderSize);
+                }
+            }
+        }
+
+        [STATestMethod]
+        [DataRow(12d)]
+        [DataRow(18d)]
+        [DataRow(24d)]
+        public void RefreshCaption_IsHiddenDuringWorkWithoutCollapsingItsSpace(double environmentSize)
+        {
+            var element = Read("StartScreenControl.xaml").Descendants(_presentation + "TextBlock")
+                .Single(candidate => candidate.Attribute(_xaml + "Name")?.Value == "LastRefreshText");
+            var caption = (TextBlock)SharedXamlReader.Parse(element.ToString());
+            caption.Resources["TestEnvironmentFontSize"] = environmentSize;
+            caption.DataContext = new { IsRefreshingAny = false, UnifiedRefreshStatus = "Updated just now" };
+            UpdateBindings(caption);
+            caption.Measure(new Size(420, double.PositiveInfinity));
+            var height = caption.DesiredSize.Height;
+            Assert.AreEqual(Visibility.Visible, caption.Visibility);
+            Assert.AreEqual("Updated just now", caption.Text);
+            caption.DataContext = new { IsRefreshingAny = true, UnifiedRefreshStatus = "Updating..." };
+            UpdateBindings(caption);
+            caption.Measure(new Size(420, double.PositiveInfinity));
+            Assert.AreEqual(Visibility.Hidden, caption.Visibility);
+            Assert.AreEqual(height, caption.DesiredSize.Height);
+            caption.DataContext = new { IsRefreshingAny = false, UnifiedRefreshStatus = "Updated just now" };
+            UpdateBindings(caption);
+            Assert.AreEqual(Visibility.Visible, caption.Visibility);
+        }
+
+        private static void UpdateBindings(FrameworkElement element)
+        {
+#pragma warning disable VSTHRD001 // Drain bindings on the current STA thread, not a thread switch.
+            element.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+#pragma warning restore VSTHRD001
         }
 
         private static XDocument Read(string name)

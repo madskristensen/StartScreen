@@ -496,9 +496,12 @@ namespace StartScreen.ToolWindows
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
+                var loadingStarted = false;
                 try
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    DevHubPanelControl.SetActivityLoading(true);
+                    loadingStarted = true;
                     DevHubPanelControl.ShowLoading($"Connecting to {host}...");
 
                     await TaskScheduler.Default;
@@ -551,6 +554,12 @@ namespace StartScreen.ToolWindows
                         DevHubPanelControl.ShowAzureDevOpsSignInRequired();
                     else
                         DevHubPanelControl.ShowError("Could not connect the account. Check your sign-in and retry.");
+                }
+                finally
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    if (loadingStarted && !_isDisposed)
+                        DevHubPanelControl.SetActivityLoading(false);
                 }
             }).FileAndForget(nameof(StartScreenControl));
         }
@@ -714,12 +723,16 @@ namespace StartScreen.ToolWindows
             if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
                 return;
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
+            var loadingStarted = false;
 
             try
             {
                 if (!Options.Instance.DevHubEnabled)
                     return;
 
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                DevHubPanelControl.SetActivityLoading(true);
+                loadingStarted = true;
                 var activityOptions = DevHubPanelControl.ActivityOptions;
                 var progress = new Progress<DevHubDashboard>(dashboard =>
                 {
@@ -766,6 +779,12 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (!cancellationToken.IsCancellationRequested)
                     UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
+            }
+            finally
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (loadingStarted && !_isDisposed)
+                    DevHubPanelControl.SetActivityLoading(false);
             }
         }
 
