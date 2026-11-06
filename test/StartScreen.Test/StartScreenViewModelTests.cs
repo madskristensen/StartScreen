@@ -310,8 +310,8 @@ namespace StartScreen.Test
             viewModel.IsRefreshingNews = true;
             viewModel.IsRefreshingYouTube = true;
 
-            Assert.AreEqual("Updating...", viewModel.UnifiedRefreshStatus);
-            Assert.AreEqual("Refreshing news, videos...", viewModel.UnifiedRefreshDetails);
+            Assert.AreEqual("Refreshing videos...", viewModel.UnifiedRefreshStatus);
+            Assert.AreEqual("Refreshing videos...\n0 of 2 work items finished.", viewModel.UnifiedRefreshDetails);
         }
 
         [TestMethod]
@@ -370,8 +370,8 @@ namespace StartScreen.Test
 
             Assert.AreEqual("Not updated yet", viewModel.UnifiedRefreshStatus);
             Assert.AreEqual("News: Showing cached content", viewModel.UnifiedRefreshDetails);
-            Assert.HasCount(3, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshStatus)));
-            Assert.HasCount(3, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshDetails)));
+            Assert.HasCount(4, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshStatus)));
+            Assert.HasCount(4, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshDetails)));
         }
 
         [TestMethod]
@@ -435,8 +435,8 @@ namespace StartScreen.Test
             viewModel.LastDevHubRefreshText = "Updated just now";
             viewModel.IsRefreshingDevHub = false;
 
-            Assert.HasCount(9, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshStatus)));
-            Assert.HasCount(9, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshDetails)));
+            Assert.HasCount(13, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshStatus)));
+            Assert.HasCount(13, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshDetails)));
         }
 
         [TestMethod]

@@ -6,6 +6,7 @@ using Microsoft.VisualStudio.Threading;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
 using StartScreen.Services.DevHub.Providers;
+using StartScreen.ToolWindows;
 
 namespace StartScreen.Test.DevHub
 {
@@ -952,6 +953,59 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual((4, 4), reports.Last());
         }
 
+        [TestMethod]
+        public async Task StepProgress_DescribesPendingCategoriesWithoutSerializingThemAsync()
+        {
+            var issues = new TaskCompletionSource<IReadOnlyList<DevHubIssue>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pulls = new TaskCompletionSource<IReadOnlyList<DevHubPullRequest>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var issuesShown = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pullsShown = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pullsStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var provider = new Provider("GitHub")
+            {
+                Issues = token => issues.Task.WithCancellation(token),
+                Pulls = token =>
+                {
+                    pullsStarted.TrySetResult(true);
+                    return pulls.Task.WithCancellation(token);
+                },
+            };
+            using var model = new StartScreenViewModel();
+            using var work = model.BackgroundProgress.Start();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var refresh = Service(provider).RefreshAsync(timeout.Token, workProgress: work, stepProgress: new InlineStepProgress(step =>
+            {
+                work.Report(step);
+                if (step == "Loading GitHub issues...")
+                    issuesShown.TrySetResult(true);
+                if (step == "Loading GitHub pull requests...")
+                    pullsShown.TrySetResult(true);
+            }));
+            try
+            {
+                await issuesShown.Task.WithCancellation(timeout.Token);
+                Assert.IsTrue(pullsStarted.Task.IsCompleted);
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.AreEqual("Loading GitHub issues...", model.UnifiedRefreshStatus);
+                issues.SetResult([]);
+                await pullsShown.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.IsFalse(pulls.Task.IsCompleted);
+                Assert.AreEqual("Loading GitHub pull requests...", model.UnifiedRefreshStatus);
+            }
+            finally
+            {
+                issues.TrySetResult([]);
+                pulls.TrySetResult([]);
+                await refresh;
+            }
+            Assert.AreEqual("Saving activity cache...", model.UnifiedRefreshStatus);
+            Assert.AreEqual(100d, model.RefreshProgressValue);
+            work.Dispose();
+            Assert.IsFalse(model.IsRefreshProgressActive);
+            Assert.AreEqual(string.Empty, model.UnifiedRefreshStatus);
+        }
+
         private DevHubIssue Issue(string title) => new DevHubIssue { Title = title, WebUrl = "https://github.com/owner/repo/issues/" + title, RepoIdentifier = _repo };
         private DevHubPullRequest PullRequest(string title) => new DevHubPullRequest
         {
@@ -970,6 +1024,11 @@ namespace StartScreen.Test.DevHub
         private sealed class InlineWorkProgress(Action<(int Completed, int Total)> report) : IProgress<(int Completed, int Total)>
         {
             public void Report((int Completed, int Total) value) => report(value);
+        }
+
+        private sealed class InlineStepProgress(Action<string> report) : IProgress<string>
+        {
+            public void Report(string value) => report(value);
         }
 
         private sealed class Provider(string name) : IDevHubProvider

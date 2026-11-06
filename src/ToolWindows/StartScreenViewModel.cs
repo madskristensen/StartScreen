@@ -150,6 +150,9 @@ namespace StartScreen.ToolWindows
         {
             get
             {
+                var step = BackgroundProgress.CurrentStep;
+                if (step != null)
+                    return $"{step}\n{BackgroundProgress.Details}";
                 var refreshing = new List<string>();
                 if (IsRefreshingDevHub)
                     refreshing.Add("Dev Hub");

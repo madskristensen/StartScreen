@@ -137,7 +137,7 @@ namespace StartScreen.Test
             Assert.AreEqual("Not updated yet", model.UnifiedRefreshStatus);
             model.IsRefreshingNews = true;
             Assert.IsTrue(model.NewsRefreshState.IsLoading);
-            Assert.AreEqual("Updating...", model.UnifiedRefreshStatus);
+            Assert.AreEqual("Refreshing news...", model.UnifiedRefreshStatus);
             model.IsRefreshingNews = false;
             Assert.AreEqual("Not updated yet", model.UnifiedRefreshStatus);
         }

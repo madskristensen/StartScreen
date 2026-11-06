@@ -97,7 +97,7 @@ namespace StartScreen.Test
 
             Assert.IsTrue(screen.IsRefreshingNews);
             Assert.IsTrue(screen.IsRefreshingAny);
-            Assert.AreEqual("Updating...", screen.UnifiedRefreshStatus);
+            Assert.AreEqual("Refreshing news...", screen.UnifiedRefreshStatus);
             CollectionAssert.Contains(changed, nameof(screen.IsRefreshingNews));
             CollectionAssert.Contains(changed, nameof(screen.IsRefreshingAny));
             CollectionAssert.Contains(changed, nameof(screen.UnifiedRefreshStatus));

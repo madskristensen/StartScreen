@@ -25,8 +25,12 @@ Dev Hub, provider sign-in, Copilot connection, news, and other background refres
 It counts completed authentication, activity categories, discovered repositories,
 cache reads/writes, Copilot connection stages, and other section refreshes. Totals
 expand as repositories are discovered; this is work-item progress, not an estimate
-of remaining time. Its space does not change when work starts or finishes. Transient connecting and
-updating labels are omitted; actionable failures and sign-in recovery links remain.
+of remaining time. Its muted theme color and reserved space keep refreshes unobtrusive.
+The header's last-updated caption shows the current step while work is running,
+including account checks, provider activity, and Copilot discovery, then returns to
+the last successful update time. Parallel operations continue independently; the
+caption describes one active operation. Extra connecting and updating labels are
+omitted; actionable failures and sign-in recovery links remain.
 Recent projects become clickable without waiting for filesystem timestamps, existence
 checks, Git metadata, or history writes. Those details are filled in afterward;
 Your Work can load independently. Repository summaries, dashboard refreshes, and
@@ -278,8 +282,8 @@ them again. Automatic refreshes continue to reuse fresh caches.
 Feed caches are identified by source URL rather than display name. Renaming a
 feed preserves its cache, changing its URL does not reuse the previous source,
 and combining cached articles does not extend individual source freshness.
-The footer stays brief: "Updating...", "Updated just now", or the known update
-age. Before a successful update is known, it says "Not updated yet". Hover over
+The header caption stays brief: the active refresh step, "Updated just now", or the
+known update time. Before a successful update is known, it says "Not updated yet". Hover over
 the status for per-section details, including cached content, unavailable sources,
 disabled feeds, and retry guidance. If a blog source fails, available cached
 articles remain visible. Cached or partially refreshed news is not reported as

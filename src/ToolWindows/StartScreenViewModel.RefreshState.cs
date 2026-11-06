@@ -19,6 +19,8 @@ namespace StartScreen.ToolWindows
             OnPropertyChanged(nameof(IsRefreshProgressActive));
             OnPropertyChanged(nameof(RefreshProgressValue));
             OnPropertyChanged(nameof(RefreshProgressDetails));
+            OnPropertyChanged(nameof(UnifiedRefreshStatus));
+            OnPropertyChanged(nameof(UnifiedRefreshDetails));
         }
 
         private void UpdateSectionProgress()
@@ -32,7 +34,7 @@ namespace StartScreen.ToolWindows
         private void SetSectionProgress(string section, bool loading)
         {
             if (loading && !_sectionProgress.ContainsKey(section))
-                _sectionProgress[section] = BackgroundProgress.Start();
+                _sectionProgress[section] = BackgroundProgress.Start(step: $"Refreshing {section.ToLowerInvariant()}...");
             else if (!loading && _sectionProgress.TryGetValue(section, out var operation))
             {
                 _sectionProgress.Remove(section);
@@ -91,6 +93,9 @@ namespace StartScreen.ToolWindows
 
         private string GetUnifiedRefreshStatus()
         {
+            var step = BackgroundProgress.CurrentStep;
+            if (step != null)
+                return step;
             if (IsRefreshingAny)
                 return "Updating...";
             DateTimeOffset? latest = RefreshStates.Max(state => state.LastSuccessfulRefreshUtc);

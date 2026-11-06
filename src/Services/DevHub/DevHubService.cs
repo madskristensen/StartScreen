@@ -80,8 +80,10 @@ namespace StartScreen.Services.DevHub
         /// Returns null if no cache exists.
         /// </summary>
         public async Task<DevHubDashboard> LoadFromCacheAsync(CancellationToken cancellationToken = default, DevHubActivityOptions options = null,
-            IProgress<DevHubDashboard> progress = null, IProgress<(int Completed, int Total)> workProgress = null)
+            IProgress<DevHubDashboard> progress = null, IProgress<(int Completed, int Total)> workProgress = null,
+            IProgress<string> stepProgress = null)
         {
+            stepProgress?.Report("Reading cached activity...");
             var completedWork = 0;
             var totalWork = 2;
             workProgress?.Report((completedWork, totalWork));
@@ -92,6 +94,7 @@ namespace StartScreen.Services.DevHub
                 return _currentDashboard = null;
             var generation = _getCredentialGeneration();
             var queryContext = _getQueryContext();
+            stepProgress?.Report("Finding workspace repositories...");
             var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken), urls => urls.Count > 0, cancellationToken);
             workProgress?.Report((++completedWork, totalWork));
             options = options ?? new DevHubActivityOptions();
@@ -111,6 +114,7 @@ namespace StartScreen.Services.DevHub
             var providers = _getProviders();
             totalWork += providers.Count;
             workProgress?.Report((completedWork, totalWork));
+            stepProgress?.Report("Verifying cached activity accounts...");
             var authentications = providers.Select(async provider =>
                 (Provider: provider, Result: await AuthenticateAsync(provider, cancellationToken, refreshContext))).ToList();
             var restored = false;
@@ -174,11 +178,13 @@ namespace StartScreen.Services.DevHub
         /// A forced refresh waits for an active refresh and then fetches fresh authentication and data.
         /// </summary>
         public async Task<DevHubDashboard> RefreshAsync(CancellationToken cancellationToken, IProgress<DevHubDashboard> progress = null,
-            bool forceRefresh = false, DevHubActivityOptions options = null, IProgress<(int Completed, int Total)> workProgress = null)
+            bool forceRefresh = false, DevHubActivityOptions options = null, IProgress<(int Completed, int Total)> workProgress = null,
+            IProgress<string> stepProgress = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             options = options ?? new DevHubActivityOptions();
 
+            stepProgress?.Report("Waiting for the activity refresh...");
             if (!await _refreshGate.WaitAsync(forceRefresh ? Timeout.Infinite : 0, cancellationToken))
                 return CurrentDashboard;
 
@@ -192,6 +198,7 @@ namespace StartScreen.Services.DevHub
                 var previousDashboard = _currentDashboard;
                 var authenticationGeneration = _getCredentialGeneration();
                 var queryContext = _getQueryContext();
+                stepProgress?.Report("Finding workspace repositories...");
                 var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken),
                     urls => urls.Count > 0, cancellationToken);
                 workProgress?.Report((++completedWork, totalWork));
@@ -213,6 +220,7 @@ namespace StartScreen.Services.DevHub
                 var providers = _getProviders();
                 totalWork += providers.Count;
                 workProgress?.Report((completedWork, totalWork));
+                stepProgress?.Report("Checking connected provider accounts...");
                 var authTasks = providers.Select(async provider =>
                 {
                     var result = await AuthenticateAsync(provider, cancellationToken, refreshContext);
@@ -264,6 +272,7 @@ namespace StartScreen.Services.DevHub
                 if (authenticated.Count == 0)
                 {
                     dashboard.IsRefreshing = false;
+                    stepProgress?.Report("Saving activity cache...");
                     await _cache.WriteDashboardAsync(dashboard, cancellationToken);
                     workProgress?.Report((++completedWork, totalWork));
                     _cacheNeedsRefresh = false;
@@ -286,21 +295,31 @@ namespace StartScreen.Services.DevHub
                 var remaining = new List<Task<(string Key, DevHubActivitySnapshot Snapshot)>>();
                 var repositoryTasks = new HashSet<Task<(string Key, DevHubActivitySnapshot Snapshot)>>();
                 var repositoryQueue = new Queue<(IDevHubProvider Provider, RemoteRepoIdentifier Repo)>();
+                var steps = new Dictionary<Task<(string Key, DevHubActivitySnapshot Snapshot)>, string>();
+                void AddSource(string key, string step, Func<Task<DevHubActivitySnapshot>> fetch, bool repository = false)
+                {
+                    var task = FetchSourceAsync(key, fetch);
+                    remaining.Add(task);
+                    steps[task] = step;
+                    if (repository)
+                        repositoryTasks.Add(task);
+                }
+
                 foreach (var provider in authenticated)
                 {
-                    remaining.Add(FetchSourceAsync(provider.DisplayName + "/issues",
-                        () => FetchActivityAsync(provider, DevHubActivityKind.Issues, options, null, requestToken)));
-                    remaining.Add(FetchSourceAsync(provider.DisplayName + "/pulls",
-                        () => FetchActivityAsync(provider, DevHubActivityKind.PullRequests, options, null, requestToken)));
-                    remaining.Add(FetchSourceAsync(provider.DisplayName + "/builds",
-                        () => FetchActivityAsync(provider, DevHubActivityKind.CiRuns, options, null, requestToken)));
-                    remaining.Add(FetchSourceAsync(provider.DisplayName + "/discovery", async () =>
+                    AddSource(provider.DisplayName + "/issues", $"Loading {provider.DisplayName} issues...",
+                        () => FetchActivityAsync(provider, DevHubActivityKind.Issues, options, null, requestToken));
+                    AddSource(provider.DisplayName + "/pulls", $"Loading {provider.DisplayName} pull requests...",
+                        () => FetchActivityAsync(provider, DevHubActivityKind.PullRequests, options, null, requestToken));
+                    AddSource(provider.DisplayName + "/builds", $"Loading {provider.DisplayName} builds...",
+                        () => FetchActivityAsync(provider, DevHubActivityKind.CiRuns, options, null, requestToken));
+                    AddSource(provider.DisplayName + "/discovery", $"Finding {provider.DisplayName} repositories...", async () =>
                     {
                         var result = await DevHubActivityRequest.RunAsync(() => provider.GetActivityReposAsync(candidateUrls, requestToken),
                             items => items.Count > 0, requestToken);
                         return new DevHubActivitySnapshot { Status = result.Status, Message = result.Message,
                             ActivityRepositories = result.Value?.ToList() ?? new List<RemoteRepoIdentifier>() };
-                    }));
+                    });
                 }
 
                 try
@@ -313,18 +332,19 @@ namespace StartScreen.Services.DevHub
                             var (provider, repo) = repositoryQueue.Dequeue();
                             var repoOptions = new DevHubActivityOptions(options.MaxItems == DevHubActivityOptions.DefaultLimit
                                 ? _dashboardRepoItemCount : options.MaxItems, options.IncludeCompleted, refreshContext);
-                            var task = FetchSourceAsync(provider.DisplayName + "/repo/" + repo.ToString().ToLowerInvariant(),
-                                () => FetchActivityAsync(provider, DevHubActivityKind.Repository, repoOptions, repo, requestToken));
-                            repositoryTasks.Add(task);
-                            remaining.Add(task);
+                            AddSource(provider.DisplayName + "/repo/" + repo.ToString().ToLowerInvariant(),
+                                $"Loading {provider.DisplayName} activity for {repo.DisplayName}...",
+                                () => FetchActivityAsync(provider, DevHubActivityKind.Repository, repoOptions, repo, requestToken), repository: true);
                         }
 
+                        stepProgress?.Report(steps[remaining[0]]);
                         var completed = await Task.WhenAny(remaining);
                         cancellationToken.ThrowIfCancellationRequested();
                         if (generation != _getCredentialGeneration() || queryContext != _getQueryContext())
                             return InvalidateContext(progress);
                         remaining.Remove(completed);
                         repositoryTasks.Remove(completed);
+                        steps.Remove(completed);
                         var (key, snapshot) = await completed;
                         dashboard.Sources.TryGetValue(key, out var previous);
                         dashboard.Sources[key] = RetainFailedSource(snapshot, previous);
@@ -371,6 +391,7 @@ namespace StartScreen.Services.DevHub
                 dashboard.IsRefreshing = false;
                 dashboard.FetchedAt = DateTime.UtcNow;
                 var final = Publish(dashboard, progress);
+                stepProgress?.Report("Saving activity cache...");
                 await _cache.WriteDashboardAsync(final, cancellationToken);
                 workProgress?.Report((++completedWork, totalWork));
                 _cacheNeedsRefresh = false;

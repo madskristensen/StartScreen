@@ -206,7 +206,7 @@ namespace StartScreen.Test
             Assert.AreEqual("Bottom", progress.Attribute("VerticalAlignment")?.Value);
             Assert.AreEqual("24 0 24 20", progress.Attribute("Margin")?.Value);
             Assert.AreEqual("False", progress.Attribute("IsHitTestVisible")?.Value);
-            Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}",
+            Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.ControlEditHintTextBrushKey}}",
                 progress.Attribute("Foreground")?.Value);
             var triggers = progress.Descendants(_presentation + "DataTrigger").ToArray();
             CollectionAssert.AreEquivalent(new[] { "{Binding IsRefreshProgressActive}" },
@@ -282,7 +282,7 @@ namespace StartScreen.Test
         [DataRow(12d)]
         [DataRow(18d)]
         [DataRow(24d)]
-        public void RefreshCaption_IsHiddenDuringWorkWithoutCollapsingItsSpace(double environmentSize)
+        public void RefreshCaption_ShowsStepsWithoutChangingItsGeometry(double environmentSize)
         {
             var element = Read("StartScreenControl.xaml").Descendants(_presentation + "TextBlock")
                 .Single(candidate => candidate.Attribute(_xaml + "Name")?.Value == "LastRefreshText");
@@ -291,17 +291,22 @@ namespace StartScreen.Test
             caption.DataContext = new { IsRefreshingAny = false, UnifiedRefreshStatus = "Updated just now" };
             UpdateBindings(caption);
             caption.Measure(new Size(420, double.PositiveInfinity));
-            var height = caption.DesiredSize.Height;
+            var size = caption.DesiredSize;
             Assert.AreEqual(Visibility.Visible, caption.Visibility);
             Assert.AreEqual("Updated just now", caption.Text);
-            caption.DataContext = new { IsRefreshingAny = true, UnifiedRefreshStatus = "Updating..." };
-            UpdateBindings(caption);
-            caption.Measure(new Size(420, double.PositiveInfinity));
-            Assert.AreEqual(Visibility.Hidden, caption.Visibility);
-            Assert.AreEqual(height, caption.DesiredSize.Height);
-            caption.DataContext = new { IsRefreshingAny = false, UnifiedRefreshStatus = "Updated just now" };
-            UpdateBindings(caption);
-            Assert.AreEqual(Visibility.Visible, caption.Visibility);
+            Assert.AreEqual(420d, size.Width);
+            Assert.AreEqual(TextTrimming.CharacterEllipsis, caption.TextTrimming);
+            foreach (var step in new[] { "Checking connected provider accounts...",
+                "Loading GitHub activity for a repository with a very long name that cannot fit in the caption...", "Updated just now" })
+            {
+                caption.DataContext = new { UnifiedRefreshStatus = step, UnifiedRefreshDetails = step + "\n3 of 8 work items finished." };
+                UpdateBindings(caption);
+                caption.Measure(new Size(420, double.PositiveInfinity));
+                Assert.AreEqual(Visibility.Visible, caption.Visibility);
+                Assert.AreEqual(step, caption.Text);
+                Assert.AreEqual(size, caption.DesiredSize);
+                StringAssert.Contains((string)caption.ToolTip, step);
+            }
         }
 
         private static void UpdateBindings(FrameworkElement element)

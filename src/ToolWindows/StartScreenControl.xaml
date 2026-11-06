@@ -328,25 +328,16 @@
                         </Button>
                     </StackPanel>
                     <TextBlock x:Name="LastRefreshText" Text="{Binding UnifiedRefreshStatus}" Opacity="0.65"
-                               TextWrapping="NoWrap" MaxWidth="420" ToolTip="{Binding UnifiedRefreshDetails}"
-                               HorizontalAlignment="Right" Margin="0 10 0 0">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsRefreshingAny}" Value="True">
-                                        <Setter Property="Visibility" Value="Hidden"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                               Style="{StaticResource StartScreen.Metadata}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                               Width="420" TextAlignment="Right" ToolTip="{Binding UnifiedRefreshDetails}"
+                               HorizontalAlignment="Right" Margin="0 10 0 0"/>
                 </StackPanel>
             </Grid>
         </Border>
             <ProgressBar x:Name="UnifiedProgressBar" Grid.Row="0" Height="2" VerticalAlignment="Bottom"
                          Minimum="0" Maximum="100" Value="{Binding RefreshProgressValue, Mode=OneWay}" IsIndeterminate="False"
                          Margin="24 0 24 20" Panel.ZIndex="1" BorderThickness="0" Background="Transparent"
-                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                         Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlEditHintTextBrushKey}}"
                          IsHitTestVisible="False" Focusable="False" AutomationProperties.Name="Start Screen background activity"
                          AutomationProperties.ItemStatus="{Binding RefreshProgressDetails}">
                 <ProgressBar.Style>

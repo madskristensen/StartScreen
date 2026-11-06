@@ -1588,7 +1588,9 @@ namespace StartScreen.Test
             Assert.AreEqual("{Binding UnifiedRefreshStatus}", status.Attribute("Text")?.Value);
             Assert.AreEqual("{Binding UnifiedRefreshDetails}", status.Attribute("ToolTip")?.Value);
             Assert.AreEqual("NoWrap", status.Attribute("TextWrapping")?.Value);
-            Assert.AreEqual("420", status.Attribute("MaxWidth")?.Value);
+            Assert.AreEqual("420", status.Attribute("Width")?.Value);
+            Assert.AreEqual("CharacterEllipsis", status.Attribute("TextTrimming")?.Value);
+            Assert.AreEqual("Right", status.Attribute("TextAlignment")?.Value);
         }
 
         [STATestMethod]

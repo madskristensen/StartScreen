@@ -497,7 +497,7 @@ namespace StartScreen.ToolWindows
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
-                using var work = _viewModel.BackgroundProgress.Start();
+                using var work = _viewModel.BackgroundProgress.Start(step: $"Connecting to {host}...");
                 var loadingStarted = false;
                 try
                 {
@@ -606,7 +606,7 @@ namespace StartScreen.ToolWindows
                 .FileAndForget(nameof(StartScreenControl));
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
-                using var work = _viewModel.BackgroundProgress.Start();
+                using var work = _viewModel.BackgroundProgress.Start(step: $"Refreshing {repo.DisplayName}...");
                 try
                 {
                     await TaskScheduler.Default;
@@ -743,8 +743,8 @@ namespace StartScreen.ToolWindows
                         UpdateDevHubPanel(dashboard, cached: true);
                 });
                 await TaskScheduler.Default;
-                using var work = _viewModel.BackgroundProgress.Start();
-                var cached = await _devHubService.LoadFromCacheAsync(cancellationToken, activityOptions, progress, work);
+                using var work = _viewModel.BackgroundProgress.Start(step: "Reading cached activity...");
+                var cached = await _devHubService.LoadFromCacheAsync(cancellationToken, activityOptions, progress, work, work);
                 work.Dispose();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -797,7 +797,7 @@ namespace StartScreen.ToolWindows
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            using var work = _viewModel.BackgroundProgress.Start();
+            using var work = _viewModel.BackgroundProgress.Start(step: "Refreshing activity...");
             var activityOptions = DevHubPanelControl.ActivityOptions;
             DevHubPanelControl.SetActivityLoading(true);
             int generation = ++_devHubRefreshGeneration;
@@ -822,7 +822,7 @@ namespace StartScreen.ToolWindows
                 // we stayed on the captured UI SynchronizationContext.
                 await TaskScheduler.Default;
 
-                await _devHubService.RefreshAsync(cancellationToken, progress, forceRefresh, activityOptions, work);
+                await _devHubService.RefreshAsync(cancellationToken, progress, forceRefresh, activityOptions, work, work);
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 cancellationToken.ThrowIfCancellationRequested();

@@ -81,7 +81,8 @@ namespace StartScreen.ToolWindows.Controls
         {
             int generation = ++_copilotGeneration;
             var totalSteps = _copilotDiskCacheLoaded ? 2 : 3;
-            _copilotProgress = Progress?.Start(totalSteps);
+            _copilotProgress = Progress?.Start(totalSteps,
+                _copilotDiskCacheLoaded ? "Connecting to local Copilot..." : "Reading cached Copilot activity...");
             _copilotProgress?.Report((0, totalSteps));
             _copilotConnecting = true;
             CopilotActivityStatus = string.Empty;
@@ -117,6 +118,7 @@ namespace StartScreen.ToolWindows.Controls
                     }
                 }
                 _copilotProgress?.Report((totalSteps - 2, totalSteps));
+                _copilotProgress?.Report("Connecting to local Copilot...");
                 await StartScreenPackage.BackgroundTaskFactory.YieldAsync(DispatcherPriority.Background, StartScreenPackage.ShutdownToken);
                 if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                     return;
@@ -141,6 +143,7 @@ namespace StartScreen.ToolWindows.Controls
                 _copilotAdapter.Changed += CopilotActivityChanged;
                 _copilotAdapter.Start(backends);
                 _copilotProgress?.Report((totalSteps - 1, totalSteps));
+                _copilotProgress?.Report("Discovering local Copilot sessions...");
                 StartupDiagnostics.Mark("Copilot harness attached");
                 RenderCopilotActivity();
             }

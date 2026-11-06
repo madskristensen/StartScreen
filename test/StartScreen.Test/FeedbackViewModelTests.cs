@@ -308,7 +308,7 @@ namespace StartScreen.Test
                 Assert.IsTrue(model.IsRefreshingFeedback);
                 Assert.IsTrue(model.IsRefreshingAny);
                 Assert.AreEqual("Feedback loading...", model.FeedbackStatus);
-                Assert.AreEqual("Updating...", model.UnifiedRefreshStatus);
+                Assert.AreEqual("Refreshing feedback...", model.UnifiedRefreshStatus);
                 StringAssert.Contains(model.UnifiedRefreshDetails, "feedback");
 
                 pending.SetResult(Snapshot(8));

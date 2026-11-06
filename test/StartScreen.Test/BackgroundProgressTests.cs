@@ -10,6 +10,84 @@ namespace StartScreen.Test
     public class BackgroundProgressTests
     {
         [TestMethod]
+        public void CurrentStep_FollowsReportsAndFallsBackToUnfinishedWork()
+        {
+            var progress = new BackgroundProgress();
+            using var activity = progress.Start(step: "Checking accounts...");
+            using var news = progress.Start(step: "Refreshing news...");
+            Assert.AreEqual("Refreshing news...", progress.CurrentStep);
+            activity.Report("Loading GitHub issues...");
+            Assert.AreEqual("Loading GitHub issues...", progress.CurrentStep);
+            activity.Complete();
+            Assert.AreEqual("Refreshing news...", progress.CurrentStep);
+            activity.Report("Late activity report");
+            Assert.AreEqual("Refreshing news...", progress.CurrentStep);
+            news.Dispose();
+            Assert.IsNull(progress.CurrentStep);
+        }
+
+        [TestMethod]
+        public void CurrentStep_NotifiesOnlyWhenItsDescriptionChanges()
+        {
+            var progress = new BackgroundProgress();
+            using var work = progress.Start(step: "Reading cache...");
+            var changes = 0;
+            progress.Changed += (_, _) => changes++;
+            work.Report("Loading issues...");
+            Assert.AreEqual(1, changes);
+            work.Report("Loading issues...");
+            Assert.AreEqual(1, changes);
+            work.Dispose();
+            Assert.AreEqual(2, changes);
+            work.Report("Late report");
+            Assert.AreEqual(2, changes);
+        }
+
+        [TestMethod]
+        public void CurrentStep_ResetIgnoresOldReportsAndRejectsEmptyDescriptions()
+        {
+            var progress = new BackgroundProgress();
+            Assert.ThrowsExactly<ArgumentException>(() => progress.Start(step: " "));
+            using var previous = progress.Start(step: "Old work");
+            progress.Reset();
+            Assert.IsNull(progress.CurrentStep);
+            using var current = progress.Start(step: "Current work");
+            previous.Report("Late report");
+            Assert.AreEqual("Current work", progress.CurrentStep);
+            Assert.ThrowsExactly<ArgumentException>(() => current.Report(string.Empty));
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void ViewModel_CurrentStepRestoresTimestampAfterCompletionOrCancellation(bool cancel)
+        {
+            using var model = new StartScreenViewModel();
+            var updated = DateTimeOffset.UtcNow.AddMinutes(-30);
+            model.SetRefreshState(model.DevHubRefreshState, "Activity updated", successfulUtc: updated);
+            var idleStatus = model.UnifiedRefreshStatus;
+            var changes = new List<string?>();
+            model.PropertyChanged += (_, args) => changes.Add(args.PropertyName);
+            using var work = model.BackgroundProgress.Start(4, "Checking accounts...");
+            Assert.AreEqual("Checking accounts...", model.UnifiedRefreshStatus);
+            work.Report("Loading GitHub pull requests...");
+            work.Report((1, 4));
+            Assert.AreEqual("Loading GitHub pull requests...", model.UnifiedRefreshStatus);
+            StringAssert.Contains(model.UnifiedRefreshDetails, "Loading GitHub pull requests...");
+            StringAssert.Contains(model.UnifiedRefreshDetails, "1 of 4 work items finished.");
+            changes.Clear();
+            if (cancel)
+                model.CancelBackgroundWork();
+            else
+                work.Complete();
+            work.Report("Late report");
+            Assert.AreEqual(idleStatus, model.UnifiedRefreshStatus);
+            Assert.AreEqual($"Updated at {updated.ToLocalTime():t}", model.UnifiedRefreshStatus);
+            CollectionAssert.Contains(changes, nameof(StartScreenViewModel.UnifiedRefreshStatus));
+            CollectionAssert.Contains(changes, nameof(StartScreenViewModel.UnifiedRefreshDetails));
+        }
+
+        [TestMethod]
         public void Reset_WhenAlreadyIdleDoesNotNotifyBindings()
         {
             var progress = new BackgroundProgress();

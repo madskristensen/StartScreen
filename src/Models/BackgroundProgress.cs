@@ -7,6 +7,7 @@ namespace StartScreen.Models
     {
         private readonly object _sync = new object();
         private readonly List<Operation> _operations = new List<Operation>();
+        private long _stepSequence;
 
         internal event EventHandler Changed;
 
@@ -21,6 +22,16 @@ namespace StartScreen.Models
         }
 
         internal bool IsBusy => State.Busy;
+        internal string CurrentStep
+        {
+            get
+            {
+                lock (_sync)
+                    return _operations.Where(operation => !operation.Finished)
+                        .OrderByDescending(operation => operation.StepSequence).FirstOrDefault()?.Step;
+            }
+        }
+
         internal double PercentComplete
         {
             get
@@ -39,16 +50,18 @@ namespace StartScreen.Models
             }
         }
 
-        internal Operation Start(int total = 1)
+        internal Operation Start(int total = 1, string step = "Updating...")
         {
             if (total < 1)
                 throw new ArgumentOutOfRangeException(nameof(total));
+            if (string.IsNullOrWhiteSpace(step))
+                throw new ArgumentException("A progress step is required.", nameof(step));
             Operation operation;
             lock (_sync)
             {
                 if (_operations.All(item => item.Finished))
                     _operations.Clear();
-                operation = new Operation(this, total);
+                operation = new Operation(this, total) { Step = step, StepSequence = ++_stepSequence };
                 _operations.Add(operation);
             }
             Changed?.Invoke(this, EventArgs.Empty);
@@ -68,12 +81,14 @@ namespace StartScreen.Models
             Changed?.Invoke(this, EventArgs.Empty);
         }
 
-        internal sealed class Operation : IProgress<(int Completed, int Total)>, IDisposable
+        internal sealed class Operation : IProgress<(int Completed, int Total)>, IProgress<string>, IDisposable
         {
             private readonly BackgroundProgress _owner;
             internal int Completed;
             internal int Total;
             internal bool Finished;
+            internal string Step;
+            internal long StepSequence;
             private bool _hasReported;
 
             internal Operation(BackgroundProgress owner, int total)
@@ -93,6 +108,20 @@ namespace StartScreen.Models
                     _hasReported = true;
                     Total = Math.Max(Total, value.Total);
                     Completed = Math.Max(Completed, value.Completed);
+                }
+                _owner.Changed?.Invoke(_owner, EventArgs.Empty);
+            }
+
+            public void Report(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                    throw new ArgumentException("A progress step is required.", nameof(value));
+                lock (_owner._sync)
+                {
+                    if (Finished || Step == value)
+                        return;
+                    Step = value;
+                    StepSequence = ++_owner._stepSequence;
                 }
                 _owner.Changed?.Invoke(_owner, EventArgs.Empty);
             }
