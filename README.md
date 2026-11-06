@@ -492,7 +492,7 @@ local metadata. GitHub cloud-agent tasks use the configured GitHub account when 
 provider is enabled. These sources refresh independently once a minute while the page is visible.
 
 PRs open in Visual Studio's native review experience when the installed Git
-tooling supports it. **Open in Browser** remains available from the PR context
+tooling supports it. **Review on the web** remains available from the PR context
 menu; unsupported providers use the browser. Native review failures are reported
 instead of silently opening a browser. Git tooling is loaded on demand, so review
 can be opened from the Start Screen before a repository is active.
@@ -500,13 +500,13 @@ Opening a review does not silently check out a branch.
 
 Right-click an activity card (or press Shift+F10 while it is focused) for native
 Visual Studio context-menu actions. PR cards use **Review in Visual Studio** and
-**Review Online** instead of inline action icons. Open GitHub.com PRs also offer
+**Review on the web** instead of inline action icons. Open GitHub.com PRs also offer
 **Request Copilot Review**: after confirmation, this requests a review posted on
 GitHub using the selected Dev Hub GitHub account. The account needs pull-request
 write access and Copilot code review availability; the request may consume Copilot
 usage. A successful request is not a completed review. Azure DevOps Services has
 Copilot code review in public preview when enabled by administrators; use
-**Review Online** and its Copilot Request action there. Direct API requests from
+**Review on the web** and its Copilot Request action there. Direct API requests from
 Start Screen are currently supported only for GitHub.com.
 
 Issue and task cards offer **Fix with Copilot**, which opens a new local VS chat

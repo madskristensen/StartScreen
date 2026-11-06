@@ -111,6 +111,7 @@ namespace StartScreen.Test
             Assert.IsTrue(fix.Visible);
             Assert.IsTrue(fix.Enabled);
             Assert.AreEqual("Fix with Copilot", fix.Text);
+            Assert.AreEqual("Open in Browser", Command(PackageIds.DevHubOpenInBrowser).Text);
             Assert.IsFalse(Command(PackageIds.DevHubRequestCopilotReview).Visible);
 
             SetMenu(Build("failure"));
@@ -124,7 +125,7 @@ namespace StartScreen.Test
             Assert.IsFalse(fix.Enabled);
             Assert.IsTrue(Command(PackageIds.DevHubRequestCopilotReview).Visible);
             Assert.IsTrue(Command(PackageIds.DevHubReviewInVisualStudio).Visible);
-            Assert.AreEqual("Review Online", Command(PackageIds.DevHubOpenInBrowser).Text);
+            Assert.AreEqual("Review on the web", Command(PackageIds.DevHubOpenInBrowser).Text);
 
             DevHubWorkItemMenu.Current = null;
             DevHubWorkItemMenu.Update(fix, PackageIds.DevHubFixWithCopilot);

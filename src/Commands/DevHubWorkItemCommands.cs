@@ -30,7 +30,7 @@ namespace StartScreen.Commands
             if (id == PackageIds.DevHubScopeToRepo)
                 command.Text = "Scope to " + target?.Item.RepoIdentifier?.Repo;
             if (id == PackageIds.DevHubOpenInBrowser)
-                command.Text = target?.Item.IsPullRequest == true ? "Review Online" : "Open in Browser";
+                command.Text = target?.Item.IsPullRequest == true ? "Review on the web" : "Open in Browser";
             if (id == PackageIds.DevHubFixWithCopilot)
                 command.Text = target?.Item.IsFailedBuild == true ? "Investigate with Copilot" : "Fix with Copilot";
         }

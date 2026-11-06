@@ -58,7 +58,7 @@ namespace StartScreen.Services
             if (response.StatusCode != HttpStatusCode.Created)
                 throw new HttpRequestException($"GitHub did not accept the Copilot review request (HTTP {(int)response.StatusCode}). "
                     + "Check your sign-in, pull request write permissions, and Copilot code review availability. "
-                    + "Use Review Online to inspect or request the review there.");
+                    + "Use Review on the web to inspect or request the review there.");
         }
     }
 }
