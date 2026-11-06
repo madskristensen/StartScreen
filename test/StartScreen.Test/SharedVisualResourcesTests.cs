@@ -27,7 +27,7 @@ namespace StartScreen.Test
 
             Assert.HasCount(1, merged.Elements());
             Assert.AreEqual(source, merged.Elements().Single().Attribute("Source")?.Value);
-            Assert.AreEqual("{StaticResource StartScreen.Root}", document.Root.Attribute("Style")?.Value);
+            Assert.AreEqual("{DynamicResource StartScreen.Root}", document.Root.Attribute("Style")?.Value);
             Assert.IsFalse(document.Root.DescendantsAndSelf().Attributes().Any(attribute => attribute.Name.LocalName == "FontSize"));
             Assert.IsFalse(document.Descendants(_presentation + "Setter").Any(element => element.Attribute("Property")?.Value == "FontSize"));
             Assert.IsFalse(document.Root.DescendantsAndSelf().Attributes().Any(attribute => attribute.Name.LocalName == "FontFamily"));
@@ -43,6 +43,24 @@ namespace StartScreen.Test
             Assert.AreEqual("Metadata", SharedXamlReader.Setter("StartScreen.Metadata", "local:Typography.Role"));
             Assert.AreEqual("Heading", SharedXamlReader.Setter("StartScreen.Heading", "local:Typography.Role"));
             Assert.AreEqual("Metadata", SharedXamlReader.Setter("StartScreen.HeaderCount", "local:Typography.Role"));
+        }
+
+        [STATestMethod]
+        [DataRow("StartScreenControl.xaml")]
+        [DataRow("DevHubPanel.xaml")]
+        [DataRow("MruItemControl.xaml")]
+        [DataRow("NewsItemControl.xaml")]
+        [DataRow("YouTubeVideoControl.xaml")]
+        public void RootStyle_LoadsWhenResourcesAreDeclaredOnTheControlItself(string name)
+        {
+            var styleReference = Read(name).Root!.Attribute("Style")!.Value;
+            var control = (UserControl)SharedXamlReader.Parse(new XElement(_presentation + "UserControl",
+                new XAttribute("Style", styleReference), new XElement(_presentation + "TextBlock", "Content")).ToString(), localResources: true);
+            control.Measure(new Size(400, 200));
+
+            Assert.IsNotNull(control.Style);
+            Assert.AreSame(control.Resources["StartScreen.Root"], control.Style);
+            Assert.AreEqual(TypographyRole.Body, StartScreen.ToolWindows.Typography.GetRole(control));
         }
 
         [STATestMethod]

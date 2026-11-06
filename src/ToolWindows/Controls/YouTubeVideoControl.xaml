@@ -6,7 +6,7 @@
              xmlns:toolkit="clr-namespace:Community.VisualStudio.Toolkit;assembly=Community.VisualStudio.Toolkit"
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              toolkit:Themes.UseVsTheme="True"
-             Style="{StaticResource StartScreen.Root}"
+             Style="{DynamicResource StartScreen.Root}"
              Background="Transparent"
              Focusable="False"
              UseLayoutRounding="True"

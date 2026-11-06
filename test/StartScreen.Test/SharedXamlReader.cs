@@ -17,7 +17,7 @@ namespace StartScreen.Test
             return XDocument.Load(stream!);
         }
 
-        public static object Parse(string xaml)
+        public static object Parse(string xaml, bool localResources = false)
         {
             var resources = ReadResources().Root!;
             var target = XElement.Parse(xaml);
@@ -28,6 +28,13 @@ namespace StartScreen.Test
                 new XAttribute(XNamespace.Xmlns + "local", TypographyNamespace),
                 new XElement(_presentation + "ContentControl.Resources", resources),
                 new XElement(_presentation + "ContentControl.Content", target));
+            if (localResources)
+            {
+                target.AddFirst(new XElement(_presentation + (target.Name.LocalName + ".Resources"), resources));
+                wrapper = target;
+                wrapper.Add(new XAttribute(XNamespace.Xmlns + "x", _xaml.NamespaceName));
+                wrapper.Add(new XAttribute(XNamespace.Xmlns + "local", TypographyNamespace));
+            }
             foreach (var attribute in wrapper.DescendantsAndSelf().Attributes().ToArray())
             {
                 if (attribute.IsNamespaceDeclaration && attribute.Value == "clr-namespace:StartScreen.ToolWindows")
@@ -46,6 +53,8 @@ namespace StartScreen.Test
             }
 
             // Only host-owned resources are substituted; all shared styles and their references are parsed by WPF.
+            if (localResources)
+                return XamlReader.Parse(wrapper.ToString());
             var host = (ContentControl)XamlReader.Parse(wrapper.ToString());
             var result = host.Content;
             host.Content = null;

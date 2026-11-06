@@ -12,7 +12,7 @@
              xmlns:platformui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:shell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              toolkit:Themes.UseVsTheme="True"
-             Style="{StaticResource StartScreen.Root}"
+             Style="{DynamicResource StartScreen.Root}"
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="1400"
              UseLayoutRounding="True"

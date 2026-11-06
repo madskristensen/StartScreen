@@ -12,7 +12,7 @@
              xmlns:helpers="clr-namespace:StartScreen.Helpers"
              xmlns:typography="clr-namespace:StartScreen.ToolWindows"
              toolkit:Themes.UseVsTheme="True"
-             Style="{StaticResource StartScreen.Root}"
+             Style="{DynamicResource StartScreen.Root}"
              Background="Transparent"
              Focusable="True"
              IsTabStop="True"
