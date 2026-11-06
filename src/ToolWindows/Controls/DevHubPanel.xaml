@@ -54,37 +54,8 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="PullRequestActionButtonStyle" TargetType="Button" BasedOn="{StaticResource StartScreen.IconActionButton}">
-            <Setter Property="Visibility" Value="Hidden"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
-                    <Setter Property="Visibility" Value="Visible"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
-                    <Setter Property="Visibility" Value="Visible"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-        <DataTemplate x:Key="PullRequestActionsTemplate">
-            <StackPanel Orientation="Horizontal">
-                <Button Click="OpenPullRequestInBrowser_Click" Style="{StaticResource PullRequestActionButtonStyle}"
-                        Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
-                        ToolTip="Open in browser" AutomationProperties.Name="Open pull request in browser"
-                        AutomationProperties.HelpText="{Binding Title}">
-                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Web}" Width="16" Height="16"/>
-                </Button>
-                <Button Click="OpenPullRequestInVisualStudio_Click" Style="{StaticResource PullRequestActionButtonStyle}"
-                        Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0" Margin="4 0 0 0"
-                        ToolTip="Open in Visual Studio" AutomationProperties.Name="Open pull request in Visual Studio"
-                        AutomationProperties.HelpText="{Binding Title}">
-                    <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.PullRequest}" Width="16" Height="16"/>
-                </Button>
-            </StackPanel>
-        </DataTemplate>
         <DataTemplate x:Key="PullRequestMetadataTemplate">
             <DockPanel>
-                <ContentControl DockPanel.Dock="Right" Content="{Binding}" Focusable="False" Margin="8 0 0 0"
-                                ContentTemplate="{StaticResource PullRequestActionsTemplate}"/>
                 <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Style="{StaticResource StartScreen.StatusBadge}"
                             BorderBrush="{Binding Foreground, ElementName=PullRequestStatus}">
@@ -128,19 +99,9 @@
         <DataTemplate x:Key="WorkItemTemplate">
             <Border x:Name="WorkItemBorder" Style="{StaticResource StartScreen.CardSurface}" Margin="0 0 0 4" Focusable="True"
                     Cursor="Hand" AutomationProperties.Name="{Binding Title}" AutomationProperties.HelpText="{Binding ActionText}"
-                    MouseUp="WorkItem_MouseUp" Loaded="DevHubItemBorder_Loaded"
+                    MouseUp="WorkItem_MouseUp"
                     PreviewMouseRightButtonDown="CopilotItem_RightButtonDown" PreviewMouseRightButtonUp="CopilotItem_RightButtonUp"
                     PreviewKeyDown="CopilotItem_PreviewKeyDown">
-                <Border.ContextMenu>
-                    <ContextMenu Opened="DevHubContextMenu_Opened">
-                        <MenuItem Header="Open in Browser" Click="OpenInBrowserMenuItem_Click" InputGestureText="Enter"/>
-                        <Separator/>
-                        <MenuItem Header="Copy URL" Click="CopyUrlMenuItem_Click" InputGestureText="Ctrl+C"/>
-                        <Separator/>
-                        <MenuItem Header="{Binding RepoIdentifier.Repo}" HeaderStringFormat="Scope to {0}" Click="ScopeToRepoMenuItem_Click"/>
-                        <MenuItem Header="Show all repositories" Click="ClearFilter_Click"/>
-                    </ContextMenu>
-                </Border.ContextMenu>
                 <StackPanel>
                     <TextBlock Text="{Binding DisplayTitle}">
                         <TextBlock.Style>
@@ -257,11 +218,6 @@
                     </ItemsControl>
                 </StackPanel>
             </Border>
-            <DataTemplate.Triggers>
-                <DataTrigger Binding="{Binding IsCopilot}" Value="True">
-                    <Setter TargetName="WorkItemBorder" Property="ContextMenu" Value="{x:Null}"/>
-                </DataTrigger>
-            </DataTemplate.Triggers>
         </DataTemplate>
         <Style x:Key="ActivityFilterStyle" TargetType="RadioButton">
             <Setter Property="Margin" Value="0 0 16 6"/>

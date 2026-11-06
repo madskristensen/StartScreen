@@ -539,6 +539,15 @@ namespace StartScreen.Test
     {
         public FakeCollection Sessions { get; } = new();
         public FakeValue<bool> SessionsReady { get; } = new(true);
+        public List<FakeSession> Created { get; } = [];
+        public FakeCreateOptions? CreateOptions { get; private set; }
+        public FakeSession NextSession { get; set; } = new();
+        public Task<IBackendSession> CreateNewSessionAsync(FakeCreateOptions options)
+        {
+            CreateOptions = options;
+            Created.Add(NextSession);
+            return Task.FromResult<IBackendSession>(NextSession);
+        }
     }
 
     public sealed class FakeSession : IBackendSession, IDisposable
@@ -553,6 +562,42 @@ namespace StartScreen.Test
         public FakeCollection ChatEvents { get; } = new();
         public int DisposeCount { get; private set; }
         public void Dispose() => DisposeCount++;
+        public FakeChatSendRequest? Request { get; private set; }
+        public Func<FakeChatSendRequest, Task<FakeChatResponse>> RespondAsync { get; set; } = _ => Task.FromResult(new FakeChatResponse());
+        public Task<FakeChatResponse> SendAsync(FakeChatSendRequest request, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Request = request;
+            return RespondAsync(request);
+        }
+    }
+
+    public sealed class FakeCreateOptions
+    {
+        public FakeFeatureId Feature { get; set; }
+        public bool IsEphemeral { get; set; }
+    }
+
+    public readonly record struct FakeFeatureId(string Value);
+    public readonly record struct FakeCorrelationId(Guid Guid);
+    public sealed class FakeChatAttachment { }
+    public sealed class FakeChatOptions { }
+    public sealed class FakeChatSendRequest
+    {
+        public string? Prompt { get; set; }
+        public FakeFeatureId? Feature { get; set; }
+        public FakeCorrelationId CorrelationId { get; set; }
+        public IReadOnlyList<FakeChatAttachment>? Attachments { get; set; }
+        public FakeChatOptions? Options { get; set; }
+    }
+    public sealed class FakeChatResponse
+    {
+        public string Status { get; set; } = "Success";
+        public FakeChatError? Error { get; set; }
+    }
+    public sealed class FakeChatError
+    {
+        public string? Message { get; set; }
     }
 
     public sealed class FakeSessionId
@@ -590,6 +635,12 @@ namespace StartScreen.Test
     {
         public IBackendSession? OpenedSession { get; private set; }
         public bool UserInitiated { get; private set; }
+        public bool IsReady { get; set; } = true;
+        public Task<FakeSessionId?> WaitForSessionReadyAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(IsReady ? OpenedSession?.SessionId : null);
+        }
         public void OpenSession(IBackendSession session, bool userInitiated = false)
         {
             OpenedSession = session;
@@ -604,8 +655,15 @@ namespace Microsoft.VisualStudio.Copilot.Harness
     {
         ICopilotBackend GetDefault();
     }
-    public interface ICopilotBackend { }
-    public interface IBackendSession { }
+    public interface ICopilotBackend
+    {
+        Task<IBackendSession> CreateNewSessionAsync(StartScreen.Test.FakeCreateOptions options);
+    }
+    public interface IBackendSession
+    {
+        StartScreen.Test.FakeSessionId SessionId { get; }
+        Task<StartScreen.Test.FakeChatResponse> SendAsync(StartScreen.Test.FakeChatSendRequest request, CancellationToken cancellationToken);
+    }
     public interface IBackendChatConfirmation { }
     public interface IBackendChatUserInput { }
     public interface IBackendChatSubagentCall { }
@@ -616,5 +674,6 @@ namespace Microsoft.VisualStudio.Copilot.UI.HarnessUi
     public interface IHarnessSessionNavigator
     {
         void OpenSession(IBackendSession session, bool userInitiated = false);
+        Task<StartScreen.Test.FakeSessionId?> WaitForSessionReadyAsync(CancellationToken cancellationToken);
     }
 }

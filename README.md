@@ -492,6 +492,27 @@ instead of silently opening a browser. Git tooling is loaded on demand, so revie
 can be opened from the Start Screen before a repository is active.
 Opening a review does not silently check out a branch.
 
+Right-click an activity card (or press Shift+F10 while it is focused) for native
+Visual Studio context-menu actions. PR cards use **Review in Visual Studio** and
+**Review Online** instead of inline action icons. Open GitHub.com PRs also offer
+**Request Copilot Review**: after confirmation, this requests a review posted on
+GitHub using the selected Dev Hub GitHub account. The account needs pull-request
+write access and Copilot code review availability; the request may consume Copilot
+usage. A successful request is not a completed review. Azure DevOps Services has
+Copilot code review in public preview when enabled by administrators; use
+**Review Online** and its Copilot Request action there. Direct API requests from
+Start Screen are currently supported only for GitHub.com.
+
+Issue and task cards offer **Fix with Copilot**, which opens a new local VS chat
+and sends a prompt beginning with `Fix <issue URL>`. Failed build cards offer
+**Investigate with Copilot**, including the build URL, branch and failure summary,
+and a failure-log link when supplied by the provider. These actions use the current
+VS workspace and ask Copilot to verify the repository before making changes.
+They do not clone repositories, switch branches, or grant tool permissions.
+Access to issue details and private build logs depends on the tools and accounts
+available to Copilot. The optional, version-sensitive VS harness contracts must
+be installed; unsupported contracts and failed requests are reported explicitly.
+
 An experimental, optional Copilot integration observes the installed VS harness
 through its in-process MEF contracts. My work includes running and recent
 conversations; its Attention feed includes sessions with unresolved

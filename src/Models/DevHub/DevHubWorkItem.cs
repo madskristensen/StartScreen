@@ -30,6 +30,8 @@ namespace StartScreen.Models.DevHub
         public DevHubWorkItemKind Kind => IsCopilot ? DevHubWorkItemKind.Copilot
             : IsPullRequest ? DevHubWorkItemKind.PullRequest : IsBuild ? DevHubWorkItemKind.Build : DevHubWorkItemKind.Issue;
         public bool IsBuild { get; private set; }
+        public bool IsFailedBuild { get; private set; }
+        public string FailureUrl { get; private set; }
         public bool IsRepositoryItem => !IsCopilot;
         public string CopilotStatus { get; private set; }
         public string CopilotStatusDetails { get; private set; }
@@ -179,6 +181,8 @@ namespace StartScreen.Models.DevHub
                 RepoIdentifier = build.RepoIdentifier,
                 WebUrl = build.WebUrl,
                 IsBuild = true,
+                IsFailedBuild = string.Equals(build.Status, "failure", StringComparison.OrdinalIgnoreCase),
+                FailureUrl = build.FailureUrl,
                 Section = "Builds",
                 UpdatedAt = build.Timestamp,
             };

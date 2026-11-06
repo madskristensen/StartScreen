@@ -442,9 +442,8 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
-        private void ScopeToRepoMenuItem_Click(object sender, RoutedEventArgs e)
+        private void ScopeToRepo(RemoteRepoIdentifier repo)
         {
-            RemoteRepoIdentifier repo = GetRepoIdentifierFromDataContext(GetContextMenuItemDataContext(sender));
             if (repo == null)
             {
                 return;
@@ -460,41 +459,6 @@ namespace StartScreen.ToolWindows.Controls
             }
 
             ScopeToRepoRequested?.Invoke(this, repo);
-        }
-
-        // Shows "Scope to <repo>" when unscoped and "Show all repositories" when scoped.
-        private void DevHubContextMenu_Opened(object sender, RoutedEventArgs e)
-        {
-            if (sender is ContextMenu menu && menu.Items.Count >= 6
-                && menu.Items[4] is MenuItem scopeTo
-                && menu.Items[5] is MenuItem showAll)
-            {
-                bool scoped = _scopedRepo != null;
-                scopeTo.Visibility = scoped ? Visibility.Collapsed : Visibility.Visible;
-                showAll.Visibility = scoped ? Visibility.Visible : Visibility.Collapsed;
-            }
-        }
-
-        // Themes each item's context menu as soon as the item is realized, so a plain
-        // right-click shows the VS-themed menu even before any keyboard navigation.
-        private void DevHubItemBorder_Loaded(object sender, RoutedEventArgs e)
-        {
-            if (sender is Border border)
-            {
-                ApplyContextMenuTheme(border);
-            }
-        }
-
-        private static RemoteRepoIdentifier GetRepoIdentifierFromDataContext(object dataContext)
-        {
-            switch (dataContext)
-            {
-                case DevHubPullRequest pr: return pr.RepoIdentifier;
-                case DevHubIssue issue: return issue.RepoIdentifier;
-                case DevHubCiRun ci: return ci.RepoIdentifier;
-                case DevHubWorkItem work: return work.RepoIdentifier;
-                default: return null;
-            }
         }
 
         public void ToggleSettings()
@@ -1315,31 +1279,6 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
-        private void OpenInBrowserMenuItem_Click(object sender, RoutedEventArgs e)
-        {
-            var url = GetWebUrlFromDataContext(GetContextMenuItemDataContext(sender));
-            if (!string.IsNullOrEmpty(url))
-            {
-                OpenUrl(url);
-            }
-        }
-
-        private void CopyUrlMenuItem_Click(object sender, RoutedEventArgs e)
-        {
-            var url = GetWebUrlFromDataContext(GetContextMenuItemDataContext(sender));
-            if (!string.IsNullOrEmpty(url))
-            {
-                Clipboard.SetText(url);
-            }
-        }
-
-        private static object GetContextMenuItemDataContext(object sender)
-        {
-            if (sender is MenuItem mi && mi.Parent is ContextMenu cm && cm.PlacementTarget is FrameworkElement fe)
-                return fe.DataContext;
-            return null;
-        }
-
         private bool FocusActiveBladeHeader()
         {
             return (_activeWorkView == DevHubDefaultTab.Incoming ? IncomingHeading : WorkHeadingLine).Focus();
@@ -1544,8 +1483,6 @@ namespace StartScreen.ToolWindows.Controls
 
             _cachedBordersList = list;
             _cachedBorders = CollectFocusableBorders(list);
-            foreach (var border in _cachedBorders)
-                ApplyContextMenuTheme(border);
             return _cachedBorders;
         }
 
@@ -1582,25 +1519,6 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
-        private static void ApplyContextMenuTheme(Border border)
-        {
-            ContextMenu menu = border.ContextMenu;
-            if (menu == null || menu.Tag as string == "themed")
-                return;
-
-            ThemedContextMenuHelper.ApplyVsTheme(menu);
-            if (menu.Items.Count >= 3)
-            {
-                ((MenuItem)menu.Items[0]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.BrowserLink);
-                ((MenuItem)menu.Items[2]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.Copy);
-            }
-            if (menu.Items.Count >= 6)
-            {
-                ((MenuItem)menu.Items[4]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.Filter);
-                ((MenuItem)menu.Items[5]).Icon = ThemedContextMenuHelper.CreateMenuIcon(Microsoft.VisualStudio.Imaging.KnownMonikers.DeleteFilter);
-            }
-            menu.Tag = "themed";
-        }
     }
 
     /// <summary>

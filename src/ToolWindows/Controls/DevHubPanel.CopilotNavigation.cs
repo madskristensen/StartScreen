@@ -17,6 +17,8 @@ namespace StartScreen.ToolWindows.Controls
 {
     public partial class DevHubPanel
     {
+        private DevHubWorkItem _rightClickedWorkItem;
+
         private async Task OpenCopilotSessionAsync(CopilotActivitySession session, CopilotSessionOrigin destination)
         {
             try
@@ -81,7 +83,8 @@ namespace StartScreen.ToolWindows.Controls
 
         private void CopilotItem_RightButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (sender is FrameworkElement element && element.DataContext is DevHubWorkItem { IsCopilot: true })
+            _rightClickedWorkItem = (sender as FrameworkElement)?.DataContext as DevHubWorkItem;
+            if (sender is FrameworkElement element && _rightClickedWorkItem != null)
             {
                 element.Focus();
                 e.Handled = true;
@@ -90,20 +93,22 @@ namespace StartScreen.ToolWindows.Controls
 
         private void CopilotItem_RightButtonUp(object sender, MouseButtonEventArgs e)
         {
-            if (sender is FrameworkElement element && element.DataContext is DevHubWorkItem { IsCopilot: true } item)
+            if (sender is FrameworkElement element && element.DataContext is DevHubWorkItem item
+                && ReferenceEquals(item, _rightClickedWorkItem))
             {
+                _rightClickedWorkItem = null;
                 e.Handled = true;
-                ShowCopilotMenuAsync(item.CopilotSession, element.PointToScreen(e.GetPosition(element))).FileAndForget(nameof(DevHubPanel));
+                ShowActivityMenuAsync(item, element.PointToScreen(e.GetPosition(element))).FileAndForget(nameof(DevHubPanel));
             }
         }
 
         private void CopilotItem_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if ((e.Key == Key.Apps || e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift)
-                && sender is FrameworkElement element && element.DataContext is DevHubWorkItem { IsCopilot: true } item)
+                && sender is FrameworkElement element && element.DataContext is DevHubWorkItem item)
             {
                 e.Handled = true;
-                ShowCopilotMenuAsync(item.CopilotSession, element.PointToScreen(new Point(0, element.ActualHeight))).FileAndForget(nameof(DevHubPanel));
+                ShowActivityMenuAsync(item, element.PointToScreen(new Point(0, element.ActualHeight))).FileAndForget(nameof(DevHubPanel));
             }
         }
 

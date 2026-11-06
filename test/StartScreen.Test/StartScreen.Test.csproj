@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\..\src\VSCommandTable.vsct" LogicalName="VSCommandTable.vsct" />
     <EmbeddedResource Include="..\..\src\ToolWindows\StartScreenControl.xaml" LogicalName="StartScreenControl.xaml" />
     <EmbeddedResource Include="..\..\src\ToolWindows\StartScreenResources.xaml" LogicalName="StartScreenResources.xaml" />
     <EmbeddedResource Include="..\..\src\ToolWindows\Controls\DevHubPanel.xaml" LogicalName="DevHubPanel.xaml" />

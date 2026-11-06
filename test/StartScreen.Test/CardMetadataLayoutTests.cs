@@ -130,7 +130,9 @@ namespace StartScreen.Test
             Assert.IsEmpty(card.Elements(p + "Border.ToolTip"));
             var title = card.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding DisplayTitle}");
             Assert.AreEqual("{Binding Title}", title.Descendants(p + "Setter").Single(element => element.Attribute("Property")?.Value == "ToolTip").Attribute("Value")?.Value);
-            Assert.IsTrue(document.Descendants(p + "Button").Any(element => element.Attribute("ToolTip")?.Value == "Open in Visual Studio"));
+            var date = card.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding ActivityDateText}");
+            Assert.AreEqual("{Binding ActivityDateToolTip}", date.Attribute("ToolTip")?.Value);
+            Assert.IsNotNull(card.Attribute("PreviewKeyDown"));
 
             var pr = DevHubWorkItem.GetMyWork([new DevHubPullRequest
             {

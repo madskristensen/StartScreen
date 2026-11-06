@@ -18,6 +18,9 @@
           <CommandName>Copilot Session</CommandName>
         </Strings>
       </Menu>
+      <Menu guid="StartScreen" id="DevHubWorkItemMenu" type="Context">
+        <Strings><CommandName>Dev Hub Activity</CommandName></Strings>
+      </Menu>
     </Menus>
 
     <Groups>
@@ -30,11 +33,71 @@
       <Group guid="StartScreen" id="CopilotSessionGroup" priority="0x0100">
         <Parent guid="StartScreen" id="CopilotSessionMenu"/>
       </Group>
+      <Group guid="StartScreen" id="DevHubWorkItemActions" priority="0x0100">
+        <Parent guid="StartScreen" id="DevHubWorkItemMenu"/>
+      </Group>
+      <Group guid="StartScreen" id="DevHubWorkItemCopy" priority="0x0200">
+        <Parent guid="StartScreen" id="DevHubWorkItemMenu"/>
+      </Group>
+      <Group guid="StartScreen" id="DevHubWorkItemScope" priority="0x0300">
+        <Parent guid="StartScreen" id="DevHubWorkItemMenu"/>
+      </Group>
     </Groups>
 
     <!--This section defines the elements the user can interact with, like a menu command or a button
         or combo box in a toolbar. -->
     <Buttons>
+      <Button guid="StartScreen" id="DevHubOpenInBrowser" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemActions"/>
+        <Icon guid="ImageCatalogGuid" id="BrowserLink"/>
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings><ButtonText>Open in Browser</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubReviewInVisualStudio" priority="0x0050" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemActions"/>
+        <Icon guid="ImageCatalogGuid" id="PullRequest"/>
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Review in Visual Studio</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubRequestCopilotReview" priority="0x0300" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemActions"/>
+        <Icon guid="ImageCatalogGuid" id="GitHubCopilot"/>
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Request Copilot Review</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubFixWithCopilot" priority="0x0200" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemActions"/>
+        <Icon guid="ImageCatalogGuid" id="GitHubCopilot"/>
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings><ButtonText>Fix with Copilot</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubCopyUrl" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemCopy"/>
+        <Icon guid="ImageCatalogGuid" id="Copy"/>
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <Strings><ButtonText>Copy URL</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubScopeToRepo" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemScope"/>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings><ButtonText>Scope to repository</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubShowAllRepos" priority="0x0200" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemScope"/>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Show all repositories</ButtonText></Strings>
+      </Button>
       <Button guid="StartScreen" id="OpenCopilotInVisualStudio" priority="0x0100" type="Button">
         <Parent guid="StartScreen" id="CopilotSessionGroup"/>
         <CommandFlag>DynamicVisibility</CommandFlag>
@@ -109,6 +172,17 @@
       <IDSymbol name="OpenCopilotInCode" value="0x0111" />
       <IDSymbol name="OpenCopilotInCli" value="0x0112" />
       <IDSymbol name="OpenCopilotOnGitHub" value="0x0113" />
+      <IDSymbol name="DevHubWorkItemMenu" value="0x1002" />
+      <IDSymbol name="DevHubWorkItemActions" value="0x0004" />
+      <IDSymbol name="DevHubWorkItemCopy" value="0x0005" />
+      <IDSymbol name="DevHubWorkItemScope" value="0x0006" />
+      <IDSymbol name="DevHubOpenInBrowser" value="0x0120" />
+      <IDSymbol name="DevHubFixWithCopilot" value="0x0121" />
+      <IDSymbol name="DevHubCopyUrl" value="0x0122" />
+      <IDSymbol name="DevHubScopeToRepo" value="0x0123" />
+      <IDSymbol name="DevHubShowAllRepos" value="0x0124" />
+      <IDSymbol name="DevHubReviewInVisualStudio" value="0x0125" />
+      <IDSymbol name="DevHubRequestCopilotReview" value="0x0126" />
     </GuidSymbol>
     
     <GuidSymbol name="autoload" value="{4add43ae-71e4-4eec-b622-2e8ed3452025}" />

@@ -38,5 +38,16 @@ namespace StartScreen
         public const int OpenCopilotInCode = 0x0111;
         public const int OpenCopilotInCli = 0x0112;
         public const int OpenCopilotOnGitHub = 0x0113;
+        public const int DevHubWorkItemMenu = 0x1002;
+        public const int DevHubWorkItemActions = 0x0004;
+        public const int DevHubWorkItemCopy = 0x0005;
+        public const int DevHubWorkItemScope = 0x0006;
+        public const int DevHubOpenInBrowser = 0x0120;
+        public const int DevHubFixWithCopilot = 0x0121;
+        public const int DevHubCopyUrl = 0x0122;
+        public const int DevHubScopeToRepo = 0x0123;
+        public const int DevHubShowAllRepos = 0x0124;
+        public const int DevHubReviewInVisualStudio = 0x0125;
+        public const int DevHubRequestCopilotReview = 0x0126;
     }
 }

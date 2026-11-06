@@ -209,24 +209,6 @@ namespace StartScreen.ToolWindows.Controls
                 OpenUrl(item.WebUrl);
         }
 
-        private void OpenPullRequestInBrowser_Click(object sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            if (sender is FrameworkElement element)
-                OpenUrl(GetWebUrlFromDataContext(element.DataContext));
-        }
-
-        private void OpenPullRequestInVisualStudio_Click(object sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            if (sender is FrameworkElement element)
-            {
-                var url = GetWebUrlFromDataContext(element.DataContext);
-                StartScreenPackage.BackgroundTaskFactory.RunAsync(() => Services.PullRequestNavigationService.OpenAsync(url))
-                    .FileAndForget(nameof(DevHubPanel));
-            }
-        }
-
         private void UpdateActivityPresentation()
         {
             if (_myWorkPresentation == null || _incomingPresentation == null)

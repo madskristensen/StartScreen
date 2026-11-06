@@ -1101,7 +1101,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void PullRequestCards_ShareStatusBadgesAndExplicitIconActions()
+        public void PullRequestCards_ShareStatusBadgesAndUseNativeContextMenusInsteadOfIconActions()
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -1112,92 +1112,34 @@ namespace StartScreen.Test
                 .Where(element => element.Attribute("ContentTemplate")?.Value == "{StaticResource PullRequestActionsTemplate}").ToArray();
 
             Assert.HasCount(2, badges);
-            Assert.HasCount(1, actions);
+            Assert.IsEmpty(actions);
             Assert.IsTrue(badges.All(element => element.Attribute("Style")?.Value == "{StaticResource PullRequestStatusStyle}"));
             Assert.IsTrue(actions.All(element => element.Attribute("Content")?.Value == "{Binding}"));
             Assert.HasCount(1, document.Descendants(p + "Setter")
                 .Where(element => element.Attribute("Property")?.Value == "ContentTemplate"
                     && element.Attribute("Value")?.Value == "{StaticResource PullRequestMetadataTemplate}"));
-            var template = document.Descendants(p + "DataTemplate")
-                .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestActionsTemplate");
-            var buttons = template.Descendants(p + "Button").ToArray();
-            Assert.HasCount(2, buttons);
-            CollectionAssert.AreEqual(new[] { "OpenPullRequestInBrowser_Click", "OpenPullRequestInVisualStudio_Click" },
-                buttons.Select(element => element.Attribute("Click")?.Value).ToArray());
-            CollectionAssert.AreEqual(new[] { "Open pull request in browser", "Open pull request in Visual Studio" },
-                buttons.Select(element => element.Attribute("AutomationProperties.Name")?.Value).ToArray());
-            CollectionAssert.AreEqual(new[] { "{x:Static catalog:KnownMonikers.Web}", "{x:Static catalog:KnownMonikers.PullRequest}" },
-                buttons.Select(element => element.Elements().Single().Attribute("Moniker")?.Value).ToArray());
-            Assert.IsTrue(buttons.All(element => element.Attribute("ToolTip") != null
-                && element.Attribute("Style")?.Value == "{StaticResource PullRequestActionButtonStyle}"
-                && element.Attribute("MinWidth")?.Value == "24" && element.Attribute("MinHeight")?.Value == "24"));
+            Assert.IsFalse(document.Descendants(p + "DataTemplate")
+                .Any(element => element.Attribute(x + "Key")?.Value == "PullRequestActionsTemplate"));
             Assert.IsFalse(document.Descendants(p + "TextBlock").Any(element =>
                 element.Attribute("Text")?.Value == "{Binding ActionText}"));
             Assert.IsFalse(document.Descendants().Any(element => element.Attribute("Text")?.Value == "Review in VS"));
         }
 
-        [STATestMethod]
-        [DataRow(false, false, Visibility.Hidden)]
-        [DataRow(true, false, Visibility.Visible)]
-        [DataRow(false, true, Visibility.Visible)]
-        [DataRow(true, true, Visibility.Visible)]
-        public void PullRequestActions_OnlyShowForActiveCardsWithoutMovingContent(bool hovered, bool focused, Visibility expected)
+        [TestMethod]
+        public void WorkItemMenus_AreReachableByMouseAndKeyboardWithoutAWpfContextMenu()
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var definition = new XElement(document.Descendants(p + "Style")
-                .Single(element => element.Attribute(x + "Key")?.Value == "PullRequestActionButtonStyle"));
-            definition.Attribute(x + "Key")!.Remove();
-            definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
-            Assert.AreEqual("{StaticResource StartScreen.IconActionButton}", definition.Attribute("BasedOn")?.Value);
-            var shared = SharedXamlReader.ReadResources().Descendants(p + "Style")
-                .Single(element => element.Attribute(x + "Key")?.Value == "StartScreen.IconActionButton");
-            var focus = shared.Descendants(p + "Trigger").Single(element => element.Attribute("Property")?.Value == "IsKeyboardFocused");
-            Assert.AreEqual("BorderBrush", focus.Element(p + "Setter")?.Attribute("Property")?.Value);
-            Assert.IsTrue(focus.Element(p + "Setter")!.Attribute("Value")!.Value.StartsWith("{DynamicResource", StringComparison.Ordinal));
-            Assert.IsTrue(shared.Descendants(p + "Trigger").Any(element => element.Attribute("Property")?.Value == "IsMouseOver"
-                && element.Elements(p + "Setter").Any(setter => setter.Attribute("Property")?.Value == "Background")));
-            var style = (Style)XamlReader.Parse(definition.ToString());
-            var interactionTriggers = style.Triggers.OfType<DataTrigger>().ToArray();
-            CollectionAssert.AreEquivalent(new[] { "IsMouseOver", "IsKeyboardFocusWithin" },
-                interactionTriggers.Select(trigger => ((Binding)trigger.Binding).Path.Path).ToArray());
-            foreach (var trigger in interactionTriggers)
-            {
-                var binding = (Binding)trigger.Binding;
-                Assert.AreEqual(RelativeSourceMode.FindAncestor, binding.RelativeSource.Mode);
-                Assert.AreEqual(typeof(Border), binding.RelativeSource.AncestorType);
-                // Drive read-only interaction states without moving the user's mouse or stealing focus.
-                trigger.Binding = new Binding("Tag." + binding.Path.Path) { RelativeSource = binding.RelativeSource };
-            }
-            var button = new Button { Style = style, Width = 24, Height = 24 };
-            var second = new Button { Style = style, Width = 24, Height = 24, Margin = new Thickness(4, 0, 0, 0) };
-            var actions = new StackPanel { Orientation = Orientation.Horizontal };
-            actions.Children.Add(button);
-            actions.Children.Add(second);
-            var content = new StackPanel();
-            content.Children.Add(new TextBlock { Text = "Whole work item" });
-            content.Children.Add(actions);
-            var card = new Border { Child = content, Tag = new { IsMouseOver = hovered, IsKeyboardFocusWithin = focused } };
-            var inactiveButton = new Button { Style = style, Width = 24, Height = 24 };
-            var otherCard = new Border { Child = inactiveButton, Tag = new { IsMouseOver = false, IsKeyboardFocusWithin = false } };
-            var root = new StackPanel();
-            root.Children.Add(card);
-            root.Children.Add(otherCard);
-            root.Measure(new Size(400, double.PositiveInfinity));
-            root.Arrange(new Rect(0, 0, 400, root.DesiredSize.Height));
-            root.UpdateLayout();
-
-            Assert.AreEqual(expected, button.Visibility);
-            Assert.AreEqual(expected, second.Visibility);
-            Assert.AreEqual(Visibility.Hidden, inactiveButton.Visibility);
-            Assert.AreEqual(52d, actions.DesiredSize.Width, 0.01);
-            Assert.AreEqual(24d, actions.DesiredSize.Height, 0.01);
-            var border = (Border)button.Template.FindName("ActionBorder", button);
-
-            Assert.AreEqual((byte)0, ((System.Windows.Media.SolidColorBrush)border.Background).Color.A);
-            button.IsEnabled = false;
-            Assert.AreEqual((byte)0, ((System.Windows.Media.SolidColorBrush)border.Background).Color.A);
+            var template = document.Descendants(p + "DataTemplate")
+                .Single(element => element.Attribute(x + "Key")?.Value == "WorkItemTemplate");
+            var card = template.Elements(p + "Border").Single();
+            Assert.AreEqual("True", card.Attribute("Focusable")?.Value);
+            Assert.AreEqual("CopilotItem_RightButtonDown", card.Attribute("PreviewMouseRightButtonDown")?.Value);
+            Assert.AreEqual("CopilotItem_RightButtonUp", card.Attribute("PreviewMouseRightButtonUp")?.Value);
+            Assert.AreEqual("CopilotItem_PreviewKeyDown", card.Attribute("PreviewKeyDown")?.Value);
+            Assert.IsFalse(template.Descendants(p + "ContextMenu").Any());
+            Assert.IsFalse(template.Descendants(p + "Button").Any());
         }
 
         [TestMethod]
@@ -1288,9 +1230,6 @@ namespace StartScreen.Test
             var details = new XElement(document.Descendants(p + "Grid")
                 .Single(element => element.Attribute(x + "Name")?.Value == "WorkItemDetails"));
             details.Elements().Single(element => element.Attribute(x + "Name")?.Value == "CopilotActivityIcon").Remove();
-            metadata.Element(p + "ContentControl")!.ReplaceWith(new XElement(p + "Border",
-                new XAttribute("DockPanel.Dock", "Right"), new XAttribute("Width", "52"),
-                new XAttribute("Height", "24"), new XAttribute("Margin", "8 0 0 0")));
             var pillDefinition = metadata.Descendants(p + "Border").Single(element => element.Attribute("Style")?.Value == "{StaticResource StartScreen.StatusBadge}");
             Assert.IsTrue(SharedXamlReader.Setter("StartScreen.StatusBadge", "Background").StartsWith("{DynamicResource", StringComparison.Ordinal));
             pillDefinition.SetAttributeValue("Background", "{DynamicResource TestPillBackground}");
@@ -1309,7 +1248,7 @@ namespace StartScreen.Test
             root.UpdateLayout();
 
             var row = (DockPanel)root.Children[1];
-            var content = (WrapPanel)row.Children[1];
+            var content = (WrapPanel)row.Children[0];
             var pill = (Border)content.Children[0];
             var badge = (TextBlock)pill.Child;
             var author = (TextBlock)content.Children[1];
@@ -1324,7 +1263,7 @@ namespace StartScreen.Test
             {
                 Assert.AreEqual($"by {authorName}", author.Text);
                 Assert.AreEqual(author.Text, author.ToolTip);
-                Assert.IsLessThanOrEqualTo(width - 60 + 0.1, author.TranslatePoint(new Point(), root).X + author.ActualWidth);
+                Assert.IsLessThanOrEqualTo(width + 0.1, author.TranslatePoint(new Point(), root).X + author.ActualWidth);
             }
             Assert.IsNotNull(date.ToolTip);
             Assert.AreEqual(width, date.TranslatePoint(new Point(), root).X + date.ActualWidth, 0.01);
