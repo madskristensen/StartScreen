@@ -104,7 +104,10 @@ namespace StartScreen.Services.DevHub.Providers
                     DevHubCredentialHelper.InvalidateCachedCredential("bitbucket.org");
                     credential = await _acquireCredential(cancellationToken);
                     if (credential == null)
+                    {
+                        DevHubActivityRequest.Failed(unauthorized: true);
                         return null;
+                    }
 
                     response = await SendGetAsync(credential, "https://api.bitbucket.org/2.0/user", cancellationToken);
                 }
@@ -181,7 +184,7 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 // Bitbucket cross-repo PR endpoint for the authenticated user
                 var url = $"https://api.bitbucket.org/2.0/pullrequests/{Uri.EscapeDataString(username)}?state=OPEN&pagelen=30";
-                var response = await SendGetAsync(credential, url, cancellationToken);
+                using var response = await SendGetAsync(credential, url, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                     return Array.Empty<DevHubPullRequest>();
 

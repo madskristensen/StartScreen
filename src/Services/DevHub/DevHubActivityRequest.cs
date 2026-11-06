@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -13,6 +14,7 @@ namespace StartScreen.Services.DevHub
     {
         internal T Value { get; set; }
         internal DevHubActivityStatus Status { get; set; }
+        internal string Message { get; set; }
     }
 
     /// <summary>
@@ -24,8 +26,15 @@ namespace StartScreen.Services.DevHub
         private static readonly AsyncLocal<DevHubActivityRequest> _current = new AsyncLocal<DevHubActivityRequest>();
         private int _failed;
         private int _unauthorized;
+        private readonly ConcurrentDictionary<string, byte> _messages = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
 
         internal static bool HasFailure => _current.Value?._failed > 0;
+
+        internal static void Warning(string message)
+        {
+            if (!string.IsNullOrWhiteSpace(message))
+                _current.Value?._messages.TryAdd(message, 0);
+        }
 
         internal static void Failed(bool unauthorized = false)
         {
@@ -40,7 +49,11 @@ namespace StartScreen.Services.DevHub
         internal static HttpResponseMessage Observe(HttpResponseMessage response)
         {
             if (!response.IsSuccessStatusCode)
+            {
                 Failed(response.StatusCode == HttpStatusCode.Unauthorized);
+                var host = response.RequestMessage?.RequestUri?.Host;
+                Warning($"{host ?? "The activity service"} returned HTTP {(int)response.StatusCode}. Refresh to retry.");
+            }
             return response;
         }
 
@@ -53,15 +66,15 @@ namespace StartScreen.Services.DevHub
                 case DevHubActivityKind.Issues:
                     var issues = await RunAsync(() => activity != null ? activity.GetUserIssuesAsync(options, cancellationToken)
                         : provider.GetUserIssuesAsync(cancellationToken), items => items.Count > 0, cancellationToken);
-                    return new DevHubActivitySnapshot { Status = issues.Status, Issues = issues.Value?.ToList() ?? new List<DevHubIssue>() };
+                    return new DevHubActivitySnapshot { Status = issues.Status, Message = issues.Message, Issues = issues.Value?.ToList() ?? new List<DevHubIssue>() };
                 case DevHubActivityKind.PullRequests:
                     var prs = await RunAsync(() => activity != null ? activity.GetUserPullRequestsAsync(options, cancellationToken)
                         : provider.GetUserPullRequestsAsync(cancellationToken), items => items.Count > 0, cancellationToken);
-                    return new DevHubActivitySnapshot { Status = prs.Status, PullRequests = prs.Value?.ToList() ?? new List<DevHubPullRequest>() };
+                    return new DevHubActivitySnapshot { Status = prs.Status, Message = prs.Message, PullRequests = prs.Value?.ToList() ?? new List<DevHubPullRequest>() };
                 case DevHubActivityKind.CiRuns:
                     var builds = await RunAsync(() => activity != null ? activity.GetUserCiRunsAsync(options, cancellationToken)
                         : provider.GetUserCiRunsAsync(cancellationToken), items => items.Count > 0, cancellationToken);
-                    return new DevHubActivitySnapshot { Status = builds.Status, CiRuns = builds.Value?.ToList() ?? new List<DevHubCiRun>() };
+                    return new DevHubActivitySnapshot { Status = builds.Status, Message = builds.Message, CiRuns = builds.Value?.ToList() ?? new List<DevHubCiRun>() };
                 case DevHubActivityKind.Repository:
                     var result = await RunAsync(async () =>
                     {
@@ -85,7 +98,7 @@ namespace StartScreen.Services.DevHub
                         PullRequests = result.Value?.PullRequests ?? new List<DevHubPullRequest>(),
                         Issues = result.Value?.Issues ?? new List<DevHubIssue>(),
                         CiRuns = result.Value?.CiRuns ?? new List<DevHubCiRun>(),
-                        Message = result.Value?.ActivityWarning,
+                        Message = string.IsNullOrEmpty(result.Value?.ActivityWarning) ? result.Message : result.Value.ActivityWarning,
                     };
                 default:
                     throw new ArgumentOutOfRangeException(nameof(kind));
@@ -106,6 +119,8 @@ namespace StartScreen.Services.DevHub
         {
             var result = await RunAsync(fetch, items => items.Count > 0, cancellationToken);
             detail.HasCategoryOutcomes = true;
+            if (!string.IsNullOrEmpty(result.Message))
+                detail.ActivityWarning = string.Join(" ", new[] { detail.ActivityWarning, result.Message }.Where(message => !string.IsNullOrWhiteSpace(message)));
             switch (kind)
             {
                 case DevHubActivityKind.PullRequests: detail.PullRequestsStatus = result.Status; break;
@@ -148,6 +163,7 @@ namespace StartScreen.Services.DevHub
                 Status = request._failed == 0 ? DevHubActivityStatus.Success
                     : value != null && hasData(value) ? DevHubActivityStatus.Partial
                     : request._unauthorized > 0 ? DevHubActivityStatus.Unauthorized : DevHubActivityStatus.Unavailable,
+                Message = request._messages.Count == 0 ? null : string.Join(" ", request._messages.Keys.OrderBy(message => message, StringComparer.Ordinal)),
             };
         }
     }

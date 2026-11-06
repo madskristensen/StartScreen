@@ -96,7 +96,8 @@ namespace StartScreen.Services.DevHub.Providers
             return await GetAuthenticatedUserAsync(_httpClient, credential, cancellationToken);
         }
 
-        internal async Task<DevHubUser> GetAuthenticatedUserAsync(HttpClient httpClient, DevHubCredential credential, CancellationToken cancellationToken)
+        internal async Task<DevHubUser> GetAuthenticatedUserAsync(HttpClient httpClient, DevHubCredential credential,
+            CancellationToken cancellationToken, Func<CancellationToken, Task<DevHubCredential>> reacquireCredential = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (credential == null)
@@ -111,9 +112,13 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     response.Dispose();
                     DevHubCredentialHelper.InvalidateCachedCredential("github.com");
-                    credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
+                    credential = reacquireCredential != null ? await reacquireCredential(cancellationToken)
+                        : await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
                     if (credential == null)
+                    {
+                        DevHubActivityRequest.Failed(unauthorized: true);
                         return null;
+                    }
 
                     response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken, httpClient);
                 }
@@ -699,7 +704,7 @@ namespace StartScreen.Services.DevHub.Providers
                 catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
                 {
                     await ex.LogAsync();
-                    DevHubActivityRequest.Failed();
+                    DevHubActivityRequest.Warning("Pull requests loaded, but some review and check details are unavailable. Refresh to retry.");
                     cancellationToken.ThrowIfCancellationRequested();
                 }
             }

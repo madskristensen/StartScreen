@@ -24,7 +24,7 @@ namespace StartScreen.ToolWindows
     /// <summary>
     /// Main ViewModel for the Start Screen.
     /// </summary>
-    public partial class StartScreenViewModel : INotifyPropertyChanged
+    public partial class StartScreenViewModel : INotifyPropertyChanged, IDisposable
     {
         private static readonly TimeSpan _autoRefreshInterval = TimeSpan.FromHours(4);
         private bool _isRefreshingNews;
@@ -69,6 +69,7 @@ namespace StartScreen.ToolWindows
         private bool _isDeferredContentInitializing;
         private bool _isDeferredContentInitialized;
         private bool _initialMruOptionsNeedSave;
+        private bool _isDisposed;
 
         public ObservableCollection<MruItem> MruItems => _mruItems ??= new ObservableCollection<MruItem>(
             _isMruFiltered ? Enumerable.Empty<MruItem>() : VisibleMruItems.Where(item => !item.IsPinned && !item.IsFromExtendedList));
@@ -115,6 +116,7 @@ namespace StartScreen.ToolWindows
                 if (_isRefreshingNews != value)
                 {
                     _isRefreshingNews = value;
+                    NewsRefreshState.IsLoading = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
                     NotifyRefreshStatusChanged();
@@ -143,6 +145,7 @@ namespace StartScreen.ToolWindows
                 if (_isRefreshingYouTube != value)
                 {
                     _isRefreshingYouTube = value;
+                    VideoRefreshState.IsLoading = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
                     NotifyRefreshStatusChanged();
@@ -158,6 +161,7 @@ namespace StartScreen.ToolWindows
                 if (_isRefreshingDevHub != value)
                 {
                     _isRefreshingDevHub = value;
+                    DevHubRefreshState.IsLoading = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
                     NotifyRefreshStatusChanged();
@@ -165,7 +169,8 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        public bool IsRefreshingAny => _isRefreshingNews || _isRefreshingYouTube || _isRefreshingDevHub || _isRefreshingWorkspaceSignals || IsRefreshingFeedback;
+        public bool IsRefreshingAny => _isRefreshingNews || _isRefreshingYouTube || _isRefreshingDevHub
+            || _isRefreshingWorkspaceSignals || IsRefreshingFeedback || RefreshStates.Any(state => state.IsLoading);
 
         public bool IsYouTubeUnavailable
         {
@@ -224,16 +229,7 @@ namespace StartScreen.ToolWindows
 
         public string UnifiedRefreshStatus
         {
-            get
-            {
-                if (IsRefreshingAny)
-                    return "Updating...";
-
-                var statuses = new[] { LastDevHubRefreshText, LastNewsRefreshText, LastYouTubeRefreshText, LastFeedbackRefreshText };
-                return statuses.FirstOrDefault(text => text == "Updated just now")
-                    ?? statuses.FirstOrDefault(text => text?.StartsWith("Updated ", StringComparison.Ordinal) == true)
-                    ?? (statuses.Any(text => !string.IsNullOrWhiteSpace(text)) ? "Not updated yet" : string.Empty);
-            }
+            get => GetUnifiedRefreshStatus();
         }
 
         public string UnifiedRefreshDetails
@@ -249,21 +245,24 @@ namespace StartScreen.ToolWindows
                     refreshing.Add("videos");
                 if (IsRefreshingFeedback)
                     refreshing.Add("feedback");
-                if (_isRefreshingWorkspaceSignals)
+                if (_isRefreshingWorkspaceSignals || WorkspaceRefreshState.IsLoading)
                     refreshing.Add("workspace status");
 
                 if (refreshing.Count > 0)
                     return $"Refreshing {string.Join(", ", refreshing)}...";
 
                 var statuses = new List<string>();
-                if (!string.IsNullOrWhiteSpace(LastDevHubRefreshText))
-                    statuses.Add($"Dev Hub: {LastDevHubRefreshText}");
+                string devHubMessage = DevHubRefreshState.HasRefreshed ? DevHubRefreshState.Message : LastDevHubRefreshText;
+                if (!string.IsNullOrWhiteSpace(devHubMessage))
+                    statuses.Add($"Dev Hub: {devHubMessage}");
                 if (!string.IsNullOrWhiteSpace(LastNewsRefreshText))
                     statuses.Add($"News: {LastNewsRefreshText}");
                 if (!string.IsNullOrWhiteSpace(LastYouTubeRefreshText))
                     statuses.Add($"Videos: {LastYouTubeRefreshText}");
                 if (_feedbackRequested)
                     statuses.Add($"Feedback: {FeedbackStatus ?? LastFeedbackRefreshText}");
+                if (WorkspaceRefreshState.HasRefreshed)
+                    statuses.Add($"Workspace: {WorkspaceRefreshState.Message}");
                 return string.Join("; ", statuses);
             }
         }
@@ -317,6 +316,8 @@ namespace StartScreen.ToolWindows
             get => _selectedMruItem;
             set
             {
+                if (_isDisposed)
+                    return;
                 if (_selectedMruItem != value)
                 {
                     // Deselect previous
@@ -525,7 +526,7 @@ namespace StartScreen.ToolWindows
         {
             lock (_cancellationSync)
             {
-                if (_shutdownToken.IsCancellationRequested)
+                if (_isDisposed || _shutdownToken.IsCancellationRequested)
                     return;
 
                 if (_lifetimeCancellation.IsCancellationRequested)
@@ -541,6 +542,8 @@ namespace StartScreen.ToolWindows
         {
             lock (_cancellationSync)
             {
+                if (_isDisposed)
+                    return;
                 _lifetimeCancellation.Cancel();
                 _newsRefreshCancellation?.Cancel();
                 _youTubeRefreshCancellation?.Cancel();
@@ -554,6 +557,7 @@ namespace StartScreen.ToolWindows
 
             bool wasRefreshingWorkspace = _isRefreshingWorkspaceSignals;
             _isRefreshingWorkspaceSignals = false;
+            WorkspaceRefreshState.IsLoading = false;
             _workspaceSignalsGeneration++;
             if (wasRefreshingWorkspace)
             {
@@ -562,10 +566,38 @@ namespace StartScreen.ToolWindows
             }
             IsRefreshingNews = false;
             IsRefreshingYouTube = false;
+            IsRefreshingDevHub = false;
+            DevHubRefreshState.IsLoading = false;
             IsRefreshingFeedback = false;
             FeedbackTickets.Clear();
             LastFeedbackRefreshText = null;
             FeedbackStatus = "Select Feedback to load your Developer Community tickets.";
+        }
+
+        public void Dispose()
+        {
+            // Dispatcher timers are only created on the UI thread. Owners marshal cleanup there.
+            _serviceHealthRefreshTimer?.Dispatcher.VerifyAccess();
+            lock (_cancellationSync)
+            {
+                if (_isDisposed)
+                    return;
+                CancelBackgroundWork();
+                _isDisposed = true;
+                FeedStore.FeedsChanged -= OnFeedsChanged;
+                if (_selectedMruItem != null)
+                    _selectedMruItem.PropertyChanged -= SelectedMruItem_PropertyChanged;
+                _autoRefreshTimer?.Dispose();
+                _autoRefreshTimer = null;
+                if (_serviceHealthRefreshTimer != null)
+                {
+                    _serviceHealthRefreshTimer.Stop();
+                    _serviceHealthRefreshTimer.Tick -= ServiceHealthRefreshTimer_Tick;
+                    _serviceHealthRefreshTimer = null;
+                }
+                // Refresh sources remain owned by their in-flight operations until their finally blocks.
+                _lifetimeCancellation.Dispose();
+            }
         }
 
         internal void EnsureDeferredContentInitialized()
@@ -574,7 +606,7 @@ namespace StartScreen.ToolWindows
 
             lock (_cancellationSync)
             {
-                if (_lifetimeCancellation.IsCancellationRequested || _isDeferredContentInitialized || _isDeferredContentInitializing)
+                if (_isDisposed || _lifetimeCancellation.IsCancellationRequested || _isDeferredContentInitialized || _isDeferredContentInitializing)
                     return;
 
                 _isDeferredContentInitializing = true;
@@ -594,6 +626,8 @@ namespace StartScreen.ToolWindows
 
         internal void SetMruItems(IEnumerable<MruItem> mruItems)
         {
+            if (_isDisposed)
+                return;
             string selectedPath = SelectedMruItem?.Path;
             _allMruItems = new ObservableCollection<MruItem>(
                 mruItems ?? Enumerable.Empty<MruItem>());
@@ -618,7 +652,7 @@ namespace StartScreen.ToolWindows
         {
             lock (_cancellationSync)
             {
-                return _lifetimeCancellation.Token;
+                return _isDisposed ? new CancellationToken(true) : _lifetimeCancellation.Token;
             }
         }
 
@@ -629,7 +663,7 @@ namespace StartScreen.ToolWindows
             {
                 refreshCancellation?.Cancel();
                 refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                    _lifetimeCancellation.Token, cancellationToken);
+                    GetBackgroundCancellationToken(), cancellationToken);
                 return refreshCancellation;
             }
         }
@@ -652,7 +686,7 @@ namespace StartScreen.ToolWindows
 
             completedCancellation.Dispose();
 
-            if (isCurrent)
+            if (isCurrent && !_isDisposed)
             {
                 onCompleted();
             }
@@ -682,8 +716,9 @@ namespace StartScreen.ToolWindows
                         await Task.WhenAll(summaryTasks);
                     }
                 }
-                catch (OperationCanceledException) when (refreshCancellation.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (refreshCancellation.IsCancellationRequested)
                 {
+                    await ex.LogAsync();
                 }
                 finally
                 {
@@ -712,24 +747,26 @@ namespace StartScreen.ToolWindows
 
                 await TaskScheduler.Default;
 
-                FeedStore.StartWatching();
-                _autoRefreshTimer ??= new Timer(
-                    OnAutoRefreshTimerTick,
-                    null,
-                    _autoRefreshInterval,
-                    _autoRefreshInterval);
-
+                lock (_cancellationSync)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    FeedStore.StartWatching();
+                }
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
-                _autoRefreshTimer.Change(_autoRefreshInterval, _autoRefreshInterval);
 
                 lock (_cancellationSync)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _autoRefreshTimer ??= new Timer(OnAutoRefreshTimerTick, null,
+                        _autoRefreshInterval, _autoRefreshInterval);
+                    _autoRefreshTimer.Change(_autoRefreshInterval, _autoRefreshInterval);
                     _isDeferredContentInitialized = true;
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {
@@ -832,8 +869,9 @@ namespace StartScreen.ToolWindows
 
                 await Task.WhenAll(newsTask, youtubeTask, versionTask, mruTask, updateTask);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             finally
             {
@@ -866,8 +904,9 @@ namespace StartScreen.ToolWindows
                     StartMruMetadataRefresh(allItems);
                 }).FileAndForget(nameof(StartScreenViewModel));
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {
@@ -889,6 +928,7 @@ namespace StartScreen.ToolWindows
                     await UpdateNewsPostsOnUIThreadAsync(posts, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                     LastNewsRefreshText = "Showing cached content";
+                    SetRefreshState(NewsRefreshState, LastNewsRefreshText, cached: true);
                     StartupDiagnostics.Mark("news cache displayed");
                 }
 
@@ -897,13 +937,15 @@ namespace StartScreen.ToolWindows
                 var needsRefresh = !hasCachedItems || FeedService.IsCacheStale();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
+                NewsRefreshState.IsStale = hasCachedItems && needsRefresh;
                 if (needsRefresh)
                 {
                     StartBackgroundFeedRefresh();
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {
@@ -958,8 +1000,9 @@ namespace StartScreen.ToolWindows
                     UpdateNewsRefreshStatus(result);
                     StartupDiagnostics.Mark("news refresh completed");
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                 {
+                    await ex.LogAsync();
                 }
                 catch (Exception ex)
                 {
@@ -971,6 +1014,8 @@ namespace StartScreen.ToolWindows
                         LastNewsRefreshText = _allNewsPosts.Count == 0
                             ? "Feed unavailable. Use Refresh to retry."
                             : "Showing cached content - refresh failed. Use Refresh to retry.";
+                        SetRefreshState(NewsRefreshState, LastNewsRefreshText,
+                            cached: !IsNewsUnavailable, stale: true, unavailable: IsNewsUnavailable);
                     }
                 }
                 finally
@@ -979,8 +1024,9 @@ namespace StartScreen.ToolWindows
                     {
                         await minDisplay;
                     }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                     {
+                        await ex.LogAsync();
                     }
 
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -1015,6 +1061,12 @@ namespace StartScreen.ToolWindows
             {
                 LastNewsRefreshText = "Updated just now";
             }
+            SetRefreshState(NewsRefreshState, LastNewsRefreshText,
+                cached: result.CachedFeeds.Count > 0 || !result.Success && hasContent,
+                stale: !result.Success, partial: !result.Success && result.FailedFeeds.Count < result.FeedCount,
+                unavailable: IsNewsUnavailable,
+                successfulUtc: result.Success && result.FeedCount > 0 && result.CachedFeeds.Count == 0
+                    ? DateTimeOffset.UtcNow : null);
         }
 
         private async Task UpdateNewsPostsOnUIThreadAsync(
@@ -1066,6 +1118,7 @@ namespace StartScreen.ToolWindows
                     await UpdateYouTubeOnUIThreadAsync(videos, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                     LastYouTubeRefreshText = "Showing cached content";
+                    SetRefreshState(VideoRefreshState, LastYouTubeRefreshText, cached: true);
                     StartupDiagnostics.Mark("video cache displayed");
                 }
 
@@ -1073,13 +1126,15 @@ namespace StartScreen.ToolWindows
                 var needsRefresh = !hasCached || YouTubeService.IsCacheStale();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
+                VideoRefreshState.IsStale = hasCached && needsRefresh;
                 if (needsRefresh)
                 {
                     StartBackgroundYouTubeRefresh();
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {
@@ -1131,6 +1186,7 @@ namespace StartScreen.ToolWindows
                         cancellationToken.ThrowIfCancellationRequested();
                         IsYouTubeUnavailable = false;
                         LastYouTubeRefreshText = "Updated just now";
+                        SetRefreshState(VideoRefreshState, LastYouTubeRefreshText, successfulUtc: DateTimeOffset.UtcNow);
                         StartupDiagnostics.Mark("video remote refresh completed");
                     }
                     else
@@ -1141,10 +1197,13 @@ namespace StartScreen.ToolWindows
                         LastYouTubeRefreshText = _allYouTubeVideos.Count == 0
                             ? "Feed unavailable. Use Refresh to retry."
                             : "Showing cached content - refresh failed. Use Refresh to retry.";
+                        SetRefreshState(VideoRefreshState, LastYouTubeRefreshText,
+                            cached: !IsYouTubeUnavailable, stale: true, unavailable: IsYouTubeUnavailable);
                     }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                 {
+                    await ex.LogAsync();
                 }
                 catch (Exception ex)
                 {
@@ -1156,6 +1215,8 @@ namespace StartScreen.ToolWindows
                         LastYouTubeRefreshText = _allYouTubeVideos.Count == 0
                             ? "Feed unavailable. Use Refresh to retry."
                             : "Showing cached content - refresh failed. Use Refresh to retry.";
+                        SetRefreshState(VideoRefreshState, LastYouTubeRefreshText,
+                            cached: !IsYouTubeUnavailable, stale: true, unavailable: IsYouTubeUnavailable);
                     }
                 }
                 finally
@@ -1164,8 +1225,9 @@ namespace StartScreen.ToolWindows
                     {
                         await minDisplay;
                     }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                     {
+                        await ex.LogAsync();
                     }
 
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -1386,8 +1448,9 @@ namespace StartScreen.ToolWindows
                 DiscoverySectionTitle = title;
                 DiscoverySectionVersion = version;
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {
@@ -1411,8 +1474,9 @@ namespace StartScreen.ToolWindows
                     ? $"VS {setupService.ChannelProductVersion} update available"
                     : "VS update available";
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {

@@ -225,7 +225,8 @@ namespace StartScreen.Test.DevHub
             Assert.IsNotNull(result);
             Assert.AreEqual("Accessible PR", result.PullRequests.Single().Title);
             Assert.IsEmpty(result.CiRuns);
-            Assert.AreEqual("Build activity could not be loaded. Check Build read access and refresh to retry.", result.ActivityWarning);
+            Assert.Contains("Build activity could not be loaded. Check Build read access and refresh to retry.", result.ActivityWarning);
+            Assert.Contains("HTTP 403", result.ActivityWarning);
         }
 
         [TestMethod]

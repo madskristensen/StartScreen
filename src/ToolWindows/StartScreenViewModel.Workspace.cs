@@ -87,10 +87,11 @@ namespace StartScreen.ToolWindows
 
         internal async Task RefreshWorkspaceSignalsAsync(bool force, CancellationToken cancellationToken)
         {
-            if (_isRefreshingWorkspaceSignals)
+            if (GetBackgroundCancellationToken().IsCancellationRequested || _isRefreshingWorkspaceSignals)
                 return;
             int generation = ++_workspaceSignalsGeneration;
             _isRefreshingWorkspaceSignals = true;
+            WorkspaceRefreshState.IsLoading = true;
             OnPropertyChanged(nameof(IsRefreshingAny));
             NotifyRefreshStatusChanged();
             try
@@ -110,6 +111,7 @@ namespace StartScreen.ToolWindows
                 if (generation == _workspaceSignalsGeneration)
                 {
                     _isRefreshingWorkspaceSignals = false;
+                    WorkspaceRefreshState.IsLoading = false;
                     OnPropertyChanged(nameof(IsRefreshingAny));
                     NotifyRefreshStatusChanged();
                 }
@@ -121,9 +123,14 @@ namespace StartScreen.ToolWindows
             var taskFactory = _getServiceHealthTaskFactory();
             await taskFactory.SwitchToMainThreadAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            if (GetBackgroundCancellationToken().IsCancellationRequested)
+                return;
             CancellationTokenSource refreshCancellation =
                 ReplaceRefreshCancellation(ref _serviceHealthRefreshCancellation, cancellationToken);
             _serviceHealthRefreshTimer?.Stop();
+            WorkspaceRefreshState.IsLoading = true;
+            OnPropertyChanged(nameof(IsRefreshingAny));
+            NotifyRefreshStatusChanged();
             try
             {
                 SetServiceHealth("Checking service status...", "Checking the public Visual Studio service status.", false, isChecking: true);
@@ -132,6 +139,9 @@ namespace StartScreen.ToolWindows
                 refreshCancellation.Token.ThrowIfCancellationRequested();
                 SetServiceHealth(status.StatusText, $"{status.Details}\nChecked {status.CheckedAtUtc.ToLocalTime():g}.",
                     status.State == ServiceHealthState.Healthy && !status.IsStale);
+                SetRefreshState(WorkspaceRefreshState, status.StatusText, cached: status.IsStale,
+                    stale: status.IsStale, unavailable: status.State == ServiceHealthState.Unknown,
+                    successfulUtc: !status.IsStale && status.State != ServiceHealthState.Unknown ? status.CheckedAtUtc : null);
             }
             catch (OperationCanceledException ex) when (refreshCancellation.IsCancellationRequested)
             {
@@ -142,13 +152,19 @@ namespace StartScreen.ToolWindows
                 await ex.LogAsync();
                 await taskFactory.SwitchToMainThreadAsync();
                 if (!refreshCancellation.IsCancellationRequested)
+                {
                     SetServiceHealth("Service status unavailable", "Unable to refresh Visual Studio service status. Retrying automatically in five minutes. Open the status page for current information.", false);
+                    SetRefreshState(WorkspaceRefreshState, ServiceHealthText, unavailable: true);
+                }
             }
             finally
             {
                 await taskFactory.SwitchToMainThreadAsync();
                 CompleteRefresh(ref _serviceHealthRefreshCancellation, refreshCancellation, () =>
                 {
+                    WorkspaceRefreshState.IsLoading = false;
+                    OnPropertyChanged(nameof(IsRefreshingAny));
+                    NotifyRefreshStatusChanged();
                     if (cancellationToken.IsCancellationRequested || GetBackgroundCancellationToken().IsCancellationRequested)
                         return;
 
@@ -224,8 +240,9 @@ namespace StartScreen.ToolWindows
             {
                 await RefreshRepositorySummariesAsync([item], cancellationToken);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {

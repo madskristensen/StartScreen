@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.ServiceModel.Syndication;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
@@ -55,25 +54,7 @@ namespace StartScreen.Services
 
             try
             {
-                if (!File.Exists(cacheFile))
-                    return null;
-
-                byte[] fileBytes = new byte[new FileInfo(cacheFile).Length];
-                using (var stream = new FileStream(cacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
-                {
-                    var offset = 0;
-                    while (offset < fileBytes.Length)
-                    {
-                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset, cancellationToken);
-                        if (bytesRead == 0)
-                            break;
-
-                        offset += bytesRead;
-                    }
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                var entries = JsonSerializer.Deserialize<List<YouTubeCacheEntry>>(fileBytes);
+                var entries = await AtomicJsonCache.ReadAsync<List<YouTubeCacheEntry>>(cacheFile, cancellationToken).ConfigureAwait(false);
 
                 return entries
                     ?.Select(YouTubeVideo.FromCacheEntry)
@@ -167,7 +148,7 @@ namespace StartScreen.Services
                                 .Where(v => v != null)
                                 .ToList();
 
-                            WriteCacheToDisk(videos, cacheFile);
+                            await WriteCacheToDiskAsync(videos, cacheFile, cancellationToken).ConfigureAwait(false);
 
                             Trace.TraceInformation("YouTube feed cache refreshed successfully.");
 
@@ -294,27 +275,31 @@ namespace StartScreen.Services
         /// <summary>
         /// Writes the YouTube videos to the JSON cache file.
         /// </summary>
-        private static void WriteCacheToDisk(List<YouTubeVideo> videos)
-        {
-            WriteCacheToDisk(videos, _cacheFile);
-        }
-
         internal static void WriteCacheToDisk(List<YouTubeVideo> videos, string cacheFile)
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(cacheFile));
-
-                var entries = videos
-                    .Select(v => v.ToCacheEntry())
-                    .ToList();
-
-                var json = JsonSerializer.SerializeToUtf8Bytes(entries);
-                File.WriteAllBytes(cacheFile, json);
+                AtomicJsonCache.Write(cacheFile, videos.Select(v => v.ToCacheEntry()).ToList());
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
+            }
+        }
+
+        internal static async Task WriteCacheToDiskAsync(List<YouTubeVideo> videos, string cacheFile, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await AtomicJsonCache.WriteAsync(cacheFile, videos.Select(v => v.ToCacheEntry()).ToList(), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
             }
         }
     }

@@ -35,7 +35,15 @@ The saved recent-project column width is applied before the first render, so it
 does not shift when background content loads.
 Dev Hub does not read its cache or authenticate providers when disabled.
 
+Each dashboard refresh discovers its repository context once and shares that
+snapshot between personal and repository activity queries. Repository-detail
+requests use a shared concurrency limit, including cancellation while queued.
+News, video, dashboard, and Copilot history caches use bounded JSON reads and
+atomic file replacement so interrupted writes preserve the previous snapshot.
+
 Hiding the Start Screen cancels refreshes and pauses its automatic refresh timer.
+Closing the tool window permanently releases its event subscriptions, timers,
+and background-work resources; reopening creates a fresh screen instance.
 Visual Studio service health is rechecked automatically every five minutes while
 the screen is visible, including retries after failed checks. Failed or stale
 results are shown explicitly rather than continuing to report healthy services.
@@ -160,6 +168,9 @@ down.
 The Refresh button checks every enabled blog feed even when its local cache is
 less than four hours old. Unchanged feeds can be validated without downloading
 them again. Automatic refreshes continue to reuse fresh caches.
+Feed caches are identified by source URL rather than display name. Renaming a
+feed preserves its cache, changing its URL does not reuse the previous source,
+and combining cached articles does not extend individual source freshness.
 The footer stays brief: "Updating...", "Updated just now", or the known update
 age. Before a successful update is known, it says "Not updated yet". Hover over
 the status for per-section details, including cached content, unavailable sources,
@@ -259,6 +270,10 @@ categories are independent, so a failed issues request cannot keep successfully
 emptied PRs or builds. Warnings and the refresh status identify stale or incomplete
 activity, and these outcomes survive cache reloads. If authentication cannot be
 verified, activity from a previous identity is not displayed.
+Providers without configured accounts do not produce authentication warnings.
+Unavailable optional GitHub review/check details are reported separately from
+the successfully loaded pull request inventory; they do not imply a sign-in
+failure or keep pull requests that are no longer in the refreshed inventory.
 
 Completed Dev Hub categories appear without waiting for slower per-repository
 activity. GitHub CI queries run with at most three repository requests in flight.

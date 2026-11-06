@@ -568,7 +568,8 @@ namespace StartScreen.Test.DevHub
             if (forbidden)
             {
                 Assert.IsEmpty(detail.Issues);
-                Assert.AreEqual("Issue activity could not be loaded. Check Work Items read access and refresh to retry.", detail.ActivityWarning);
+                Assert.Contains("Issue activity could not be loaded. Check Work Items read access and refresh to retry.", detail.ActivityWarning);
+                Assert.Contains("HTTP 403", detail.ActivityWarning);
             }
             else
             {

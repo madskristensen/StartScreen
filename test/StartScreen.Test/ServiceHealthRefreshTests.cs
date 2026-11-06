@@ -26,7 +26,13 @@ namespace StartScreen.Test
             {
                 context.Factory.Run(() => model.RefreshServiceHealthAsync(CancellationToken.None));
                 var changed = new List<string?>();
-                model.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+                model.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName != nameof(StartScreenViewModel.UnifiedRefreshStatus)
+                        && e.PropertyName != nameof(StartScreenViewModel.UnifiedRefreshDetails)
+                        && e.PropertyName != nameof(StartScreenViewModel.IsRefreshingAny))
+                        changed.Add(e.PropertyName);
+                };
 
                 var refresh = context.Factory.RunAsync(() => model.RefreshServiceHealthAsync(CancellationToken.None));
 

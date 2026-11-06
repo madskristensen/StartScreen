@@ -296,18 +296,16 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        [DataRow("Updated just now")]
-        [DataRow("Updated 1 minute ago")]
-        [DataRow("Updated 3 minutes ago")]
-        [DataRow("Updated 1 hour ago")]
-        public void UnifiedRefreshStatus_PreservesKnownUpdateAgeAndSimplifiesRefreshing(string updated)
+        [DataRow(0)]
+        [DataRow(3)]
+        [DataRow(60)]
+        public void UnifiedRefreshStatus_PreservesKnownUpdateAgeAndSimplifiesRefreshing(int minutes)
         {
-            var viewModel = new StartScreenViewModel
-            {
-                LastDevHubRefreshText = updated,
-            };
+            using var viewModel = new StartScreenViewModel();
+            var updated = DateTimeOffset.UtcNow.AddMinutes(-minutes);
+            viewModel.SetRefreshState(viewModel.DevHubRefreshState, "Localized status", successfulUtc: updated);
 
-            Assert.AreEqual(updated, viewModel.UnifiedRefreshStatus);
+            Assert.AreEqual(minutes == 0 ? "Updated just now" : $"Updated at {updated.ToLocalTime():t}", viewModel.UnifiedRefreshStatus);
 
             viewModel.IsRefreshingNews = true;
             viewModel.IsRefreshingYouTube = true;
@@ -325,6 +323,9 @@ namespace StartScreen.Test
                 LastNewsRefreshText = "Refresh failed - Example. Use Refresh to retry.",
                 LastYouTubeRefreshText = "Showing cached content - refresh failed. Use Refresh to retry.",
             };
+            viewModel.SetRefreshState(viewModel.DevHubRefreshState, viewModel.LastDevHubRefreshText, successfulUtc: DateTimeOffset.UtcNow);
+            viewModel.SetRefreshState(viewModel.NewsRefreshState, viewModel.LastNewsRefreshText, unavailable: true);
+            viewModel.SetRefreshState(viewModel.VideoRefreshState, viewModel.LastYouTubeRefreshText, cached: true, stale: true);
 
             Assert.AreEqual("Updated just now", viewModel.UnifiedRefreshStatus);
             Assert.AreEqual("Dev Hub: Updated just now; News: Refresh failed - Example. Use Refresh to retry.; " +
@@ -340,6 +341,9 @@ namespace StartScreen.Test
                 LastNewsRefreshText = "Updated just now",
                 LastYouTubeRefreshText = "Updated just now",
             };
+            viewModel.SetRefreshState(viewModel.DevHubRefreshState, viewModel.LastDevHubRefreshText, successfulUtc: DateTimeOffset.UtcNow);
+            viewModel.SetRefreshState(viewModel.NewsRefreshState, viewModel.LastNewsRefreshText, successfulUtc: DateTimeOffset.UtcNow);
+            viewModel.SetRefreshState(viewModel.VideoRefreshState, viewModel.LastYouTubeRefreshText, successfulUtc: DateTimeOffset.UtcNow);
 
             Assert.AreEqual("Updated just now", viewModel.UnifiedRefreshStatus);
         }
@@ -361,12 +365,13 @@ namespace StartScreen.Test
             viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
 
             viewModel.LastNewsRefreshText = "Showing cached content";
+            viewModel.SetRefreshState(viewModel.NewsRefreshState, viewModel.LastNewsRefreshText, cached: true);
             viewModel.IsRefreshingNews = false;
 
             Assert.AreEqual("Not updated yet", viewModel.UnifiedRefreshStatus);
             Assert.AreEqual("News: Showing cached content", viewModel.UnifiedRefreshDetails);
-            Assert.HasCount(2, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshStatus)));
-            Assert.HasCount(2, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshDetails)));
+            Assert.HasCount(3, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshStatus)));
+            Assert.HasCount(3, changed.Where(name => name == nameof(StartScreenViewModel.UnifiedRefreshDetails)));
         }
 
         [TestMethod]
@@ -377,6 +382,8 @@ namespace StartScreen.Test
                 LastNewsRefreshText = "Showing cached content",
                 LastYouTubeRefreshText = "Showing cached content",
             };
+            viewModel.SetRefreshState(viewModel.NewsRefreshState, viewModel.LastNewsRefreshText, cached: true);
+            viewModel.SetRefreshState(viewModel.VideoRefreshState, viewModel.LastYouTubeRefreshText, cached: true);
 
             Assert.AreEqual("Not updated yet", viewModel.UnifiedRefreshStatus);
             Assert.AreEqual("News: Showing cached content; Videos: Showing cached content", viewModel.UnifiedRefreshDetails);
@@ -389,6 +396,7 @@ namespace StartScreen.Test
             {
                 LastNewsRefreshText = "Feed unavailable. Use Refresh to retry.",
             };
+            viewModel.SetRefreshState(viewModel.NewsRefreshState, viewModel.LastNewsRefreshText, unavailable: true);
 
             Assert.AreEqual("Not updated yet", viewModel.UnifiedRefreshStatus);
             Assert.AreEqual("News: Feed unavailable. Use Refresh to retry.", viewModel.UnifiedRefreshDetails);
@@ -403,6 +411,9 @@ namespace StartScreen.Test
                 LastNewsRefreshText = "Updated just now",
                 LastYouTubeRefreshText = "Showing cached content",
             };
+            viewModel.SetRefreshState(viewModel.DevHubRefreshState, viewModel.LastDevHubRefreshText, successfulUtc: DateTimeOffset.UtcNow.AddMinutes(-3));
+            viewModel.SetRefreshState(viewModel.NewsRefreshState, viewModel.LastNewsRefreshText, successfulUtc: DateTimeOffset.UtcNow);
+            viewModel.SetRefreshState(viewModel.VideoRefreshState, viewModel.LastYouTubeRefreshText, cached: true);
 
             Assert.AreEqual("Updated just now", viewModel.UnifiedRefreshStatus);
         }
@@ -437,6 +448,8 @@ namespace StartScreen.Test
 
             Assert.IsFalse(viewModel.IsNewsUnavailable);
             Assert.AreEqual("Updated just now", viewModel.LastNewsRefreshText);
+            Assert.IsNotNull(viewModel.NewsRefreshState.LastSuccessfulRefreshUtc);
+            Assert.IsFalse(viewModel.NewsRefreshState.IsCached);
         }
 
         [TestMethod]
@@ -460,6 +473,10 @@ namespace StartScreen.Test
             Assert.IsFalse(viewModel.IsNewsUnavailable);
             Assert.AreEqual("Partially refreshed - unavailable: Failing. Showing cached content from Failing. Use Refresh to retry.",
                 viewModel.LastNewsRefreshText);
+            Assert.IsTrue(viewModel.NewsRefreshState.IsPartial);
+            Assert.IsTrue(viewModel.NewsRefreshState.IsCached);
+            Assert.IsTrue(viewModel.NewsRefreshState.IsStale);
+            Assert.IsNull(viewModel.NewsRefreshState.LastSuccessfulRefreshUtc);
             StringAssert.Contains(viewModel.UnifiedRefreshDetails, viewModel.LastNewsRefreshText);
         }
 
@@ -472,6 +489,7 @@ namespace StartScreen.Test
 
             Assert.IsTrue(viewModel.IsNewsUnavailable);
             Assert.AreEqual("Refresh failed - unavailable: Example. Use Refresh to retry.", viewModel.LastNewsRefreshText);
+            Assert.IsTrue(viewModel.NewsRefreshState.IsUnavailable);
         }
 
         [TestMethod]

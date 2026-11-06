@@ -102,6 +102,27 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task DownloadVideosAsync_CacheFailureStillReturnsNetworkResultWithoutRetryAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var blockedFolder = directory.GetPath("not-a-folder");
+            File.WriteAllText(blockedFolder, "blocked");
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>Videos</title>" +
+                    "<entry><title>Video</title><link href=\"https://www.youtube.com/watch?v=abc123\" /></entry></feed>"),
+            });
+            using var client = new HttpClient(handler);
+
+            var result = await YouTubeService.DownloadVideosAsync(client, _ => Task.CompletedTask,
+                Path.Combine(blockedFolder, "videos.json"));
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.HasCount(1, result);
+            Assert.AreEqual("Video", result[0].Title);
+        }
+
+        [TestMethod]
         public async Task DownloadVideosAsync_WithTransientFailures_RetriesThreeTimesAsync()
         {
             var handler = new TestHttpMessageHandler(

@@ -68,7 +68,8 @@ namespace StartScreen.ToolWindows.Controls
 
         private void StartCopilotActivity()
         {
-            if (!_copilotLoaded || !IsVisible || _copilotAdapter != null || _copilotConnecting)
+            if (_isDisposed || StartScreenPackage.ShutdownToken.IsCancellationRequested
+                || !_copilotLoaded || !IsVisible || _copilotAdapter != null || _copilotConnecting)
                 return;
             ConnectCopilotActivityAsync().FileAndForget(nameof(DevHubPanel));
         }
@@ -164,19 +165,24 @@ namespace StartScreen.ToolWindows.Controls
 
         private void CopilotActivityChanged(object sender, EventArgs e)
         {
+            if (_isDisposed)
+                return;
             if (_copilotRenderTimer == null)
             {
                 _copilotRenderTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
                 {
                     Interval = TimeSpan.FromMilliseconds(150),
                 };
-                _copilotRenderTimer.Tick += (s, args) =>
-                {
-                    _copilotRenderTimer.Stop();
-                    RenderCopilotActivity();
-                };
+                _copilotRenderTimer.Tick += CopilotRenderTimer_Tick;
             }
             _copilotRenderTimer.Start();
+        }
+
+        private void CopilotRenderTimer_Tick(object sender, EventArgs e)
+        {
+            _copilotRenderTimer?.Stop();
+            if (!_isDisposed)
+                RenderCopilotActivity();
         }
 
         private IReadOnlyList<CopilotActivitySession> GetVisibleCopilotSessions()
@@ -189,6 +195,8 @@ namespace StartScreen.ToolWindows.Controls
 
         private void RenderCopilotActivity()
         {
+            if (_isDisposed)
+                return;
             if (_copilotAdapter != null)
             {
                 CopilotActivityStatus = _copilotCacheError ?? (_copilotAdapter.IsReady ? string.Empty : "Discovering local Copilot sessions...");
@@ -210,6 +218,8 @@ namespace StartScreen.ToolWindows.Controls
                 {
                     await CopilotActivityCache.WriteAsync(CopilotActivityCache.DefaultFile, snapshot, StartScreenPackage.ShutdownToken);
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
+                    if (_isDisposed)
+                        return;
                     _copilotCacheError = null;
                     if (_copilotAdapter != null)
                         CopilotActivityStatus = _copilotAdapter.IsReady ? string.Empty : "Discovering local Copilot sessions...";
@@ -239,12 +249,18 @@ namespace StartScreen.ToolWindows.Controls
         {
             _copilotGeneration++;
             _copilotConnecting = false;
-            _copilotRenderTimer?.Stop();
+            if (_copilotRenderTimer != null)
+            {
+                _copilotRenderTimer.Stop();
+                _copilotRenderTimer.Tick -= CopilotRenderTimer_Tick;
+                _copilotRenderTimer = null;
+            }
             var adapter = _copilotAdapter;
             if (adapter != null)
             {
                 _copilotCache.Update(adapter.Sessions, adapter.IsReady);
-                if (adapter.IsReady || _copilotCache.Sessions.Count > 0)
+                if (!StartScreenPackage.ShutdownToken.IsCancellationRequested
+                    && (adapter.IsReady || _copilotCache.Sessions.Count > 0))
                     PersistCopilotCache();
             }
             _copilotCacheSavedForConnection = false;
@@ -255,6 +271,8 @@ namespace StartScreen.ToolWindows.Controls
                 adapter.Dispose();
             }
             _copilotComponentModel = null;
+            if (_isDisposed)
+                return;
             CopilotActivityStatus = "Local Copilot activity is disconnected.";
             UpdateWorkspaceActivity(_activityPullRequests, _activityIssues, _activityBuilds);
         }

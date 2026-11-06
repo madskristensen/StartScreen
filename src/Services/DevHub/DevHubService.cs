@@ -73,8 +73,9 @@ namespace StartScreen.Services.DevHub
                 return _currentDashboard = null;
             var generation = _getCredentialGeneration();
             var queryContext = _getQueryContext();
-            var users = await Task.WhenAll(_providers.Select(provider => AuthenticateAsync(provider, cancellationToken)));
             var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken), urls => urls.Count > 0, cancellationToken);
+            var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status);
+            var users = await Task.WhenAll(_providers.Select(provider => AuthenticateAsync(provider, cancellationToken, refreshContext)));
             if (candidates.Status != DevHubActivityStatus.Success || generation != _getCredentialGeneration() || queryContext != _getQueryContext())
                 return _currentDashboard = null;
             var context = CreateContext(users.SelectMany(value => value.Value ?? Array.Empty<DevHubUser>()), options ?? new DevHubActivityOptions(), candidates.Value);
@@ -115,6 +116,10 @@ namespace StartScreen.Services.DevHub
                 var previousDashboard = _currentDashboard;
                 var authenticationGeneration = _getCredentialGeneration();
                 var queryContext = _getQueryContext();
+                var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken),
+                    urls => urls.Count > 0, cancellationToken);
+                var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status);
+                options = new DevHubActivityOptions(options.MaxItems, options.IncludeCompleted, refreshContext);
                 var dashboard = new DevHubDashboard
                 {
                     FetchedAt = DateTime.UtcNow,
@@ -130,7 +135,7 @@ namespace StartScreen.Services.DevHub
                 // Azure DevOps cloud + on-premises Server).
                 var authTasks = _providers.Select(async provider =>
                 {
-                    var result = await AuthenticateAsync(provider, cancellationToken);
+                    var result = await AuthenticateAsync(provider, cancellationToken, refreshContext);
                     return (provider, result);
                 }).ToList();
 
@@ -151,24 +156,25 @@ namespace StartScreen.Services.DevHub
                     if (result.Status != DevHubActivityStatus.Success)
                     {
                         var key = provider.DisplayName + "/authentication";
-                        dashboard.Sources[key] = new DevHubActivitySnapshot { Status = result.Status };
-                        dashboard.ActivityWarnings[key] = $"{provider.DisplayName}: authentication {result.Status.ToString().ToLowerInvariant()}. Activity cannot be verified. Sign in or refresh to retry.";
+                        var message = !string.IsNullOrEmpty(result.Message) ? result.Message
+                            : $"{provider.DisplayName}: authentication {result.Status.ToString().ToLowerInvariant()}. Activity cannot be verified. Sign in or refresh to retry.";
+                        dashboard.Sources[key] = new DevHubActivitySnapshot { Status = result.Status, Message = message };
+                        dashboard.ActivityWarnings[key] = message;
                     }
                 }
 
                 dashboard.IdentityContext = CreateIdentityContext(dashboard.Users);
 
-                var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken),
-                    urls => urls.Count > 0, cancellationToken);
                 if (authenticationGeneration != _getCredentialGeneration() || queryContext != _getQueryContext())
                     return InvalidateContext(progress);
-                var candidateUrls = candidates.Value ?? Array.Empty<string>();
+                var candidateUrls = refreshContext.RemoteUrls;
                 dashboard.CacheContext = candidates.Status == DevHubActivityStatus.Success
                     ? CreateContext(dashboard.Users, options, candidateUrls) : null;
                 if (candidates.Status != DevHubActivityStatus.Success)
                 {
-                    dashboard.Sources["repositories/discovery"] = new DevHubActivitySnapshot { Status = candidates.Status };
-                    dashboard.ActivityWarnings["repositories/discovery"] = "Repository discovery is unavailable. Refresh to retry.";
+                    var message = !string.IsNullOrEmpty(candidates.Message) ? candidates.Message : "Repository discovery is unavailable. Refresh to retry.";
+                    dashboard.Sources["repositories/discovery"] = new DevHubActivitySnapshot { Status = candidates.Status, Message = message };
+                    dashboard.ActivityWarnings["repositories/discovery"] = message;
                 }
                 if (string.IsNullOrEmpty(dashboard.CacheContext) || previousDashboard?.CacheContext != dashboard.CacheContext)
                     previousDashboard = null;
@@ -177,7 +183,7 @@ namespace StartScreen.Services.DevHub
                 if (authenticated.Count == 0)
                 {
                     dashboard.IsRefreshing = false;
-                    _cache.WriteDashboard(dashboard);
+                    await _cache.WriteDashboardAsync(dashboard, cancellationToken);
                     SetCurrentDashboard(dashboard);
                     progress?.Report(dashboard);
                     return dashboard;
@@ -190,60 +196,87 @@ namespace StartScreen.Services.DevHub
                 }
                 Publish(dashboard, progress);
 
+                using var requests = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var requestToken = requests.Token;
                 var remaining = new List<Task<(string Key, DevHubActivitySnapshot Snapshot)>>();
+                var repositoryTasks = new HashSet<Task<(string Key, DevHubActivitySnapshot Snapshot)>>();
+                var repositoryQueue = new Queue<(IDevHubProvider Provider, RemoteRepoIdentifier Repo)>();
                 foreach (var provider in authenticated)
                 {
                     remaining.Add(FetchSourceAsync(provider.DisplayName + "/issues",
-                        () => FetchActivityAsync(provider, DevHubActivityKind.Issues, options, null, cancellationToken)));
+                        () => FetchActivityAsync(provider, DevHubActivityKind.Issues, options, null, requestToken)));
                     remaining.Add(FetchSourceAsync(provider.DisplayName + "/pulls",
-                        () => FetchActivityAsync(provider, DevHubActivityKind.PullRequests, options, null, cancellationToken)));
+                        () => FetchActivityAsync(provider, DevHubActivityKind.PullRequests, options, null, requestToken)));
                     remaining.Add(FetchSourceAsync(provider.DisplayName + "/builds",
-                        () => FetchActivityAsync(provider, DevHubActivityKind.CiRuns, options, null, cancellationToken)));
+                        () => FetchActivityAsync(provider, DevHubActivityKind.CiRuns, options, null, requestToken)));
                     remaining.Add(FetchSourceAsync(provider.DisplayName + "/discovery", async () =>
                     {
-                        var result = await DevHubActivityRequest.RunAsync(() => provider.GetActivityReposAsync(candidateUrls, cancellationToken),
-                            items => items.Count > 0, cancellationToken);
-                        return new DevHubActivitySnapshot { Status = result.Status,
+                        var result = await DevHubActivityRequest.RunAsync(() => provider.GetActivityReposAsync(candidateUrls, requestToken),
+                            items => items.Count > 0, requestToken);
+                        return new DevHubActivitySnapshot { Status = result.Status, Message = result.Message,
                             ActivityRepositories = result.Value?.ToList() ?? new List<RemoteRepoIdentifier>() };
                     }));
                 }
 
-                while (remaining.Count > 0)
+                try
                 {
-                    var completed = await Task.WhenAny(remaining);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (generation != _getCredentialGeneration() || queryContext != _getQueryContext())
-                        return InvalidateContext(progress);
-                    remaining.Remove(completed);
-                    var (key, snapshot) = await completed;
-                    dashboard.Sources.TryGetValue(key, out var previous);
-                    dashboard.Sources[key] = RetainFailedSource(snapshot, previous);
-                    if (key.EndsWith("/discovery", StringComparison.Ordinal))
+                    while (remaining.Count > 0 || repositoryQueue.Count > 0)
                     {
-                        var provider = authenticated.First(candidate => key == candidate.DisplayName + "/discovery");
-                        var prefix = provider.DisplayName + "/repo/";
-                        var validKeys = new HashSet<string>(snapshot.ActivityRepositories.Select(repo => prefix + repo.ToString().ToLowerInvariant()));
-                        foreach (var pair in dashboard.Sources.Where(pair => pair.Key.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+                        cancellationToken.ThrowIfCancellationRequested();
+                        while (repositoryQueue.Count > 0 && repositoryTasks.Count < DashboardRepositoryConcurrency)
                         {
-                            if (snapshot.IsStale)
-                                dashboard.Sources[pair.Key] = RetainFailedSource(new DevHubActivitySnapshot
-                                {
-                                    RepoIdentifier = pair.Value.RepoIdentifier,
-                                    Status = snapshot.Status,
-                                }, pair.Value);
-                            else if (!validKeys.Contains(pair.Key))
-                                dashboard.Sources.Remove(pair.Key);
+                            var (provider, repo) = repositoryQueue.Dequeue();
+                            var repoOptions = new DevHubActivityOptions(options.MaxItems == DevHubActivityOptions.DefaultLimit
+                                ? _dashboardRepoItemCount : options.MaxItems, options.IncludeCompleted, refreshContext);
+                            var task = FetchSourceAsync(provider.DisplayName + "/repo/" + repo.ToString().ToLowerInvariant(),
+                                () => FetchActivityAsync(provider, DevHubActivityKind.Repository, repoOptions, repo, requestToken));
+                            repositoryTasks.Add(task);
+                            remaining.Add(task);
                         }
 
-                        foreach (var repo in snapshot.ActivityRepositories)
+                        var completed = await Task.WhenAny(remaining);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (generation != _getCredentialGeneration() || queryContext != _getQueryContext())
+                            return InvalidateContext(progress);
+                        remaining.Remove(completed);
+                        repositoryTasks.Remove(completed);
+                        var (key, snapshot) = await completed;
+                        dashboard.Sources.TryGetValue(key, out var previous);
+                        dashboard.Sources[key] = RetainFailedSource(snapshot, previous);
+                        if (key.EndsWith("/discovery", StringComparison.Ordinal))
                         {
-                            var repoOptions = new DevHubActivityOptions(options.MaxItems == DevHubActivityOptions.DefaultLimit
-                                ? _dashboardRepoItemCount : options.MaxItems, options.IncludeCompleted);
-                            remaining.Add(FetchSourceAsync(prefix + repo.ToString().ToLowerInvariant(),
-                                () => FetchActivityAsync(provider, DevHubActivityKind.Repository, repoOptions, repo, cancellationToken)));
+                            var provider = authenticated.First(candidate => key == candidate.DisplayName + "/discovery");
+                            var prefix = provider.DisplayName + "/repo/";
+                            var validKeys = new HashSet<string>(snapshot.ActivityRepositories.Select(repo => prefix + repo.ToString().ToLowerInvariant()));
+                            foreach (var pair in dashboard.Sources.Where(pair => pair.Key.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+                            {
+                                if (snapshot.IsStale)
+                                    dashboard.Sources[pair.Key] = RetainFailedSource(new DevHubActivitySnapshot
+                                    {
+                                        RepoIdentifier = pair.Value.RepoIdentifier,
+                                        Status = snapshot.Status,
+                                    }, pair.Value);
+                                else if (!validKeys.Contains(pair.Key))
+                                    dashboard.Sources.Remove(pair.Key);
+                            }
+
+                            foreach (var repo in snapshot.ActivityRepositories)
+                                repositoryQueue.Enqueue((provider, repo));
                         }
+                        Publish(dashboard, progress);
                     }
-                    Publish(dashboard, progress);
+                }
+                finally
+                {
+                    requests.Cancel();
+                    try
+                    {
+                        await Task.WhenAll(remaining);
+                    }
+                    catch (Exception ex)
+                    {
+                        await ex.LogAsync();
+                    }
                 }
 
                 // Cache the final result
@@ -251,7 +284,7 @@ namespace StartScreen.Services.DevHub
                 dashboard.IsRefreshing = false;
                 dashboard.FetchedAt = DateTime.UtcNow;
                 var final = Publish(dashboard, progress);
-                _cache.WriteDashboard(final);
+                await _cache.WriteDashboardAsync(final, cancellationToken);
 
                 return final;
             }
@@ -303,14 +336,15 @@ namespace StartScreen.Services.DevHub
             return dashboard;
         }
 
-        private static Task<DevHubActivityResult<IReadOnlyList<DevHubUser>>> AuthenticateAsync(IDevHubProvider provider, CancellationToken cancellationToken)
+        private static Task<DevHubActivityResult<IReadOnlyList<DevHubUser>>> AuthenticateAsync(IDevHubProvider provider,
+            CancellationToken cancellationToken, DevHubRefreshContext context = null)
         {
             return DevHubActivityRequest.RunAsync(async () =>
             {
-                var users = await provider.GetAuthenticatedUsersAsync(cancellationToken);
-                if ((users == null || users.Count == 0) && !DevHubActivityRequest.HasFailure)
-                    DevHubActivityRequest.Failed(unauthorized: true);
-                return users;
+                var users = context != null && provider is IDevHubRefreshProvider refreshProvider
+                    ? await refreshProvider.GetAuthenticatedUsersAsync(context, cancellationToken)
+                    : await provider.GetAuthenticatedUsersAsync(cancellationToken);
+                return users ?? Array.Empty<DevHubUser>();
             }, users => users.Count > 0, cancellationToken);
         }
 
@@ -359,7 +393,8 @@ namespace StartScreen.Services.DevHub
                 var source = pair.Value;
                 var key = source.RepoIdentifier?.ToString().ToLowerInvariant() ?? pair.Key;
                 if (source.IsStale)
-                    dashboard.ActivityWarnings[key] = source.Message ?? $"{pair.Key}: {source.Status}. Showing stale activity where available. Refresh to retry.";
+                    dashboard.ActivityWarnings[key] = !string.IsNullOrEmpty(source.Message) ? source.Message
+                        : $"{pair.Key}: {source.Status}. Showing stale activity where available. Refresh to retry.";
                 else if (!string.IsNullOrEmpty(source.Message))
                     dashboard.ActivityWarnings[key] = source.Message;
                 else
@@ -399,6 +434,9 @@ namespace StartScreen.Services.DevHub
         /// because many repos may be queried.
         /// </summary>
         private const int _dashboardRepoItemCount = 10;
+
+        /// <summary>Maximum active repository detail operations across all dashboard providers.</summary>
+        internal const int DashboardRepositoryConcurrency = 3;
 
         /// <summary>
         /// Number of items fetched per category when the user scopes the dashboard to a single
@@ -478,8 +516,8 @@ namespace StartScreen.Services.DevHub
             dashboard.Issues = snapshot.Issues;
             dashboard.CiRuns = snapshot.CiRuns;
             if (snapshot.IsStale)
-                dashboard.ActivityWarnings[repo.ToString().ToLowerInvariant()] = snapshot.Message
-                    ?? $"Repository activity {snapshot.Status.ToString().ToLowerInvariant()}. Showing stale activity where available. Refresh to retry.";
+                dashboard.ActivityWarnings[repo.ToString().ToLowerInvariant()] = !string.IsNullOrEmpty(snapshot.Message) ? snapshot.Message
+                    : $"Repository activity {snapshot.Status.ToString().ToLowerInvariant()}. Showing stale activity where available. Refresh to retry.";
             return dashboard;
         }
 

@@ -13,8 +13,9 @@ using StartScreen.Services.DevHub;
 
 namespace StartScreen.ToolWindows.Controls
 {
-    public partial class DevHubPanel : UserControl
+    public partial class DevHubPanel : UserControl, IDisposable
     {
+        private bool _isDisposed;
         private DevHubDashboard _currentDashboard;
         private RemoteRepoIdentifier _currentFilterRepo;
 
@@ -36,6 +37,22 @@ namespace StartScreen.ToolWindows.Controls
         public DevHubPanel()
         {
             InitializeComponent();
+        }
+
+        public void Dispose()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (_isDisposed)
+                return;
+            _isDisposed = true;
+            _copilotLoaded = false;
+            Loaded -= BeginWorkspaceVisit;
+            Unloaded -= CopilotUnloaded;
+            IsVisibleChanged -= CopilotVisibilityChanged;
+            StopCopilotActivity();
+            _currentDashboard = null;
+            _cachedBorders = null;
+            _cachedBordersList = null;
         }
 
         private void DevHubPanel_GotFocus(object sender, RoutedEventArgs e)

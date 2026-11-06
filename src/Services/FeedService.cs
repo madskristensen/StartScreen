@@ -4,8 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.ServiceModel.Syndication;
-using System.Text.Json;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
@@ -53,25 +54,8 @@ namespace StartScreen.Services
 
             try
             {
-                if (!File.Exists(cacheFile))
-                    return null;
-
-                byte[] fileBytes = new byte[new FileInfo(cacheFile).Length];
-                using (var stream = new FileStream(cacheFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
-                {
-                    var offset = 0;
-                    while (offset < fileBytes.Length)
-                    {
-                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset, cancellationToken);
-                        if (bytesRead == 0)
-                            break;
-
-                        offset += bytesRead;
-                    }
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                List<FeedCacheEntry> entries = JsonSerializer.Deserialize<List<FeedCacheEntry>>(fileBytes);
+                var snapshot = await AtomicJsonCache.ReadAsync<CombinedCache>(cacheFile, cancellationToken).ConfigureAwait(false);
+                var entries = snapshot?.Entries;
 
                 return entries
                     ?.Select(NewsPost.FromCacheEntry)
@@ -90,7 +74,7 @@ namespace StartScreen.Services
         }
 
         /// <summary>
-        /// Returns true if the feed cache is stale (>4 hours old) or doesn't exist.
+        /// Returns true if any source validation is at least four hours old or the snapshot is missing.
         /// </summary>
         public static bool IsCacheStale()
         {
@@ -99,11 +83,17 @@ namespace StartScreen.Services
 
         internal static bool IsCacheStale(string cacheFile, DateTime utcNow)
         {
-            if (!File.Exists(cacheFile))
+            try
+            {
+                var snapshot = AtomicJsonCache.Read<CombinedCache>(cacheFile);
+                return snapshot?.Entries == null || snapshot.ValidatedUtc == null || snapshot.ValidatedUtc.Length == 0 ||
+                    snapshot.ValidatedUtc.Any(time => time > utcNow || utcNow - time >= _staleThreshold);
+            }
+            catch (Exception ex)
+            {
+                ex.LogAsync().FireAndForget();
                 return true;
-
-            DateTime lastModified = File.GetLastWriteTimeUtc(cacheFile);
-            return utcNow - lastModified >= _staleThreshold;
+            }
         }
 
         /// <summary>
@@ -131,7 +121,7 @@ namespace StartScreen.Services
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
             cancellationToken.ThrowIfCancellationRequested();
             var selectedFeeds = feeds.Where(f => f.Enabled).ToList();
-            (SyndicationFeed Feed, bool Refreshed, bool Failed)[] results;
+            (SyndicationFeed Feed, bool Refreshed, bool Failed, DateTime ValidatedUtc)[] results;
 
             using (var semaphore = new SemaphoreSlim(_maxConcurrentDownloads, _maxConcurrentDownloads))
             {
@@ -164,7 +154,7 @@ namespace StartScreen.Services
                     catch (Exception ex)
                     {
                         await ex.LogAsync();
-                        return (Feed: (SyndicationFeed)null, Refreshed: false, Failed: true);
+                        return (Feed: (SyndicationFeed)null, Refreshed: false, Failed: true, ValidatedUtc: DateTime.MinValue);
                     }
                     finally
                     {
@@ -189,7 +179,9 @@ namespace StartScreen.Services
             // A fallback must not reset the combined cache's freshness clock.
             if (refreshResult.Success)
             {
-                WriteCacheToDisk(refreshResult.Posts, Path.Combine(cacheFolder, "_feed.json"));
+                await WriteCacheToDiskAsync(refreshResult.Posts, Path.Combine(cacheFolder, "_feed.json"),
+                    results.Length == 0 ? new[] { DateTime.UtcNow } : results.Select(result => result.ValidatedUtc).ToArray(),
+                    cancellationToken).ConfigureAwait(false);
             }
 
             return refreshResult;
@@ -198,7 +190,7 @@ namespace StartScreen.Services
         /// <summary>
         /// Downloads a single feed with disk caching.
         /// </summary>
-        private static async Task<(SyndicationFeed Feed, bool Refreshed, bool Failed)> DownloadFeedAsync(
+        private static async Task<(SyndicationFeed Feed, bool Refreshed, bool Failed, DateTime ValidatedUtc)> DownloadFeedAsync(
             HttpClient httpClient,
             FeedInfo feedInfo,
             string cacheFolder,
@@ -206,27 +198,34 @@ namespace StartScreen.Services
             CancellationToken cancellationToken,
             bool forceRefresh)
         {
-            var fileName = $"{feedInfo.Name}.xml";
-            var cacheFile = Path.Combine(cacheFolder, fileName);
+            var cacheFile = GetSourceCachePath(cacheFolder, feedInfo.Url);
             SyndicationFeed cachedFeed = null;
+            var validatedUtc = DateTime.MinValue;
 
-            if (File.Exists(cacheFile))
+            try
             {
-                try
+                var snapshot = await AtomicJsonCache.ReadAsync<SourceCache>(cacheFile, cancellationToken).ConfigureAwait(false);
+                if (snapshot != null)
                 {
-                    using (var reader = XmlReader.Create(cacheFile))
+                    using (var text = new StringReader(snapshot.Xml))
+                    using (var reader = XmlReader.Create(text))
                     {
                         cachedFeed = SyndicationFeed.Load(reader);
                     }
-                }
-                catch (Exception ex)
-                {
-                    await ex.LogAsync();
+                    validatedUtc = snapshot.ValidatedUtc;
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
 
-            if (cachedFeed != null && !forceRefresh && !IsCacheStale(cacheFile, DateTime.UtcNow))
-                return (cachedFeed, false, false);
+            if (cachedFeed != null && !forceRefresh && validatedUtc <= DateTime.UtcNow && DateTime.UtcNow - validatedUtc < _staleThreshold)
+                return (cachedFeed, false, false, validatedUtc);
 
             DateTime? lastModified = cachedFeed?.LastUpdatedTime > DateTimeOffset.MinValue
                 ? cachedFeed.LastUpdatedTime.UtcDateTime : (DateTime?)null;
@@ -239,21 +238,23 @@ namespace StartScreen.Services
                     feedInfo.Url, lastModified, cancellationToken);
                 if (download.Feed != null)
                 {
-                    await WriteFeedToDiskAsync(cacheFile, download.Feed);
-                    return (download.Feed, true, false);
+                    var checkedUtc = DateTime.UtcNow;
+                    await WriteFeedToDiskAsync(cacheFile, download.Feed, checkedUtc, cancellationToken);
+                    return (download.Feed, true, false, checkedUtc);
                 }
 
                 if (download.NotModified && cachedFeed != null)
                 {
-                    await WriteFeedToDiskAsync(cacheFile, cachedFeed);
-                    return (cachedFeed, true, false);
+                    var checkedUtc = DateTime.UtcNow;
+                    await WriteFeedToDiskAsync(cacheFile, cachedFeed, checkedUtc, cancellationToken);
+                    return (cachedFeed, true, false, checkedUtc);
                 }
 
                 if (attempt < maxAttempts)
                     await delayAsync(attempt);
             }
 
-            return (cachedFeed, false, true);
+            return (cachedFeed, false, true, validatedUtc);
         }
 
         internal static async Task<SyndicationFeed> DownloadFromUrlAsync(
@@ -316,17 +317,24 @@ namespace StartScreen.Services
         /// <summary>
         /// Writes feed to disk cache.
         /// </summary>
-        private static async Task WriteFeedToDiskAsync(string filePath, SyndicationFeed feed)
+        internal static async Task WriteFeedToDiskAsync(string filePath, SyndicationFeed feed, DateTime validatedUtc, CancellationToken cancellationToken = default)
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
-
-                using (var writer = XmlWriter.Create(filePath))
+                using (var text = new StringWriter())
                 {
-                    feed.Items = feed.Items.Take(_maxNewsItems);
-                    feed.SaveAsRss20(writer);
+                    using (var writer = XmlWriter.Create(text))
+                    {
+                        feed.Items = feed.Items.Take(_maxNewsItems).ToArray();
+                        feed.SaveAsRss20(writer);
+                    }
+                    await AtomicJsonCache.WriteAsync(filePath, new SourceCache { Xml = text.ToString(), ValidatedUtc = validatedUtc },
+                        cancellationToken).ConfigureAwait(false);
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -380,19 +388,58 @@ namespace StartScreen.Services
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(cacheFile));
-
-                List<FeedCacheEntry> entries = posts
-                    .Select(p => p.ToCacheEntry())
-                    .ToList();
-
-                var json = JsonSerializer.SerializeToUtf8Bytes(entries);
-                File.WriteAllBytes(cacheFile, json);
+                AtomicJsonCache.Write(cacheFile, new CombinedCache
+                {
+                    Entries = posts.Select(p => p.ToCacheEntry()).ToList(),
+                    ValidatedUtc = new[] { DateTime.UtcNow },
+                });
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
             }
+        }
+
+        private static async Task WriteCacheToDiskAsync(List<NewsPost> posts, string cacheFile, DateTime[] validatedUtc, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await AtomicJsonCache.WriteAsync(cacheFile, new CombinedCache
+                {
+                    Entries = posts.Select(p => p.ToCacheEntry()).ToList(),
+                    ValidatedUtc = validatedUtc,
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+            }
+        }
+
+        internal static string GetSourceCachePath(string cacheFolder, string url)
+        {
+            var uri = new UriBuilder(url.Trim()) { Fragment = string.Empty }.Uri;
+            using var hash = SHA256.Create();
+            var bytes = hash.ComputeHash(Encoding.UTF8.GetBytes(uri.AbsoluteUri));
+            return Path.Combine(cacheFolder, "source-" + BitConverter.ToString(bytes).Replace("-", string.Empty).ToLowerInvariant() + ".json");
+        }
+
+        private sealed class SourceCache
+        {
+            public SourceCache() { }
+            public string Xml { get; set; }
+            public DateTime ValidatedUtc { get; set; }
+        }
+
+        private sealed class CombinedCache
+        {
+            public CombinedCache() { }
+            public List<FeedCacheEntry> Entries { get; set; }
+            public DateTime[] ValidatedUtc { get; set; }
         }
     }
 }

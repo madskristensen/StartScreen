@@ -27,6 +27,7 @@ namespace StartScreen.ToolWindows
                 if (_isRefreshingFeedback != value)
                 {
                     _isRefreshingFeedback = value;
+                    FeedbackRefreshState.IsLoading = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsRefreshingAny));
                     NotifyRefreshStatusChanged();
@@ -112,6 +113,8 @@ namespace StartScreen.ToolWindows
                 FeedbackStatus = snapshot.Tickets.Count == 0
                     ? "No created or currently upvoted tickets found for this Visual Studio account."
                     : null;
+                SetRefreshState(FeedbackRefreshState, FeedbackStatus ?? LastFeedbackRefreshText,
+                    successfulUtc: new DateTimeOffset(snapshot.UpdatedUtc));
             }
             catch (OperationCanceledException ex) when (token.IsCancellationRequested)
             {
@@ -127,6 +130,7 @@ namespace StartScreen.ToolWindows
                     FeedbackStatus = ex is UnauthorizedAccessException || ex is CredentialUnavailableException || ex is AuthenticationFailedException
                         ? "Sign in or reauthenticate in Visual Studio, select your account under Tools > Options > Azure Service Authentication, then use Refresh."
                         : "Developer Community is unavailable. Use Refresh to retry.";
+                    SetRefreshState(FeedbackRefreshState, FeedbackStatus, unavailable: true);
                 }
             }
             finally

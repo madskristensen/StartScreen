@@ -27,6 +27,7 @@ namespace StartScreen
     public sealed class StartScreenPackage : ToolkitPackage
     {
         private readonly CancellationTokenSource _shutdownCancellation;
+        private bool _isDisposed;
         internal static JoinableTaskFactory BackgroundTaskFactory { get; private set; }
         internal static CancellationToken ShutdownToken { get; private set; }
 
@@ -124,10 +125,17 @@ namespace StartScreen
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing)
+            if (disposing && !_isDisposed)
             {
+                _isDisposed = true;
                 Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterCloseSolution -= OnSolutionClosed;
                 _shutdownCancellation.Cancel();
+                JoinableTaskFactory.Run(async () =>
+                {
+                    await JoinableTaskFactory.SwitchToMainThreadAsync();
+                    StartScreenWindow.DisposeCurrent();
+                    Services.FeedStore.StopWatching();
+                });
             }
 
             base.Dispose(disposing);

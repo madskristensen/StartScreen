@@ -378,7 +378,8 @@ namespace StartScreen.Test.DevHub
             Assert.IsNotNull(detail);
             var pr = detail.PullRequests.Single();
             Assert.IsEmpty(detail.CiRuns);
-            Assert.AreEqual("Build activity could not be loaded. Check Build read access and refresh to retry.", detail.ActivityWarning);
+            Assert.Contains("Build activity could not be loaded. Check Build read access and refresh to retry.", detail.ActivityWarning);
+            Assert.Contains("HTTP 403", detail.ActivityWarning);
             Assert.IsTrue(pr.IsAuthoredByCurrentUser);
             Assert.IsTrue(pr.IsReviewRequestedForCurrentUser);
             Assert.IsNull(pr.UnresolvedThreadCount);

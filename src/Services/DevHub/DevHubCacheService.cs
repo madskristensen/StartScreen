@@ -64,23 +64,7 @@ namespace StartScreen.Services.DevHub
 
             try
             {
-                byte[] fileBytes;
-                using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
-                {
-                    fileBytes = new byte[stream.Length];
-                    var offset = 0;
-                    while (offset < fileBytes.Length)
-                    {
-                        var bytesRead = await stream.ReadAsync(fileBytes, offset, fileBytes.Length - offset, cancellationToken);
-                        if (bytesRead == 0)
-                            break;
-
-                        offset += bytesRead;
-                    }
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                return JsonSerializer.Deserialize<DevHubDashboard>(fileBytes, _jsonOptions);
+                return await AtomicJsonCache.ReadAsync<DevHubDashboard>(filePath, cancellationToken, _jsonOptions).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -103,15 +87,34 @@ namespace StartScreen.Services.DevHub
 
             try
             {
-                Directory.CreateDirectory(_cacheFolder);
-
                 var filePath = Path.Combine(_cacheFolder, _dashboardFileName);
-                var json = JsonSerializer.SerializeToUtf8Bytes(dashboard, _jsonOptions);
-                File.WriteAllBytes(filePath, json);
+                AtomicJsonCache.Write(filePath, dashboard, _jsonOptions);
             }
             catch (Exception ex)
             {
                 ex.LogAsync().FireAndForget();
+            }
+        }
+
+        /// <summary>Persists a dashboard without blocking the caller's synchronization context.</summary>
+        public async Task WriteDashboardAsync(DevHubDashboard dashboard, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (dashboard == null)
+                return;
+
+            try
+            {
+                await AtomicJsonCache.WriteAsync(Path.Combine(_cacheFolder, _dashboardFileName), dashboard,
+                    cancellationToken, _jsonOptions).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
             }
         }
 

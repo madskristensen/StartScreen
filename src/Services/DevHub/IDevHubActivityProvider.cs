@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using StartScreen.Models.DevHub;
@@ -20,22 +22,43 @@ namespace StartScreen.Services.DevHub
             RemoteRepoIdentifier repo, CancellationToken cancellationToken);
     }
 
+    /// <summary>Optional authentication contract for providers that discover organization endpoints from local repositories.</summary>
+    internal interface IDevHubRefreshProvider
+    {
+        Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(DevHubRefreshContext context, CancellationToken cancellationToken);
+    }
+
+    /// <summary>An immutable workspace discovery result shared only within one dashboard operation.</summary>
+    internal sealed class DevHubRefreshContext
+    {
+        public DevHubRefreshContext(IEnumerable<string> remoteUrls, DevHubActivityStatus status = DevHubActivityStatus.Success)
+        {
+            RemoteUrls = Array.AsReadOnly((remoteUrls ?? Array.Empty<string>()).ToArray());
+            Status = status;
+        }
+
+        public IReadOnlyList<string> RemoteUrls { get; }
+        public DevHubActivityStatus Status { get; }
+    }
+
     internal sealed class DevHubActivityOptions
     {
         public const int DefaultLimit = 30;
         public const int MaximumLimit = 300;
 
-        public DevHubActivityOptions(int maxItems = DefaultLimit, bool includeCompleted = false)
+        public DevHubActivityOptions(int maxItems = DefaultLimit, bool includeCompleted = false, DevHubRefreshContext refreshContext = null)
         {
             if (maxItems < 1 || maxItems > MaximumLimit)
                 throw new ArgumentOutOfRangeException(nameof(maxItems));
 
             MaxItems = maxItems;
             IncludeCompleted = includeCompleted;
+            RefreshContext = refreshContext;
         }
 
         public int MaxItems { get; }
         public bool IncludeCompleted { get; }
+        public DevHubRefreshContext RefreshContext { get; }
     }
 
     internal interface IDevHubActivityProvider

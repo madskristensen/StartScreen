@@ -17,7 +17,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// Azure DevOps provider for the Dev Hub.
     /// Fetches PRs, work items, and build status from the ADO REST API.
     /// </summary>
-    internal sealed class AzureDevOpsDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource
+    internal sealed class AzureDevOpsDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource, IDevHubRefreshProvider
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -29,6 +29,7 @@ namespace StartScreen.Services.DevHub.Providers
         private readonly Func<string, string, CancellationToken, Task<DevHubCredential>> _acquireCredential;
         private readonly Action<string, DevHubCredential> _invalidateCredential;
         private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _getRemoteUrls;
+        private readonly Func<IReadOnlyList<string>> _getCredentialHosts;
 
         public AzureDevOpsDevHubProvider() : this(_sharedHttpClient, DevHubCredentialHelper.GetAzureDevOpsCredentialAsync,
             (host, credential) =>
@@ -44,12 +45,14 @@ namespace StartScreen.Services.DevHub.Providers
         internal AzureDevOpsDevHubProvider(HttpClient httpClient,
             Func<string, string, CancellationToken, Task<DevHubCredential>> acquireCredential,
             Action<string, DevHubCredential> invalidateCredential,
-            Func<CancellationToken, Task<IReadOnlyList<string>>> getRemoteUrls = null)
+            Func<CancellationToken, Task<IReadOnlyList<string>>> getRemoteUrls = null,
+            Func<IReadOnlyList<string>> getCredentialHosts = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _acquireCredential = acquireCredential ?? throw new ArgumentNullException(nameof(acquireCredential));
             _invalidateCredential = invalidateCredential ?? throw new ArgumentNullException(nameof(invalidateCredential));
             _getRemoteUrls = getRemoteUrls ?? MruService.GetRepositoryRemoteUrlsAsync;
+            _getCredentialHosts = getCredentialHosts ?? AzureDevOpsServerHelper.GetAllKnownHosts;
         }
 
         private static HttpClient CreateSharedHttpClient()
@@ -156,10 +159,15 @@ namespace StartScreen.Services.DevHub.Providers
             return users.Count > 0 ? users[0] : null;
         }
 
-        public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)
+        public Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)
+        {
+            return GetAuthenticatedUsersAsync(null, cancellationToken);
+        }
+
+        public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(DevHubRefreshContext context, CancellationToken cancellationToken)
         {
             var results = new List<DevHubUser>();
-            var credentialHosts = AzureDevOpsServerHelper.GetAllKnownHosts().ToList();
+            var credentialHosts = _getCredentialHosts();
             var profileTargets = new List<(string CredentialHost, string ProfileUrl)>();
 
             foreach (var host in credentialHosts)
@@ -169,7 +177,7 @@ namespace StartScreen.Services.DevHub.Providers
                     : $"https://{host.TrimEnd('/')}/_apis/connectionData?api-version=3.0"));
             }
 
-            var organizationUrls = await GetCloudProfileBaseUrlsAsync(cancellationToken);
+            var organizationUrls = await GetCloudProfileBaseUrlsAsync(context, cancellationToken);
             foreach (var organizationUrl in organizationUrls)
             {
                 var target = (AzureDevOpsServerHelper.CloudHost, $"{organizationUrl.TrimEnd('/')}/_apis/connectionData?api-version=3.0");
@@ -177,13 +185,16 @@ namespace StartScreen.Services.DevHub.Providers
                     profileTargets.Add(target);
             }
 
-            var attempts = new List<(string Host, DevHubActivityResult<DevHubUser> Result)>();
+            var attempts = new List<(string Host, DevHubActivityResult<DevHubUser[]> Result)>();
             foreach (var (credentialHost, profileUrl) in profileTargets)
             {
-                var attempt = await DevHubActivityRequest.RunAsync(() => GetUserForHostAsync(credentialHost, profileUrl, cancellationToken),
-                    user => user != null, cancellationToken);
+                var attempt = await DevHubActivityRequest.RunAsync(async () =>
+                {
+                    var authenticatedUser = await GetUserForHostAsync(credentialHost, profileUrl, cancellationToken);
+                    return authenticatedUser == null ? Array.Empty<DevHubUser>() : new[] { authenticatedUser };
+                }, users => users.Length > 0, cancellationToken);
                 attempts.Add((credentialHost, attempt));
-                var user = attempt.Value;
+                var user = attempt.Value?.FirstOrDefault();
                 if (user != null && !results.Any(existing => string.Equals(existing.Host, user.Host, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(existing.Username, user.Username, StringComparison.OrdinalIgnoreCase)))
                     results.Add(user);
@@ -191,8 +202,13 @@ namespace StartScreen.Services.DevHub.Providers
 
             foreach (var host in attempts.GroupBy(attempt => attempt.Host, StringComparer.OrdinalIgnoreCase))
             {
-                if (!host.Any(attempt => attempt.Result.Value != null))
+                if (!host.Any(attempt => attempt.Result.Value?.Length > 0)
+                    && host.Any(attempt => attempt.Result.Status != DevHubActivityStatus.Success))
+                {
                     DevHubActivityRequest.Failed(unauthorized: host.Any(attempt => attempt.Result.Status == DevHubActivityStatus.Unauthorized));
+                    foreach (var attempt in host)
+                        DevHubActivityRequest.Warning(attempt.Result.Message);
+                }
             }
 
             return results;
@@ -207,10 +223,7 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 var credential = await _acquireCredential(credentialHost, profileUrl, cancellationToken);
                 if (credential == null)
-                {
-                    DevHubActivityRequest.Failed(unauthorized: true);
                     return null;
-                }
 
                 bool isCloud = credentialHost.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase);
                 using var response = await SendAuthenticatedGetAsync(credentialHost, credential, profileUrl, cancellationToken);
@@ -305,11 +318,13 @@ namespace StartScreen.Services.DevHub.Providers
             return results;
         }
 
-        private static async Task<IReadOnlyList<string>> GetCloudProfileBaseUrlsAsync(CancellationToken cancellationToken)
+        private async Task<IReadOnlyList<string>> GetCloudProfileBaseUrlsAsync(DevHubRefreshContext context, CancellationToken cancellationToken)
         {
             try
             {
-                var remoteUrls = await MruService.GetRepositoryRemoteUrlsAsync(cancellationToken);
+                if (context != null && context.Status != DevHubActivityStatus.Success)
+                    DevHubActivityRequest.Failed();
+                var remoteUrls = context?.RemoteUrls ?? await _getRemoteUrls(cancellationToken);
                 return GetCloudProfileBaseUrls(remoteUrls);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
@@ -335,7 +350,7 @@ namespace StartScreen.Services.DevHub.Providers
                     var items = await GetPersonalPullRequestsAsync(repo, credential, identity, options, token);
                     await EnrichPullRequestsAsync(items, credential, token);
                     return items;
-                }, cancellationToken);
+                }, options, cancellationToken);
             return results.OrderByDescending(pr => pr.IsOpen).ThenByDescending(pr => pr.UpdatedAt).ToList();
         }
 
@@ -349,17 +364,19 @@ namespace StartScreen.Services.DevHub.Providers
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
             var results = await GetPersonalProjectActivityAsync(
-                (repo, credential, identity, token) => GetIssuesAsync(repo, credential, identity, options, null, token), cancellationToken);
+                (repo, credential, identity, token) => GetIssuesAsync(repo, credential, identity, options, null, token), options, cancellationToken);
             return results.OrderBy(issue => issue.IsClosed).ThenByDescending(issue => issue.UpdatedAt).ToList();
         }
 
         private async Task<IReadOnlyList<T>> GetPersonalProjectActivityAsync<T>(
             Func<RemoteRepoIdentifier, DevHubCredential, string, CancellationToken, Task<List<T>>> fetch,
-            CancellationToken cancellationToken)
+            DevHubActivityOptions options, CancellationToken cancellationToken)
         {
             try
             {
-                var remotes = await _getRemoteUrls(cancellationToken);
+                if (options.RefreshContext != null && options.RefreshContext.Status != DevHubActivityStatus.Success)
+                    DevHubActivityRequest.Failed();
+                var remotes = options.RefreshContext?.RemoteUrls ?? await _getRemoteUrls(cancellationToken);
                 var repos = await GetActivityReposAsync(remotes, cancellationToken);
                 var projects = repos.GroupBy(repo => $"{GetBaseUrl(repo)}/{repo.Project}", StringComparer.OrdinalIgnoreCase)
                     .Select(group => group.First()).ToList();
@@ -451,7 +468,7 @@ namespace StartScreen.Services.DevHub.Providers
                 var runs = ParseAdoBuilds(json, repo, identity, projectWide: true).Where(run => run.IsTriggeredByCurrentUser).ToList();
                 await EnrichBuildFailuresAsync(runs, repo, credential, json, token);
                 return runs;
-            }, cancellationToken);
+            }, options, cancellationToken);
             return results.OrderByDescending(run => run.Timestamp).ToList();
         }
 
@@ -647,9 +664,18 @@ namespace StartScreen.Services.DevHub.Providers
                 return DevHubActivityRequest.Observe(new HttpResponseMessage(HttpStatusCode.Unauthorized));
 
             var retried = await SendAsync(fresh, url, json, cancellationToken);
-            if (retried.StatusCode == HttpStatusCode.Unauthorized)
-                _invalidateCredential(host, fresh);
-            return DevHubActivityRequest.Observe(retried);
+            try
+            {
+                if (retried.StatusCode == HttpStatusCode.Unauthorized)
+                    _invalidateCredential(host, fresh);
+                return DevHubActivityRequest.Observe(retried);
+            }
+            catch (Exception ex)
+            {
+                retried.Dispose();
+                await ex.LogAsync();
+                throw;
+            }
         }
 
         private async Task<HttpResponseMessage> SendAsync(DevHubCredential credential, string url, string json, CancellationToken cancellationToken)

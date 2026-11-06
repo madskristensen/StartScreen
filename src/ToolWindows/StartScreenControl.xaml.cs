@@ -20,7 +20,7 @@ using StartScreen.ToolWindows.Controls;
 
 namespace StartScreen.ToolWindows
 {
-    public partial class StartScreenControl : UserControl
+    public partial class StartScreenControl : UserControl, IDisposable
     {
         private readonly StartScreenViewModel _viewModel;
         private readonly JoinableTask _loadTask;
@@ -35,6 +35,10 @@ namespace StartScreen.ToolWindows
         private CancellationTokenSource _workspaceCancellation;
         private DevHubDashboard _workspaceDashboard;
         private string _workspaceError;
+        private bool _isDisposed;
+        private int _devHubRefreshGeneration;
+        private bool _isGlobalDevHubRefreshing;
+        private bool _isWorkspaceDevHubRefreshing;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -58,7 +62,7 @@ namespace StartScreen.ToolWindows
 
         private void UserControl_Loaded(object sender, RoutedEventArgs e)
         {
-            if (_shutdownToken.IsCancellationRequested)
+            if (_isDisposed || _shutdownToken.IsCancellationRequested)
                 return;
 
             StartupDiagnostics.Mark("control loaded");
@@ -84,8 +88,32 @@ namespace StartScreen.ToolWindows
 
         private void UserControl_Unloaded(object sender, RoutedEventArgs e)
         {
+            if (_isDisposed)
+                return;
             _lifetimeCancellation.Cancel();
+            _workspaceCancellation?.Cancel();
+            _devHubRefreshGeneration++;
+            _isGlobalDevHubRefreshing = false;
+            _isWorkspaceDevHubRefreshing = false;
             _viewModel.CancelBackgroundWork();
+        }
+
+        public void Dispose()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (_isDisposed)
+                return;
+            _isDisposed = true;
+            _lifetimeCancellation.Cancel();
+            _workspaceCancellation?.Cancel();
+            _workspaceCancellation?.Dispose();
+            _workspaceCancellation = null;
+            _lifetimeCancellation.Dispose();
+            Loaded -= UserControl_Loaded;
+            Unloaded -= UserControl_Unloaded;
+            _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            DevHubPanelControl.Dispose();
+            _viewModel.Dispose();
         }
 
         private async Task LoadControlAsync(CancellationToken cancellationToken)
@@ -131,8 +159,9 @@ namespace StartScreen.ToolWindows
                 cancellationToken.ThrowIfCancellationRequested();
                 _isInitialized = true;
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {
@@ -285,20 +314,21 @@ namespace StartScreen.ToolWindows
 
         private void MruItemControl_PinToggleRequested(object sender, MruItem item)
         {
-            if (ViewModel == null)
+            if (_isDisposed || ViewModel == null)
                 return;
 
             var hadFocus = sender is MruItemControl ctrl && ctrl.IsItemFocused();
+            CancellationToken cancellationToken = _lifetimeCancellation.Token;
 
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 await ViewModel.TogglePinAsync(item);
 
-                if (hadFocus)
+                if (hadFocus && !cancellationToken.IsCancellationRequested)
                 {
                     // Allow layout to rebuild after collection change
                     await StartScreenPackage.BackgroundTaskFactory.YieldAsync(
-                        System.Windows.Threading.DispatcherPriority.Loaded, _lifetimeCancellation.Token);
+                        System.Windows.Threading.DispatcherPriority.Loaded, cancellationToken);
                     FocusMruItemByPath(item.Path);
                 }
             }).FileAndForget(nameof(StartScreenControl));
@@ -397,6 +427,8 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_RefreshRequested(object sender, EventArgs e)
         {
+            if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
+                return;
             DevHubPanelControl.RefreshCopilotActivity();
             // Don't fetch Dev Hub data when the section is hidden. The unified
             // refresh button routes through here, so this keeps a refresh from
@@ -416,11 +448,8 @@ namespace StartScreen.ToolWindows
             }
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
-                if (ViewModel != null)
-                {
-                    ViewModel.IsRefreshingDevHub = true;
-                }
-
+                if (cancellationToken.IsCancellationRequested)
+                    return;
                 try
                 {
                     // Only show loading spinner if we have no data to display
@@ -432,8 +461,9 @@ namespace StartScreen.ToolWindows
                     await RefreshDevHubInBackgroundAsync(cancellationToken, forceRefresh: true);
                     RefreshWorkspaceSignalsAsync(true).FileAndForget(nameof(StartScreenControl));
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                 {
+                    await ex.LogAsync();
                 }
                 catch (Exception ex)
                 {
@@ -441,17 +471,10 @@ namespace StartScreen.ToolWindows
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
                     // Only show error if we have no cached data to fall back to
-                    if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
+                    if (!cancellationToken.IsCancellationRequested
+                        && (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication))
                     {
                         DevHubPanelControl.ShowError("Failed to refresh. Check your connection and try again.");
-                    }
-                }
-                finally
-                {
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    if (ViewModel != null)
-                    {
-                        ViewModel.IsRefreshingDevHub = false;
                     }
                 }
             }).FileAndForget(nameof(StartScreenControl));
@@ -459,6 +482,8 @@ namespace StartScreen.ToolWindows
 
         private void DevHubPanel_ConnectAccountRequested(object sender, string host)
         {
+            if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
+                return;
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
@@ -529,12 +554,16 @@ namespace StartScreen.ToolWindows
 
         private void RefreshWorkspaceScope()
         {
+            if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
+                return;
             _workspaceDashboard = null;
             _workspaceError = null;
             _workspaceCancellation?.Cancel();
             _workspaceCancellation?.Dispose();
             _workspaceCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
             CancellationToken cancellationToken = _workspaceCancellation.Token;
+            _isWorkspaceDevHubRefreshing = false;
+            UpdateDevHubLoadingState();
             RemoteRepoIdentifier repo = ViewModel.SelectedRepository;
             DevHubPanelControl.SetWorkspaceFilter(repo);
             UpdateDevHubPanel();
@@ -543,6 +572,8 @@ namespace StartScreen.ToolWindows
 
             var activityOptions = DevHubPanelControl.ActivityOptions;
             DevHubPanelControl.SetActivityLoading(true);
+            _isWorkspaceDevHubRefreshing = true;
+            UpdateDevHubLoadingState();
             ViewModel.RefreshSelectedRepositorySummaryAsync(ViewModel.SelectedMruItem, cancellationToken)
                 .FileAndForget(nameof(StartScreenControl));
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
@@ -567,8 +598,9 @@ namespace StartScreen.ToolWindows
                         }
                     }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                 {
+                    await ex.LogAsync();
                 }
                 catch (Exception ex)
                 {
@@ -583,13 +615,21 @@ namespace StartScreen.ToolWindows
                 finally
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    DevHubPanelControl.SetActivityLoading(false);
+                    if (!_isDisposed)
+                        DevHubPanelControl.SetActivityLoading(false);
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        _isWorkspaceDevHubRefreshing = false;
+                        UpdateDevHubLoadingState();
+                    }
                 }
             }).FileAndForget(nameof(StartScreenControl));
         }
 
         private void ViewModel_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
+            if (_isDisposed)
+                return;
             if (e.PropertyName == nameof(StartScreenViewModel.SelectedRepository))
             {
                 RefreshWorkspaceScope();
@@ -654,6 +694,8 @@ namespace StartScreen.ToolWindows
 
         private async Task LoadDevHubAsync()
         {
+            if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
+                return;
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
 
             try
@@ -666,7 +708,7 @@ namespace StartScreen.ToolWindows
                 if (cached != null && cached.HasAuthentication)
                 {
                     // Show cached data immediately (same pattern as News/MRU)
-                    UpdateDevHubPanel();
+                    UpdateDevHubPanel(cached, cached: true);
                     StartupDiagnostics.Mark("Dev Hub cache displayed");
 
                     // Refresh in background if stale - don't block the UI
@@ -688,22 +730,28 @@ namespace StartScreen.ToolWindows
                     await RefreshDevHubInBackgroundAsync(cancellationToken);
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {
                 await ex.LogAsync();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
+                if (!cancellationToken.IsCancellationRequested)
+                    UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
             }
         }
 
         private async Task RefreshDevHubInBackgroundAsync(CancellationToken cancellationToken, bool forceRefresh = false)
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             var activityOptions = DevHubPanelControl.ActivityOptions;
             DevHubPanelControl.SetActivityLoading(true);
+            int generation = ++_devHubRefreshGeneration;
+            _isGlobalDevHubRefreshing = true;
+            UpdateDevHubLoadingState();
             try
             {
                 // Construct Progress<T> while still on the UI thread so it captures
@@ -732,14 +780,17 @@ namespace StartScreen.ToolWindows
                     RefreshWorkspaceScope();
                 StartupDiagnostics.Mark("Dev Hub remote refresh completed");
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {
                 await ex.LogAsync();
                 // Only show error if we have no cached data to fall back to
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (cancellationToken.IsCancellationRequested)
+                    return;
                 if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
                 {
                     UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
@@ -747,13 +798,27 @@ namespace StartScreen.ToolWindows
                 else
                 {
                     DevHubPanelControl.ShowActivityError("Activity could not be refreshed. Showing loaded items. Refresh to retry.");
+                    ViewModel.SetDevHubRefreshState(_devHubService.CurrentDashboard,
+                        cached: true, error: "Activity could not be refreshed. Showing loaded items. Refresh to retry.");
                 }
             }
             finally
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                DevHubPanelControl.SetActivityLoading(false);
+                if (!_isDisposed)
+                    DevHubPanelControl.SetActivityLoading(false);
+                if (!cancellationToken.IsCancellationRequested && generation == _devHubRefreshGeneration)
+                {
+                    _isGlobalDevHubRefreshing = false;
+                    UpdateDevHubLoadingState();
+                }
             }
+        }
+
+        private void UpdateDevHubLoadingState()
+        {
+            if (!_isDisposed)
+                ViewModel.IsRefreshingDevHub = _isGlobalDevHubRefreshing || _isWorkspaceDevHubRefreshing;
         }
 
         private void UpdateDevHubPanel()
@@ -762,8 +827,10 @@ namespace StartScreen.ToolWindows
             UpdateDevHubPanel(dashboard);
         }
 
-        private void UpdateDevHubPanel(DevHubDashboard dashboard, string error = null)
+        private void UpdateDevHubPanel(DevHubDashboard dashboard, string error = null, bool cached = false)
         {
+            if (_isDisposed)
+                return;
             if (_workspaceDashboard != null && (_workspaceDashboard.CredentialGeneration != DevHubCredentialHelper.CredentialGeneration
                 || _workspaceDashboard.QueryContext != (Options.Instance.DevHubSearchQuery ?? string.Empty)
                 || dashboard?.IdentityContext != null && dashboard.IdentityContext != _workspaceDashboard.IdentityContext))
@@ -772,6 +839,7 @@ namespace StartScreen.ToolWindows
                 _workspaceError = null;
                 _workspaceCancellation?.Cancel();
             }
+            ViewModel.SetDevHubRefreshState(_workspaceDashboard ?? dashboard, cached, error ?? _workspaceError);
             DevHubPanelControl.SetCopilotWorkspace(ViewModel.GetCopilotWorkspaceRoots(),
                 ViewModel.SelectedMruItem != null || ViewModel.SelectedRepository != null);
             if (ViewModel.HasSelectedMruItem && ViewModel.SelectedRepository == null)
@@ -1254,20 +1322,27 @@ namespace StartScreen.ToolWindows
 
         private async Task RefreshWorkspaceSignalsAsync(bool force)
         {
+            if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
+                return;
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
             try
             {
                 await ViewModel.RefreshWorkspaceSignalsAsync(force, cancellationToken);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {
                 await ex.LogAsync();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (!cancellationToken.IsCancellationRequested)
+                {
                     ViewModel.SetServiceHealth("Service status unavailable", "Refresh to try checking service health again.", false);
+                    ViewModel.SetRefreshState(ViewModel.WorkspaceRefreshState,
+                        "Some workspace signals could not be refreshed. Refresh to retry.", partial: true);
+                }
             }
         }
 

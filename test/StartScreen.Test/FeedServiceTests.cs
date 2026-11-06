@@ -68,13 +68,12 @@ namespace StartScreen.Test
         {
             using var directory = new TemporaryDirectory();
             var cacheFile = directory.GetPath("feed.json");
-            File.WriteAllText(cacheFile, "[]");
             var now = new DateTime(2026, 9, 12, 12, 0, 0, DateTimeKind.Utc);
 
-            File.SetLastWriteTimeUtc(cacheFile, now.AddHours(-3));
+            AtomicJsonCache.Write(cacheFile, new { Entries = Array.Empty<FeedCacheEntry>(), ValidatedUtc = new[] { now.AddHours(-3) } });
             Assert.IsFalse(FeedService.IsCacheStale(cacheFile, now));
 
-            File.SetLastWriteTimeUtc(cacheFile, now.AddHours(-4));
+            AtomicJsonCache.Write(cacheFile, new { Entries = Array.Empty<FeedCacheEntry>(), ValidatedUtc = new[] { now.AddHours(-4) } });
             Assert.IsTrue(FeedService.IsCacheStale(cacheFile, now));
         }
 
@@ -309,7 +308,7 @@ namespace StartScreen.Test
             Assert.IsEmpty(result.FailedFeeds);
             Assert.AreEqual(new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero),
                 handler.LastRequest?.Headers.IfModifiedSince);
-            Assert.IsFalse(FeedService.IsCacheStale(directory.GetPath("Example.xml"), DateTime.UtcNow));
+            Assert.IsFalse(FeedService.IsCacheStale(directory.GetPath("_feed.json"), DateTime.UtcNow));
         }
 
         [TestMethod]
@@ -359,7 +358,7 @@ namespace StartScreen.Test
             CollectionAssert.AreEqual(new[] { "Example" }, result.CachedFeeds.ToArray());
             Assert.AreEqual(originalCache, File.ReadAllText(combinedFile));
             Assert.AreEqual(oldCheck, File.GetLastWriteTimeUtc(combinedFile));
-            Assert.AreEqual(oldCheck, File.GetLastWriteTimeUtc(directory.GetPath("Example.xml")));
+            Assert.AreEqual(oldCheck, File.GetLastWriteTimeUtc(FeedService.GetSourceCachePath(directory.Path, CreateFeed("Example").Url)));
         }
 
         [TestMethod]
@@ -444,7 +443,7 @@ namespace StartScreen.Test
         public async Task DownloadFeedsAsync_MalformedCacheIsDownloadedEvenWhenRecentAsync()
         {
             using var directory = new TemporaryDirectory();
-            File.WriteAllText(directory.GetPath("Example.xml"), "not xml");
+            File.WriteAllText(FeedService.GetSourceCachePath(directory.Path, CreateFeed("Example").Url), "not json");
             var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("Recovered post"));
             using var client = new HttpClient(handler);
 
@@ -476,6 +475,114 @@ namespace StartScreen.Test
             Assert.IsFalse(File.Exists(directory.GetPath("_feed.json")));
         }
 
+        [TestMethod]
+        public void SourceCacheKey_NormalizesHostPortAndFragmentButPreservesPathAndQuery()
+        {
+            using var directory = new TemporaryDirectory();
+            var original = FeedService.GetSourceCachePath(directory.Path, "http://example.com/feed?a=1");
+
+            Assert.AreEqual(original, FeedService.GetSourceCachePath(directory.Path, " HTTP://EXAMPLE.COM:80/feed?a=1#section "));
+            Assert.AreNotEqual(original, FeedService.GetSourceCachePath(directory.Path, "http://example.com/Feed?a=1"));
+            Assert.AreNotEqual(original, FeedService.GetSourceCachePath(directory.Path, "http://example.com/feed?a=2"));
+            Assert.IsTrue(Path.GetFileName(original).StartsWith("source-", StringComparison.Ordinal));
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_RenameReusesUrlCacheAndDisplaysCurrentNameAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            WriteSourceCache(directory, "Example", "Cached post", DateTime.UtcNow.AddHours(-1));
+            var feed = CreateFeed("Example");
+            feed.Name = @"..\renamed: source";
+            var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("Unexpected"));
+            using var client = new HttpClient(handler);
+
+            var result = await FeedService.DownloadFeedsAsync(client, [feed], directory.Path, _ => Task.CompletedTask);
+
+            Assert.AreEqual(0, handler.RequestCount);
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("Cached post", result.Posts.Single().Title);
+            Assert.IsTrue(result.Posts.Single().Source.EndsWith(" in " + feed.Name, StringComparison.Ordinal));
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_SameDisplayNameWithDifferentUrlsDoesNotShareCacheAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            WriteSourceCache(directory, "Example", "Cached post", DateTime.UtcNow.AddHours(-1));
+            var original = CreateFeed("Example");
+            var other = CreateFeed("Other");
+            other.Name = original.Name;
+            var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("Other post"));
+            using var client = new HttpClient(handler);
+
+            var result = await FeedService.DownloadFeedsAsync(client, [original, other], directory.Path, _ => Task.CompletedTask);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.AreEqual("other.example.com", handler.LastRequest?.RequestUri?.Host);
+            CollectionAssert.AreEquivalent(new[] { "Cached post", "Other post" }, result.Posts.Select(post => post.Title).ToArray());
+            Assert.AreNotEqual(FeedService.GetSourceCachePath(directory.Path, original.Url), FeedService.GetSourceCachePath(directory.Path, other.Url));
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_AggregateRewriteDoesNotExtendOldestSourceDeadlineAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var oldestCheck = DateTime.UtcNow.AddHours(-3).AddMinutes(-59);
+            WriteSourceCache(directory, "Example", "Cached post", oldestCheck);
+            var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("New source post"));
+            using var client = new HttpClient(handler);
+            var combinedPath = directory.GetPath("_feed.json");
+
+            var result = await FeedService.DownloadFeedsAsync(client, [CreateFeed("Example"), CreateFeed("Other")], directory.Path, _ => Task.CompletedTask);
+
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsFalse(FeedService.IsCacheStale(combinedPath, oldestCheck.AddHours(4).AddTicks(-1)));
+            Assert.IsTrue(FeedService.IsCacheStale(combinedPath, oldestCheck.AddHours(4)));
+
+            await FeedService.DownloadFeedsAsync(client, [CreateFeed("Example"), CreateFeed("Other")], directory.Path, _ => Task.CompletedTask);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsTrue(FeedService.IsCacheStale(combinedPath, oldestCheck.AddHours(4)));
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_LegacyNameCachesAreSafelyInvalidatedAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            File.WriteAllText(directory.GetPath("Example.xml"), "legacy data from an unknown URL");
+            File.WriteAllText(directory.GetPath("_feed.json"), "[]");
+            var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("New content"));
+            using var client = new HttpClient(handler);
+
+            Assert.IsTrue(FeedService.IsCacheStale(directory.GetPath("_feed.json"), DateTime.UtcNow));
+            Assert.IsNull(await FeedService.GetCachedPostsAsync(directory.GetPath("_feed.json")));
+            var result = await FeedService.DownloadFeedsAsync(client, [CreateFeed("Example")], directory.Path, _ => Task.CompletedTask);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("New content", result.Posts.Single().Title);
+            Assert.IsNull(handler.LastRequest?.Headers.IfModifiedSince);
+        }
+
+        [TestMethod]
+        public async Task DownloadFeedsAsync_PersistenceFailureDoesNotBecomeNetworkFailureAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var blockedFolder = directory.GetPath("not-a-folder");
+            File.WriteAllText(blockedFolder, "blocked");
+            var handler = new TestHttpMessageHandler((_, _) => CreateFeedResponse("Fresh post"));
+            using var client = new HttpClient(handler);
+
+            var result = await FeedService.DownloadFeedsAsync(client, [CreateFeed("Example")], blockedFolder, _ => Task.CompletedTask);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsTrue(result.Success);
+            Assert.IsEmpty(result.FailedFeeds);
+            Assert.AreEqual("Fresh post", result.Posts.Single().Title);
+        }
+
         private static FeedInfo CreateFeed(string name)
         {
             return new FeedInfo { Name = name, Url = $"https://{name.ToLowerInvariant()}.example.com/feed", Enabled = true };
@@ -493,15 +600,17 @@ namespace StartScreen.Test
 
         private static void WriteSourceCache(TemporaryDirectory directory, string name, string title, DateTime checkedAt)
         {
-            var path = directory.GetPath(name + ".xml");
+            var path = FeedService.GetSourceCachePath(directory.Path, CreateFeed(name).Url);
             var feed = new SyndicationFeed("Feed", "Description", new Uri("https://example.com"))
             {
                 LastUpdatedTime = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero),
                 Items = [CreateItem(title, DateTimeOffset.UtcNow)],
             };
-            using (var writer = XmlWriter.Create(path))
+            using (var text = new StringWriter())
             {
-                feed.SaveAsRss20(writer);
+                using (var writer = XmlWriter.Create(text))
+                    feed.SaveAsRss20(writer);
+                AtomicJsonCache.Write(path, new { Xml = text.ToString(), ValidatedUtc = checkedAt });
             }
             File.SetLastWriteTimeUtc(path, checkedAt);
         }
