@@ -272,7 +272,9 @@ namespace StartScreen.Test
             Assert.AreEqual(1, row.Children.Count);
             var item = new Models.MruItem { RemoteUrl = "https://github.com/o/r.git" };
             grid.DataContext = item;
+#pragma warning disable VSTHRD001 // Drain bindings on the current STA thread, not a thread switch.
             void UpdateBindings() => grid.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
+#pragma warning restore VSTHRD001
             UpdateBindings();
             Assert.AreEqual(Visibility.Collapsed, badge.Visibility);
             Assert.AreEqual(Visibility.Collapsed, row.Visibility);

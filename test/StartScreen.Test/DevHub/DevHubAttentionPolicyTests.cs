@@ -46,8 +46,8 @@ namespace StartScreen.Test.DevHub
             Assert.IsTrue(card.IsPullRequest);
             Assert.AreEqual(failing && daysAgo < 30, card.NeedsAttention);
             Assert.IsEmpty(DevHubWorkItem.GetIncoming([pr], [], []));
-            Assert.AreEqual(card.NeedsAttention ? 1 : 0,
-                DevHubWorkItem.Filter(mine, DevHubWorkItemKind.All, true).Count);
+            Assert.HasCount(card.NeedsAttention ? 1 : 0,
+                DevHubWorkItem.Filter(mine, DevHubWorkItemKind.All, true));
         }
 
         [TestMethod]
