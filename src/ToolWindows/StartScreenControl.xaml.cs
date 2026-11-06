@@ -291,7 +291,7 @@ namespace StartScreen.ToolWindows
             }
             else if (e.Key == Key.Down)
             {
-                MruItemControl firstMru = FindFirstControl<MruItemControl>(MruPanel);
+                MruItemControl firstMru = MruItemControl.GetItemControl(MruPanel, 0);
                 if (firstMru != null)
                 {
                     firstMru.FocusItem();
@@ -378,7 +378,7 @@ namespace StartScreen.ToolWindows
             // Focus the currently selected MRU item, or the first one
             MruItemControl mru = ViewModel.SelectedMruItem != null
                 ? FindMruItemControlByPath(MruPanel, ViewModel.SelectedMruItem.Path) : null;
-            mru ??= FindFirstControl<MruItemControl>(MruPanel);
+            mru ??= MruItemControl.GetItemControl(MruPanel, 0);
             if (mru != null)
             {
                 mru.RootBorder.Focus();
@@ -831,7 +831,7 @@ namespace StartScreen.ToolWindows
         {
             if (_isDisposed)
                 return;
-            if (_workspaceDashboard != null && (_workspaceDashboard.CredentialGeneration != DevHubCredentialHelper.CredentialGeneration
+            if (_workspaceDashboard != null && (_workspaceDashboard.CredentialGeneration != DevHubCredentialHelper.AccountGeneration
                 || _workspaceDashboard.QueryContext != (Options.Instance.DevHubSearchQuery ?? string.Empty)
                 || dashboard?.IdentityContext != null && dashboard.IdentityContext != _workspaceDashboard.IdentityContext))
             {
@@ -1028,7 +1028,7 @@ namespace StartScreen.ToolWindows
 
         private void FocusFirstMruItem()
         {
-            MruItemControl firstMru = FindFirstControl<MruItemControl>(MruPanel);
+            MruItemControl firstMru = MruItemControl.GetItemControl(MruPanel, 0);
             firstMru?.FocusItem();
         }
 
@@ -1054,20 +1054,12 @@ namespace StartScreen.ToolWindows
             mruControl?.FocusItem();
         }
 
-        private static MruItemControl FindMruItemControlByPath(DependencyObject parent, string path)
+        private static MruItemControl FindMruItemControlByPath(ListBox list, string path)
         {
-            var count = VisualTreeHelper.GetChildrenCount(parent);
-            for (var i = 0; i < count; i++)
+            for (var index = 0; index < list.Items.Count; index++)
             {
-                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
-                if (child is MruItemControl mru && mru.DataContext is MruItem item && item.Path == path)
-                {
-                    return mru;
-                }
-
-                MruItemControl result = FindMruItemControlByPath(child, path);
-                if (result != null)
-                    return result;
+                if (list.Items[index] is MruItem item && string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase))
+                    return MruItemControl.GetItemControl(list, index);
             }
             return null;
         }

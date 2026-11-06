@@ -74,6 +74,55 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow("#12345")]
+        [DataRow("######")]
+        [DataRow("#1234567")]
+        [DataRow("12345600")]
+        [DataRow("gggggg")]
+        [DataRow("12 456")]
+        [DataRow("")]
+        [DataRow(null)]
+        public void MalformedColors_UseStableFrozenFallbacksWithoutThrowing(string? value)
+        {
+            var backgrounds = new HexColorToBrushConverter();
+            var foregrounds = new HexColorToForegroundConverter();
+            var background = (SolidColorBrush)backgrounds.Convert(value, typeof(Brush), null, CultureInfo.InvariantCulture);
+
+            Assert.AreEqual(Color.FromRgb(128, 128, 128), background.Color);
+            Assert.IsTrue(background.IsFrozen);
+            Assert.AreSame(background, backgrounds.Convert(null, typeof(Brush), null, CultureInfo.InvariantCulture));
+            Assert.AreSame(System.Windows.SystemColors.ControlTextBrush,
+                foregrounds.Convert(value, typeof(Brush), null, CultureInfo.InvariantCulture));
+        }
+
+        [TestMethod]
+        public void NormalizedColors_ReuseBrushAndForegroundAcrossPrefixCaseAndWhitespace()
+        {
+            var backgrounds = new HexColorToBrushConverter();
+            var foregrounds = new HexColorToForegroundConverter();
+            var background = backgrounds.Convert("aabbcc", typeof(Brush), null, CultureInfo.InvariantCulture);
+            var foreground = foregrounds.Convert("aabbcc", typeof(Brush), null, CultureInfo.InvariantCulture);
+
+            Assert.AreSame(background, backgrounds.Convert(" #AaBbCc ", typeof(Brush), null, CultureInfo.InvariantCulture));
+            Assert.AreSame(foreground, foregrounds.Convert(" #AaBbCc ", typeof(Brush), null, CultureInfo.InvariantCulture));
+        }
+
+        [TestMethod]
+        public void BackgroundCache_IsBoundedAndEvictionDoesNotChangeRetainedBrushes()
+        {
+            var converter = new HexColorToBrushConverter();
+            var retained = (SolidColorBrush)converter.Convert("abcdef", typeof(Brush), null, CultureInfo.InvariantCulture);
+            for (var index = 0; index < 1024; index++)
+                converter.Convert(index.ToString("x6"), typeof(Brush), null, CultureInfo.InvariantCulture);
+
+            var cache = (System.Collections.IDictionary)typeof(HexColorToBrushConverter)
+                .GetField("_cache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
+            Assert.IsLessThanOrEqualTo(256, cache.Count);
+            Assert.AreEqual(Color.FromRgb(171, 205, 239), retained.Color);
+            Assert.IsTrue(retained.IsFrozen);
+        }
+
+        [TestMethod]
         public void HexColorToForeground_LightColorReturnsDarkForeground()
         {
             var converter = new HexColorToForegroundConverter();

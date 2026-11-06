@@ -165,6 +165,24 @@ namespace StartScreen.ToolWindows.Controls
 
         internal static void SynchronizeItems(ObservableCollection<DevHubWorkItem> collection, IReadOnlyList<DevHubWorkItem> items)
         {
+            var differences = Math.Abs(collection.Count - items.Count);
+            for (var index = 0; index < Math.Min(collection.Count, items.Count); index++)
+            {
+                if (!ReferenceEquals(collection[index], items[index]))
+                    differences++;
+            }
+            if (differences == 0)
+                return;
+
+            // Keep small edits incremental, but bound the repeated searches and shifts for large reorders.
+            if (differences > 64 && collection.Count > 64 && items.Count > 64)
+            {
+                collection.Clear();
+                foreach (var item in items)
+                    collection.Add(item);
+                return;
+            }
+
             var wanted = new HashSet<DevHubWorkItem>(items);
             for (var index = collection.Count - 1; index >= 0; index--)
             {

@@ -17,12 +17,21 @@ namespace StartScreen.Services.DevHub
     internal sealed class DevHubService
     {
         private readonly DevHubCacheService _cache;
-        private readonly IReadOnlyList<IDevHubProvider> _providers;
+        private readonly Func<IReadOnlyList<IDevHubProvider>> _getProviders;
         private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _getCandidateRemoteUrls;
         private readonly Func<DevHubSortOrder> _getSortOrder;
         private readonly Func<string> _getQueryContext;
         private readonly Func<int> _getCredentialGeneration;
-        private readonly Dictionary<string, DevHubActivitySnapshot> _scopedSources = new Dictionary<string, DevHubActivitySnapshot>();
+        internal const int ScopedSourceCapacity = 32;
+        private readonly Dictionary<string, ScopedSource> _scopedSources = new Dictionary<string, ScopedSource>();
+        private readonly Func<DateTimeOffset> _utcNow;
+        private string _scopedContext;
+        private string _scopedIdentity;
+        private string _scopedQuery;
+        private int _scopedCredentialGeneration;
+        private long _scopeRequestId;
+        private long _scopedContextRequestId;
+        private long _scopedEpoch;
         private readonly object _scopeGate = new object();
         private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
         private volatile DevHubDashboard _currentDashboard;
@@ -34,14 +43,16 @@ namespace StartScreen.Services.DevHub
 
         public DevHubService(DevHubCacheService cache, IReadOnlyList<IDevHubProvider> providers = null,
             Func<CancellationToken, Task<IReadOnlyList<string>>> getCandidateRemoteUrls = null,
-            Func<DevHubSortOrder> getSortOrder = null, Func<string> getQueryContext = null, Func<int> getCredentialGeneration = null)
+            Func<DevHubSortOrder> getSortOrder = null, Func<string> getQueryContext = null, Func<int> getCredentialGeneration = null,
+            Func<DateTimeOffset> utcNow = null, Func<IReadOnlyList<IDevHubProvider>> getProviders = null)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            _providers = providers ?? DevHubProviderRegistry.GetAllProviders();
+            _getProviders = getProviders ?? (providers == null ? DevHubProviderRegistry.GetEnabledProviders : () => providers);
             _getCandidateRemoteUrls = getCandidateRemoteUrls ?? GetCandidateRemoteUrlsAsync;
             _getSortOrder = getSortOrder ?? (() => Options.Instance.DevHubSortOrder);
             _getQueryContext = getQueryContext ?? (() => Options.Instance.DevHubSearchQuery ?? string.Empty);
-            _getCredentialGeneration = getCredentialGeneration ?? (() => DevHubCredentialHelper.CredentialGeneration);
+            _getCredentialGeneration = getCredentialGeneration ?? (() => DevHubCredentialHelper.AccountGeneration);
+            _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         }
 
         /// <summary>
@@ -75,7 +86,7 @@ namespace StartScreen.Services.DevHub
             var queryContext = _getQueryContext();
             var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken), urls => urls.Count > 0, cancellationToken);
             var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status);
-            var users = await Task.WhenAll(_providers.Select(provider => AuthenticateAsync(provider, cancellationToken, refreshContext)));
+            var users = await Task.WhenAll(_getProviders().Select(provider => AuthenticateAsync(provider, cancellationToken, refreshContext)));
             if (candidates.Status != DevHubActivityStatus.Success || generation != _getCredentialGeneration() || queryContext != _getQueryContext())
                 return _currentDashboard = null;
             var context = CreateContext(users.SelectMany(value => value.Value ?? Array.Empty<DevHubUser>()), options ?? new DevHubActivityOptions(), candidates.Value);
@@ -133,7 +144,7 @@ namespace StartScreen.Services.DevHub
                 // Phase 1: Authenticate all providers in parallel. A single provider may
                 // surface multiple authenticated users when it spans multiple hosts (e.g.
                 // Azure DevOps cloud + on-premises Server).
-                var authTasks = _providers.Select(async provider =>
+                var authTasks = _getProviders().Select(async provider =>
                 {
                     var result = await AuthenticateAsync(provider, cancellationToken, refreshContext);
                     return (provider, result);
@@ -323,11 +334,19 @@ namespace StartScreen.Services.DevHub
 
         private void SetCurrentDashboard(DevHubDashboard dashboard)
         {
+            lock (_scopeGate)
+            {
+                PruneScopedSources();
+                if (_scopedIdentity != null && !string.IsNullOrEmpty(dashboard?.IdentityContext) && _scopedIdentity != dashboard.IdentityContext)
+                    ClearScopedSources();
+            }
             _currentDashboard = dashboard;
         }
 
         private DevHubDashboard InvalidateContext(IProgress<DevHubDashboard> progress = null)
         {
+            lock (_scopeGate)
+                PruneScopedSources();
             var dashboard = new DevHubDashboard { CredentialGeneration = _getCredentialGeneration(), QueryContext = _getQueryContext() };
             dashboard.Sources["authentication"] = new DevHubActivitySnapshot { Status = DevHubActivityStatus.Unauthorized };
             dashboard.ActivityWarnings["authentication"] = "The account or activity settings changed during refresh. Refresh again to load the current account.";
@@ -471,14 +490,32 @@ namespace StartScreen.Services.DevHub
                 return CurrentDashboard;
 
             options = options ?? new DevHubActivityOptions(ScopedRepoItemCount);
+            var requestId = Interlocked.Increment(ref _scopeRequestId);
             var authenticationGeneration = _getCredentialGeneration();
             var queryContext = _getQueryContext();
-            var authResults = await Task.WhenAll(_providers.Select(async provider => (Provider: provider, Result: await AuthenticateAsync(provider, cancellationToken))));
+            var refreshContext = new DevHubRefreshContext(new[] { GetLookupUrl(repo) });
+            var authResults = await Task.WhenAll(_getProviders().Select(async provider => (Provider: provider, Result: await AuthenticateAsync(provider, cancellationToken, refreshContext))));
             if (authenticationGeneration != _getCredentialGeneration() || queryContext != _getQueryContext())
                 return InvalidateContext();
             var users = authResults.SelectMany(pair => pair.Result.Value ?? Array.Empty<DevHubUser>()).ToList();
-            var context = CreateContext(users, options, new[] { repo.ToString() });
+            var context = CreateContext(users, options, new[] { GetLookupUrl(repo) });
             var generation = _getCredentialGeneration();
+            long scopeEpoch;
+            lock (_scopeGate)
+            {
+                var scopeContext = generation + ":" + CreateContext(users, options, Array.Empty<string>());
+                PruneScopedSources();
+                if (_scopedContext != scopeContext && requestId >= _scopedContextRequestId)
+                {
+                    ClearScopedSources();
+                    _scopedContext = scopeContext;
+                    _scopedIdentity = CreateIdentityContext(users);
+                    _scopedQuery = queryContext;
+                    _scopedCredentialGeneration = generation;
+                }
+                scopeEpoch = _scopedContext == scopeContext ? _scopedEpoch : -1;
+                _scopedContextRequestId = Math.Max(_scopedContextRequestId, requestId);
+            }
             var dashboard = new DevHubDashboard
             {
                 Users = users,
@@ -502,16 +539,20 @@ namespace StartScreen.Services.DevHub
                     RepoIdentifier = repo,
                 };
             cancellationToken.ThrowIfCancellationRequested();
-            if (generation != _getCredentialGeneration() || context != CreateContext(users, options, new[] { repo.ToString() }))
+            if (generation != _getCredentialGeneration() || queryContext != _getQueryContext()
+                || context != CreateContext(users, options, new[] { GetLookupUrl(repo) }))
                 return InvalidateContext();
             lock (_scopeGate)
             {
-                DevHubActivitySnapshot previous = null;
-                if (verified)
-                    _scopedSources.TryGetValue(context, out previous);
-                snapshot = RetainFailedSource(snapshot, previous);
-                if (verified)
-                    _scopedSources[context] = snapshot;
+                PruneScopedSources();
+                if (verified && scopeEpoch == _scopedEpoch)
+                {
+                    _scopedSources.TryGetValue(context, out var previous);
+                    snapshot = RetainFailedSource(snapshot, previous?.Snapshot);
+                    _scopedSources[context] = new ScopedSource(snapshot, _utcNow());
+                    while (_scopedSources.Count > ScopedSourceCapacity)
+                        _scopedSources.Remove(_scopedSources.OrderBy(pair => pair.Value.StoredAt).First().Key);
+                }
             }
             dashboard.Sources[repo.ToString().ToLowerInvariant()] = snapshot;
             dashboard.PullRequests = snapshot.PullRequests;
@@ -626,7 +667,51 @@ namespace StartScreen.Services.DevHub
             _cache.ClearCache();
             _currentDashboard = null;
             lock (_scopeGate)
-                _scopedSources.Clear();
+            {
+                ClearScopedSources();
+                _scopedContextRequestId = Interlocked.Increment(ref _scopeRequestId);
+            }
+        }
+
+        internal int ScopedSourceCount
+        {
+            get
+            {
+                lock (_scopeGate)
+                {
+                    PruneScopedSources();
+                    return _scopedSources.Count;
+                }
+            }
+        }
+
+        private void PruneScopedSources()
+        {
+            if (_scopedCredentialGeneration != _getCredentialGeneration() || _scopedQuery != _getQueryContext())
+                ClearScopedSources();
+            var cutoff = _utcNow().AddMinutes(-5);
+            foreach (var key in _scopedSources.Where(pair => pair.Value.StoredAt <= cutoff).Select(pair => pair.Key).ToArray())
+                _scopedSources.Remove(key);
+        }
+
+        private void ClearScopedSources()
+        {
+            _scopedSources.Clear();
+            _scopedContext = null;
+            _scopedIdentity = null;
+            _scopedEpoch++;
+        }
+
+        private sealed class ScopedSource
+        {
+            internal ScopedSource(DevHubActivitySnapshot snapshot, DateTimeOffset storedAt)
+            {
+                Snapshot = snapshot;
+                StoredAt = storedAt;
+            }
+
+            internal DevHubActivitySnapshot Snapshot { get; }
+            internal DateTimeOffset StoredAt { get; }
         }
     }
 }

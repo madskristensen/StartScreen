@@ -204,7 +204,7 @@ namespace StartScreen.Test.DevHub
             DevHubCredential? credential = null;
             var acquisitions = 0;
             var provider = new BitbucketDevHubProvider(client, _ => Task.FromResult(credential == null ? null!
-                : ++acquisitions == 1 || retryCredentialAvailable ? credential : null!));
+                : ++acquisitions == 1 || retryCredentialAvailable ? credential : null!), hasStoredCredential: () => credential != null);
             var service = Service([provider]);
 
             var unconfigured = await service.RefreshAsync(CancellationToken.None);

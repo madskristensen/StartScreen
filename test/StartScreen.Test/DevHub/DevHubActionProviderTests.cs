@@ -508,7 +508,7 @@ namespace StartScreen.Test.DevHub
                 return Json(path.EndsWith("/repositories/repo") ? "{\"id\":\"" + RepositoryId + "\"}" : "{\"value\":[]}");
             });
             using var client = new HttpClient(handler);
-            var provider = new AzureDevOpsDevHubProvider(client, (_, _, _) => Task.FromResult(Credential()), (_, _) => { });
+            var provider = new AzureDevOpsDevHubProvider(client, (_, _, _) => Task.FromResult(Credential()), (_, _) => { }, getCredentialHosts: () => []);
 
             var detail = await provider.GetRepoDetailAsync(repo, 10, CancellationToken.None);
 

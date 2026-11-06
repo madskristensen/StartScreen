@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using StartScreen.Helpers;
 using StartScreen.Models.DevHub;
 
 namespace StartScreen.Services.DevHub.Providers
@@ -55,8 +56,7 @@ namespace StartScreen.Services.DevHub.Providers
                     {
                         if (!response.IsSuccessStatusCode)
                             return Failure(repo, response.StatusCode, signInMessage);
-                        using (var stream = await response.Content.ReadAsStreamAsync())
-                        using (var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken))
+                        using (var doc = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken)))
                         {
                             cancellationToken.ThrowIfCancellationRequested();
                             var items = gitHub ? doc.RootElement : doc.RootElement.GetProperty("value");
@@ -115,12 +115,12 @@ namespace StartScreen.Services.DevHub.Providers
                     DevHubActivityRequest.Observe(response);
                     if (!response.IsSuccessStatusCode)
                         return null;
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    using (var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken))
+                    using (var doc = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken)))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var identity = gitHub ? doc.RootElement : doc.RootElement.GetProperty("authenticatedUser");
-                        var value = identity.GetProperty(identityProperty ?? (gitHub ? "login" : "id")).GetString();
+                        var value = identityProperty == "uuid" ? BitbucketDevHubProvider.GetUserIdentity(identity)
+                            : identity.GetProperty(identityProperty ?? (gitHub ? "login" : "id")).GetString();
                         return string.IsNullOrWhiteSpace(value) ? null : value;
                     }
                 }

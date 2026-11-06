@@ -551,8 +551,9 @@ namespace StartScreen.Services
         /// <summary>
         /// Pulls the repository for an MRU item and refreshes its Git status afterward.
         /// </summary>
-        public static async Task<GitCommandResult> PullGitAsync(MruItem item)
+        public static async Task<GitCommandResult> PullGitAsync(MruItem item, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (item == null || string.IsNullOrWhiteSpace(item.Path))
                 return new GitCommandResult(false, "The MRU item does not have a valid path.");
 
@@ -563,7 +564,8 @@ namespace StartScreen.Services
             if (string.IsNullOrEmpty(repoPath))
                 return new GitCommandResult(false, "The MRU item is not in a Git repository.");
 
-            GitCommandResult result = await GitHelper.PullAsync(repoPath);
+            GitCommandResult result = await GitHelper.PullAsync(repoPath, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             item.ApplyGitStatus(GitHelper.GetGitStatus(item.Path));
 
             return result;

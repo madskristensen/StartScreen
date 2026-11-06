@@ -85,5 +85,63 @@ namespace StartScreen.Test
             await FeedStore.RemoveFeedAsync("CUSTOM", filePath);
             Assert.IsEmpty(FeedStore.ReadFeeds(filePath));
         }
+
+        [TestMethod]
+        public async Task ConcurrentEdits_PreserveEverySuccessfulChangeAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var filePath = directory.GetPath("newsfeeds.json");
+            await FeedStore.SaveFeedsAsync(
+                [new FeedInfo { Name = "Remove", Url = "https://example.com/remove", Enabled = true }], filePath);
+
+            await Task.WhenAll(Enumerable.Range(0, 20).Select(index =>
+                FeedStore.AddCustomFeedAsync($"Feed {index}", $"https://example.com/{index}", filePath))
+                .Append(FeedStore.RemoveFeedAsync("Remove", filePath)));
+
+            var feeds = FeedStore.ReadFeeds(filePath);
+            Assert.HasCount(20, feeds);
+            CollectionAssert.AreEquivalent(Enumerable.Range(0, 20).Select(index => $"Feed {index}").ToArray(),
+                feeds.Select(feed => feed.Name).ToArray());
+            Assert.IsEmpty(Directory.GetFiles(directory.Path, "*.tmp"));
+        }
+
+        [TestMethod]
+        public async Task SaveFailure_PreservesPreviousConfigurationAndThrowsAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var filePath = directory.GetPath("newsfeeds.json");
+            await FeedStore.SaveFeedsAsync(
+                [new FeedInfo { Name = "Original", Url = "https://example.com/original", Enabled = true }], filePath);
+            var before = File.ReadAllText(filePath);
+            var oversized = new FeedInfo { Name = new string('X', AtomicJsonCache.MaxBytes + 1), Url = "https://example.com" };
+
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() => FeedStore.SaveFeedsAsync([oversized], filePath));
+
+            Assert.AreEqual(before, File.ReadAllText(filePath));
+            Assert.IsEmpty(Directory.GetFiles(directory.Path, "*.tmp"));
+            await FeedStore.AddCustomFeedAsync("After failure", "https://example.com/after", filePath);
+            Assert.HasCount(2, FeedStore.ReadFeeds(filePath));
+        }
+
+        [TestMethod]
+        public async Task FailedAtomicReplacement_LeavesOriginalFileAndCleansStagingFileAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var filePath = directory.GetPath("newsfeeds.json");
+            await FeedStore.SaveFeedsAsync(
+                [new FeedInfo { Name = "Original", Url = "https://example.com/original", Enabled = true }], filePath);
+            var before = File.ReadAllText(filePath);
+            using (var locked = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                await Assert.ThrowsAsync<IOException>(() => FeedStore.SaveFeedsAsync(
+                    [new FeedInfo { Name = "Replacement", Url = "https://example.com/replacement" }], filePath));
+                Assert.AreEqual(before, File.ReadAllText(filePath));
+                Assert.IsEmpty(Directory.GetFiles(directory.Path, "*.tmp"));
+            }
+
+            await FeedStore.SaveFeedsAsync(
+                [new FeedInfo { Name = "Replacement", Url = "https://example.com/replacement" }], filePath);
+            Assert.AreEqual("Replacement", FeedStore.ReadFeeds(filePath).Single().Name);
+        }
     }
 }

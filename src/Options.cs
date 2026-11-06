@@ -74,6 +74,18 @@ namespace StartScreen
         [DefaultValue(true)]
         public bool DevHubEnabled { get; set; } = true;
 
+        [Browsable(false)]
+        [DefaultValue(true)]
+        public bool DevHubGitHubEnabled { get; set; } = true;
+
+        [Browsable(false)]
+        [DefaultValue(true)]
+        public bool DevHubAzureDevOpsEnabled { get; set; } = true;
+
+        [Browsable(false)]
+        [DefaultValue(true)]
+        public bool DevHubBitbucketEnabled { get; set; } = true;
+
         /// <summary>
         /// Custom GitHub search query for incoming Dev Hub activity.
         /// When set, this replaces the default "involves:{login}" query.

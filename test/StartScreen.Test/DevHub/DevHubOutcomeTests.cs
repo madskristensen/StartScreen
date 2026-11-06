@@ -92,6 +92,187 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DoNotParallelize]
+        public async Task Cache_BitbucketUnauthorizedDoesNotDiscardOtherVerifiedAccountsAsync()
+        {
+            var github = new Provider("GitHub")
+            {
+                Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("cached pull")]),
+                Issues = _ => Task.FromResult<IReadOnlyList<DevHubIssue>>([Issue("cached issue")]),
+                Builds = _ => Task.FromResult<IReadOnlyList<DevHubCiRun>>([new DevHubCiRun { Name = "cached build", WebUrl = "https://example.com/build" }]),
+            };
+            var bitbucket = new Provider("Bitbucket") { Authenticated = false };
+            DevHubService CreateService() => new(new DevHubCacheService(_folder), [github, bitbucket],
+                _ => Task.FromResult<IReadOnlyList<string>>([]), () => DevHubSortOrder.MostRecent, () => string.Empty);
+            await CreateService().RefreshAsync(CancellationToken.None);
+            bitbucket.OnAuthenticate = () =>
+            {
+                DevHubCredentialHelper.InvalidateCachedCredential("bitbucket.org");
+                DevHubActivityRequest.Failed(unauthorized: true);
+            };
+
+            var reopened = CreateService();
+            var cached = await reopened.LoadFromCacheAsync();
+
+            Assert.IsNotNull(cached);
+            Assert.IsTrue(cached.HasAuthentication);
+            Assert.AreEqual("cached pull", cached.PullRequests.Single().Title);
+            Assert.AreEqual("cached issue", cached.Issues.Single().Title);
+            Assert.AreEqual("cached build", cached.CiRuns.Single().Name);
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var refreshed = await reopened.RefreshAsync(CancellationToken.None, forceRefresh: true);
+                Assert.IsTrue(refreshed.HasAuthentication);
+                Assert.AreEqual(DevHubActivityStatus.Partial, refreshed.Status);
+                Assert.AreEqual("cached pull", refreshed.PullRequests.Single().Title);
+                Assert.AreEqual("cached issue", refreshed.Issues.Single().Title);
+                Assert.AreEqual("cached build", refreshed.CiRuns.Single().Name);
+                Assert.AreEqual(DevHubActivityStatus.Unauthorized, refreshed.Sources["Bitbucket/authentication"].Status);
+                Assert.IsFalse(refreshed.ActivityWarnings.ContainsKey("authentication"));
+                Assert.IsEmpty(refreshed.GetVisibleActivityWarnings(), "Bitbucket errors belong in Output, not the activity banner.");
+                Assert.AreSame(refreshed, reopened.CurrentDashboard);
+            }
+        }
+
+        [TestMethod]
+        [DataRow("GitHub")]
+        [DataRow("Azure DevOps")]
+        [DataRow("Bitbucket")]
+        public async Task ProviderSettings_DisabledProviderIsSkippedByCacheRefreshAndScopeAndCanBeReenabledAsync(string name)
+        {
+            var enabled = true;
+            var generation = 0;
+            var authentications = 0;
+            var activities = 0;
+            var provider = new Provider(name)
+            {
+                OnAuthenticate = () => authentications++,
+                Pulls = _ =>
+                {
+                    activities++;
+                    return Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("enabled pull")]);
+                },
+                Detail = _ =>
+                {
+                    activities++;
+                    return Task.FromResult(new DevHubRepoDetail { RepoIdentifier = _repo });
+                },
+            };
+            var service = new DevHubService(new DevHubCacheService(_folder), [provider],
+                _ => Task.FromResult<IReadOnlyList<string>>([]), () => DevHubSortOrder.MostRecent, () => string.Empty,
+                () => generation, getProviders: () => enabled ? [provider] : []);
+            Assert.IsTrue((await service.RefreshAsync(CancellationToken.None)).HasData);
+
+            enabled = false;
+            generation++;
+            authentications = activities = 0;
+            Assert.IsNull(service.CurrentDashboard);
+            Assert.IsNull(await service.LoadFromCacheAsync());
+            var disabled = await service.RefreshAsync(CancellationToken.None, forceRefresh: true);
+            Assert.IsFalse(disabled.HasAuthentication);
+            Assert.IsFalse(disabled.HasData);
+            Assert.IsFalse((await service.ScopeToRepoAsync(_repo, CancellationToken.None)).HasData);
+            Assert.AreEqual(0, authentications);
+            Assert.AreEqual(0, activities);
+
+            enabled = true;
+            generation++;
+            var reenabled = await service.RefreshAsync(CancellationToken.None, forceRefresh: true);
+            Assert.IsTrue(reenabled.HasAuthentication);
+            Assert.AreEqual("enabled pull", reenabled.PullRequests.Single().Title);
+            Assert.AreEqual(1, authentications);
+            Assert.AreEqual(1, activities);
+        }
+
+        [TestMethod]
+        [DataRow("Bitbucket/authentication")]
+        [DataRow("Bitbucket/global/Issues")]
+        [DataRow("bitbucket.org/workspace/repo")]
+        public async Task Cache_BitbucketWarningsRemainDiagnosticOnlyWhileOtherWarningsStayVisibleAsync(string key)
+        {
+            var dashboard = new DevHubDashboard
+            {
+                ActivityWarnings = new Dictionary<string, string>
+                {
+                    [key] = "api.bitbucket.org returned HTTP 401. Refresh to retry.",
+                    ["GitHub/authentication"] = "GitHub sign-in is required.",
+                },
+                Sources = new Dictionary<string, DevHubActivitySnapshot>
+                {
+                    [key] = new DevHubActivitySnapshot { Status = DevHubActivityStatus.Unauthorized },
+                },
+            };
+            var cache = new DevHubCacheService(_folder);
+            await cache.WriteDashboardAsync(dashboard);
+
+            var restored = await cache.ReadDashboardAsync(CancellationToken.None);
+
+            Assert.IsNotNull(restored);
+            Assert.AreEqual(DevHubActivityStatus.Unauthorized, restored.Status);
+            Assert.HasCount(2, restored.ActivityWarnings, "Suppressing presentation must not discard diagnostic failure data.");
+            Assert.AreEqual("GitHub sign-in is required.", restored.GetVisibleActivityWarnings().Single().Value);
+            Assert.IsNull(restored.FilterByRepo(new RemoteRepoIdentifier("bitbucket.org", "workspace", "repo")).ActivityWarning);
+        }
+
+        [TestMethod]
+        [DoNotParallelize]
+        public async Task Refresh_ProviderTokenRetryDuringActivityDoesNotDiscardConnectedDataAsync()
+        {
+            var provider = new Provider("GitHub")
+            {
+                Pulls = _ =>
+                {
+                    DevHubCredentialHelper.InvalidateCachedCredential("github.com");
+                    return Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("refreshed pull")]);
+                },
+                Detail = _ =>
+                {
+                    DevHubCredentialHelper.InvalidateCachedCredential("github.com");
+                    return Task.FromResult(new DevHubRepoDetail { RepoIdentifier = _repo, PullRequests = [PullRequest("scoped pull")] });
+                },
+            };
+            var service = new DevHubService(new DevHubCacheService(_folder), [provider],
+                _ => Task.FromResult<IReadOnlyList<string>>([]), () => DevHubSortOrder.MostRecent, () => string.Empty);
+
+            var dashboard = await service.RefreshAsync(CancellationToken.None);
+            var scoped = await service.ScopeToRepoAsync(_repo, CancellationToken.None);
+
+            Assert.IsTrue(dashboard.HasAuthentication);
+            Assert.AreEqual("refreshed pull", dashboard.PullRequests.Single().Title);
+            Assert.IsTrue(scoped.HasAuthentication);
+            Assert.AreEqual("scoped pull", scoped.PullRequests.Single().Title);
+            Assert.IsNotNull(await new DevHubCacheService(_folder).ReadDashboardAsync());
+        }
+
+        [TestMethod]
+        [DoNotParallelize]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task Refresh_ExplicitAccountChangeStillDiscardsConnectedDataAsync(bool duringAuthentication)
+        {
+            var provider = new Provider("GitHub")
+            {
+                OnAuthenticate = duringAuthentication ? DevHubCredentialHelper.ClearCachedCredentials : null,
+                Pulls = _ =>
+                {
+                    if (!duringAuthentication)
+                        DevHubCredentialHelper.ClearCachedCredentials();
+                    return Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("old account")]);
+                },
+            };
+            var cache = new DevHubCacheService(_folder);
+            var service = new DevHubService(cache, [provider],
+                _ => Task.FromResult<IReadOnlyList<string>>([]), () => DevHubSortOrder.MostRecent, () => string.Empty);
+
+            var dashboard = await service.RefreshAsync(CancellationToken.None);
+
+            Assert.IsFalse(dashboard.HasAuthentication);
+            Assert.IsEmpty(dashboard.PullRequests);
+            Assert.AreEqual(DevHubActivityStatus.Unauthorized, dashboard.Status);
+            Assert.IsNull(await cache.ReadDashboardAsync());
+        }
+
+        [TestMethod]
         public async Task Refresh_FailureRetainsSourceButSuccessfulEmptyClearsOnlyItsSourceAsync()
         {
             var provider = new Provider("GitHub")
@@ -510,6 +691,7 @@ namespace StartScreen.Test.DevHub
             public string Username { get; set; } = "account";
             public string IdentityId { get; set; } = "identity";
             public bool Authenticated { get; set; } = true;
+            public Action? OnAuthenticate { get; set; }
             public Func<CancellationToken, Task<IReadOnlyList<DevHubIssue>>> Issues { get; set; } = _ => Task.FromResult<IReadOnlyList<DevHubIssue>>([]);
             public Func<CancellationToken, Task<IReadOnlyList<DevHubPullRequest>>> Pulls { get; set; } = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([]);
             public Func<CancellationToken, Task<IReadOnlyList<DevHubCiRun>>> Builds { get; set; } = _ => Task.FromResult<IReadOnlyList<DevHubCiRun>>([]);
@@ -518,7 +700,10 @@ namespace StartScreen.Test.DevHub
             public RemoteRepoIdentifier ParseRemoteUrl(string remoteUrl) => RemoteRepoIdentifier.TryParse(remoteUrl);
             public Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken) => Task.FromResult(User());
             public Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)
-                => Task.FromResult<IReadOnlyList<DevHubUser>>(Authenticated ? [User()] : []);
+            {
+                OnAuthenticate?.Invoke();
+                return Task.FromResult<IReadOnlyList<DevHubUser>>(Authenticated ? [User()] : []);
+            }
             private DevHubUser User() => new DevHubUser { Username = Username, IdentityId = IdentityId, Host = "github.com", ProviderName = name };
             public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken) => Issues(cancellationToken);
             public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken) => Pulls(cancellationToken);

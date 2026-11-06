@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using StartScreen.Helpers;
 using StartScreen.Models.DevHub;
 
 namespace StartScreen.Services.DevHub.Providers
@@ -128,7 +129,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (!response.IsSuccessStatusCode)
                     return null;
 
-                var json = await response.Content.ReadAsStringAsync();
+                var json = await HttpResponseReader.ReadStringAsync(response, cancellationToken);
                 using (var doc = System.Text.Json.JsonDocument.Parse(json))
                 {
                     var root = doc.RootElement;
@@ -261,7 +262,7 @@ namespace StartScreen.Services.DevHub.Providers
             if (!reposResponse.IsSuccessStatusCode)
                 return Array.Empty<DevHubCiRun>();
 
-            var repos = ParseRepoList(await reposResponse.Content.ReadAsStringAsync());
+            var repos = ParseRepoList(await HttpResponseReader.ReadStringAsync(reposResponse, cancellationToken));
             using var semaphore = new SemaphoreSlim(3, 3);
             var results = await Task.WhenAll(repos.Select(async repo =>
             {
@@ -271,7 +272,7 @@ namespace StartScreen.Services.DevHub.Providers
                     var runsUrl = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs?per_page=3";
                     using var response = await SendGetAsync(credential, runsUrl, cancellationToken, httpClient);
                     return response.IsSuccessStatusCode
-                        ? ParseCiRuns(await response.Content.ReadAsStringAsync(), repo)
+                        ? ParseCiRuns(await HttpResponseReader.ReadStringAsync(response, cancellationToken), repo)
                         : new List<DevHubCiRun>();
                 }
                 finally
@@ -526,6 +527,16 @@ namespace StartScreen.Services.DevHub.Providers
                 && value.TryGetDateTime(out var date) && date.ToUniversalTime() >= cutoff;
         }
 
+        private static void ObserveSearchCompleteness(JsonElement root)
+        {
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("incomplete_results", out var incomplete)
+                && incomplete.ValueKind == JsonValueKind.True)
+            {
+                DevHubActivityRequest.Failed();
+                DevHubActivityRequest.Warning("GitHub returned incomplete search results. Some activity may be missing. Refresh to retry.");
+            }
+        }
+
         private static string SearchUrl(string query) =>
             $"https://api.github.com/search/issues?q={Uri.EscapeDataString(query)}&advanced_search=true&sort=updated&order=desc";
 
@@ -543,8 +554,9 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     using var response = await SendGetAsync(credential, $"{url}&per_page={pageSize}&page={page}", cancellationToken, client);
                     response.EnsureSuccessStatusCode();
-                    using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    using var doc = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
                     cancellationToken.ThrowIfCancellationRequested();
+                    ObserveSearchCompleteness(doc.RootElement);
                     var items = collection == null ? doc.RootElement : doc.RootElement.GetProperty(collection);
                     var added = false;
                     foreach (var item in items.EnumerateArray().Take(Math.Min(pageSize, maxItems - (page - 1) * pageSize)))
@@ -638,7 +650,7 @@ namespace StartScreen.Services.DevHub.Providers
                     $"https://api.github.com/search/issues?q={query}&advanced_search=true&sort=updated&order=desc&per_page=30",
                     cancellationToken, client);
                 response.EnsureSuccessStatusCode();
-                foreach (var pr in ParsePullRequests(await response.Content.ReadAsStringAsync(), login)
+                foreach (var pr in ParsePullRequests(await HttpResponseReader.ReadStringAsync(response, cancellationToken), login)
                     .Where(item => item.IsOpen && item.IsAuthoredByCurrentUser && (repo == null || Equals(repo, item.RepoIdentifier))))
                 {
                     var existing = results.Find(item => item.NumericId == pr.NumericId && Equals(item.RepoIdentifier, pr.RepoIdentifier));
@@ -672,7 +684,7 @@ namespace StartScreen.Services.DevHub.Providers
                         $"https://api.github.com/search/issues?q={query}&advanced_search=true&sort=updated&order=desc&per_page={NormalizeMaxItems(maxItems)}",
                         cancellationToken, client);
                     response.EnsureSuccessStatusCode();
-                    foreach (var issue in ParseIssues(await response.Content.ReadAsStringAsync(), login))
+                    foreach (var issue in ParseIssues(await HttpResponseReader.ReadStringAsync(response, cancellationToken), login))
                     {
                         if ((repo == null || Equals(issue.RepoIdentifier, repo))
                             && !results.Any(existing => existing.NumericId == issue.NumericId && Equals(existing.RepoIdentifier, issue.RepoIdentifier)))
@@ -747,7 +759,7 @@ namespace StartScreen.Services.DevHub.Providers
                     : "GitHub could not provide metadata. Try again later.";
                 throw new HttpRequestException($"GitHub metadata returned HTTP {(int)response.StatusCode}. {guidance}");
             }
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            using var doc = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
             cancellationToken.ThrowIfCancellationRequested();
             var hasErrors = doc.RootElement.TryGetProperty("errors", out var errors) && errors.GetArrayLength() > 0;
             if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
@@ -965,6 +977,7 @@ namespace StartScreen.Services.DevHub.Providers
 
             using (var doc = System.Text.Json.JsonDocument.Parse(json))
             {
+                ObserveSearchCompleteness(doc.RootElement);
                 if (!doc.RootElement.TryGetProperty("items", out var items))
                     return results;
 
@@ -1055,6 +1068,7 @@ namespace StartScreen.Services.DevHub.Providers
 
             using (var doc = System.Text.Json.JsonDocument.Parse(json))
             {
+                ObserveSearchCompleteness(doc.RootElement);
                 if (!doc.RootElement.TryGetProperty("items", out var items))
                     return results;
 

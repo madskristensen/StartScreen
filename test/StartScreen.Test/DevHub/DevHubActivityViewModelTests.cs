@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
@@ -290,6 +291,50 @@ namespace StartScreen.Test.DevHub
             Assert.IsTrue(activity.TrySelectInitialFilter(false, true));
             Assert.IsFalse(activity.TrySelectInitialFilter(false, true));
             Assert.IsTrue(activity.MyWorkAttention);
+        }
+
+        [TestMethod]
+        public void LargeReorder_ReplacesInLinearNotificationsAndPreservesItemIdentityAndNoOp()
+        {
+            var activity = new DevHubActivityViewModel();
+            activity.SetMyWorkFilter(DevHubWorkItemKind.PullRequest, false);
+            activity.UpdateRepositoryActivity(Enumerable.Range(0, 300).Select(index => PullRequest(index.ToString(), true)).ToArray(),
+                [], [], [], DevHubSortOrder.MostRecent, false);
+            var items = activity.MyWorkItems.Reverse().ToArray();
+            var collection = new ObservableCollection<DevHubWorkItem>(activity.MyWorkItems);
+            var changes = new List<NotifyCollectionChangedAction>();
+            collection.CollectionChanged += (_, e) => changes.Add(e.Action);
+
+            DevHubActivityViewModel.SynchronizeItems(collection, items);
+
+            CollectionAssert.AreEqual(items, collection.ToArray());
+            Assert.AreEqual(NotifyCollectionChangedAction.Reset, changes[0]);
+            Assert.HasCount(items.Length + 1, changes);
+            for (var index = 0; index < items.Length; index++)
+                Assert.AreSame(items[index], collection[index]);
+            changes.Clear();
+            DevHubActivityViewModel.SynchronizeItems(collection, items);
+            Assert.IsEmpty(changes);
+        }
+
+        [TestMethod]
+        public void LargeReorder_PreservesRepeatedReferencesAndMultiplicity()
+        {
+            var activity = new DevHubActivityViewModel();
+            activity.SetMyWorkFilter(DevHubWorkItemKind.PullRequest, false);
+            activity.UpdateRepositoryActivity([PullRequest("one", true), PullRequest("two", true)],
+                [], [], [], DevHubSortOrder.MostRecent, false);
+            var first = activity.MyWorkItems[0];
+            var second = activity.MyWorkItems[1];
+            var original = Enumerable.Repeat(first, 100).Concat(Enumerable.Repeat(second, 100)).ToArray();
+            var collection = new ObservableCollection<DevHubWorkItem>(original);
+            var desired = original.AsEnumerable().Reverse().ToArray();
+
+            DevHubActivityViewModel.SynchronizeItems(collection, desired);
+
+            CollectionAssert.AreEqual(desired, collection.ToArray());
+            Assert.AreEqual(100, collection.Count(item => ReferenceEquals(item, first)));
+            Assert.AreEqual(100, collection.Count(item => ReferenceEquals(item, second)));
         }
 
         private static DevHubPullRequest PullRequest(string title, bool own)

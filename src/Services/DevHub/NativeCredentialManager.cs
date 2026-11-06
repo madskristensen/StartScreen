@@ -58,6 +58,39 @@ namespace StartScreen.Services.DevHub
             }
         }
 
+        internal static bool HasGitCredential(string host)
+        {
+            if (!CredEnumerate("git:*", 0, out var count, out var credentials))
+            {
+                var error = Marshal.GetLastWin32Error();
+                if (error == 1168)
+                    return false;
+                throw new Win32Exception(error);
+            }
+            try
+            {
+                for (var index = 0; index < count; index++)
+                {
+                    var credential = Marshal.PtrToStructure<CREDENTIAL>(Marshal.ReadIntPtr(credentials, index * IntPtr.Size));
+                    if (credential.Type == _credTypeGeneric && IsGitCredentialTargetForHost(credential.TargetName, host))
+                        return true;
+                }
+                return false;
+            }
+            finally
+            {
+                CredFree(credentials);
+            }
+        }
+
+        internal static bool IsGitCredentialTargetForHost(string target, string host)
+        {
+            return target?.StartsWith("git:", StringComparison.OrdinalIgnoreCase) == true
+                && Uri.TryCreate(target.Substring(4), UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+                && string.Equals(uri.Host, host, StringComparison.OrdinalIgnoreCase);
+        }
+
         public static void Delete(string targetName)
         {
             CredDelete(targetName, _credTypeGeneric, 0);
@@ -71,6 +104,9 @@ namespace StartScreen.Services.DevHub
 
         [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern bool CredRead(string targetName, int type, int flags, out IntPtr credential);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool CredEnumerate(string filter, int flags, out int count, out IntPtr credentials);
 
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool CredDelete(string targetName, int type, int flags);

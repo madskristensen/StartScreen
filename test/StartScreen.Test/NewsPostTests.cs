@@ -168,6 +168,26 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        [DataRow("<p>Hello <b>world</b></p>", "Hello world")]
+        [DataRow("<>keep<unfinished", "<>keep<unfinished")]
+        [DataRow("a\r\nb\nc", "a bc")]
+        [DataRow("<<nested>value", "value")]
+        public void SummaryStripping_PreservesExistingTagAndNewlineRules(string summary, string expected)
+        {
+            var item = new SyndicationItem { Summary = new TextSyndicationContent(summary) };
+
+            Assert.AreEqual(expected, NewsPost.FromSyndicationItem(item).Summary);
+        }
+
+        [TestMethod]
+        public void SummaryStripping_BoundsOutputForManyUnmatchedTagOpeners()
+        {
+            var item = new SyndicationItem { Summary = new TextSyndicationContent(new string('<', 1_000_000)) };
+
+            Assert.AreEqual(new string('<', 1000), NewsPost.FromSyndicationItem(item).Summary);
+        }
+
+        [TestMethod]
         public void FromSyndicationItem_SetsPublishDate()
         {
             var publishDate = new DateTimeOffset(2025, 5, 20, 14, 0, 0, TimeSpan.Zero);

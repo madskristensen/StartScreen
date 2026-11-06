@@ -153,6 +153,41 @@ namespace StartScreen.Test
             Assert.IsFalse(activity.MyWorkAttention);
         }
 
+        [STATestMethod]
+        public void ActivityContextChange_ReleasesInactiveDataButKeepsFilterListsReusable()
+        {
+            var activity = new DevHubActivityViewModel();
+            activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
+            activity.UpdateRepositoryActivity([], [new DevHubIssue
+            {
+                Title = "Previous scope", WebUrl = "https://example.com/issues/old", IsAssignedToCurrentUser = true,
+            }], [], [], DevHubSortOrder.MostRecent, false);
+            var host = new StackPanel();
+            var original = new ItemsControl();
+            host.Children.Add(original);
+            var presentation = new DevHubActivityList(original);
+            var issueList = presentation.Show(DevHubWorkItemKind.Issue, false, activity.MyWorkItems);
+            var issueSource = issueList.ItemsSource;
+            var active = presentation.Show(DevHubWorkItemKind.PullRequest, false, activity.MyWorkItems);
+            var activeSource = active.ItemsSource;
+            Assert.HasCount(1, issueList.Items);
+
+            presentation.ClearInactiveItems();
+
+            Assert.IsEmpty(issueList.Items, "Inactive lists must not retain cards from the previous context.");
+            Assert.AreSame(issueSource, issueList.ItemsSource);
+            Assert.AreSame(activeSource, active.ItemsSource);
+            Assert.HasCount(1, active.Items, "The active list is synchronized separately without discarding its containers.");
+            activity.UpdateRepositoryActivity([], [new DevHubIssue
+            {
+                Title = "New scope", WebUrl = "https://example.com/issues/new", IsAssignedToCurrentUser = true,
+            }], [], [], DevHubSortOrder.MostRecent, false);
+            Assert.AreSame(issueList, presentation.Show(DevHubWorkItemKind.Issue, false, activity.MyWorkItems));
+            Assert.AreEqual("New scope", issueList.Items.Cast<DevHubWorkItem>().Single().Title);
+            Assert.AreSame(issueSource, issueList.ItemsSource);
+            Assert.HasCount(2, host.Children);
+        }
+
         private static void LayoutActivity(FrameworkElement host)
         {
             host.Measure(new Size(800, 1000));

@@ -238,10 +238,11 @@ namespace StartScreen.Services.DevHub
 
         private static Task<DevHubRepoSummary> FetchFromProviderAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
-            var provider = DevHubProviderRegistry.GetAllProviders().FirstOrDefault(candidate =>
+            var providers = DevHubProviderRegistry.GetEnabledProviders();
+            var provider = providers.FirstOrDefault(candidate =>
                 candidate.ParseRemoteUrl($"https://{repo.Host}/{repo.DisplayName}") != null);
             if (repo.IsAzureDevOpsServer)
-                provider = DevHubProviderRegistry.GetAllProviders().FirstOrDefault(candidate => candidate is Providers.AzureDevOpsDevHubProvider);
+                provider = providers.FirstOrDefault(candidate => candidate is Providers.AzureDevOpsDevHubProvider);
             return provider != null ? provider.GetRepoSummaryAsync(repo, cancellationToken)
                 : Task.FromResult(new DevHubRepoSummary(repo, DevHubRepoSummaryStatus.Unsupported,
                     statusMessage: "This repository host does not support summaries."));

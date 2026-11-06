@@ -80,6 +80,21 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow(false, false, false, "")]
+        [DataRow(true, false, false, "GitHub")]
+        [DataRow(false, true, false, "Azure DevOps")]
+        [DataRow(false, false, true, "Bitbucket")]
+        [DataRow(true, true, false, "GitHub,Azure DevOps")]
+        [DataRow(true, true, true, "GitHub,Azure DevOps,Bitbucket")]
+        public void GetEnabledProviders_HonorsIndependentProviderFlags(bool github, bool azureDevOps, bool bitbucket, string expected)
+        {
+            var providers = DevHubProviderRegistry.GetEnabledProviders(github, azureDevOps, bitbucket);
+
+            Assert.AreEqual(expected, string.Join(",", providers.Select(provider => provider.DisplayName)));
+            Assert.HasCount(3, DevHubProviderRegistry.GetAllProviders(), "Disabled providers must remain available for remote URL parsing.");
+        }
+
+        [TestMethod]
         public void GetAllProviders_ContainsGitHub()
         {
             var providers = DevHubProviderRegistry.GetAllProviders();

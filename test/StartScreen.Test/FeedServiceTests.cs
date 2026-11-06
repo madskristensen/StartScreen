@@ -249,6 +249,39 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task DownloadFromUrlAsync_RejectsOversizedResponsesAsync()
+        {
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[FeedService.MaxFeedBytes + 1]),
+            });
+            using var client = new HttpClient(handler);
+
+            var result = await FeedService.DownloadFromUrlAsync(client, "https://example.com/feed", DateTime.UtcNow);
+
+            Assert.IsNull(result);
+            Assert.AreEqual(1, handler.RequestCount);
+        }
+
+        [TestMethod]
+        public async Task DownloadFromUrlAsync_RejectsDocumentTypeDeclarationsAsync()
+        {
+            const string xml = "<!DOCTYPE rss [<!ENTITY text 'expanded'>]><rss version='2.0'><channel>" +
+                "<title>&text;</title><description>Feed</description><link>https://example.com</link></channel></rss>";
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(xml),
+            });
+            using var client = new HttpClient(handler);
+
+            var result = await FeedService.DownloadFromUrlAsync(client, "https://example.com/feed", DateTime.UtcNow);
+
+            Assert.IsNull(result);
+            Assert.AreEqual(System.Xml.DtdProcessing.Prohibit, FeedService.CreateReaderSettings().DtdProcessing);
+            Assert.AreEqual(FeedService.MaxFeedBytes, FeedService.CreateReaderSettings().MaxCharactersInDocument);
+        }
+
+        [TestMethod]
         public async Task DownloadFeedsAsync_ForcedRefreshBypassesFreshSourceCacheAsync()
         {
             using var directory = new TemporaryDirectory();

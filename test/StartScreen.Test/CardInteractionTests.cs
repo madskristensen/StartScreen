@@ -140,5 +140,24 @@ namespace StartScreen.Test
             Assert.AreEqual("OpenInBrowser", browser.Name);
             Assert.AreEqual("Ctrl+C", copy.InputGestureText);
         }
+
+        [STATestMethod]
+        public void MenuTheme_RepeatedAttachmentKeepsOneOpeningHandler()
+        {
+            var menu = new ContextMenu();
+            ThemedContextMenuHelper.AttachOpeningTheme(menu);
+            ThemedContextMenuHelper.AttachOpeningTheme(menu);
+            ThemedContextMenuHelper.AttachOpeningTheme(menu);
+            var store = typeof(UIElement).GetProperty("EventHandlersStore",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(menu)!;
+            var handlers = (Array)store.GetType().GetMethod("GetRoutedEventHandlers")!
+                .Invoke(store, [ContextMenu.OpenedEvent])!;
+            Assert.HasCount(1, handlers);
+            var handler = (Delegate)handlers.GetValue(0)!.GetType().GetProperty("Handler")!
+                .GetValue(handlers.GetValue(0))!;
+            Assert.AreEqual("Menu_Opened", handler.Method.Name);
+
+            menu.RaiseEvent(new RoutedEventArgs(ContextMenu.OpenedEvent));
+        }
     }
 }

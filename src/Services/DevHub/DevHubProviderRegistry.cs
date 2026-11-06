@@ -36,6 +36,23 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public static IReadOnlyList<IDevHubProvider> GetAllProviders() => _providers;
 
+        internal static IReadOnlyList<IDevHubProvider> GetEnabledProviders()
+        {
+            var options = Options.Instance;
+            return GetEnabledProviders(options.DevHubGitHubEnabled, options.DevHubAzureDevOpsEnabled, options.DevHubBitbucketEnabled);
+        }
+
+        internal static IReadOnlyList<IDevHubProvider> GetEnabledProviders(bool github, bool azureDevOps, bool bitbucket)
+        {
+            return _providers.Where(provider => provider.DisplayName switch
+            {
+                "GitHub" => github,
+                "Azure DevOps" => azureDevOps,
+                "Bitbucket" => bitbucket,
+                _ => false,
+            }).ToArray();
+        }
+
         /// <summary>
         /// Returns all providers that currently have valid credentials.
         /// </summary>
@@ -43,7 +60,7 @@ namespace StartScreen.Services.DevHub
         {
             var results = new List<IDevHubProvider>();
 
-            foreach (var provider in _providers)
+            foreach (var provider in GetEnabledProviders())
             {
                 var user = await provider.GetAuthenticatedUserAsync(cancellationToken);
                 if (user != null)

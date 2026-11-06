@@ -235,6 +235,12 @@ namespace StartScreen.ToolWindows.Controls
             MyWorkList = myWork;
             IncomingList = incoming;
         }
+
+        private void ClearInactiveActivityItems()
+        {
+            _myWorkPresentation?.ClearInactiveItems();
+            _incomingPresentation?.ClearInactiveItems();
+        }
     }
 
     internal sealed class DevHubActivityList
@@ -246,6 +252,15 @@ namespace StartScreen.ToolWindows.Controls
         public DevHubActivityList(ItemsControl original)
         {
             _original = original;
+        }
+
+        internal void ClearInactiveItems()
+        {
+            foreach (var list in _lists.Values)
+            {
+                if (!ReferenceEquals(list, _active))
+                    ((ObservableCollection<DevHubWorkItem>)list.ItemsSource).Clear();
+            }
         }
 
         public ItemsControl Show(DevHubWorkItemKind kind, bool attention, IReadOnlyList<DevHubWorkItem> items)

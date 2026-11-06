@@ -114,19 +114,21 @@ namespace StartScreen.Helpers
                     return status;
                 }
             }
-            catch (RepositoryNotFoundException)
+            catch (RepositoryNotFoundException ex)
             {
+                ex.LogAsync().FireAndForget();
                 // Not a git repository - return empty status
                 return new GitStatus();
             }
             catch (LibGit2SharpException ex) when (IsRepositoryOwnershipFailure(ex))
             {
+                ex.LogAsync().FireAndForget();
                 // Git intentionally rejected a repository owned by another user.
                 return new GitStatus();
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
                 return new GitStatus();
             }
         }
@@ -213,8 +215,9 @@ namespace StartScreen.Helpers
                 DateTime lastWriteUtc = File.GetLastWriteTimeUtc(fetchHead);
                 return DateTime.UtcNow - lastWriteUtc < threshold;
             }
-            catch
+            catch (Exception ex)
             {
+                ex.LogAsync().FireAndForget();
                 return false;
             }
         }
@@ -266,8 +269,9 @@ namespace StartScreen.Helpers
 
                 return await RunFetchProcessAsync(psi, cancellationToken);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                await ex.LogAsync();
                 throw;
             }
             catch (Exception ex)
@@ -280,59 +284,22 @@ namespace StartScreen.Helpers
         internal static async Task<GitCommandResult> RunFetchProcessAsync(
             ProcessStartInfo startInfo, CancellationToken cancellationToken = default, Action<int> processStarted = null)
         {
-            await TaskScheduler.Default.SwitchTo(alwaysYield: true);
-            cancellationToken.ThrowIfCancellationRequested();
+            var result = await OwnedProcess.RunAsync(startInfo, TimeSpan.FromSeconds(5), cancellationToken, processStarted: processStarted);
+            return ToGitCommandResult(result, "The background Git fetch timed out.", "The background Git fetch failed.");
+        }
 
-            using (var process = new Process { StartInfo = startInfo })
-            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
-            {
-                if (!process.Start())
-                    return new GitCommandResult(false, "Git could not be started.");
+        private static GitCommandResult ToGitCommandResult(OwnedProcessResult result, string timeoutMessage, string failureMessage)
+        {
+            if (result.TimedOut)
+                return new GitCommandResult(false, timeoutMessage);
+            if (result.ExitCode == 0)
+                return GitCommandResult.Success;
 
-                Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
-                Task<string> errorTask = process.StandardError.ReadToEndAsync();
-                Task completionTask = Task.WhenAll(process.WaitForExitAsync(timeout.Token), outputTask, errorTask);
-                try
-                {
-                    processStarted?.Invoke(process.Id);
-                    Task completed = await Task.WhenAny(completionTask, Task.Delay(5000, timeout.Token));
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (completed != completionTask)
-                        return new GitCommandResult(false, "The background Git fetch timed out.");
-
-                    await completionTask;
-                    var output = await outputTask;
-                    var error = await errorTask;
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (process.ExitCode == 0)
-                        return GitCommandResult.Success;
-
-                    var message = string.IsNullOrWhiteSpace(error) ? output : error;
-                    return new GitCommandResult(false, string.IsNullOrWhiteSpace(message)
-                        ? "The background Git fetch failed." : message.Trim());
-                }
-                finally
-                {
-                    timeout.Cancel();
-                    try
-                    {
-                        if (!process.HasExited)
-                            process.Kill();
-                    }
-                    catch (Exception ex)
-                    {
-                        await ex.LogAsync();
-                    }
-
-                    // A child process may still hold the redirected pipes after Git exits.
-                    // Observe cleanup without extending the fetch's cancellation/timeout.
-                    completionTask.ContinueWith(
-                        task => task.Exception.LogAsync(),
-                        CancellationToken.None,
-                        TaskContinuationOptions.OnlyOnFaulted,
-                        TaskScheduler.Default).Unwrap().Forget();
-                }
-            }
+            var useError = !string.IsNullOrWhiteSpace(result.Error);
+            var message = useError ? result.Error : result.Output;
+            var truncated = useError ? result.ErrorTruncated : result.OutputTruncated;
+            return new GitCommandResult(false, string.IsNullOrWhiteSpace(message)
+                ? failureMessage : message.Trim() + (truncated ? " [output truncated]" : string.Empty));
         }
 
         /// <summary>
@@ -362,10 +329,13 @@ namespace StartScreen.Helpers
         }
 
         /// <summary>
-        /// Runs git pull --quiet for the specified repository.
+        /// Runs git pull --quiet without credential prompts, with a two-minute deadline.
+        /// Cancellation terminates Git and its credential/SSH child processes.
         /// </summary>
-        internal static async Task<GitCommandResult> PullAsync(string repoPath)
+        internal static async Task<GitCommandResult> PullAsync(string repoPath, CancellationToken cancellationToken = default)
         {
+            await TaskScheduler.Default.SwitchTo(alwaysYield: true);
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrEmpty(repoPath) || !Directory.Exists(repoPath))
                 return new GitCommandResult(false, "The Git repository could not be found.");
 
@@ -374,7 +344,7 @@ namespace StartScreen.Helpers
                 var psi = new ProcessStartInfo
                 {
                     FileName = "git",
-                    Arguments = "pull --quiet",
+                    Arguments = "-c core.askPass= pull --quiet",
                     WorkingDirectory = repoPath,
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -382,29 +352,18 @@ namespace StartScreen.Helpers
                     RedirectStandardError = true
                 };
 
-                using (var process = Process.Start(psi))
-                {
-                    if (process == null)
-                        return new GitCommandResult(false, "Git could not be started.");
-
-                    var outputTask = process.StandardOutput.ReadToEndAsync();
-                    var errorTask = process.StandardError.ReadToEndAsync();
-                    process.WaitForExit();
-
-                    var output = await outputTask;
-                    var error = await errorTask;
-
-                    if (process.ExitCode == 0)
-                        return GitCommandResult.Success;
-
-                    var message = string.IsNullOrWhiteSpace(error) ? output : error;
-
-                    return new GitCommandResult(false, string.IsNullOrWhiteSpace(message) ? "Git pull failed." : message.Trim());
-                }
+                SuppressCredentialPrompts(psi);
+                var result = await OwnedProcess.RunAsync(psi, TimeSpan.FromMinutes(2), cancellationToken);
+                return ToGitCommandResult(result, "Git pull timed out.", "Git pull failed.");
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                throw;
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
                 return new GitCommandResult(false, ex.Message);
             }
         }
@@ -439,11 +398,12 @@ namespace StartScreen.Helpers
             }
             catch (LibGit2SharpException ex) when (IsRepositoryOwnershipFailure(ex))
             {
+                ex.LogAsync().FireAndForget();
                 return (null, null);
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
             }
 
             return (null, null);

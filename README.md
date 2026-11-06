@@ -40,6 +40,20 @@ snapshot between personal and repository activity queries. Repository-detail
 requests use a shared concurrency limit, including cancellation while queued.
 News, video, dashboard, and Copilot history caches use bounded JSON reads and
 atomic file replacement so interrupted writes preserve the previous snapshot.
+Feed configuration edits are also published atomically, and concurrent add/remove
+operations preserve each other's changes. Failed saves are reported to the caller.
+
+Remote response bodies have cancellation, time, and size limits, including after
+response headers arrive. RSS and Atom responses are limited to 4 MiB and reject
+document type declarations. Summary HTML stripping uses a bounded-output linear
+scan, including for malformed markup. Failed sources continue to use available
+cached content rather than being reported as successfully refreshed.
+Thumbnail downloads are limited to 2 MiB, decoded before atomic publication, and
+invalid cached images are removed and downloaded again. The thumbnail disk cache
+retains at most 100 images. Repository-scope activity caches evict older entries,
+and changing scope releases hidden activity cards from the previous context.
+Large activity reorders rebuild the visible collection instead of repeatedly
+searching and moving items. Unchanged refreshes retain existing item instances.
 
 News and videos have focused section view models that own their inventories,
 filters, unread markers, and refresh state. Dev Hub activity presentation is
@@ -60,6 +74,25 @@ without waiting for the Start Screen to unload or hiding it synchronously.
 Background Git fetches suppress credential prompts, honor cancellation, and time
 out after five seconds. Reopening the screen does not retry the same repository
 more than once every fifteen minutes, including failed fetch attempts.
+Git pull is noninteractive, supports cancellation, and has a two-minute deadline.
+Credential operations also have cancellation and deadlines. Their
+output streams are drained concurrently with bounded retained diagnostics, and
+cleanup terminates owned helper processes as well as Git. Account enumeration is
+shared while settings are open instead of starting another process on every
+dashboard update. Credentials acquired before an account invalidation cannot
+repopulate the cache afterward.
+Rejected-token retries invalidate only the affected provider's credentials, not
+other providers' in-flight sign-ins or verified dashboard snapshots. Explicit
+account changes still invalidate the dashboard and repository scopes.
+Automatic Bitbucket authentication runs only when a Bitbucket repository is in
+the workspace or a matching credential exists in Start Screen or Windows Git
+Credential Manager. Detection checks Git credential target names without reading
+their passwords. Other credential-store backends require a matching repository
+or a token stored through Start Screen. Bitbucket failures remain in the Output
+window instead of the activity warning banner.
+The Dev Hub account settings include independent GitHub, Azure DevOps, and
+Bitbucket checkboxes. Turning off a provider stops its authentication, activity,
+and repository-summary requests without deleting its stored credentials.
 Git status detection uses version-matched native libraries bundled with the
 extension for x64 and ARM64 Visual Studio. No separate libgit2 installation is
 required.

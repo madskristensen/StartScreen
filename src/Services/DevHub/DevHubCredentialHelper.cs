@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using StartScreen.Helpers;
 
 namespace StartScreen.Services.DevHub
 {
@@ -15,10 +16,15 @@ namespace StartScreen.Services.DevHub
     /// </summary>
     internal static class DevHubCredentialHelper
     {
-        private static readonly Dictionary<string, DevHubCredential> _credentialCache = new Dictionary<string, DevHubCredential>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, CachedCredential> _credentialCache = new Dictionary<string, CachedCredential>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _cacheLock = new object();
+        private static readonly Dictionary<string, int> _hostGenerations = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private static int _credentialGeneration;
+        private static int _allCredentialsGeneration;
+        private static int _accountGeneration;
         internal static int CredentialGeneration => Volatile.Read(ref _credentialGeneration);
+        // Token retries must not invalidate dashboards for otherwise unchanged accounts.
+        internal static int AccountGeneration => Volatile.Read(ref _accountGeneration);
         private static readonly Lazy<AzureDevOpsCredentialProvider> _azureDevOpsCredentials = new Lazy<AzureDevOpsCredentialProvider>(() =>
             new AzureDevOpsCredentialProvider(new Azure.Identity.VisualStudioCredential(new Azure.Identity.VisualStudioCredentialOptions
             {
@@ -31,15 +37,26 @@ namespace StartScreen.Services.DevHub
             if (!host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
                 return await GetCredentialAsync(host, cancellationToken);
 
-            var mode = Options.Instance.DevHubAdoAuthentication;
+            int generation;
+            AzureDevOpsAuthenticationMode mode;
+            lock (_cacheLock)
+            {
+                generation = GetHostGeneration(host);
+                mode = Options.Instance.DevHubAdoAuthentication;
+            }
             if (mode == AzureDevOpsAuthenticationMode.Disconnected)
                 return null;
 
             var stored = mode == AzureDevOpsAuthenticationMode.VisualStudio ? null : TryWindowsCredentialManager(host);
-            if (!UsesVisualStudio(mode, stored != null))
-                return stored ?? await GetCredentialAsync(host, cancellationToken);
-
-            return await _azureDevOpsCredentials.Value.GetCredentialAsync(requestUrl, cancellationToken);
+            var credential = !UsesVisualStudio(mode, stored != null)
+                ? stored ?? await GetCredentialAsync(host, cancellationToken)
+                : await _azureDevOpsCredentials.Value.GetCredentialAsync(requestUrl, cancellationToken);
+            lock (_cacheLock)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return generation == GetHostGeneration(host) && mode == Options.Instance.DevHubAdoAuthentication
+                    ? credential : null;
+            }
         }
 
         internal static bool UsesVisualStudio(AzureDevOpsAuthenticationMode mode, bool hasStoredPat) =>
@@ -48,15 +65,18 @@ namespace StartScreen.Services.DevHub
 
         internal static void InvalidateAzureDevOpsCredential(DevHubCredential credential)
         {
-            Interlocked.Increment(ref _credentialGeneration);
-            if (credential.IsBearer)
+            lock (_cacheLock)
             {
-                if (_azureDevOpsCredentials.IsValueCreated)
-                    _azureDevOpsCredentials.Value.Invalidate(credential);
-            }
-            else
-            {
-                InvalidateCachedCredential(AzureDevOpsServerHelper.CloudHost);
+                _hostGenerations[AzureDevOpsServerHelper.CloudHost] = ++_credentialGeneration;
+                if (credential.IsBearer)
+                {
+                    if (_azureDevOpsCredentials.IsValueCreated)
+                        _azureDevOpsCredentials.Value.Invalidate(credential);
+                }
+                else
+                {
+                    RemoveCachedCredentialsForHost(AzureDevOpsServerHelper.CloudHost);
+                }
             }
         }
 
@@ -75,7 +95,15 @@ namespace StartScreen.Services.DevHub
         /// Attempts to acquire a credential (username + token) for the given host and optional username.
         /// When username is provided, this asks GCM for that specific account.
         /// </summary>
-        public static async Task<DevHubCredential> GetCredentialAsync(string host, string username, CancellationToken cancellationToken)
+        public static Task<DevHubCredential> GetCredentialAsync(string host, string username, CancellationToken cancellationToken)
+        {
+            return GetCredentialAsync(host, username, cancellationToken, TryGitCredentialManagerAsync,
+                TryWindowsCredentialManager, GetSelectedGitHubAccount);
+        }
+
+        internal static async Task<DevHubCredential> GetCredentialAsync(string host, string username, CancellationToken cancellationToken,
+            Func<string, string, CancellationToken, Task<DevHubCredential>> acquire,
+            Func<string, DevHubCredential> readStored, Func<string> selectedAccount)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -84,32 +112,38 @@ namespace StartScreen.Services.DevHub
 
             var normalizedUsername = string.IsNullOrWhiteSpace(username) ? null : username.Trim();
             var cacheKey = GetCacheKey(host, normalizedUsername);
-
-            // Return cached credential if available
-            var cached = TryGetCachedCredential(cacheKey);
-            if (cached != null)
-                return cached;
-
-            // Try Git Credential Manager
-            var gcmResult = await TryGitCredentialManagerAsync(host, normalizedUsername, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (gcmResult != null)
+            int generation;
+            string account;
+            lock (_cacheLock)
             {
-                CacheCredential(cacheKey, gcmResult);
-                return gcmResult;
+                generation = GetHostGeneration(host);
+                account = selectedAccount();
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_credentialCache.TryGetValue(cacheKey, out var cached) &&
+                    (normalizedUsername != null || string.Equals(cached.Account, account, StringComparison.OrdinalIgnoreCase)) &&
+                    IsAcquisitionCurrent(generation, host, account, selectedAccount))
+                    return cached.Credential;
             }
 
-            // Fallback: Windows Credential Manager
-            var stored = TryWindowsCredentialManager(host);
-            if (stored != null &&
-                (normalizedUsername == null ||
-                 string.Equals(normalizedUsername, stored.Username, StringComparison.OrdinalIgnoreCase)))
+            var credential = await acquire(host, normalizedUsername, cancellationToken);
+            lock (_cacheLock)
             {
-                CacheCredential(cacheKey, stored);
-                return stored;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsAcquisitionCurrent(generation, host, account, selectedAccount))
+                    return null;
             }
 
-            return null;
+            credential ??= readStored(host);
+            lock (_cacheLock)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsAcquisitionCurrent(generation, host, account, selectedAccount) || credential == null ||
+                    (normalizedUsername != null && !string.Equals(normalizedUsername, credential.Username, StringComparison.OrdinalIgnoreCase)))
+                    return null;
+
+                _credentialCache[cacheKey] = new CachedCredential(credential, account);
+                return credential;
+            }
         }
 
         /// <summary>
@@ -117,13 +151,15 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public static void ClearCachedCredentials()
         {
-            Interlocked.Increment(ref _credentialGeneration);
             lock (_cacheLock)
             {
+                _allCredentialsGeneration = ++_credentialGeneration;
+                _accountGeneration++;
+                _hostGenerations.Clear();
                 _credentialCache.Clear();
+                if (_azureDevOpsCredentials.IsValueCreated)
+                    _azureDevOpsCredentials.Value.Invalidate();
             }
-            if (_azureDevOpsCredentials.IsValueCreated)
-                _azureDevOpsCredentials.Value.Invalidate();
         }
 
         /// <summary>
@@ -136,8 +172,11 @@ namespace StartScreen.Services.DevHub
             if (string.IsNullOrWhiteSpace(host))
                 return;
 
-            Interlocked.Increment(ref _credentialGeneration);
-            RemoveCachedCredentialsForHost(host);
+            lock (_cacheLock)
+            {
+                _hostGenerations[host] = ++_credentialGeneration;
+                RemoveCachedCredentialsForHost(host);
+            }
         }
 
         /// <summary>
@@ -212,36 +251,20 @@ namespace StartScreen.Services.DevHub
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                 };
-
-                psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
-
-                using (var process = Process.Start(psi))
+                GitHelper.SuppressCredentialPrompts(psi);
+                var result = await OwnedProcess.RunAsync(psi, TimeSpan.FromSeconds(5), cancellationToken);
+                if (result.TimedOut || result.ExitCode != 0 || result.OutputTruncated)
                 {
-                    if (process == null)
-                        return Array.Empty<string>();
-
-                    var outputTask = process.StandardOutput.ReadToEndAsync();
-                    var completed = await Task.WhenAny(
-                        outputTask,
-                        Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
-
-                    if (completed != outputTask)
-                    {
-                        TryKillProcess(process);
-                        return Array.Empty<string>();
-                    }
-
-                    if (!process.WaitForExit(3000))
-                    {
-                        TryKillProcess(process);
-                        return Array.Empty<string>();
-                    }
-
-                    if (process.ExitCode != 0)
-                        return Array.Empty<string>();
-
-                    return ParseGitHubAccountListOutput(await outputTask);
+                    await LogProcessFailureAsync("github list", result);
+                    return Array.Empty<string>();
                 }
+
+                return ParseGitHubAccountListOutput(result.Output);
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                throw;
             }
             catch (Exception ex)
             {
@@ -271,29 +294,22 @@ namespace StartScreen.Services.DevHub
                     RedirectStandardError = true,
                 };
 
-                psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
-
-                using (var process = Process.Start(psi))
+                GitHelper.SuppressCredentialPrompts(psi);
+                var result = await OwnedProcess.RunAsync(psi, TimeSpan.FromSeconds(8), cancellationToken);
+                var success = !result.TimedOut && result.ExitCode == 0;
+                if (!success || result.OutputTruncated || result.ErrorTruncated)
+                    await LogProcessFailureAsync("github logout", result);
+                if (success)
                 {
-                    if (process == null)
-                        return false;
-
-                    var waitTask = Task.Run(() => process.WaitForExit(8000), cancellationToken);
-                    var completed = await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromSeconds(8), cancellationToken));
-                    if (completed != waitTask || !await waitTask)
-                    {
-                        TryKillProcess(process);
-                        return false;
-                    }
-
-                    var success = process.ExitCode == 0;
-                    if (success)
-                    {
-                        InvalidateCachedCredential("github.com");
-                    }
-
-                    return success;
+                    InvalidateCachedCredential("github.com");
                 }
+
+                return success;
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                throw;
             }
             catch (Exception ex)
             {
@@ -306,64 +322,53 @@ namespace StartScreen.Services.DevHub
         /// Calls GCM interactively, allowing it to open a browser for OAuth.
         /// Used when the user explicitly clicks "Connect account".
         /// </summary>
-        public static async Task<bool> ConnectInteractiveAsync(string host, CancellationToken cancellationToken)
+        public static Task<bool> ConnectInteractiveAsync(string host, CancellationToken cancellationToken)
         {
+            return ConnectInteractiveAsync(host, cancellationToken,
+                (target, token) => ReadGitCredentialAsync(target, null, true, token),
+                StoreCredential, GetSelectedGitHubAccount);
+        }
+
+        internal static async Task<bool> ConnectInteractiveAsync(string host, CancellationToken cancellationToken,
+            Func<string, CancellationToken, Task<DevHubCredential>> acquire,
+            Action<string, string, string> store, Func<string> selectedAccount)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(host))
+                return false;
+
+            int generation;
+            string account;
+            lock (_cacheLock)
+            {
+                generation = GetHostGeneration(host);
+                account = selectedAccount();
+            }
+
             try
             {
-                var psi = new ProcessStartInfo
+                var credential = await acquire(host, cancellationToken);
+                lock (_cacheLock)
                 {
-                    FileName = "git",
-                    Arguments = "credential fill",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                };
-
-                // Allow GCM to open browser / show interactive prompts for OAuth.
-                using (var process = Process.Start(psi))
-                {
-                    if (process == null)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (credential == null || !IsAcquisitionCurrent(generation, host, account, selectedAccount))
                         return false;
 
-                    await process.StandardInput.WriteAsync(BuildGitCredentialInput(host));
-                    process.StandardInput.Close();
-
-                    // Wait up to 2 minutes for the user to complete the browser OAuth flow.
-                    var outputTask = process.StandardOutput.ReadToEndAsync();
-                    var completed = await Task.WhenAny(
-                        outputTask,
-                        Task.Delay(TimeSpan.FromMinutes(2), cancellationToken));
-
-                    if (completed != outputTask)
-                    {
-                        TryKillProcess(process);
+                    // Persistence and publication are serialized with invalidation.
+                    // A stale interactive login must not repopulate the default key.
+                    store(host, credential.Username, credential.Token);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!IsAcquisitionCurrent(generation, host, account, selectedAccount))
                         return false;
-                    }
-
-                    if (!process.WaitForExit(5000))
-                    {
-                        TryKillProcess(process);
-                        return false;
-                    }
-
-                    if (process.ExitCode != 0)
-                        return false;
-
-                    var credential = ParseGitCredentialOutput(await outputTask);
-                    if (credential == null)
-                        return false;
-
-                    // Cache the freshly acquired credential.
-                    CacheCredential(GetCacheKey(host, username: null), credential);
-
-                    // Also persist to Windows Credential Manager so the credential
-                    // survives VS restarts even if GCM can't refresh non-interactively.
-                    StoreCredential(host, credential.Username, credential.Token);
-
+                    ClearCachedCredentials();
+                    _credentialCache[GetCacheKey(host, username: null)] = new CachedCredential(credential, account);
                     return true;
                 }
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                throw;
             }
             catch (Exception ex)
             {
@@ -376,60 +381,55 @@ namespace StartScreen.Services.DevHub
         {
             try
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "git",
-                    Arguments = "credential fill",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                };
-
-                // Prevent GCM from opening interactive prompts (browser, dialog).
-                // Only return credentials already cached/stored.
-                psi.Environment["GCM_INTERACTIVE"] = "never";
-                psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
-
-                using (var process = Process.Start(psi))
-                {
-                    if (process == null)
-                        return null;
-
-                    // Write the protocol/host (+ optional username) to stdin.
-                    await process.StandardInput.WriteAsync(BuildGitCredentialInput(host, username));
-                    process.StandardInput.Close();
-
-                    // Read output with timeout
-                    var outputTask = process.StandardOutput.ReadToEndAsync();
-                    var completed = await Task.WhenAny(
-                        outputTask,
-                        Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
-
-                    if (completed != outputTask)
-                    {
-                        TryKillProcess(process);
-                        return null;
-                    }
-
-                    if (!process.WaitForExit(3000))
-                    {
-                        TryKillProcess(process);
-                        return null;
-                    }
-
-                    if (process.ExitCode != 0)
-                        return null;
-
-                    return ParseGitCredentialOutput(await outputTask);
-                }
+                return await ReadGitCredentialAsync(host, username, false, cancellationToken);
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                throw;
             }
             catch (Exception ex)
             {
                 await ex.LogAsync();
                 return null;
             }
+        }
+
+        private static async Task<DevHubCredential> ReadGitCredentialAsync(string host, string username, bool interactive, CancellationToken cancellationToken)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = "credential fill",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            if (!interactive)
+                GitHelper.SuppressCredentialPrompts(psi);
+
+            var result = await OwnedProcess.RunAsync(psi,
+                interactive ? TimeSpan.FromMinutes(2) : TimeSpan.FromSeconds(5),
+                cancellationToken, BuildGitCredentialInput(host, username));
+            // Never parse a partial token or log credential-bearing subprocess output.
+            if (result.TimedOut || result.ExitCode != 0 || result.OutputTruncated)
+            {
+                await LogProcessFailureAsync(interactive ? "interactive credential fill" : "credential fill", result);
+                return null;
+            }
+
+            return ParseGitCredentialOutput(result.Output);
+        }
+
+        private static Task LogProcessFailureAsync(string operation, OwnedProcessResult result)
+        {
+            var ex = new InvalidOperationException(
+                $"Git Credential Manager {operation} did not complete cleanly " +
+                $"(deadlineExceeded={result.TimedOut}, exitCode={result.ExitCode}, " +
+                $"stdoutTruncated={result.OutputTruncated}, stderrTruncated={result.ErrorTruncated}).");
+            return ex.LogAsync();
         }
 
         internal static DevHubCredential ParseGitCredentialOutput(string output)
@@ -508,23 +508,32 @@ namespace StartScreen.Services.DevHub
             return $"{host}\n{username ?? string.Empty}";
         }
 
-        private static DevHubCredential TryGetCachedCredential(string key)
+        private static string GetSelectedGitHubAccount()
         {
-            lock (_cacheLock)
-            {
-                if (_credentialCache.TryGetValue(key, out var cached))
-                    return cached;
-            }
-
-            return null;
+            return Options.Instance.DevHubGitHubAccount?.Trim() ?? string.Empty;
         }
 
-        private static void CacheCredential(string key, DevHubCredential credential)
+        private static int GetHostGeneration(string host)
         {
-            lock (_cacheLock)
+            return _hostGenerations.TryGetValue(host, out var generation) ? generation : _allCredentialsGeneration;
+        }
+
+        private static bool IsAcquisitionCurrent(int generation, string host, string account, Func<string> selectedAccount)
+        {
+            return generation == GetHostGeneration(host) &&
+                string.Equals(account, selectedAccount(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private sealed class CachedCredential
+        {
+            public CachedCredential(DevHubCredential credential, string account)
             {
-                _credentialCache[key] = credential;
+                Credential = credential;
+                Account = account;
             }
+
+            public DevHubCredential Credential { get; }
+            public string Account { get; }
         }
 
         private static void RemoveCachedCredentialsForHost(string host)
@@ -556,19 +565,6 @@ namespace StartScreen.Services.DevHub
             }
 
             return null;
-        }
-
-        private static void TryKillProcess(Process process)
-        {
-            try
-            {
-                if (!process.HasExited)
-                    process.Kill();
-            }
-            catch (Exception ex)
-            {
-                ex.Log();
-            }
         }
     }
 

@@ -187,6 +187,116 @@ namespace StartScreen.Test
             }
         }
 
+        [TestMethod]
+        public async Task OwnedProcess_DrainsBothPipesAndWritesInput_EnforcesOutputBoundsAsync()
+        {
+            var input = new string('i', 200000);
+            var startInfo = CreatePowerShellProcess(
+                "$text = 'x' * 200000; [Console]::Out.Write($text); [Console]::Error.Write($text); " +
+                "$inputText = [Console]::In.ReadToEnd(); if ($inputText.Length -eq 200000) { exit 23 } else { exit 9 }");
+
+            OwnedProcessResult result = await OwnedProcess.RunAsync(startInfo, TimeSpan.FromSeconds(20), input: input);
+
+            Assert.IsFalse(result.TimedOut, "Both output pipes must drain while stdin is being written.");
+            Assert.AreEqual(23, result.ExitCode, "Preserve the actual exit code after draining all pipes.");
+            Assert.AreEqual(new string('x', OwnedProcess.MaximumOutputCharacters), result.Output);
+            Assert.AreEqual(new string('x', OwnedProcess.MaximumOutputCharacters), result.Error);
+            Assert.IsTrue(result.OutputTruncated);
+            Assert.IsTrue(result.ErrorTruncated);
+        }
+
+        [TestMethod]
+        public async Task OwnedProcess_UntruncatedOutput_PreservesBothStreamsAsync()
+        {
+            OwnedProcessResult result = await OwnedProcess.RunAsync(CreatePowerShellProcess(
+                "[Console]::Out.Write('standard output'); [Console]::Error.Write('useful diagnostic'); exit 7"), TimeSpan.FromSeconds(10));
+
+            Assert.AreEqual(7, result.ExitCode);
+            Assert.AreEqual("standard output", result.Output);
+            Assert.AreEqual("useful diagnostic", result.Error);
+            Assert.IsFalse(result.OutputTruncated);
+            Assert.IsFalse(result.ErrorTruncated);
+        }
+
+        [TestMethod]
+        public async Task RunFetchProcess_NonzeroExit_ReturnsStandardErrorDiagnosticAsync()
+        {
+            var result = await GitHelper.RunFetchProcessAsync(CreatePowerShellProcess(
+                "[Console]::Out.Write('ordinary output'); [Console]::Error.Write('actionable failure'); exit 7"));
+
+            Assert.IsFalse(result.Succeeded);
+            Assert.AreEqual("actionable failure", result.ErrorMessage);
+        }
+
+        [TestMethod]
+        public async Task OwnedProcess_PreCanceled_DoesNotStartProcessAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            var starts = 0;
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => OwnedProcess.RunAsync(
+                CreateSleepingProcess(), TimeSpan.FromSeconds(5), cancellation.Token, processStarted: _ => starts++));
+
+            Assert.AreEqual(0, starts);
+        }
+
+        [TestMethod]
+        public async Task Pull_PreCanceled_DoesNotStartGitAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => GitHelper.PullAsync(Environment.CurrentDirectory, cancellation.Token));
+        }
+
+        [TestMethod]
+        public async Task OwnedProcess_Timeout_TerminatesDescendantAsync()
+        {
+            var script = CreateDescendantScript() +
+                "[Console]::Out.WriteLine($child.Id); [Console]::Out.Flush(); Start-Sleep -Seconds 30";
+            var rootId = 0;
+
+            OwnedProcessResult result = await OwnedProcess.RunAsync(CreatePowerShellProcess(script),
+                TimeSpan.FromSeconds(4), processStarted: id => rootId = id);
+
+            Assert.IsTrue(result.TimedOut);
+            Assert.IsTrue(int.TryParse(result.Output.Trim(), out var childId), "The test descendant must have started before timeout.");
+            AssertProcessExited(rootId);
+            AssertProcessExited(childId);
+        }
+
+        [TestMethod]
+        public async Task OwnedProcess_RootExits_TerminatesRemainingDescendantAsync()
+        {
+            var script = CreateDescendantScript() +
+                "[Console]::Out.WriteLine($child.Id); [Console]::Out.Flush(); exit 0";
+
+            OwnedProcessResult result = await OwnedProcess.RunAsync(CreatePowerShellProcess(script), TimeSpan.FromSeconds(10));
+
+            Assert.IsFalse(result.TimedOut);
+            Assert.AreEqual(0, result.ExitCode);
+            Assert.IsTrue(int.TryParse(result.Output.Trim(), out var childId));
+            AssertProcessExited(childId);
+        }
+
+        private static string CreateDescendantScript()
+        {
+            return "$info = New-Object System.Diagnostics.ProcessStartInfo; " +
+                "$info.FileName = $PSHOME + '\\powershell.exe'; " +
+                "$info.Arguments = '-NoProfile -NonInteractive -Command Start-Sleep -Seconds 30'; " +
+                "$info.UseShellExecute = $false; $info.CreateNoWindow = $true; " +
+                "$child = [System.Diagnostics.Process]::Start($info); ";
+        }
+
+        private static ProcessStartInfo CreatePowerShellProcess(string script)
+        {
+            var result = CreateSleepingProcess();
+            result.Arguments = "-NoProfile -NonInteractive -EncodedCommand " +
+                Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+            return result;
+        }
+
         private static ProcessStartInfo CreateSleepingProcess()
         {
             return new ProcessStartInfo

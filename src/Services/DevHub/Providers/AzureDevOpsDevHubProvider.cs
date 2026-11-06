@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using StartScreen.Helpers;
 using StartScreen.Models.DevHub;
 using StartScreen.Services;
 
@@ -130,13 +131,24 @@ namespace StartScreen.Services.DevHub.Providers
         /// <summary>
         /// Returns the credential-storage host for the given identifier. For cloud and legacy
         /// visualstudio.com URLs this is "dev.azure.com"; for on-premises servers it is the
-        /// actual server host.
+        /// matching configured endpoint key (including port/path), or the server authority.
         /// </summary>
-        internal static string GetCredentialHost(RemoteRepoIdentifier repo)
+        internal string GetCredentialHost(RemoteRepoIdentifier repo)
         {
-            return repo != null && repo.IsAzureDevOpsServer
-                ? repo.Host
-                : "dev.azure.com";
+            if (repo == null || !repo.IsAzureDevOpsServer)
+                return AzureDevOpsServerHelper.CloudHost;
+            var repositoryUri = AzureDevOpsServerHelper.GetServerUri(repo.BaseUrl);
+            if (repositoryUri == null)
+                return repo.Host;
+            // Settings store PATs under the entire persisted endpoint, including virtual directories.
+            // Match URI authorities and path boundaries, never hostname substrings or sibling ports.
+            return _getCredentialHosts().Select(host => (Host: host, Uri: AzureDevOpsServerHelper.GetServerUri(host)))
+                .Where(entry => entry.Uri != null && entry.Uri.Scheme == repositoryUri.Scheme
+                    && string.Equals(entry.Uri.Authority, repositoryUri.Authority, StringComparison.OrdinalIgnoreCase)
+                    && (string.Equals(repositoryUri.AbsolutePath.TrimEnd('/'), entry.Uri.AbsolutePath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)
+                        || repositoryUri.AbsolutePath.StartsWith(entry.Uri.AbsolutePath.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(entry => entry.Uri.AbsolutePath.Length).Select(entry => entry.Host).FirstOrDefault()
+                ?? repositoryUri.Authority;
         }
 
         /// <summary>
@@ -172,9 +184,14 @@ namespace StartScreen.Services.DevHub.Providers
 
             foreach (var host in credentialHosts)
             {
-                profileTargets.Add((host, host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase)
-                    ? "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"
-                    : $"https://{host.TrimEnd('/')}/_apis/connectionData?api-version=3.0"));
+                if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                    profileTargets.Add((host, "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"));
+                else
+                {
+                    var server = AzureDevOpsServerHelper.GetServerUri(host);
+                    if (server != null)
+                        profileTargets.Add((host, $"{server.AbsoluteUri.TrimEnd('/')}/_apis/connectionData?api-version=3.0"));
+                }
             }
 
             var organizationUrls = await GetCloudProfileBaseUrlsAsync(context, cancellationToken);
@@ -230,7 +247,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (!response.IsSuccessStatusCode)
                     return null;
 
-                var json = await response.Content.ReadAsStringAsync();
+                var json = await HttpResponseReader.ReadStringAsync(response, cancellationToken);
                 using (var doc = JsonDocument.Parse(json))
                 {
                     var root = doc.RootElement;
@@ -280,7 +297,7 @@ namespace StartScreen.Services.DevHub.Providers
                         DisplayName = displayName ?? username,
                         AvatarUrl = null,
                         ProviderName = DisplayName,
-                        Host = credentialHost,
+                        Host = isCloud ? AzureDevOpsServerHelper.CloudHost : new Uri(profileUrl).Host,
                     };
                 }
             }
@@ -573,7 +590,7 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     using var repositoryResponse = await SendAuthenticatedGetAsync(credentialHost, credential, repositoryUrl, cancellationToken);
                     repositoryResponse.EnsureSuccessStatusCode();
-                    using var repositoryJson = JsonDocument.Parse(await repositoryResponse.Content.ReadAsStringAsync());
+                    using var repositoryJson = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(repositoryResponse, cancellationToken));
                     if (!repositoryJson.RootElement.TryGetProperty("id", out var repositoryId)
                         || repositoryId.ValueKind != JsonValueKind.String
                         || !Guid.TryParse(repositoryId.GetString(), out var id) || id == Guid.Empty)
@@ -728,7 +745,7 @@ namespace StartScreen.Services.DevHub.Providers
                         : $"&$skip={items.Count}");
                 using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential, pageUrl, cancellationToken);
                 response.EnsureSuccessStatusCode();
-                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                using var doc = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
                 var page = doc.RootElement.GetProperty("value").EnumerateArray().ToList();
                 items.AddRange(page.Take(pageSize).Select(item => item.Clone()));
                 if (continuationPaging)
@@ -798,7 +815,7 @@ namespace StartScreen.Services.DevHub.Providers
             using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
                 $"{GetProjectUrl(repo)}/_apis/wit/workitemtypes?api-version={version}", cancellationToken);
             response.EnsureSuccessStatusCode();
-            using var types = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            using var types = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
             var result = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var type in types.RootElement.GetProperty("value").EnumerateArray())
             {
@@ -806,7 +823,7 @@ namespace StartScreen.Services.DevHub.Providers
                 using var statesResponse = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
                     $"{GetProjectUrl(repo)}/_apis/wit/workitemtypes/{Uri.EscapeDataString(name)}/states?api-version={version}", cancellationToken);
                 statesResponse.EnsureSuccessStatusCode();
-                using var states = JsonDocument.Parse(await statesResponse.Content.ReadAsStringAsync());
+                using var states = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(statesResponse, cancellationToken));
                 result[name] = new HashSet<string>(states.RootElement.GetProperty("value").EnumerateArray()
                     .Where(state => string.Equals(ReadString(state, "category"), "Completed", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(ReadString(state, "category"), "Removed", StringComparison.OrdinalIgnoreCase))
@@ -848,7 +865,7 @@ namespace StartScreen.Services.DevHub.Providers
                 using var queryResponse = await SendAuthenticatedAsync(GetCredentialHost(repo), credential,
                     $"{GetProjectUrl(repo)}/_apis/wit/wiql?$top={pageSize}&api-version={version}", JsonSerializer.Serialize(new { query }), cancellationToken);
                 queryResponse.EnsureSuccessStatusCode();
-                using var queryDoc = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
+                using var queryDoc = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(queryResponse, cancellationToken));
                 var ids = queryDoc.RootElement.GetProperty("workItems").EnumerateArray().Select(item => item.GetProperty("id").GetInt32())
                     .Where(id => id < beforeId).Distinct().Take(pageSize).ToList();
                 if (ids.Count == 0)
@@ -856,7 +873,7 @@ namespace StartScreen.Services.DevHub.Providers
                 using var itemsResponse = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
                     $"{GetProjectUrl(repo)}/_apis/wit/workitems?ids={string.Join(",", ids)}&$expand=all&api-version={version}", cancellationToken);
                 itemsResponse.EnsureSuccessStatusCode();
-                var itemsJson = await itemsResponse.Content.ReadAsStringAsync();
+                var itemsJson = await HttpResponseReader.ReadStringAsync(itemsResponse, cancellationToken);
                 if (completedSince.HasValue)
                 {
                     using var items = JsonDocument.Parse(itemsJson);
@@ -952,7 +969,7 @@ namespace StartScreen.Services.DevHub.Providers
                         using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
                             $"{prUrl}/threads?api-version={version}", cancellationToken);
                         response.EnsureSuccessStatusCode();
-                        using var threads = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                        using var threads = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
                         var discussions = threads.RootElement.GetProperty("value").EnumerateArray()
                             .Where(thread => !(thread.TryGetProperty("isDeleted", out var deleted) && deleted.ValueKind == JsonValueKind.True)).ToList();
                         var knownStates = new[] { "active", "pending", "fixed", "wontFix", "closed", "byDesign" };
@@ -971,7 +988,7 @@ namespace StartScreen.Services.DevHub.Providers
                         using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
                             $"{prUrl}?api-version={version}", cancellationToken);
                         response.EnsureSuccessStatusCode();
-                        using var metadata = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                        using var metadata = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
                         var root = metadata.RootElement;
                         if (!string.Equals(ReadString(root, "status"), "active", StringComparison.OrdinalIgnoreCase)
                             || (root.TryGetProperty("isDraft", out var draft) && draft.ValueKind == JsonValueKind.True))
@@ -991,7 +1008,7 @@ namespace StartScreen.Services.DevHub.Providers
                         using var iterationResponse = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
                             $"{prUrl}/iterations?api-version={version}", cancellationToken);
                         iterationResponse.EnsureSuccessStatusCode();
-                        using var iterations = JsonDocument.Parse(await iterationResponse.Content.ReadAsStringAsync());
+                        using var iterations = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(iterationResponse, cancellationToken));
                         var iteration = iterations.RootElement.GetProperty("value").EnumerateArray()
                             .OrderByDescending(item => item.GetProperty("id").GetInt32()).FirstOrDefault();
                         if (iteration.ValueKind != JsonValueKind.Object || !iteration.TryGetProperty("sourceRefCommit", out var source)
@@ -1003,7 +1020,7 @@ namespace StartScreen.Services.DevHub.Providers
                         using var statusesResponse = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
                             $"{prUrl}/statuses?api-version={version}", cancellationToken);
                         statusesResponse.EnsureSuccessStatusCode();
-                        using var statuses = JsonDocument.Parse(await statusesResponse.Content.ReadAsStringAsync());
+                        using var statuses = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(statusesResponse, cancellationToken));
                         if (statusesResponse.Headers.Contains("x-ms-continuationtoken"))
                             return pr;
                         var latest = statuses.RootElement.GetProperty("value").EnumerateArray()
@@ -1077,7 +1094,7 @@ namespace StartScreen.Services.DevHub.Providers
                     using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
                         $"{GetProjectUrl(repo)}/_apis/build/builds/{id.GetInt32()}/timeline?api-version={version}", cancellationToken);
                     response.EnsureSuccessStatusCode();
-                    using var timeline = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    using var timeline = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
                     var failed = timeline.RootElement.GetProperty("records").EnumerateArray()
                         .FirstOrDefault(record => ReadString(record, "result") == "failed");
                     if (failed.ValueKind != JsonValueKind.Object)

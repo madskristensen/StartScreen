@@ -301,7 +301,7 @@ namespace StartScreen.Test.DevHub
             {
                 Assert.AreEqual("tfs.contoso.com", host);
                 return Task.FromResult(Credential(false));
-            }, (_, _) => { });
+            }, (_, _) => { }, getCredentialHosts: () => []);
 
             Assert.AreEqual(DevHubRepoSummaryStatus.Ready, (await provider.GetRepoSummaryAsync(repo, CancellationToken.None)).Status);
         }
@@ -374,7 +374,7 @@ namespace StartScreen.Test.DevHub
             ? new DevHubCredential("token", DateTimeOffset.UtcNow.AddHours(1)) : new DevHubCredential("user", "token");
 
         private static AzureDevOpsDevHubProvider Provider(HttpClient client, DevHubCredential credential) =>
-            new AzureDevOpsDevHubProvider(client, (_, _, _) => Task.FromResult(credential), (_, _) => { });
+            new AzureDevOpsDevHubProvider(client, (_, _, _) => Task.FromResult(credential), (_, _) => { }, getCredentialHosts: () => []);
 
         private static RemoteRepoIdentifier Repo() => new RemoteRepoIdentifier("dev.azure.com", "org", "repo", "project");
 

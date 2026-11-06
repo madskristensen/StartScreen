@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -29,6 +30,11 @@ namespace StartScreen.ToolWindows.Controls
         private bool _suppressGitHubAccountSelectionChanged;
         private bool _defaultTabApplied;
         private bool _suppressSettingsComboChanged;
+        private readonly CancellationTokenSource _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(StartScreenPackage.ShutdownToken);
+        private Microsoft.VisualStudio.Threading.JoinableTask _gitHubAccountsRefreshTask;
+        private string _gitHubAccountContext;
+        private string _activityIdentityContext;
+        private string _activityCacheContext;
 
         // Host that the inline PAT entry box is currently targeting (cloud or on-prem).
         // Set when the user clicks "Sign in" / "Change" on a server row; consumed by AdoPatBox_KeyDown.
@@ -46,6 +52,8 @@ namespace StartScreen.ToolWindows.Controls
             if (_isDisposed)
                 return;
             _isDisposed = true;
+            _lifetimeCancellation.Cancel();
+            _lifetimeCancellation.Dispose();
             _copilotLoaded = false;
             Loaded -= BeginWorkspaceVisit;
             Unloaded -= CopilotUnloaded;
@@ -106,11 +114,18 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public void UpdateView(DevHubDashboard dashboard, RemoteRepoIdentifier filterRepo = null)
         {
+            if (_isDisposed)
+                return;
             // A context-menu scope takes precedence over any externally supplied filter.
             RemoteRepoIdentifier effectiveFilter = _scopedRepo ?? filterRepo;
 
             bool dashboardChanged = !ReferenceEquals(_currentDashboard, dashboard);
             bool filterChanged = !Equals(_currentFilterRepo, effectiveFilter);
+            if (filterChanged || _activityIdentityContext != dashboard?.IdentityContext
+                || _activityCacheContext != dashboard?.CacheContext)
+                ClearInactiveActivityItems();
+            _activityIdentityContext = dashboard?.IdentityContext;
+            _activityCacheContext = dashboard?.CacheContext;
 
             _currentDashboard = dashboard;
             _currentFilterRepo = effectiveFilter;
@@ -131,8 +146,9 @@ namespace StartScreen.ToolWindows.Controls
             if (!dashboard.HasAuthentication)
             {
                 ShowNotConnected(hasGitHub, hasAdo);
-                if (dashboard.ActivityWarnings.Count > 0)
-                    ShowActivityError(string.Join("\n", dashboard.ActivityWarnings.Values.Distinct()));
+                var warning = string.Join("\n", dashboard.GetVisibleActivityWarnings().Select(pair => pair.Value).Distinct());
+                if (!string.IsNullOrEmpty(warning))
+                    ShowActivityError(warning);
                 LastRefreshChanged?.Invoke(this, GetActivityRefreshStatus(dashboard) ?? string.Empty);
                 return;
             }
@@ -154,7 +170,7 @@ namespace StartScreen.ToolWindows.Controls
                 prs = dashboard.PullRequests;
                 issues = dashboard.Issues;
                 ciRuns = dashboard.CiRuns;
-                ActivityWarningText.Text = string.Join("\n", dashboard.ActivityWarnings.Values.Distinct());
+                ActivityWarningText.Text = string.Join("\n", dashboard.GetVisibleActivityWarnings().Select(pair => pair.Value).Distinct());
             }
 
             ActivityWarningText.Visibility = string.IsNullOrEmpty(ActivityWarningText.Text) ? Visibility.Collapsed : Visibility.Visible;
@@ -216,16 +232,18 @@ namespace StartScreen.ToolWindows.Controls
         {
             ResetStatusPanels(NotConnectedPanel, LoadingPanel, ErrorPanel);
             DashboardPanel.Visibility = Visibility.Visible;
-            NotConnectedPanel.Visibility = Visibility.Visible;
+            NotConnectedPanel.Visibility = Options.Instance.DevHubGitHubEnabled || Options.Instance.DevHubAzureDevOpsEnabled
+                ? Visibility.Visible : Visibility.Collapsed;
 
-            ConnectGitHubTextBlock.Visibility = hasGitHub ? Visibility.Collapsed : Visibility.Visible;
+            ConnectGitHubTextBlock.Visibility = hasGitHub || !Options.Instance.DevHubGitHubEnabled ? Visibility.Collapsed : Visibility.Visible;
             GitHubCredentialHelpTextBlock.Visibility = _showGitHubCredentialHelp && !hasGitHub ? Visibility.Visible : Visibility.Collapsed;
-            ConnectAdoTextBlock.Visibility = hasAdo ? Visibility.Collapsed : Visibility.Visible;
+            ConnectAdoTextBlock.Visibility = hasAdo || !Options.Instance.DevHubAzureDevOpsEnabled ? Visibility.Collapsed : Visibility.Visible;
             ClearRepositoryActivity();
         }
 
         private void ClearRepositoryActivity()
         {
+            ClearInactiveActivityItems();
             ActivityWarningText.Text = null;
             ActivityWarningText.Visibility = Visibility.Collapsed;
             ActivityCoveragePanel.Visibility = Visibility.Collapsed;
@@ -234,6 +252,10 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateSettingsAccountStatus(bool hasGitHub, bool hasAdo)
         {
+            hasGitHub &= Options.Instance.DevHubGitHubEnabled;
+            var accountContext = GetGitHubAccountContext();
+            var accountsChanged = _gitHubAccountContext != accountContext;
+            _gitHubAccountContext = accountContext;
             ConnectedGitHubStatus.Visibility = hasGitHub ? Visibility.Visible : Visibility.Collapsed;
             SettingsConnectGitHubTextBlock.Visibility = hasGitHub ? Visibility.Collapsed : Visibility.Visible;
             GitHubConnectedStatusText.Text = hasGitHub
@@ -243,7 +265,8 @@ namespace StartScreen.ToolWindows.Controls
             {
                 GitHubCredentialSettingsHelpTextBlock.Visibility = Visibility.Collapsed;
                 GitHubPatEntryPanel.Visibility = Visibility.Collapsed;
-                RefreshGitHubAccountsAsync().FireAndForget();
+                if (accountsChanged && SettingsPanel.Visibility == Visibility.Visible)
+                    RefreshGitHubAccountsAsync().FileAndForget(nameof(DevHubPanel));
             }
             else
             {
@@ -283,6 +306,8 @@ namespace StartScreen.ToolWindows.Controls
             {
                 UpdateView(_currentDashboard, _currentFilterRepo);
                 SettingsPanel.Visibility = Visibility.Visible;
+                if (hasGitHub)
+                    RefreshGitHubAccountsAsync().FileAndForget(nameof(DevHubPanel));
             }
             else
             {
@@ -464,6 +489,8 @@ namespace StartScreen.ToolWindows.Controls
             PopulateDisplaySettings();
 
             SettingsPanel.Visibility = Visibility.Visible;
+            if (hasGitHub)
+                RefreshGitHubAccountsAsync().FileAndForget(nameof(DevHubPanel));
         }
 
         private void PopulateDisplaySettings()
@@ -473,11 +500,50 @@ namespace StartScreen.ToolWindows.Controls
             {
                 DefaultTabComboBox.SelectedIndex = Options.Instance.DevHubDefaultTab == DevHubDefaultTab.Incoming ? 1 : 0;
                 SortOrderComboBox.SelectedIndex = (int)Options.Instance.DevHubSortOrder;
+                GitHubProviderEnabled.IsChecked = Options.Instance.DevHubGitHubEnabled;
+                AdoProviderEnabled.IsChecked = Options.Instance.DevHubAzureDevOpsEnabled;
+                BitbucketProviderEnabled.IsChecked = Options.Instance.DevHubBitbucketEnabled;
             }
             finally
             {
                 _suppressSettingsComboChanged = false;
             }
+        }
+
+        private void ProviderEnabled_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isDisposed || _suppressSettingsComboChanged || GitHubProviderEnabled == null
+                || AdoProviderEnabled == null || BitbucketProviderEnabled == null)
+                return;
+            SaveProviderSettingsAsync().FileAndForget(nameof(DevHubPanel));
+        }
+
+        private async Task SaveProviderSettingsAsync()
+        {
+            var options = Options.Instance;
+            var github = GitHubProviderEnabled.IsChecked == true;
+            var azureDevOps = AdoProviderEnabled.IsChecked == true;
+            var bitbucket = BitbucketProviderEnabled.IsChecked == true;
+            if (github == options.DevHubGitHubEnabled && azureDevOps == options.DevHubAzureDevOpsEnabled
+                && bitbucket == options.DevHubBitbucketEnabled)
+                return;
+
+            options.DevHubGitHubEnabled = github;
+            options.DevHubAzureDevOpsEnabled = azureDevOps;
+            options.DevHubBitbucketEnabled = bitbucket;
+            DevHubCredentialHelper.ClearCachedCredentials();
+            try
+            {
+                await options.SaveAsync();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                if (!_isDisposed)
+                    ShowActivityError("Could not save provider settings. Check the Output window and retry.");
+            }
+            if (!_isDisposed)
+                RefreshRequested?.Invoke(this, EventArgs.Empty);
         }
 
         private void DefaultTabComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -584,11 +650,40 @@ namespace StartScreen.ToolWindows.Controls
             return "connected";
         }
 
+        private string GetGitHubAccountContext()
+        {
+            return $"{DevHubCredentialHelper.AccountGeneration}:{_currentDashboard?.IdentityContext}:"
+                + $"{GetConnectedGitHubAccountDisplayText()}:{Options.Instance.DevHubGitHubAccount}";
+        }
+
         private async Task RefreshGitHubAccountsAsync()
         {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            if (_isDisposed || !Options.Instance.DevHubGitHubEnabled)
+                return;
+            if (_gitHubAccountsRefreshTask == null || _gitHubAccountsRefreshTask.IsCompleted)
+                _gitHubAccountsRefreshTask = ThreadHelper.JoinableTaskFactory.RunAsync(RefreshGitHubAccountsCoreAsync);
+            await _gitHubAccountsRefreshTask.JoinAsync();
+        }
+
+        private async Task RefreshGitHubAccountsCoreAsync()
+        {
+            var cancellationToken = _lifetimeCancellation.Token;
             try
             {
-                var accounts = await Services.DevHub.DevHubCredentialHelper.GetGitHubAccountsAsync(System.Threading.CancellationToken.None);
+                IReadOnlyList<string> accounts;
+                string accountContext;
+                do
+                {
+                    accountContext = GetGitHubAccountContext();
+                    accounts = await Services.DevHub.DevHubCredentialHelper.GetGitHubAccountsAsync(cancellationToken);
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (_isDisposed || !Options.Instance.DevHubGitHubEnabled || _currentDashboard?.HasProvider("github.com") != true)
+                        return;
+                }
+                while (accountContext != GetGitHubAccountContext());
+
                 var preferred = Options.Instance.DevHubGitHubAccount?.Trim() ?? string.Empty;
 
                 _suppressGitHubAccountSelectionChanged = true;
@@ -623,14 +718,20 @@ namespace StartScreen.ToolWindows.Controls
                     GitHubAccountSelectionPanel.Visibility = Visibility.Collapsed;
                 }
             }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+            }
             catch (Exception ex)
             {
                 await ex.LogAsync();
-                GitHubAccountSelectionPanel.Visibility = Visibility.Collapsed;
+                if (!_isDisposed && !cancellationToken.IsCancellationRequested)
+                    GitHubAccountSelectionPanel.Visibility = Visibility.Collapsed;
             }
             finally
             {
-                _suppressGitHubAccountSelectionChanged = false;
+                if (!_isDisposed)
+                    _suppressGitHubAccountSelectionChanged = false;
             }
         }
 
@@ -660,21 +761,26 @@ namespace StartScreen.ToolWindows.Controls
 
         private async Task SignOutFromGitHubAsync()
         {
+            if (_isDisposed)
+                return;
+            var cancellationToken = _lifetimeCancellation.Token;
             try
             {
                 var selectedAccount = GitHubAccountsComboBox.SelectedItem as string;
                 if (!string.IsNullOrWhiteSpace(selectedAccount))
                 {
                     await Services.DevHub.DevHubCredentialHelper.RemoveGitHubAccountAsync(
-                        selectedAccount, System.Threading.CancellationToken.None);
+                        selectedAccount, cancellationToken);
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
                 Services.DevHub.DevHubCredentialHelper.RemoveCredential("github.com");
                 Services.DevHub.DevHubCredentialHelper.ClearCachedCredentials();
                 Options.Instance.DevHubGitHubAccount = string.Empty;
                 Options.Instance.SaveAsync().FireAndForget();
                 await RefreshGitHubAccountsAsync();
-                RefreshRequested?.Invoke(this, EventArgs.Empty);
+                if (!_isDisposed && !cancellationToken.IsCancellationRequested)
+                    RefreshRequested?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception ex)
             {
@@ -1427,28 +1533,45 @@ namespace StartScreen.ToolWindows.Controls
     /// </summary>
     public class HexColorToBrushConverter : System.Windows.Data.IValueConverter
     {
+        private const int _maximumCachedColors = 256;
         private static readonly Dictionary<string, SolidColorBrush> _cache = new Dictionary<string, SolidColorBrush>(StringComparer.OrdinalIgnoreCase);
+        private static readonly SolidColorBrush _fallbackBrush = CreateFrozen(Color.FromRgb(128, 128, 128));
 
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value is string hex && hex.Length >= 6)
+            if (TryParseColor(value, out var hex, out var color))
             {
-                hex = hex.TrimStart('#');
-                if (_cache.TryGetValue(hex, out var cached))
-                    return cached;
-
-                if (byte.TryParse(hex.Substring(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte r) &&
-                    byte.TryParse(hex.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte g) &&
-                    byte.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))
+                lock (_cache)
                 {
-                    var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-                    brush.Freeze();
+                    if (_cache.TryGetValue(hex, out var cached))
+                        return cached;
+                    if (_cache.Count >= _maximumCachedColors)
+                        _cache.Clear();
+                    var brush = CreateFrozen(color);
                     _cache[hex] = brush;
                     return brush;
                 }
             }
 
-            return new SolidColorBrush(Color.FromRgb(128, 128, 128));
+            return _fallbackBrush;
+        }
+
+        internal static bool TryParseColor(object value, out string hex, out Color color)
+        {
+            hex = (value as string)?.Trim().TrimStart('#');
+            color = default;
+            if (hex == null || hex.Length != 6 || !uint.TryParse(hex, NumberStyles.AllowHexSpecifier,
+                CultureInfo.InvariantCulture, out var rgb))
+                return false;
+            color = Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+            return true;
+        }
+
+        private static SolidColorBrush CreateFrozen(Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -1468,16 +1591,10 @@ namespace StartScreen.ToolWindows.Controls
 
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value is string hex && hex.Length >= 6)
+            if (HexColorToBrushConverter.TryParseColor(value, out _, out var color))
             {
-                hex = hex.TrimStart('#');
-                if (byte.TryParse(hex.Substring(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte r) &&
-                    byte.TryParse(hex.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte g) &&
-                    byte.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))
-                {
-                    double luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
-                    return luminance > 0.5 ? _darkBrush : _lightBrush;
-                }
+                double luminance = (0.299 * color.R + 0.587 * color.G + 0.114 * color.B) / 255.0;
+                return luminance > 0.5 ? _darkBrush : _lightBrush;
             }
 
             return SystemColors.ControlTextBrush;

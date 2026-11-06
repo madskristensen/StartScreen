@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -188,6 +190,154 @@ namespace StartScreen.Test
                     cancellation.Token));
 
             Assert.AreEqual(0, handler.RequestCount);
+        }
+
+        [STATestMethod]
+        public async Task Thumbnails_CorruptCacheIsReplacedAndThenReusedAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var path = directory.GetPath("abc123.jpg");
+            File.WriteAllText(path, "not an image");
+            var image = CreateImage();
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(image),
+            });
+            using var client = new HttpClient(handler);
+            var first = CreateVideo();
+
+            await YouTubeService.LoadThumbnailsAsync([first], client, directory.Path);
+            var second = CreateVideo();
+            await YouTubeService.LoadThumbnailsAsync([second], client, directory.Path);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsNotNull(first.Thumbnail);
+            Assert.IsTrue(first.Thumbnail.IsFrozen);
+            Assert.IsNotNull(second.Thumbnail);
+            CollectionAssert.AreEqual(image, File.ReadAllBytes(path));
+            Assert.IsEmpty(Directory.GetFiles(directory.Path, "*.tmp"));
+        }
+
+        [STATestMethod]
+        public async Task Thumbnails_InvalidDownloadIsNotCachedAndNextAttemptRecoversAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var image = CreateImage();
+            var handler = new TestHttpMessageHandler((_, attempt) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(attempt == 1 ? new byte[] { 1, 2, 3 } : image),
+            });
+            using var client = new HttpClient(handler);
+            var video = CreateVideo();
+
+            await YouTubeService.LoadThumbnailsAsync([video], client, directory.Path);
+
+            Assert.IsNull(video.Thumbnail);
+            Assert.IsFalse(File.Exists(directory.GetPath("abc123.jpg")));
+            await YouTubeService.LoadThumbnailsAsync([video], client, directory.Path);
+            Assert.IsNotNull(video.Thumbnail);
+            Assert.AreEqual(2, handler.RequestCount);
+            Assert.IsEmpty(Directory.GetFiles(directory.Path, "*.tmp"));
+        }
+
+        [STATestMethod]
+        public async Task Thumbnails_OversizedCacheIsEvictedAndHistoryIsBoundedAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            for (var index = 0; index < 105; index++)
+            {
+                var path = directory.GetPath($"old{index}.jpg");
+                File.WriteAllBytes(path, [0]);
+                File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-1).AddMinutes(-index));
+            }
+            File.WriteAllBytes(directory.GetPath("abc123.jpg"), new byte[2 * 1024 * 1024 + 1]);
+            var image = CreateImage();
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(image),
+            });
+            using var client = new HttpClient(handler);
+            var video = CreateVideo();
+
+            await YouTubeService.LoadThumbnailsAsync([video], client, directory.Path);
+
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsNotNull(video.Thumbnail);
+            Assert.HasCount(100, Directory.GetFiles(directory.Path, "*.jpg"));
+            Assert.IsTrue(File.Exists(directory.GetPath("abc123.jpg")));
+            Assert.IsFalse(File.Exists(directory.GetPath("old104.jpg")));
+        }
+
+        [TestMethod]
+        public async Task Thumbnails_CancellationDoesNotStartRequestOrCreateFilesAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+            using var client = new HttpClient(handler);
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => YouTubeService.LoadThumbnailsAsync(
+                [CreateVideo()], client, directory.Path, cancellation.Token));
+
+            Assert.AreEqual(0, handler.RequestCount);
+            Assert.IsEmpty(Directory.GetFiles(directory.Path));
+        }
+
+        [STATestMethod]
+        public async Task Thumbnails_OversizedDownloadIsNotPublishedAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[2 * 1024 * 1024 + 1]),
+            });
+            using var client = new HttpClient(handler);
+            var video = CreateVideo();
+
+            await YouTubeService.LoadThumbnailsAsync([video], client, directory.Path);
+
+            Assert.IsNull(video.Thumbnail);
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.IsEmpty(Directory.GetFiles(directory.Path));
+        }
+
+        [STATestMethod]
+        public async Task Thumbnails_ConcurrentPublicationKeepsBothImagesAndOneCompleteFileAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var image = CreateImage();
+            var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(image),
+            });
+            using var client = new HttpClient(handler);
+            var first = CreateVideo();
+            var second = CreateVideo();
+
+            await Task.WhenAll(YouTubeService.LoadThumbnailsAsync([first], client, directory.Path),
+                YouTubeService.LoadThumbnailsAsync([second], client, directory.Path));
+
+            Assert.IsNotNull(first.Thumbnail);
+            Assert.IsNotNull(second.Thumbnail);
+            CollectionAssert.AreEqual(image, File.ReadAllBytes(directory.GetPath("abc123.jpg")));
+            Assert.IsEmpty(Directory.GetFiles(directory.Path, "*.tmp"));
+        }
+
+        private static YouTubeVideo CreateVideo() => new()
+        {
+            Url = "https://www.youtube.com/watch?v=abc123",
+            ThumbnailUrl = "https://i.ytimg.com/vi/abc123/mqdefault.jpg",
+        };
+
+        private static byte[] CreateImage()
+        {
+            var bitmap = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 0, 255, 255 }, 4);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var stream = new MemoryStream();
+            encoder.Save(stream);
+            return stream.ToArray();
         }
     }
 }

@@ -455,7 +455,14 @@ namespace StartScreen.Test
                 .Single(element => element.Attribute(x + "Name")?.Value == "SettingsPanel"));
             definition.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
             definition.SetAttributeValue("Visibility", "Visible");
-            var events = new[] { "Click", "SelectionChanged", "KeyDown", "PasswordChanged", "TextChanged", "LostFocus" };
+            var providerControls = definition.Descendants(p + "CheckBox").ToArray();
+            Assert.HasCount(3, providerControls);
+            foreach (var control in providerControls)
+            {
+                Assert.AreEqual("ProviderEnabled_Changed", control.Attribute("Checked")!.Value);
+                Assert.AreEqual("ProviderEnabled_Changed", control.Attribute("Unchecked")!.Value);
+            }
+            var events = new[] { "Click", "SelectionChanged", "KeyDown", "PasswordChanged", "TextChanged", "LostFocus", "Checked", "Unchecked" };
             foreach (var attribute in definition.DescendantsAndSelf().Attributes()
                 .Where(attribute => events.Contains(attribute.Name.LocalName)
                     || attribute.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)).ToArray())
@@ -485,6 +492,10 @@ namespace StartScreen.Test
             var display = (Grid)panel.FindName("DisplaySettingsGrid");
             var defaultTab = (ComboBox)panel.FindName("DefaultTabComboBox");
             var sortOrder = (ComboBox)panel.FindName("SortOrderComboBox");
+            var github = (CheckBox)panel.FindName("GitHubProviderEnabled");
+            var ado = (CheckBox)panel.FindName("AdoProviderEnabled");
+            var bitbucket = (CheckBox)panel.FindName("BitbucketProviderEnabled");
+            github.IsChecked = ado.IsChecked = bitbucket.IsChecked = true;
             void Layout()
             {
                 panel.Measure(new Size(width, double.PositiveInfinity));
@@ -509,6 +520,19 @@ namespace StartScreen.Test
             }
             Assert.AreEqual(Visibility.Visible, servers.Visibility);
             Assert.AreSame(connections.Parent, servers.Parent, "Connection status must remain outside the collapsed controls.");
+            Assert.IsTrue(connections.IsEnabled);
+            Assert.IsTrue(servers.IsEnabled);
+            github.IsChecked = false;
+            ado.IsChecked = false;
+            Layout();
+            Assert.IsFalse(((FrameworkElement)panel.FindName("ConnectedGitHubStatus")).IsEnabled);
+            Assert.IsFalse(((FrameworkElement)panel.FindName("SettingsConnectGitHubTextBlock")).IsEnabled);
+            Assert.IsFalse(((FrameworkElement)panel.FindName("GitHubPatEntryPanel")).IsEnabled);
+            Assert.IsFalse(connections.IsEnabled);
+            Assert.IsFalse(servers.IsEnabled);
+            Assert.IsTrue(bitbucket.IsChecked);
+            github.IsChecked = ado.IsChecked = true;
+            Layout();
             Assert.AreEqual(Visibility.Visible, defaultTab.Visibility);
             Assert.AreEqual(Visibility.Visible, sortOrder.Visibility);
             Assert.AreSame(display, defaultTab.Parent);

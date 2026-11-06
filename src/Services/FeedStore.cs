@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 
 namespace StartScreen.Services
@@ -21,6 +22,8 @@ namespace StartScreen.Services
 
         private static readonly string _newsFeedsFile = Path.Combine(_userProfileFolder, "newsfeeds.json");
 
+        private static readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions { WriteIndented = true };
         private static FileSystemWatcher _watcher;
 
         /// <summary>
@@ -44,16 +47,17 @@ namespace StartScreen.Services
                 Directory.CreateDirectory(_userProfileFolder);
                 _watcher = new FileSystemWatcher(_userProfileFolder, "newsfeeds.json")
                 {
-                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.FileName,
                     EnableRaisingEvents = true
                 };
 
                 _watcher.Changed += OnFileChanged;
                 _watcher.Created += OnFileChanged;
+                _watcher.Renamed += OnFileChanged;
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
             }
         }
 
@@ -67,8 +71,14 @@ namespace StartScreen.Services
                 _watcher.EnableRaisingEvents = false;
                 _watcher.Changed -= OnFileChanged;
                 _watcher.Created -= OnFileChanged;
+                _watcher.Renamed -= OnFileChanged;
                 _watcher.Dispose();
                 _watcher = null;
+            }
+            lock (_debounceLock)
+            {
+                _debounceTimer?.Dispose();
+                _debounceTimer = null;
             }
         }
 
@@ -109,15 +119,14 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
                 return GetHardcodedDefaultFeeds();
             }
         }
 
         internal static List<FeedInfo> ReadFeeds(string filePath)
         {
-            var json = File.ReadAllText(filePath);
-            NewsFeedsWrapper wrapper = JsonSerializer.Deserialize<NewsFeedsWrapper>(json);
+            NewsFeedsWrapper wrapper = AtomicJsonCache.Read<NewsFeedsWrapper>(filePath);
             return wrapper?.Feeds ?? GetHardcodedDefaultFeeds();
         }
 
@@ -138,7 +147,7 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
                 return null;
             }
         }
@@ -153,30 +162,30 @@ namespace StartScreen.Services
 
         internal static async Task SaveFeedsAsync(IEnumerable<FeedInfo> feeds, string filePath)
         {
-            await Task.Run(() =>
+            await System.Threading.Tasks.TaskScheduler.Default;
+            await _writeGate.WaitAsync();
+            try
             {
-                try
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                await SaveFeedsCoreAsync(feeds, filePath);
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                throw;
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
+        }
 
-                    var wrapper = new NewsFeedsWrapper
-                    {
-                        Schema = "https://raw.githubusercontent.com/madskristensen/StartScreen/master/newsfeeds.schema.json",
-                        Feeds = feeds.ToList()
-                    };
-
-                    var json = JsonSerializer.Serialize(wrapper, new JsonSerializerOptions
-                    {
-                        WriteIndented = true
-                    });
-
-                    File.WriteAllText(filePath, json);
-                }
-                catch (Exception ex)
-                {
-                    ex.Log();
-                }
-            });
+        private static Task SaveFeedsCoreAsync(IEnumerable<FeedInfo> feeds, string filePath)
+        {
+            return AtomicJsonCache.WriteAsync(filePath, new NewsFeedsWrapper
+            {
+                Schema = "https://raw.githubusercontent.com/madskristensen/StartScreen/master/newsfeeds.schema.json",
+                Feeds = feeds.ToList()
+            }, options: _jsonOptions);
         }
 
         /// <summary>
@@ -189,25 +198,27 @@ namespace StartScreen.Services
 
         internal static async Task AddCustomFeedAsync(string name, string url, string filePath)
         {
-            List<FeedInfo> feeds = File.Exists(filePath)
-                ? ReadFeeds(filePath)
-                : GetHardcodedDefaultFeeds();
-
-            // Check for duplicates
-            if (feeds.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase) ||
-                              string.Equals(f.Url, url, StringComparison.OrdinalIgnoreCase)))
+            await System.Threading.Tasks.TaskScheduler.Default;
+            await _writeGate.WaitAsync();
+            try
             {
-                return;
+                List<FeedInfo> feeds = File.Exists(filePath) ? ReadFeeds(filePath) : GetHardcodedDefaultFeeds();
+                if (feeds.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                                  string.Equals(f.Url, url, StringComparison.OrdinalIgnoreCase)))
+                    return;
+
+                feeds.Add(new FeedInfo { Name = name, Url = url, Enabled = true });
+                await SaveFeedsCoreAsync(feeds, filePath);
             }
-
-            feeds.Add(new FeedInfo
+            catch (Exception ex)
             {
-                Name = name,
-                Url = url,
-                Enabled = true
-            });
-
-            await SaveFeedsAsync(feeds, filePath);
+                await ex.LogAsync();
+                throw;
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
         }
 
         /// <summary>
@@ -220,11 +231,23 @@ namespace StartScreen.Services
 
         internal static async Task RemoveFeedAsync(string name, string filePath)
         {
-            List<FeedInfo> feeds = File.Exists(filePath)
-                ? ReadFeeds(filePath)
-                : GetHardcodedDefaultFeeds();
-            feeds.RemoveAll(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
-            await SaveFeedsAsync(feeds, filePath);
+            await System.Threading.Tasks.TaskScheduler.Default;
+            await _writeGate.WaitAsync();
+            try
+            {
+                List<FeedInfo> feeds = File.Exists(filePath) ? ReadFeeds(filePath) : GetHardcodedDefaultFeeds();
+                feeds.RemoveAll(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+                await SaveFeedsCoreAsync(feeds, filePath);
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                throw;
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
         }
 
         /// <summary>
@@ -252,7 +275,8 @@ namespace StartScreen.Services
                             using (var reader = new StreamReader(stream))
                             {
                                 var content = reader.ReadToEnd();
-                                File.WriteAllText(_newsFeedsFile, content);
+                                AtomicJsonCache.Write(_newsFeedsFile,
+                                    JsonSerializer.Deserialize<NewsFeedsWrapper>(content), _jsonOptions);
                                 return;
                             }
                         }
@@ -264,7 +288,7 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FireAndForget();
 
                 // Try to write hardcoded defaults
                 try
@@ -273,7 +297,7 @@ namespace StartScreen.Services
                 }
                 catch (Exception ex2)
                 {
-                    ex2.Log();
+                    ex2.LogAsync().FireAndForget();
                 }
             }
         }
@@ -286,8 +310,7 @@ namespace StartScreen.Services
                 Feeds = GetHardcodedDefaultFeeds()
             };
 
-            var json = JsonSerializer.Serialize(wrapper, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_newsFeedsFile, json);
+            AtomicJsonCache.Write(_newsFeedsFile, wrapper, _jsonOptions);
         }
 
         /// <summary>

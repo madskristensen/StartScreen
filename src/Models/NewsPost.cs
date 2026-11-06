@@ -4,7 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.ServiceModel.Syndication;
-using System.Text.RegularExpressions;
+using System.Text;
 
 namespace StartScreen.Models
 {
@@ -13,8 +13,6 @@ namespace StartScreen.Models
     /// </summary>
     public class NewsPost : INotifyPropertyChanged
     {
-        private static readonly Regex _htmlRegex = new Regex(@"<[^>]+>", RegexOptions.Compiled);
-
         private const string _trackingParameter = "?cid=vs_start_screen";
         private const int _maxSummaryLength = 1000;
         private const string _noDescriptionText = "(No description)";
@@ -213,14 +211,21 @@ namespace StartScreen.Models
             if (string.IsNullOrEmpty(input))
                 return string.Empty;
 
-            // Remove HTML tags
-            var clearText = _htmlRegex.Replace(input, string.Empty)
-                .Replace("\r", " ")
-                .Replace("\n", string.Empty);
-
-            // Truncate to max length
-            var maxLength = Math.Min(_maxSummaryLength, clearText.Length);
-            return clearText.Substring(0, maxLength);
+            var clearText = new StringBuilder(Math.Min(input.Length, _maxSummaryLength));
+            var closingTag = input.IndexOf('>');
+            for (var index = 0; index < input.Length && clearText.Length < _maxSummaryLength; index++)
+            {
+                if (closingTag >= 0 && closingTag < index)
+                    closingTag = input.IndexOf('>', index);
+                if (input[index] == '<' && closingTag > index + 1)
+                {
+                    index = closingTag;
+                    continue;
+                }
+                if (input[index] != '\n')
+                    clearText.Append(input[index] == '\r' ? ' ' : input[index]);
+            }
+            return clearText.ToString();
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

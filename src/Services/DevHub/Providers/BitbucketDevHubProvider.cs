@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using StartScreen.Helpers;
 using StartScreen.Models.DevHub;
 
 namespace StartScreen.Services.DevHub.Providers
@@ -12,7 +14,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// Bitbucket Cloud provider for the Dev Hub.
     /// Fetches PRs, issues, and pipeline status from the Bitbucket REST API v2.
     /// </summary>
-    internal sealed class BitbucketDevHubProvider : IDevHubProvider, IDevHubActivitySource
+    internal sealed class BitbucketDevHubProvider : IDevHubProvider, IDevHubActivitySource, IDevHubRefreshProvider
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -22,6 +24,7 @@ namespace StartScreen.Services.DevHub.Providers
         private readonly HttpClient _client;
         private readonly Func<CancellationToken, Task<DevHubCredential>> _acquireCredential;
         private readonly DevHubIdentityCache _identityCache;
+        private readonly Func<bool> _hasStoredCredential;
 
         public BitbucketDevHubProvider() : this(_httpClient,
             token => DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", token))
@@ -29,11 +32,13 @@ namespace StartScreen.Services.DevHub.Providers
         }
 
         internal BitbucketDevHubProvider(HttpClient client, Func<CancellationToken, Task<DevHubCredential>> acquireCredential,
-            DevHubIdentityCache identityCache = null)
+            DevHubIdentityCache identityCache = null, Func<bool> hasStoredCredential = null)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _acquireCredential = acquireCredential ?? throw new ArgumentNullException(nameof(acquireCredential));
             _identityCache = identityCache ?? new DevHubIdentityCache();
+            _hasStoredCredential = hasStoredCredential ?? (() => DevHubCredentialHelper.HasCredential("bitbucket.org")
+                || NativeCredentialManager.HasGitCredential("bitbucket.org"));
         }
 
         private static HttpClient CreateSharedHttpClient()
@@ -117,7 +122,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (!response.IsSuccessStatusCode)
                     return null;
 
-                var json = await response.Content.ReadAsStringAsync();
+                var json = await HttpResponseReader.ReadStringAsync(response, cancellationToken);
                 using (var doc = JsonDocument.Parse(json))
                 {
                     var root = doc.RootElement;
@@ -129,12 +134,15 @@ namespace StartScreen.Services.DevHub.Providers
                             ? href.GetString()
                             : null;
 
-                    _identityCache.Remember(credential, "https://api.bitbucket.org/2.0/user", username);
+                    var identity = GetUserIdentity(root);
+                    if (string.IsNullOrEmpty(identity))
+                        throw new JsonException("Bitbucket did not return an authenticated identity.");
+                    _identityCache.Remember(credential, "https://api.bitbucket.org/2.0/user", identity);
 
                     return new DevHubUser
                     {
                         Username = username ?? credential.Username,
-                        IdentityId = root.TryGetProperty("uuid", out var uuid) ? uuid.GetString() : username,
+                        IdentityId = identity,
                         DisplayName = displayName ?? credential.Username,
                         AvatarUrl = avatarUrl,
                         ProviderName = DisplayName,
@@ -150,6 +158,14 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
+        public Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(DevHubRefreshContext context, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!context.RemoteUrls.Any(url => ParseRemoteUrl(url) != null) && !_hasStoredCredential())
+                return Task.FromResult<IReadOnlyList<DevHubUser>>(Array.Empty<DevHubUser>());
+            return GetAuthenticatedUsersAsync(cancellationToken);
+        }
+
         public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)
         {
             var user = await GetAuthenticatedUserAsync(cancellationToken);
@@ -157,7 +173,7 @@ namespace StartScreen.Services.DevHub.Providers
         }
 
         /// <summary>
-        /// Gets the cached Bitbucket username, or fetches it from the API if not yet cached.
+        /// Gets the stable Bitbucket identity, with username compatibility for older responses.
         /// </summary>
         internal async Task<(DevHubCredential credential, string username)> GetCredentialAndUsernameAsync(CancellationToken cancellationToken)
         {
@@ -168,7 +184,7 @@ namespace StartScreen.Services.DevHub.Providers
                 return (null, null);
             }
             var username = await _identityCache.GetAsync(credential, "https://api.bitbucket.org/2.0/user",
-                (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken, identityProperty: "username");
+                (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken, identityProperty: "uuid");
             if (string.IsNullOrEmpty(username))
                 DevHubActivityRequest.Failed();
             return (credential, username);
@@ -188,7 +204,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (!response.IsSuccessStatusCode)
                     return Array.Empty<DevHubPullRequest>();
 
-                var json = await ReadPageAsync(response);
+                var json = await ReadPageAsync(response, cancellationToken);
                 return ParsePullRequests(json, username);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
@@ -253,9 +269,9 @@ namespace StartScreen.Services.DevHub.Providers
                     using var prResponse = await SendGetAsync(credential, prUrl, cancellationToken);
                     if (!prResponse.IsSuccessStatusCode)
                         return new List<DevHubPullRequest>();
-                    var prJson = await ReadPageAsync(prResponse);
+                    var prJson = await ReadPageAsync(prResponse, cancellationToken);
                     var username = await _identityCache.GetAsync(credential, "https://api.bitbucket.org/2.0/user",
-                        (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken, identityProperty: "username");
+                        (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken, identityProperty: "uuid");
                     return ParseRepoPullRequests(prJson, repo, username);
                 }, cancellationToken);
 
@@ -266,7 +282,7 @@ namespace StartScreen.Services.DevHub.Providers
                     using var issueResponse = await SendGetAsync(credential, issueUrl, cancellationToken);
                     if (!issueResponse.IsSuccessStatusCode)
                         return new List<DevHubIssue>();
-                    var issueJson = await ReadPageAsync(issueResponse);
+                    var issueJson = await ReadPageAsync(issueResponse, cancellationToken);
                     return ParseRepoIssues(issueJson, repo);
                 }, cancellationToken);
 
@@ -277,7 +293,7 @@ namespace StartScreen.Services.DevHub.Providers
                     using var pipeResponse = await SendGetAsync(credential, pipeUrl, cancellationToken);
                     if (!pipeResponse.IsSuccessStatusCode)
                         return new List<DevHubCiRun>();
-                    var pipeJson = await ReadPageAsync(pipeResponse);
+                    var pipeJson = await ReadPageAsync(pipeResponse, cancellationToken);
                     return ParsePipelines(pipeJson, repo);
                 }, cancellationToken);
 
@@ -294,9 +310,9 @@ namespace StartScreen.Services.DevHub.Providers
         public string GetRepoWebUrl(RemoteRepoIdentifier repo) =>
             $"https://bitbucket.org/{repo.Owner}/{repo.Repo}";
 
-        private static async Task<string> ReadPageAsync(HttpResponseMessage response)
+        private static async Task<string> ReadPageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
         {
-            var json = await response.Content.ReadAsStringAsync();
+            var json = await HttpResponseReader.ReadStringAsync(response, cancellationToken);
             using var document = JsonDocument.Parse(json);
             if (!document.RootElement.TryGetProperty("values", out var values) || values.ValueKind != JsonValueKind.Array)
                 throw new JsonException("Bitbucket did not return an activity collection.");
@@ -308,6 +324,18 @@ namespace StartScreen.Services.DevHub.Providers
 
         public string GetIssuesWebUrl(RemoteRepoIdentifier repo) =>
             $"https://bitbucket.org/{repo.Owner}/{repo.Repo}/issues";
+
+        internal static string GetUserIdentity(JsonElement user)
+        {
+            // Nicknames are mutable and not unique. Only legacy payloads fall back to username.
+            foreach (var property in new[] { "uuid", "account_id", "username" })
+            {
+                if (user.ValueKind == JsonValueKind.Object && user.TryGetProperty(property, out var value)
+                    && value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString()))
+                    return value.GetString();
+            }
+            return null;
+        }
 
         internal static List<DevHubPullRequest> ParsePullRequests(string json, string currentUser)
         {
@@ -337,8 +365,7 @@ namespace StartScreen.Services.DevHub.Providers
                     ? authorName.GetString()
                     : "Unknown";
             var authorUsername = item.TryGetProperty("author", out var authorEl2)
-                && authorEl2.TryGetProperty("username", out var authorUname)
-                    ? authorUname.GetString()
+                    ? GetUserIdentity(authorEl2)
                     : null;
 
             var repo = ParseRepoFromPrSource(item);
@@ -375,7 +402,7 @@ namespace StartScreen.Services.DevHub.Providers
                 UpdatedAt = item.GetProperty("updated_on").GetDateTime().ToUniversalTime(),
                 CreatedAt = item.GetProperty("created_on").GetDateTime().ToUniversalTime(),
                 WebUrl = webUrl,
-                IsAuthoredByCurrentUser = string.Equals(authorUsername, currentUser, StringComparison.OrdinalIgnoreCase),
+                IsAuthoredByCurrentUser = !string.IsNullOrEmpty(currentUser) && string.Equals(authorUsername, currentUser, StringComparison.OrdinalIgnoreCase),
             };
         }
 
@@ -398,8 +425,7 @@ namespace StartScreen.Services.DevHub.Providers
                             ? authorName.GetString()
                             : "Unknown";
                     var authorUsername = item.TryGetProperty("author", out var authorEl2)
-                        && authorEl2.TryGetProperty("username", out var authorUname)
-                            ? authorUname.GetString()
+                            ? GetUserIdentity(authorEl2)
                             : null;
 
                     var sourceBranch = item.TryGetProperty("source", out var src)
@@ -434,7 +460,7 @@ namespace StartScreen.Services.DevHub.Providers
                         UpdatedAt = item.GetProperty("updated_on").GetDateTime().ToUniversalTime(),
                         CreatedAt = item.GetProperty("created_on").GetDateTime().ToUniversalTime(),
                         WebUrl = webUrl,
-                        IsAuthoredByCurrentUser = string.Equals(authorUsername, currentUser, StringComparison.OrdinalIgnoreCase),
+                        IsAuthoredByCurrentUser = !string.IsNullOrEmpty(currentUser) && string.Equals(authorUsername, currentUser, StringComparison.OrdinalIgnoreCase),
                     });
                 }
             }

@@ -268,54 +268,73 @@ namespace StartScreen.ToolWindows.Controls
 
         private bool MoveToAdjacentMruItem(bool forward)
         {
-            FrameworkElement parent = FindMruScrollViewer(this);
-            if (parent == null)
+            var list = FindMruList(this);
+            if (list == null)
                 return false;
 
-            var allItems = new System.Collections.Generic.List<MruItemControl>();
-            CollectMruItemControls(parent, allItems);
-
-            var index = allItems.IndexOf(this);
-            if (index < 0)
+            var next = GetAdjacentItemIndex(list, MruItem, forward);
+            if (next < 0)
                 return false;
 
-            var next = forward ? index + 1 : index - 1;
-            if (next >= 0 && next < allItems.Count)
-            {
-                allItems[next].RootBorder.Focus();
-                return true;
-            }
-            return false;
+            GetItemControl(list, next)?.FocusItem();
+            return true;
         }
 
-        private static FrameworkElement FindMruScrollViewer(DependencyObject element)
+        internal static int GetAdjacentItemIndex(ListBox list, object item, bool forward)
+        {
+            var index = list.Items.IndexOf(item);
+            var next = forward ? index + 1 : index - 1;
+            return index >= 0 && next >= 0 && next < list.Items.Count ? next : -1;
+        }
+
+        private static ListBox FindMruList(DependencyObject element)
         {
             DependencyObject current = element;
             while (current != null)
             {
-                if (current is StackPanel sp && sp.Name == "MruPanel")
-                    return sp;
+                if (current is ListBox list && list.Name == "MruPanel")
+                    return list;
 
                 current = VisualTreeHelper.GetParent(current);
             }
             return null;
         }
 
-        private static void CollectMruItemControls(DependencyObject parent, System.Collections.Generic.List<MruItemControl> results)
+        internal static ListBoxItem RealizeItemContainer(ListBox list, int index)
+        {
+            if (index < 0 || index >= list.Items.Count)
+                return null;
+
+            // Initialize the generator before scrolling, including when returning from another section.
+            list.ApplyTemplate();
+            list.UpdateLayout();
+            list.ScrollIntoView(list.Items[index]);
+            list.UpdateLayout();
+            var container = list.ItemContainerGenerator.ContainerFromIndex(index) as ListBoxItem;
+            container?.ApplyTemplate();
+            container?.UpdateLayout();
+            return container;
+        }
+
+        internal static MruItemControl GetItemControl(ListBox list, int index)
+        {
+            var container = RealizeItemContainer(list, index);
+            return container == null ? null : FindItemControl(container);
+        }
+
+        private static MruItemControl FindItemControl(DependencyObject parent)
         {
             var count = VisualTreeHelper.GetChildrenCount(parent);
             for (var i = 0; i < count; i++)
             {
                 DependencyObject child = VisualTreeHelper.GetChild(parent, i);
                 if (child is MruItemControl mru)
-                {
-                    results.Add(mru);
-                }
-                else
-                {
-                    CollectMruItemControls(child, results);
-                }
+                    return mru;
+                var match = FindItemControl(child);
+                if (match != null)
+                    return match;
             }
+            return null;
         }
 
         private async System.Threading.Tasks.Task OpenItemAsync()
@@ -417,7 +436,8 @@ namespace StartScreen.ToolWindows.Controls
             try
             {
                 await VS.StatusBar.ShowMessageAsync($"Pulling Git changes for {item.Name}...");
-                GitCommandResult result = await MruService.PullGitAsync(item);
+                GitCommandResult result = await MruService.PullGitAsync(item, StartScreenPackage.ShutdownToken);
+                StartScreenPackage.ShutdownToken.ThrowIfCancellationRequested();
 
                 if (!result.Succeeded)
                 {
@@ -428,6 +448,10 @@ namespace StartScreen.ToolWindows.Controls
                 {
                     await VS.StatusBar.ShowMessageAsync($"Git pull completed for {item.Name}.");
                 }
+            }
+            catch (OperationCanceledException ex) when (StartScreenPackage.ShutdownToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
             }
             catch (Exception ex)
             {

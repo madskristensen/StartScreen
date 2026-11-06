@@ -55,6 +55,12 @@ namespace StartScreen.Models.DevHub
 
         public Dictionary<string, string> ActivityWarnings { get; set; } = new Dictionary<string, string>();
 
+        internal IEnumerable<KeyValuePair<string, string>> GetVisibleActivityWarnings()
+        {
+            return ActivityWarnings.Where(pair => !pair.Key.StartsWith("Bitbucket/", StringComparison.OrdinalIgnoreCase)
+                && !pair.Key.StartsWith("bitbucket.org/", StringComparison.OrdinalIgnoreCase));
+        }
+
         /// <summary>
         /// Whether any providers are authenticated.
         /// </summary>
@@ -103,7 +109,7 @@ namespace StartScreen.Models.DevHub
             if (repo == null)
                 return null;
 
-            var warnings = ActivityWarnings.Where(pair => pair.Key == repo.ToString().ToLowerInvariant()
+            var warnings = GetVisibleActivityWarnings().Where(pair => pair.Key == repo.ToString().ToLowerInvariant()
                 || Sources.TryGetValue(pair.Key, out var source) && source.RepoIdentifier == null).Select(pair => pair.Value).Distinct().ToArray();
 
             return new DevHubRepoDetail

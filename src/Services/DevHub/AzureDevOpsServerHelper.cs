@@ -81,12 +81,13 @@ namespace StartScreen.Services.DevHub
 
         /// <summary>
         /// Normalizes a user-entered Azure DevOps Server URL into the identifier we persist.
-        /// Preserves the optional path (e.g. "/tfs" virtual directory or collection segment)
+        /// Preserves the port and optional path (e.g. "/tfs" virtual directory or collection segment)
         /// because older on-premises servers expose their REST endpoints under that path.
         /// Examples:
         ///   "https://tfs.contoso.com/tfs/DefaultCollection" -> "tfs.contoso.com/tfs/DefaultCollection"
         ///   "tfs.contoso.com/tfs"                          -> "tfs.contoso.com/tfs"
         ///   "tfs.contoso.com"                              -> "tfs.contoso.com"
+        /// Explicit HTTP endpoints retain their scheme; scheme-less entries use HTTPS.
         /// Returns null when the input is empty or cannot be parsed.
         /// </summary>
         public static string NormalizeServerInput(string raw)
@@ -96,39 +97,25 @@ namespace StartScreen.Services.DevHub
 
             raw = raw.Trim();
 
-            string host;
-            string path;
-
-            if (Uri.TryCreate(raw, UriKind.Absolute, out var uri))
-            {
-                host = uri.Host;
-                path = uri.AbsolutePath ?? string.Empty;
-            }
-            else
-            {
-                var bare = raw.TrimStart('/');
-                var slash = bare.IndexOf('/');
-                if (slash < 0)
-                {
-                    host = bare;
-                    path = string.Empty;
-                }
-                else
-                {
-                    host = bare.Substring(0, slash);
-                    path = bare.Substring(slash);
-                }
-            }
-
-            host = (host ?? string.Empty).Trim();
-            path = (path ?? string.Empty).Trim().TrimEnd('/');
-
-            if (host.Length == 0)
+            var uri = GetServerUri(raw);
+            if (uri == null)
                 return null;
+            // HTTPS stays scheme-less for compatibility with existing credential keys.
+            var prefix = uri.Scheme == Uri.UriSchemeHttp ? "http://" : string.Empty;
+            return prefix + uri.Authority + uri.AbsolutePath.TrimEnd('/');
+        }
 
-            return path.Length == 0 || path == "/"
-                ? host
-                : host + (path.StartsWith("/", StringComparison.Ordinal) ? path : "/" + path);
+        internal static Uri GetServerUri(string endpoint)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint))
+                return null;
+            endpoint = endpoint.Trim().TrimStart('/');
+            if (endpoint.IndexOf("://", StringComparison.Ordinal) < 0)
+                endpoint = "https://" + endpoint;
+            return Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+                && !string.IsNullOrEmpty(uri.Host) && string.IsNullOrEmpty(uri.UserInfo)
+                && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment) ? uri : null;
         }
 
         /// <summary>
@@ -156,7 +143,7 @@ namespace StartScreen.Services.DevHub
             IEnumerable<string> excludeHosts = null)
         {
             var exclude = new HashSet<string>(
-                excludeHosts ?? Array.Empty<string>(),
+                (excludeHosts ?? Array.Empty<string>()).Select(host => GetServerUri(host)?.Authority).Where(host => host != null),
                 StringComparer.OrdinalIgnoreCase);
 
             var byHost = new Dictionary<string, DiscoveredServer>(StringComparer.OrdinalIgnoreCase);
@@ -171,24 +158,27 @@ namespace StartScreen.Services.DevHub
                 {
                     id = RemoteRepoIdentifier.TryParse(url);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    ex.LogAsync().FireAndForget();
                     continue;
                 }
 
                 if (id == null || !id.IsAzureDevOpsServer)
                     continue;
 
-                if (exclude.Contains(id.Host))
+                var serverUri = GetServerUri(id.BaseUrl);
+                var authority = serverUri?.Authority ?? id.Host;
+                if (exclude.Contains(authority))
                     continue;
 
-                if (!byHost.TryGetValue(id.Host, out var existing))
+                if (!byHost.TryGetValue(authority, out var existing))
                 {
-                    byHost[id.Host] = new DiscoveredServer(id.Host, id.BaseUrl);
+                    byHost[authority] = new DiscoveredServer(serverUri?.Scheme == Uri.UriSchemeHttp ? "http://" + authority : authority, id.BaseUrl);
                 }
                 else if (string.IsNullOrEmpty(existing.SampleBaseUrl) && !string.IsNullOrEmpty(id.BaseUrl))
                 {
-                    byHost[id.Host] = new DiscoveredServer(id.Host, id.BaseUrl);
+                    byHost[authority] = new DiscoveredServer(existing.Host, id.BaseUrl);
                 }
             }
 
@@ -197,24 +187,22 @@ namespace StartScreen.Services.DevHub
 
         /// <summary>
         /// Auto-discovers on-premises Azure DevOps Server hosts from the current MRU items.
-        /// Reads <see cref="Models.MruItem.RemoteUrl"/> from each item that has been populated.
+        /// Reads actual repository remotes, including repositories whose MRU metadata is not populated.
         /// Excludes hosts already in the configured server list and the cloud host.
         /// Safe to call from any thread.
         /// </summary>
-        public static async Task<IReadOnlyList<DiscoveredServer>> DiscoverFromMruAsync()
+        public static Task<IReadOnlyList<DiscoveredServer>> DiscoverFromMruAsync()
+        {
+            return DiscoverFromMruAsync(() => MruService.GetRepositoryRemoteUrlsAsync(StartScreenPackage.ShutdownToken), GetAllKnownHosts());
+        }
+
+        internal static async Task<IReadOnlyList<DiscoveredServer>> DiscoverFromMruAsync(
+            Func<Task<IReadOnlyList<string>>> getRemoteUrls, IEnumerable<string> excludeHosts)
         {
             try
             {
-                var items = await StartScreen.Services.MruService.GetMruItemsAsync();
-                var remotes = items
-                    .Select(i => i.RemoteUrl)
-                    .Where(u => !string.IsNullOrWhiteSpace(u))
-                    .ToList();
-
-                var exclude = new List<string> { CloudHost };
-                exclude.AddRange(GetConfiguredServerHosts());
-
-                return DiscoverServers(remotes, exclude);
+                var remotes = await getRemoteUrls();
+                return DiscoverServers(remotes, excludeHosts);
             }
             catch (Exception ex)
             {

@@ -393,7 +393,20 @@
                            typography:Typography.Role="Body"
                            FontWeight="SemiBold"
                            Margin="0 0 24 12"/>
-                <StackPanel x:Name="ConnectedGitHubStatus" Margin="0 0 0 12">
+                <WrapPanel Margin="0 0 0 12">
+                    <CheckBox x:Name="GitHubProviderEnabled" Content="GitHub" Margin="0 0 16 0"
+                              typography:Typography.Role="Metadata"
+                              Checked="ProviderEnabled_Changed" Unchecked="ProviderEnabled_Changed"/>
+                    <CheckBox x:Name="AdoProviderEnabled" Content="Azure DevOps" Margin="0 0 16 0"
+                              typography:Typography.Role="Metadata"
+                              Checked="ProviderEnabled_Changed" Unchecked="ProviderEnabled_Changed"/>
+                    <CheckBox x:Name="BitbucketProviderEnabled" Content="Bitbucket"
+                              typography:Typography.Role="Metadata"
+                              Checked="ProviderEnabled_Changed" Unchecked="ProviderEnabled_Changed"
+                              ToolTip="Check Bitbucket only when a matching repository or stored credential is available."/>
+                </WrapPanel>
+                <StackPanel x:Name="ConnectedGitHubStatus" Margin="0 0 0 12"
+                            IsEnabled="{Binding IsChecked, ElementName=GitHubProviderEnabled}">
                     <DockPanel LastChildFill="True">
                         <TextBlock DockPanel.Dock="Right" typography:Typography.Role="Metadata" Margin="12 0 0 0">
                             <Hyperlink Click="GitHubSignOut_Click"
@@ -423,7 +436,8 @@
                                   />
                     </StackPanel>
                 </StackPanel>
-                <TextBlock x:Name="SettingsConnectGitHubTextBlock" typography:Typography.Role="Metadata" Margin="0 0 0 4">
+                <TextBlock x:Name="SettingsConnectGitHubTextBlock" typography:Typography.Role="Metadata" Margin="0 0 0 4"
+                           IsEnabled="{Binding IsChecked, ElementName=GitHubProviderEnabled}">
                     <Hyperlink Click="ConnectGitHub_Click"
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                         Connect GitHub account...
@@ -441,7 +455,8 @@
                            TextWrapping="Wrap"
                            Margin="0 0 0 4"
                            Text="Git Credential Manager did not provide a GitHub credential. Sign in with Git Credential Manager or enter a token."/>
-                <StackPanel x:Name="GitHubPatEntryPanel" Visibility="Collapsed" Margin="0 0 0 4">
+                <StackPanel x:Name="GitHubPatEntryPanel" Visibility="Collapsed" Margin="0 0 0 4"
+                            IsEnabled="{Binding IsChecked, ElementName=GitHubProviderEnabled}">
                     <TextBlock Text="GitHub personal access token"
                                typography:Typography.Role="Metadata"
                                Opacity="0.6"
@@ -475,7 +490,8 @@
                 <!-- Azure DevOps section: cloud + on-prem servers -->
                 <TextBlock x:Name="AdoAuthenticationHelpText" Visibility="Collapsed"
                            typography:Typography.Role="Metadata" Opacity="0.8" TextWrapping="Wrap" Margin="0 0 0 6"/>
-                <ItemsControl x:Name="AdoServersList" Focusable="False">
+                <ItemsControl x:Name="AdoServersList" Focusable="False"
+                              IsEnabled="{Binding IsChecked, ElementName=AdoProviderEnabled}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Grid Margin="0 0 0 8">
@@ -530,6 +546,7 @@
                 </ItemsControl>
 
                 <Expander x:Name="AdoConnectionOptions" Header="Connection options" IsExpanded="False"
+                          IsEnabled="{Binding IsChecked, ElementName=AdoProviderEnabled}"
                           typography:Typography.Role="Metadata" Margin="0 4 0 0">
                     <StackPanel Margin="18 10 0 0">
                 <TextBlock typography:Typography.Role="Metadata" Margin="0 0 0 10" TextWrapping="Wrap">

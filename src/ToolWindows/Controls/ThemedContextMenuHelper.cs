@@ -91,7 +91,18 @@ namespace StartScreen.ToolWindows.Controls
             }
 
             menu.Style = GetContextMenuStyle();
-            menu.Opened += (sender, e) => ApplyThemeToMenuItems(menu.Items);
+            AttachOpeningTheme(menu);
+        }
+
+        internal static void AttachOpeningTheme(ContextMenu menu)
+        {
+            menu.Opened -= Menu_Opened;
+            menu.Opened += Menu_Opened;
+        }
+
+        private static void Menu_Opened(object sender, RoutedEventArgs e)
+        {
+            ApplyThemeToMenuItems(((ContextMenu)sender).Items);
         }
 
         private static void ApplyThemeToMenuItems(ItemCollection items)

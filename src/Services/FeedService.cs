@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using Microsoft.VisualStudio.Threading;
+using StartScreen.Helpers;
 using StartScreen.Models;
 
 namespace StartScreen.Services
@@ -31,6 +32,7 @@ namespace StartScreen.Services
         private static readonly TimeSpan _staleThreshold = TimeSpan.FromHours(4);
         private const int _maxConcurrentDownloads = 6;
         private const int _maxNewsItems = 40;
+        internal const int MaxFeedBytes = 4 * 1024 * 1024;
 
         static FeedService()
         {
@@ -208,7 +210,7 @@ namespace StartScreen.Services
                 if (snapshot != null)
                 {
                     using (var text = new StringReader(snapshot.Xml))
-                    using (var reader = XmlReader.Create(text))
+                    using (var reader = XmlReader.Create(text, CreateReaderSettings()))
                     {
                         cachedFeed = SyndicationFeed.Load(reader);
                     }
@@ -281,16 +283,19 @@ namespace StartScreen.Services
                 {
                     request.Headers.IfModifiedSince = lastModified;
 
-                    using (HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken))
+                    using (HttpResponseMessage response = await httpClient.SendAsync(request,
+                        HttpCompletionOption.ResponseHeadersRead, cancellationToken))
                     {
                         if (response.StatusCode == HttpStatusCode.NotModified && lastModified.HasValue)
                             return (null, true);
 
                         response.EnsureSuccessStatusCode();
-                        using (Stream stream = await response.Content.ReadAsStreamAsync())
-                        using (var reader = XmlReader.Create(stream))
+                        var bytes = await HttpResponseReader.ReadBytesAsync(response, cancellationToken, MaxFeedBytes);
+                        using (var stream = new MemoryStream(bytes, writable: false))
+                        using (var reader = XmlReader.Create(stream, CreateReaderSettings()))
                         {
                             var feed = SyndicationFeed.Load(reader);
+                            cancellationToken.ThrowIfCancellationRequested();
 
                             if (response.Content.Headers.LastModified.HasValue)
                             {
@@ -312,6 +317,16 @@ namespace StartScreen.Services
             }
 
             return (null, false);
+        }
+
+        internal static XmlReaderSettings CreateReaderSettings()
+        {
+            return new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                MaxCharactersInDocument = MaxFeedBytes
+            };
         }
 
         /// <summary>
