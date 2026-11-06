@@ -576,6 +576,10 @@ Local discovery reads at most 100 recent CLI/VS Code metadata directories from
 must map the backing runtime ID to a native Agents session ID; unsupported legacy
 formats and unmapped sessions are not shown. Creator metadata determines the icon,
 not the last app that resumed a session. No transcripts are scanned for discovery.
+The catalog is read through `Microsoft.Data.Sqlite.Core` using Windows' built-in
+SQLite library, so the VSIX does not ship native SQLite binaries. This still
+depends on VS Code's internal catalog format; incompatible metadata is reported
+without changing the database.
 GitHub cloud discovery requires Agent tasks read permission and queries up to 100
 recent tasks. Synced local tasks are not treated as cloud agents. If the preview API
 omits cloud-origin metadata, unverified tasks are omitted with a diagnostic in Output.

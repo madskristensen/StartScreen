@@ -138,6 +138,32 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void CodeCatalog_UsesWindowsSystemSqlite()
+        {
+            using var directory = new TemporaryDirectory();
+            var database = CreateCodeDatabase(directory.Path, RuntimeId);
+
+            Assert.AreEqual(RuntimeId, CopilotLocalSessions.ReadCodeMapping(database));
+            Assert.AreEqual("winsqlite3", SQLitePCL.raw.GetNativeLibraryName());
+        }
+
+        [TestMethod]
+        public void CodeCatalog_ReadsCommittedWalMetadataWhileWriterIsOpen()
+        {
+            using var directory = new TemporaryDirectory();
+            var database = CreateCodeDatabase(directory.Path, RuntimeId);
+            using var connection = new SqliteConnection("Data Source=" + database + ";Pooling=False");
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA journal_mode=WAL; UPDATE session_metadata SET value = $data WHERE key = 'defaultChatProviderData'";
+            command.Parameters.AddWithValue("$data", JsonSerializer.Serialize(new { sdkSessionId = NativeId }));
+            command.ExecuteNonQuery();
+
+            Assert.IsTrue(File.Exists(database + "-wal"));
+            Assert.AreEqual(NativeId, CopilotLocalSessions.ReadCodeMapping(database));
+        }
+
+        [TestMethod]
         public async Task Discovery_HonorsCancellationAsync()
         {
             using var directory = new TemporaryDirectory();
