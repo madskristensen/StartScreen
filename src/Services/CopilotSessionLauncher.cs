@@ -11,16 +11,19 @@ namespace StartScreen.Services
         internal static bool Supports(CopilotSessionOrigin source, CopilotSessionOrigin destination) => source == destination
             || destination == CopilotSessionOrigin.Cli && (source == CopilotSessionOrigin.VisualStudio || source == CopilotSessionOrigin.VisualStudioCode);
 
-        internal static string CliUnavailableReason(CopilotActivitySession session, bool codeRunning)
+        internal static string CliUnavailableReason(CopilotActivitySession session, bool codeRunning,
+            Func<string, string> readSavedState = null)
         {
             if (!Supports(session.Origin, CopilotSessionOrigin.Cli))
                 return "This session cannot be opened in CLI.";
-            if (session.NeedsAttention || session.IsRunning || session.IsCached
-                || session.Origin == CopilotSessionOrigin.VisualStudio && !session.IsTranscript)
+            if (session.PendingPermissions > 0 || session.PendingQuestions > 0 || session.IsResponding == true || session.IsCached)
                 return "Close the original session first; its ownership has not been released.";
+            // A live activity stream means VS still has the session loaded, even while idle.
+            if (session.Origin == CopilotSessionOrigin.VisualStudio && session.IsResponding.HasValue)
+                return "Close the original session first; Visual Studio still has it loaded.";
             if (session.Origin == CopilotSessionOrigin.VisualStudioCode && codeRunning)
                 return "Close VS Code first; its agent host may still own this session.";
-            return SavedSessionUnavailableReason(SessionDirectory(session));
+            return (readSavedState ?? SavedSessionUnavailableReason)(SessionDirectory(session));
         }
 
         internal static string SavedSessionUnavailableReason(string directory)

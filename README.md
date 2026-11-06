@@ -504,7 +504,9 @@ Right-click, the Menu key, or Shift+F10 opens native Visual Studio session actio
 Only Visual Studio-to-CLI and VS Code-to-CLI alternatives are offered. There are no
 destination buttons on cards and no unverified cross-IDE or CLI-to-IDE actions.
 CLI opening requires an explicit final shutdown, no ownership markers, and no known
-live activity. VS Code-to-CLI also requires VS Code to be closed. The checks run again
+live activity. Native VS sessions do not have to be transcripts: saved, unhydrated
+sessions can qualify, while a live VS activity stream blocks opening even when idle.
+VS Code-to-CLI also requires VS Code to be closed. The checks run again
 immediately before launch. Unknown ownership disables the action; locks are never
 deleted, sessions are never forcibly taken over or silently forked. Active CLI
 sessions cannot be focused externally and must be closed normally before resuming.

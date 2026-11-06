@@ -261,6 +261,61 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void Ownership_ReleasedVisualStudioSessionsDoNotRequireTranscriptFormat(bool transcript)
+        {
+            using var directory = new TemporaryDirectory();
+            var events = directory.GetPath("events.jsonl");
+            File.WriteAllText(events, "{\"type\":\"session.shutdown\"}\n");
+            var session = new CopilotActivitySession
+            {
+                Id = RuntimeId,
+                Origin = CopilotSessionOrigin.VisualStudio,
+                IsTranscript = transcript,
+                IsResponding = null,
+            };
+            string? checkedPath = null;
+            string ReadSavedState(string path)
+            {
+                checkedPath = path;
+                return CopilotSessionLauncher.SavedSessionUnavailableReason(directory.Path);
+            }
+
+            Assert.IsNull(CopilotSessionLauncher.CliUnavailableReason(session, false, ReadSavedState));
+            Assert.AreEqual(Path.Combine(CopilotLocalSessions.VisualStudioHome, "session-state", RuntimeId), checkedPath);
+            File.WriteAllText(directory.GetPath("inuse.123.lock"), "");
+            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session, false, ReadSavedState));
+            File.Delete(directory.GetPath("inuse.123.lock"));
+            File.AppendAllText(events, "{\"type\":\"session.resume\"}\n");
+            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session, false, ReadSavedState));
+        }
+
+        [TestMethod]
+        [DataRow(false, false)]
+        [DataRow(false, true)]
+        [DataRow(true, false)]
+        [DataRow(true, true)]
+        public void Ownership_LoadedVisualStudioSessionsStayBlockedRegardlessOfFormat(bool responding, bool transcript)
+        {
+            var session = new CopilotActivitySession
+            {
+                Id = RuntimeId,
+                Origin = CopilotSessionOrigin.VisualStudio,
+                IsTranscript = transcript,
+                IsResponding = responding,
+            };
+            var checkedDisk = false;
+            var reason = CopilotSessionLauncher.CliUnavailableReason(session, false, _ =>
+            {
+                checkedDisk = true;
+                return null;
+            });
+            Assert.IsNotNull(reason);
+            Assert.IsFalse(checkedDisk, "A stale saved shutdown must not override VS's live ownership signal.");
+        }
+
+        [TestMethod]
         [DataRow("copilot-developer", true)]
         [DataRow("copilot-swe-agent", true)]
         [DataRow("copilot-developer-cli", false)]
