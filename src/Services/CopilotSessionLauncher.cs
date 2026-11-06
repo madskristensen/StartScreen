@@ -30,8 +30,12 @@ namespace StartScreen.Services
         {
             if (!Directory.Exists(directory))
                 return "The saved session is no longer available.";
-            if (Directory.EnumerateFiles(directory, "inuse.*").Any() || File.Exists(Path.Combine(directory, ".workspace-fork.lock")))
+            if (Directory.EnumerateFiles(directory, "inuse.*").Any())
                 return "The session has an ownership marker. Close its owner normally before resuming.";
+            // The fork-lock file can outlive its handle. Probe it exclusively without modifying or deleting it.
+            var forkLock = Path.Combine(directory, ".workspace-fork.lock");
+            using var forkLockStream = File.Exists(forkLock)
+                ? new FileStream(forkLock, FileMode.Open, FileAccess.Read, FileShare.None) : null;
             var events = Path.Combine(directory, "events.jsonl");
             if (!File.Exists(events))
                 return "Session ownership is unknown. Open it in its original app.";

@@ -1,9 +1,12 @@
+using System.ComponentModel.Design;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.Shell;
+using StartScreen.Commands;
 using StartScreen.Helpers;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
@@ -241,6 +244,71 @@ namespace StartScreen.Test
             File.Delete(marker);
             File.AppendAllText(events, "{\"type\":\"session.resume\"}\n");
             Assert.IsNotNull(CopilotSessionLauncher.SavedSessionUnavailableReason(directory.Path));
+        }
+
+        [TestMethod]
+        [DoNotParallelize]
+        [DataRow(0)]
+        [DataRow(1)]
+        [DataRow(2)]
+        public void CliMenu_ReleasedSessionsWithAnUnheldForkLockAreEnabled(int origin)
+        {
+            using var directory = new TemporaryDirectory();
+            var events = directory.GetPath("events.jsonl");
+            var forkLock = directory.GetPath(".workspace-fork.lock");
+            File.WriteAllText(events, "{\"type\":\"session.shutdown\"}\n");
+            File.WriteAllText(forkLock, "");
+            var session = new CopilotActivitySession { Id = RuntimeId, Origin = (CopilotSessionOrigin)origin };
+            var command = new OleMenuCommand(null, new CommandID(PackageGuids.StartScreen, PackageIds.OpenCopilotInCli));
+            void UpdateMenu()
+            {
+                CopilotSessionMenu.Current = new CopilotSessionMenu
+                {
+                    Session = session,
+                    CliUnavailableReason = CopilotSessionLauncher.CliUnavailableReason(session, false,
+                        _ => CopilotSessionLauncher.SavedSessionUnavailableReason(directory.Path)),
+                };
+                CopilotSessionMenu.Update(command, CopilotSessionOrigin.Cli);
+            }
+
+            try
+            {
+                UpdateMenu();
+                Assert.IsTrue(command.Visible);
+                Assert.IsTrue(command.Enabled, CopilotSessionMenu.Current.CliUnavailableReason);
+                Assert.AreEqual("Open in CLI", command.Text);
+                Assert.IsTrue(File.Exists(forkLock), "A released lock file must not be deleted.");
+
+                var marker = directory.GetPath("inuse.123.lock");
+                File.WriteAllText(marker, "");
+                UpdateMenu();
+                Assert.IsFalse(command.Enabled);
+                Assert.IsTrue(File.Exists(marker));
+
+                File.Delete(marker);
+                File.AppendAllText(events, "{\"type\":\"session.resume\"}\n");
+                UpdateMenu();
+                Assert.IsFalse(command.Enabled, "An unheld fork lock alone must not qualify a session for resuming.");
+            }
+            finally
+            {
+                CopilotSessionMenu.Current = null;
+            }
+        }
+
+        [TestMethod]
+        public void Ownership_HeldForkLockBlocksEvenAfterASavedShutdown()
+        {
+            using var directory = new TemporaryDirectory();
+            File.WriteAllText(directory.GetPath("events.jsonl"), "{\"type\":\"session.shutdown\"}\n");
+            var forkLock = directory.GetPath(".workspace-fork.lock");
+            File.WriteAllText(forkLock, "");
+            using (var owner = new FileStream(forkLock, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete))
+                Assert.Throws<IOException>(() => CopilotSessionLauncher.SavedSessionUnavailableReason(directory.Path));
+
+            Assert.IsNull(CopilotSessionLauncher.SavedSessionUnavailableReason(directory.Path));
+            Assert.IsTrue(File.Exists(forkLock));
+            Assert.AreEqual(0L, new FileInfo(forkLock).Length);
         }
 
         [TestMethod]

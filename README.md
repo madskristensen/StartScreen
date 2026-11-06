@@ -524,8 +524,9 @@ on GitHub. No prompts are sent and requests are never answered automatically.
 Right-click, the Menu key, or Shift+F10 opens native Visual Studio session actions.
 Only Visual Studio-to-CLI and VS Code-to-CLI alternatives are offered. There are no
 destination buttons on cards and no unverified cross-IDE or CLI-to-IDE actions.
-CLI opening requires an explicit final shutdown, no ownership markers, and no known
-live activity. Native VS sessions do not have to be transcripts: saved, unhydrated
+CLI opening requires an explicit final shutdown, no in-use markers or held fork lock,
+and no known live activity. A retained, unheld fork-lock file does not block resuming
+and is never modified or deleted. Native VS sessions do not have to be transcripts: saved, unhydrated
 sessions can qualify, while a live VS activity stream blocks opening even when idle.
 VS Code-to-CLI also requires VS Code to be closed. The checks run again
 immediately before launch. Unknown ownership disables the action; locks are never
