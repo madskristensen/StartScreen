@@ -181,8 +181,8 @@ namespace StartScreen.Test
         public void NeedsYou_RequiresActualReviewRequestOrFailingAuthoredPr()
         {
             var unrelated = new DevHubPullRequest { Title = "Other", CiStatus = "failure" };
-            var review = new DevHubPullRequest { Title = "Review", Status = "open", IsReviewRequestedForCurrentUser = true };
-            var authored = new DevHubPullRequest { Title = "Fix checks", Status = "open", IsAuthoredByCurrentUser = true, CiStatus = "failure" };
+            var review = new DevHubPullRequest { Title = "Review", Status = "open", IsReviewRequestedForCurrentUser = true, UpdatedAt = DateTime.UtcNow };
+            var authored = new DevHubPullRequest { Title = "Fix checks", Status = "open", IsAuthoredByCurrentUser = true, CiStatus = "failure", UpdatedAt = DateTime.UtcNow };
             var draft = new DevHubPullRequest { Title = "Draft", Status = "draft", IsReviewRequestedForCurrentUser = true };
 
             var items = DevHubWorkItem.GetNeedsYou([unrelated, authored, review, draft]);
@@ -367,14 +367,14 @@ namespace StartScreen.Test
             var incoming = DevHubWorkItem.GetIncoming([requested, failing, other], [], []);
             var own = DevHubWorkItem.GetMyWork([requested, failing, other], [], []);
 
-            CollectionAssert.AreEqual(new[] { "Review me", "Other update" }, incoming.Select(item => item.Title).ToArray());
-            Assert.AreEqual("Requests for you", incoming[0].Section);
-            Assert.AreEqual("Repository activity", incoming[1].Section);
-            CollectionAssert.AreEqual(new[] { "Fix checks" }, own.Select(item => item.Title).ToArray());
-            Assert.AreEqual("Checks failing", own.Single().AttentionReason);
-            CollectionAssert.AreEqual(new[] { "Review me" },
-                DevHubWorkItem.Filter(incoming, DevHubWorkItemKind.All, true).Select(item => item.Title).ToArray());
-            Assert.HasCount(2, incoming);
+            CollectionAssert.AreEqual(new[] { "Other update" }, incoming.Select(item => item.Title).ToArray());
+            Assert.AreEqual("Repository activity", incoming.Single().Section);
+            CollectionAssert.AreEquivalent(new[] { "Fix checks", "Review me" }, own.Select(item => item.Title).ToArray());
+            Assert.AreEqual("Checks failing", own.Single(item => item.Title == "Fix checks").AttentionReason);
+            Assert.AreEqual("Review requested", own.Single(item => item.Title == "Review me").AttentionReason);
+            CollectionAssert.AreEquivalent(new[] { "Review me", "Fix checks" },
+                DevHubWorkItem.Filter(own, DevHubWorkItemKind.All, true).Select(item => item.Title).ToArray());
+            Assert.IsEmpty(DevHubWorkItem.Filter(incoming, DevHubWorkItemKind.All, true));
         }
 
         [TestMethod]
@@ -383,8 +383,8 @@ namespace StartScreen.Test
             var issues = new[]
             {
                 new DevHubIssue { Title = "Created", IsAuthoredByCurrentUser = true, State = "open", WebUrl = "https://example.com/1" },
-                new DevHubIssue { Title = "Assigned", IsAssignedToCurrentUser = true, State = "active", WebUrl = "https://example.com/2" },
-                new DevHubIssue { Title = "Both", IsAuthoredByCurrentUser = true, IsAssignedToCurrentUser = true, State = "open", WebUrl = "https://example.com/3" },
+                new DevHubIssue { Title = "Assigned", IsAssignedToCurrentUser = true, State = "active", WebUrl = "https://example.com/2", UpdatedAt = DateTime.UtcNow },
+                new DevHubIssue { Title = "Both", IsAuthoredByCurrentUser = true, IsAssignedToCurrentUser = true, State = "open", WebUrl = "https://example.com/3", UpdatedAt = DateTime.UtcNow },
                 new DevHubIssue { Title = "Other", State = "open", WebUrl = "https://example.com/4" },
                 new DevHubIssue { Title = "Closed", IsAuthoredByCurrentUser = true, IsClosed = true, WebUrl = "https://example.com/5" },
                 new DevHubIssue { Title = "Unlinked", IsAuthoredByCurrentUser = true },
@@ -411,7 +411,7 @@ namespace StartScreen.Test
             };
             var prs = new[]
             {
-                new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, HasChangesRequested = true, WebUrl = "https://example.com/1" },
+                new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, HasChangesRequested = true, WebUrl = "https://example.com/1", UpdatedAt = DateTime.UtcNow },
                 new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, CiStatus = "pending", WebUrl = "https://example.com/2" },
             };
             var own = DevHubWorkItem.GetMyWork(prs, [], sessions);
@@ -452,16 +452,19 @@ namespace StartScreen.Test
             var inventory = DevHubWorkItem.GetMyWork(prs, issues, sessions, DevHubSortOrder.AzureDevOpsFirst,
                 includeCompleted: true, builds: builds);
             var attention = DevHubWorkItem.Filter(inventory, DevHubWorkItemKind.All, true);
-            var view = ToolWindows.Controls.DevHubPanel.CreateWorkItemView(attention, groupBySection: false);
+            var view = ToolWindows.Controls.DevHubPanel.CreateWorkItemView(attention);
 
             Assert.AreEqual(2, inventory.Count(item => item.IsCompleted));
-            CollectionAssert.AreEqual(new[] { "Task 0", "Task 1", "Task 2", "Copilot", "Task 3", "Task 4", "Task 5", "Task 6", "Build", "Task 7", "Task 8", "Task 9", "Task 10", "Task 11", "My PR" },
+            Assert.IsFalse(attention.Any(item => item.IsBuild));
+            CollectionAssert.AreEquivalent(new[] { "Build", "Successful build" },
+                DevHubWorkItem.Filter(inventory, DevHubWorkItemKind.Build, false).Select(item => item.Title).ToArray());
+            CollectionAssert.AreEqual(new[] { "Task 0", "Task 1", "Task 2", "Copilot", "Task 3", "Task 4", "Task 5", "Task 6", "Task 7", "Task 8", "Task 9", "Task 10", "Task 11", "My PR" },
                 view.Cast<DevHubWorkItem>().Select(item => item.Title).ToArray());
             Assert.IsNull(view.Groups);
         }
 
         [TestMethod]
-        public void IncomingAttention_OverridesProviderOrderButTypeInventoryKeepsEveryItemAndItsOrder()
+        public void RequestedReviews_AppearInMyWorkAttentionAndKeepProviderOrderInPrInventory()
         {
             var now = DateTime.UtcNow;
             var prs = new[]
@@ -471,15 +474,56 @@ namespace StartScreen.Test
                 new DevHubPullRequest { Title = "Passive update", Status = "open", WebUrl = "https://github.com/o/r/pull/2", RepoIdentifier = RemoteRepoIdentifier.TryParse("https://github.com/o/r.git"), UpdatedAt = now },
             };
             var incoming = DevHubWorkItem.GetIncoming(prs, [], [], DevHubSortOrder.AzureDevOpsFirst);
+            var own = DevHubWorkItem.GetMyWork(prs, [], [], DevHubSortOrder.AzureDevOpsFirst);
 
             CollectionAssert.AreEqual(new[] { "GitHub review", "ADO review" },
-                DevHubWorkItem.Filter(incoming, DevHubWorkItemKind.All, true).Select(item => item.Title).ToArray());
-            CollectionAssert.AreEqual(new[] { "ADO review", "GitHub review", "Passive update" },
-                DevHubWorkItem.Filter(incoming, DevHubWorkItemKind.PullRequest, false).Select(item => item.Title).ToArray());
+                DevHubWorkItem.Filter(own, DevHubWorkItemKind.All, true).Select(item => item.Title).ToArray());
+            CollectionAssert.AreEqual(new[] { "ADO review", "GitHub review" },
+                DevHubWorkItem.Filter(own, DevHubWorkItemKind.PullRequest, false).Select(item => item.Title).ToArray());
+            CollectionAssert.AreEqual(new[] { "Passive update" }, incoming.Select(item => item.Title).ToArray());
         }
 
         [STATestMethod]
-        public void WorkViews_GroupCardsWithoutLosingActionableItems()
+        [DataRow(0, (int)DevHubWorkItemKind.All)]
+        [DataRow(15, (int)DevHubWorkItemKind.Copilot)]
+        [DataRow(14, (int)DevHubWorkItemKind.PullRequest)]
+        [DataRow(12, (int)DevHubWorkItemKind.Issue)]
+        [DataRow(8, (int)DevHubWorkItemKind.Build)]
+        [DataRow(5, (int)DevHubWorkItemKind.Copilot)]
+        [DataRow(10, (int)DevHubWorkItemKind.PullRequest)]
+        public void InitialMyWorkTab_SkipsEmptyTabsInDisplayOrder(int available, int expected)
+        {
+            var inventory = DevHubWorkItem.GetMyWork(
+                [new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, WebUrl = "https://example.com/pr/1" }],
+                [new DevHubIssue { IsAssignedToCurrentUser = true, State = "open", WebUrl = "https://example.com/issues/1" }],
+                [new CopilotActivitySession { Id = "session", IsResponding = true }],
+                builds: [new DevHubCiRun { IsTriggeredByCurrentUser = true, WebUrl = "https://example.com/build/1" }]);
+            var items = inventory.Where(item => (available & (item.Kind switch
+            {
+                DevHubWorkItemKind.Copilot => 1,
+                DevHubWorkItemKind.PullRequest => 2,
+                DevHubWorkItemKind.Issue => 4,
+                DevHubWorkItemKind.Build => 8,
+                _ => 0,
+            })) != 0).ToArray();
+
+            Assert.IsTrue(items.All(item => !item.NeedsAttention));
+            Assert.AreEqual((DevHubWorkItemKind)expected, ToolWindows.Controls.DevHubPanel.GetInitialMyWorkKind(items));
+        }
+
+        [STATestMethod]
+        public void InitialMyWorkTab_KeepsAttentionWhenAnActionableItemExists()
+        {
+            var items = DevHubWorkItem.GetMyWork(
+                [new DevHubPullRequest { Status = "open", IsReviewRequestedForCurrentUser = true,
+                    WebUrl = "https://example.com/pr/1", UpdatedAt = DateTime.UtcNow }], [],
+                [new CopilotActivitySession { Id = "session", IsResponding = true }]);
+
+            Assert.AreEqual(DevHubWorkItemKind.All, ToolWindows.Controls.DevHubPanel.GetInitialMyWorkKind(items));
+        }
+
+        [STATestMethod]
+        public void WorkViews_DisplayCardsWithoutSectionHeadingsOrLosingItems()
         {
             var own = DevHubWorkItem.GetMyWork(
                 [new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, WebUrl = "https://example.com/1" }],
@@ -488,9 +532,8 @@ namespace StartScreen.Test
 
             var view = ToolWindows.Controls.DevHubPanel.CreateWorkItemView(own);
 
-            Assert.HasCount(3, view.Groups);
-            CollectionAssert.AreEqual(new[] { "Pull requests", "Issues and tasks", "Copilot sessions" },
-                view.Groups.Cast<System.Windows.Data.CollectionViewGroup>().Select(group => group.Name.ToString()).ToArray());
+            Assert.IsNull(view.Groups);
+            CollectionAssert.AreEqual(own.ToArray(), view.Cast<DevHubWorkItem>().ToArray());
             Assert.AreEqual(own.Count, view.Count);
         }
 

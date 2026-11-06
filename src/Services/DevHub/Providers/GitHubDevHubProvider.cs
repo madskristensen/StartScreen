@@ -390,7 +390,8 @@ namespace StartScreen.Services.DevHub.Providers
             var scope = repo == null ? string.Empty : $" AND repo:{repo.Owner}/{repo.Repo}";
             var queries = new[] { BuildActivitySearchQuery("is:pr", login, customQuery, repo), BuildPersonalSearchQuery("is:pr", login, "author", repo),
                 BuildActivitySearchQuery("is:pr", login, customQuery, repo, "review-requested"),
-                BuildActivitySearchQuery("is:pr", login, customQuery, repo, "mentions") };
+                BuildActivitySearchQuery("is:pr", login, customQuery, repo, "mentions"),
+                BuildPersonalSearchQuery("is:pr", login, "assignee", repo) };
             for (var index = 0; index < queries.Length; index++)
             {
                 var page = await SearchPullRequestsAsync(client, credential, queries[index], login, options.MaxItems, cancellationToken);
@@ -398,15 +399,20 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     pr.IsReviewRequestedForCurrentUser = index == 2 && pr.IsOpen;
                     pr.IsMentioned = index == 3;
+                    pr.IsAssignedToCurrentUser |= index == 4;
                 }
                 MergePullRequests(results, page.Where(pr => pr.IsOpen));
             }
             if (options.IncludeCompleted)
             {
                 var cutoff = DateTime.UtcNow.AddDays(-14);
-                var query = $"is:pr is:merged author:{login} merged:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}";
-                var completed = await SearchPullRequestsAsync(client, credential, query, login, options.MaxItems, cancellationToken, cutoff);
-                MergePullRequests(results, completed.Where(pr => pr.IsMerged && pr.IsAuthoredByCurrentUser && pr.UpdatedAt >= cutoff));
+                foreach (var qualifier in new[] { "author", "assignee" })
+                {
+                    var query = $"is:pr is:merged {qualifier}:{login} merged:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}";
+                    var completed = await SearchPullRequestsAsync(client, credential, query, login, options.MaxItems, cancellationToken, cutoff);
+                    MergePullRequests(results, completed.Where(pr => pr.IsMerged && pr.UpdatedAt >= cutoff
+                        && (pr.IsAuthoredByCurrentUser || pr.IsAssignedToCurrentUser)));
+                }
             }
             if (populateMetadata)
                 await PopulateActivityMetadataAsync(client, credential, results, cancellationToken);
@@ -465,6 +471,7 @@ namespace StartScreen.Services.DevHub.Providers
                 else
                 {
                     existing.IsAuthoredByCurrentUser |= pr.IsAuthoredByCurrentUser;
+                    existing.IsAssignedToCurrentUser |= pr.IsAssignedToCurrentUser;
                     existing.IsReviewRequestedForCurrentUser |= pr.IsReviewRequestedForCurrentUser;
                     existing.IsMentioned |= pr.IsMentioned;
                 }
@@ -946,6 +953,7 @@ namespace StartScreen.Services.DevHub.Providers
                 WebUrl = item.GetProperty("html_url").GetString(),
                 IsAuthoredByCurrentUser = !string.IsNullOrEmpty(currentUser)
                     && string.Equals(author, currentUser, StringComparison.OrdinalIgnoreCase),
+                IsAssignedToCurrentUser = IsIssueAssignee(item, currentUser),
             };
         }
 
@@ -978,6 +986,7 @@ namespace StartScreen.Services.DevHub.Providers
                         WebUrl = item.GetProperty("html_url").GetString(),
                         IsAuthoredByCurrentUser = !string.IsNullOrEmpty(currentUser)
                             && string.Equals(author, currentUser, StringComparison.OrdinalIgnoreCase),
+                        IsAssignedToCurrentUser = IsIssueAssignee(item, currentUser),
                         IsReviewRequestedForCurrentUser = (GetPrStatus(item) == "open" || GetPrStatus(item) == "draft")
                             && DevHubRepoSummaryFetcher.IsRequested(item, currentUser, true) == true,
                     });

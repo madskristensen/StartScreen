@@ -32,6 +32,9 @@
         <local:RefreshingToOpacityConverter x:Key="RefreshingToOpacityConverter"/>
         <local:CountToVisibilityConverter x:Key="CountToVisibilityConverter"/>
         <local:ColumnCountToWidthConverter x:Key="ColumnCountToWidthConverter"/>
+        <controls:NullToCollapsedConverter x:Key="NullToCollapsedConverter"/>
+        <controls:HexColorToBrushConverter x:Key="FeedbackStateBrushConverter"/>
+        <controls:HexColorToForegroundConverter x:Key="FeedbackStateForegroundConverter"/>
         <CollectionViewSource x:Key="GroupedMruItemsView"
                               Source="{Binding VisibleMruItems}">
             <CollectionViewSource.GroupDescriptions>
@@ -111,9 +114,9 @@
             </Setter>
         </Style>
 
-        <!-- Tab item style for News sub-tabs (Blogs / Videos) -->
+        <!-- Tab item style for News sub-tabs -->
         <Style x:Key="NewsTabItemStyle" TargetType="TabItem">
-            <Setter Property="Padding" Value="8 4"/>
+            <Setter Property="Padding" Value="0 4"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
@@ -122,27 +125,28 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="TabBorder"
-                                Background="{TemplateBinding Background}"
-                                Padding="{TemplateBinding Padding}"
-                                BorderThickness="0 0 0 2"
-                                BorderBrush="Transparent">
-                            <ContentPresenter ContentSource="Header"
+                        <Grid x:Name="TabRoot">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="16"/>
+                            </Grid.ColumnDefinitions>
+                            <ContentPresenter x:Name="TabContent" ContentSource="Header" Margin="{TemplateBinding Padding}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
                                               HorizontalAlignment="Center"
                                               VerticalAlignment="Center"/>
-                        </Border>
+                            <Rectangle x:Name="SelectionIndicator" Height="2" VerticalAlignment="Bottom"
+                                       Fill="{Binding (TextElement.Foreground), ElementName=TabContent}" Visibility="Collapsed"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="TabBorder" Property="BorderBrush"
-                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                                <Setter TargetName="SelectionIndicator" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="TabContent" Property="TextElement.Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                             </Trigger>
-                            <Trigger SourceName="TabBorder" Property="IsMouseOver" Value="True">
-                                <Setter TargetName="TabBorder" Property="Background"
-                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                            <Trigger SourceName="TabRoot" Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabContent" Property="TextElement.Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="TabBorder" Property="Background"
-                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                                <Setter TargetName="TabContent" Property="TextElement.Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -498,10 +502,7 @@
                                         <RowDefinition Height="Auto" SharedSizeGroup="ActivitySectionHeader"/>
                                         <RowDefinition Height="*"/>
                                     </Grid.RowDefinitions>
-                                    <DockPanel MinHeight="28" Margin="0 0 0 12">
-                                        <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12 0 0 0">
-                                            <Hyperlink Click="NewsFeedsSettingsLink_Click" Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">Feeds</Hyperlink>
-                                        </TextBlock>
+                                    <DockPanel MinHeight="28" Margin="8 0 0 12">
                                         <TextBlock Text="News &amp; updates" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                     </DockPanel>
                             <TabControl Grid.Row="1"
@@ -510,6 +511,19 @@
                                         BorderThickness="0"
                                         Padding="0"
                                         SelectionChanged="NewsTabs_SelectionChanged">
+                                <TabControl.Template>
+                                    <ControlTemplate TargetType="TabControl">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="*"/>
+                                            </Grid.RowDefinitions>
+                                            <TabPanel IsItemsHost="True" Margin="8 0 0 0"/>
+                                            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1"
+                                                              ContentSource="SelectedContent"/>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </TabControl.Template>
                                 <!-- Blogs Tab -->
                                 <TabItem x:Name="BlogsTab" Style="{StaticResource NewsTabItemStyle}">
                                     <TabItem.Header>
@@ -525,7 +539,7 @@
                                         <TextBlock Text="News feeds are currently unavailable. Use Refresh at the top to try again."
                                                    TextWrapping="Wrap"
                                                    Opacity="0.6"
-                                                   Margin="0 0 0 8"
+                                                   Margin="8 0 0 8"
                                                    Visibility="{Binding IsNewsUnavailable, Converter={StaticResource BoolToVisibilityConverter}}"/>
 
                                         <!-- Pinned News Articles -->
@@ -533,7 +547,7 @@
                                                   FontSize="13"
                                                   FontWeight="SemiBold"
                                                   Opacity="0.7"
-                                                  Margin="0 0 0 4"
+                                                  Margin="8 0 0 4"
                                                   Focusable="False"
                                                   Visibility="{Binding PinnedNewsPosts.Count, Converter={StaticResource CountToVisibilityConverter}}"/>
                                         <ItemsControl ItemsSource="{Binding PinnedNewsPosts}" Focusable="False"
@@ -589,7 +603,7 @@
                                         <TextBlock Text="YouTube feed is currently unavailable. Use Refresh at the top to try again."
                                                    TextWrapping="Wrap"
                                                    Opacity="0.6"
-                                                   Margin="0 0 0 8"
+                                                   Margin="8 0 0 8"
                                                    Visibility="{Binding IsYouTubeUnavailable, Converter={StaticResource BoolToVisibilityConverter}}"/>
                                         <ItemsControl ItemsSource="{Binding YouTubeVideos}" Focusable="False"
                                                       HorizontalAlignment="Stretch"
@@ -609,12 +623,72 @@
                                     </StackPanel>
                                 </TabItem>
 
+                                <TabItem x:Name="FeedbackTab" Header="Feedback" Style="{StaticResource NewsTabItemStyle}">
+                                    <StackPanel Margin="8 24 0 0">
+                                        <TextBlock Text="{Binding FeedbackStatus}" TextWrapping="Wrap" Margin="0 0 0 12"
+                                                   Visibility="{Binding FeedbackStatus, Converter={StaticResource NullToCollapsedConverter}}"
+                                                   AutomationProperties.LiveSetting="Polite"/>
+                                        <ItemsControl x:Name="FeedbackItems" ItemsSource="{Binding FeedbackTickets}" Focusable="False"
+                                                      Opacity="{Binding IsRefreshingFeedback, Converter={StaticResource RefreshingToOpacityConverter}}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="{Binding NewsColumnCount}"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="0 0 12 16" MaxWidth="360" HorizontalAlignment="Left">
+                                                        <TextBlock TextWrapping="Wrap" FontSize="13" FontWeight="SemiBold">
+                                                            <Hyperlink NavigateUri="{Binding Url}" RequestNavigate="FeedbackTicket_RequestNavigate"
+                                                                       ToolTip="{Binding Url}" TextDecorations="None"
+                                                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}">
+                                                                <Run Text="{Binding Title, Mode=OneWay}"/>
+                                                            </Hyperlink>
+                                                        </TextBlock>
+                                                        <WrapPanel Margin="0 6 0 4">
+                                                            <Border CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
+                                                                    Tag="{DynamicResource {x:Static SystemParameters.HighContrastKey}}">
+                                                                <Border.Style>
+                                                                    <Style TargetType="Border">
+                                                                        <Setter Property="Background" Value="{Binding StateColor, Converter={StaticResource FeedbackStateBrushConverter}}"/>
+                                                                        <Setter Property="BorderBrush" Value="{Binding StateColor, Converter={StaticResource FeedbackStateBrushConverter}}"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                                                                                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
+                                                                                <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
+                                                                <TextBlock Text="{Binding StateText}" FontSize="10" FontWeight="Bold">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Foreground" Value="{Binding StateColor, Converter={StaticResource FeedbackStateForegroundConverter}}"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Border>
+                                                            <TextBlock Text="{Binding Details}" TextWrapping="Wrap" FontSize="11" Opacity="0.65" VerticalAlignment="Center"/>
+                                                        </WrapPanel>
+                                                        <TextBlock Text="{Binding UpdatedText}" ToolTip="{Binding ToolTip}" FontSize="11" Opacity="0.65"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </TabItem>
+
                                 <!-- Release Notes Tab -->
                                 <TabItem x:Name="ReleaseNotesTab" Style="{StaticResource NewsTabItemStyle}">
                                     <TabItem.Header>
                                         <TextBlock Text="Release notes"/>
                                     </TabItem.Header>
-                                    <StackPanel Margin="0 24 0 0">
+                                    <StackPanel Margin="8 24 0 0">
                                         <TextBlock TextWrapping="Wrap">
                                             <Hyperlink x:Name="ReleaseNotesLink" Click="ReleaseNotesLink_Click"
                                                        Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">

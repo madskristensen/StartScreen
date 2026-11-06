@@ -176,7 +176,7 @@ namespace StartScreen.Services.DevHub
                         MergeIssues(issues.Where(item => !replacedRepos.Contains(item.RepoIdentifier)), perRepo.SelectMany(detail => detail.Issues)),
                         sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
                     dashboard.PullRequests = DevHubItemSorter.Sort(
-                        MergePullRequests(pullRequests.Where(item => item.IsAuthoredByCurrentUser || item.IsReviewRequestedForCurrentUser
+                        MergePullRequests(pullRequests.Where(item => item.IsAuthoredByCurrentUser || item.IsAssignedToCurrentUser || item.IsReviewRequestedForCurrentUser
                                 || item.IsMentioned || !replacedRepos.Contains(item.RepoIdentifier)),
                             perRepo.SelectMany(detail => detail.PullRequests)),
                         sortOrder, item => item.RepoIdentifier, item => item.UpdatedAt);
@@ -286,7 +286,7 @@ namespace StartScreen.Services.DevHub
         internal static void MergeRepoDetail(DevHubDashboard dashboard, RemoteRepoIdentifier repo, DevHubRepoDetail detail)
         {
             dashboard.PullRequests = MergePullRequests(dashboard.PullRequests
-                .Where(pr => pr.IsAuthoredByCurrentUser || pr.IsReviewRequestedForCurrentUser || pr.IsMentioned
+                .Where(pr => pr.IsAuthoredByCurrentUser || pr.IsAssignedToCurrentUser || pr.IsReviewRequestedForCurrentUser || pr.IsMentioned
                     || !repo.Equals(pr.RepoIdentifier)), detail.PullRequests).ToList();
             dashboard.Issues = MergeIssues(dashboard.Issues.Where(i => !repo.Equals(i.RepoIdentifier)), detail.Issues).ToList();
             dashboard.CiRuns = dashboard.CiRuns
@@ -314,6 +314,7 @@ namespace StartScreen.Services.DevHub
                 if (seen.TryGetValue(pr.WebUrl, out var existing))
                 {
                     existing.IsAuthoredByCurrentUser |= pr.IsAuthoredByCurrentUser;
+                    existing.IsAssignedToCurrentUser |= pr.IsAssignedToCurrentUser;
                     existing.IsReviewRequestedForCurrentUser |= pr.IsReviewRequestedForCurrentUser;
                     existing.IsMentioned |= pr.IsMentioned;
                     existing.UnresolvedThreadCount = existing.UnresolvedThreadCount ?? pr.UnresolvedThreadCount;

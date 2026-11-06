@@ -98,12 +98,13 @@ Only positive counts are shown; loading, unsupported, signed-out, and unavailabl
 states add no placeholder links or status text to recent items. Select a PR count
 to filter both ownership views to PRs without changing your selected view, or
 select the workspace to view its repository activity. Select a personal review
-count to open Team activity's Attention feed.
+count to open My work's Attention feed.
 
-**My work** tracks your loaded open PRs, including drafts, created or assigned
+**My work** tracks your loaded open PRs, including drafts and requests for your review, created or assigned
 issues and tasks, personally triggered builds, and local Copilot sessions. **Team activity** shows other people's
-PRs and issues, with requested reviews above general repository and build
-activity. Each blade defaults to **Attention**, a mixed-type feed of all loaded
+PRs and issues plus repository build activity, excluding requests for your review.
+Team activity defaults to **PRs** and has no Attention tab.
+My work defaults to **Attention**, a mixed-type feed of all loaded
 items with a known action for you, ordered newest updated first without type
 grouping or a separate top-items limit. The count shows how many items need you.
 Type filters show their full inventories independently of Attention. There is
@@ -119,8 +120,9 @@ layout shifts. When a workspace is selected, its name and **All repositories**
 sit beside the My work heading, keeping both blades' filter rows aligned.
 PR authors appear beside the status, before the date; PRs have no separate
 action-text line or check-details link. Issues and tasks assigned to you have a
-prominent themed **Assigned to you** banner. Labels use lightweight text rather
-than a second pill style. All labels, including priority and type labels, appear
+themed **Assigned to you** pill below the title, beside the date. Labels use solid
+rounded pills with their GitHub colors and contrasting text, with system colors
+in High Contrast mode. All labels, including priority and type labels, appear
 together in one row, wrapping only when needed; there is no separate priority/type row.
 Open issues omit the redundant open-status pill. Meaningful workflow states remain
 visible. Status colors distinguish failures/conflicts (red), success/approval
@@ -196,6 +198,37 @@ The feed is cached locally and refreshes automatically every four hours.
 Click the Refresh button at the top of the screen to force an update at
 any time.
 
+## Your Developer Community feedback
+
+The **Feedback** tab in the News panel lists Developer Community tickets you
+created or currently upvoted, with status, vote count, and last update date.
+Ticket titles use the normal themed card text color, with compact muted metadata.
+No created/upvoted count summary is shown above the cards; loading, empty, and error messages remain visible when applicable.
+State pills use green for fixed/completed, blue for consideration/review, crimson
+for more information needed, brown for investigation/roadmap, and gray for closed
+or other states. New and triaged tickets are also blue. Short API state names are
+shown as readable labels, including **Not enough info** and **Closed - Duplicate**.
+High Contrast mode uses system colors instead.
+Select a ticket title to open it in your browser. Tickets you both created and
+upvoted appear only once. All activity pages are checked; canceled votes and
+comment reactions are excluded unless you also created or currently upvoted the
+ticket. Deleted or inaccessible tickets are omitted.
+
+Feedback loads only after you select its tab, using your signed-in Visual Studio
+account. Choose the same account you use on Developer Community under
+**Tools > Options > Azure Service Authentication**. No PAT or separate sign-in
+is needed. Use the main **Refresh** button to reload after changing accounts or
+to retry an unavailable service. Switching away from Feedback and back keeps
+the displayed tickets without reloading. When reopening the Start Screen,
+feedback reuses cached results for up to one hour, after confirming the account.
+The main **Refresh** button bypasses this cache and reloads feedback alongside
+the other data sources. Hiding the screen cancels pending requests.
+
+Tokens and feedback are never written to disk. Cached feedback is held only in
+memory, isolated by the authenticated Developer Community identity, and previous
+results are cleared before refreshing. Feedback failures are shown in the tab
+and in the refresh-status details rather than presented as an empty result.
+
 ## Drag and drop
 
 Drop a solution, project, or folder from File Explorer directly onto the
@@ -223,20 +256,35 @@ Both work blades are always visible. Keyboard navigation initially targets
 **My work** by default. Existing Overview/Needs you preferences migrate
 to My work, and existing Issues/Pull requests/Builds preferences migrate to
 Team activity. The initial keyboard destination remains configurable. Work stays visible after viewing it;
-activity timestamps do not determine ownership or whether action is required.
-**Attention** uses explicit signals: requested reviews, changes requested
-on your PRs, known failing checks or merge conflicts on your PRs, assigned open
-issues/tasks, your failed builds, unresolved discussions on your PRs, verified
-merge readiness, and live Copilot questions or permission requests. Pending checks,
-approvals alone, mentions, idle sessions, and generic updates do not imply an action.
+activity timestamps do not determine ownership. Open PRs you authored, are assigned,
+or are requested to review stay in My work's **PRs** tab regardless of age.
+**Attention** requires activity in the last 30 days and explicit signals: requested reviews, changes requested
+on PRs you authored or are assigned, known failing checks or merge conflicts on those PRs, assigned open
+issues/tasks, unresolved discussions on your PRs, verified
+merge readiness. Recency uses the last update, falling back to creation when unavailable;
+items without either timestamp and dormant items remain in their normal tabs, not Attention.
+Live Copilot questions or permission requests also appear in Attention, independently of this date window. Pending checks,
+approvals alone, PR assignment alone, mentions, idle sessions, and generic updates do not imply an action.
+Standalone builds, including failures, appear only in the build inventories, not Attention.
 Unknown provider metadata is not treated as an action signal. A mention is not an
 unread indicator, and an unresolved discussion is not proof of an unanswered question.
 Developer Community feedback is not included.
 
-Cards keep one primary status without a separate PR action-text line. Hover for simultaneous
-review/check blockers, approvals, discussion counts, and authorship. Issue labels stay
-together in one row; task type, priority, assignment, and iteration details are on hover.
+My work and Team activity display cards directly below the selected tab without redundant
+section headings. Tabs use a footprint-neutral underline for selection, without
+surrounding borders or hover/selection backgrounds.
+My work orders its tabs as Attention, Copilot, PRs, Issues, and Builds. On initial
+load, empty Attention falls back to the first non-empty tab in that order. Later
+refreshes preserve your selection. If every tab is empty, Attention stays selected.
+
+Card titles stay on one line with ellipsis; hover to read the full title.
+Work card titles reserve extra space on the right to separate the blades visually.
+Assigned issues/tasks show an **Assigned to you** pill below the title with the date
+immediately to its right. Cards keep one primary status without a separate PR action-text line. Hover for simultaneous
+review/check blockers, approvals, discussion counts, and authorship. Issue label pills stay
+together in one row, wrapping when needed; task type, priority, assignment, and iteration details are on hover.
 The workflow state remains visible even when the item is assigned to you.
+Build headings show the repository without branch names; the full branch remains available on hover.
 A PR is only called
 **Ready to merge** when the provider supplies verified readiness; approval or a
 passing build by itself is not enough. Missing or incomplete policy/discussion

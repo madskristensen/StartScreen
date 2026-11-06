@@ -77,6 +77,7 @@ namespace StartScreen.Models.DevHub
             && !string.Equals(State, "closed", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(State, "done", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(State, "removed", StringComparison.OrdinalIgnoreCase)
+            && DevHubAttentionPolicy.HasRecentActivity(UpdatedAt, CreatedAt, DateTime.UtcNow)
             && IsAssignedToCurrentUser ? (IsBlocked ? "Blocked" : "Assigned to you") : null;
 
         [JsonIgnore]

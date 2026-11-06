@@ -18,7 +18,7 @@
   <Border x:Name="RootBorder"
           BorderThickness="0"
           Background="Transparent"
-          Padding="6"
+          Padding="8"
           CornerRadius="4"
           Focusable="True"
           FocusVisualStyle="{x:Null}"

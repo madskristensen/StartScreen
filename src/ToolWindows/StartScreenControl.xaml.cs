@@ -366,6 +366,17 @@ namespace StartScreen.ToolWindows
 
         private void FocusFirstNewsItem()
         {
+            if (ReferenceEquals(NewsTabs.SelectedItem, FeedbackTab))
+            {
+                TextBlock title = FindFirstControl<TextBlock>(FeedbackItems);
+                Hyperlink link = title?.Inlines.OfType<Hyperlink>().FirstOrDefault();
+                if (link != null)
+                    link.Focus();
+                else
+                    FeedbackTab.Focus();
+                return;
+            }
+
             NewsItemControl firstNews = FindFirstControl<NewsItemControl>(NewsPanel);
             if (firstNews != null)
             {
@@ -1219,6 +1230,7 @@ namespace StartScreen.ToolWindows
             {
                 ViewModel.ForceRefreshNews();
                 ViewModel.ForceRefreshYouTube();
+                ViewModel.ForceRefreshFeedback();
             }
 
             DevHubPanel_RefreshRequested(this, System.EventArgs.Empty);
@@ -1281,6 +1293,31 @@ namespace StartScreen.ToolWindows
                 StartScreenPackage.BackgroundTaskFactory.RunAsync(
                     () => ViewModel.MarkVideosAsSeenAsync())
                     .FileAndForget(nameof(StartScreenControl));
+            }
+            else if (ReferenceEquals(selected, FeedbackTab))
+            {
+                ViewModel.EnsureFeedbackLoaded();
+            }
+        }
+
+        private void FeedbackTicket_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is Hyperlink link && link.DataContext is FeedbackTicket ticket)
+            {
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ticket.Url) { UseShellExecute = true });
+                    }
+                    catch (Exception ex)
+                    {
+                        await ex.LogAsync();
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        ViewModel?.ReportFeedbackNavigationFailure();
+                    }
+                }).FileAndForget(nameof(StartScreenControl));
             }
         }
 

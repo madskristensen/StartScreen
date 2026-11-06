@@ -15,7 +15,7 @@ namespace StartScreen.Test.DevHub
         [TestMethod]
         [DataRow(false)]
         [DataRow(true)]
-        public async Task PullRequests_CustomQueryConstrainsReviewAndMentionLanesButNotPersonalWorkAsync(bool scoped)
+        public async Task PullRequests_CustomQueryConstrainsReviewAndMentionLanesButNotAuthoredOrAssignedWorkAsync(bool scoped)
         {
             var queries = new List<string>();
             using var client = Client(request =>
@@ -24,6 +24,12 @@ namespace StartScreen.Test.DevHub
                 queries.Add(query);
                 if (scoped)
                     Assert.Contains("AND repo:owner/repo", query);
+                if (query.Contains("assignee:me"))
+                {
+                    Assert.DoesNotContain("org:ligershark", query);
+                    var merged = query.Contains("is:merged");
+                    return Search(new[] { Item(merged ? 5 : 4, assigned: true, closed: merged, merged: merged) });
+                }
                 if (query.Contains("author:me"))
                 {
                     Assert.DoesNotContain("org:ligershark", query);
@@ -39,15 +45,18 @@ namespace StartScreen.Test.DevHub
                 new DevHubActivityOptions(includeCompleted: true), CancellationToken.None, scoped ? _repo : null,
                 "user:{login} org:ligershark", populateMetadata: false);
 
-            CollectionAssert.AreEquivalent(new[] { 1, 2, 3 }, results.Select(pr => pr.NumericId).ToArray());
+            CollectionAssert.AreEquivalent(new[] { 1, 2, 3, 4, 5 }, results.Select(pr => pr.NumericId).ToArray());
             var incoming = results.Single(pr => pr.NumericId == 1);
             Assert.IsTrue(incoming.IsReviewRequestedForCurrentUser);
             Assert.IsTrue(incoming.IsMentioned);
             Assert.IsTrue(incoming.NeedsAttention);
             Assert.IsTrue(results.Single(pr => pr.NumericId == 2).IsAuthoredByCurrentUser);
             Assert.IsTrue(results.Single(pr => pr.NumericId == 3).IsMerged);
-            Assert.HasCount(5, queries);
-            Assert.IsTrue(queries.Where(query => !query.Contains("author:me"))
+            Assert.IsTrue(results.Single(pr => pr.NumericId == 4).IsAssignedToCurrentUser);
+            Assert.IsTrue(results.Single(pr => pr.NumericId == 5).IsAssignedToCurrentUser);
+            Assert.IsTrue(results.Single(pr => pr.NumericId == 5).IsMerged);
+            Assert.HasCount(7, queries);
+            Assert.IsTrue(queries.Where(query => !query.Contains("author:me") && !query.Contains("assignee:me"))
                 .All(query => query.Contains("is:pr AND (user:me org:ligershark)")));
             Assert.IsTrue(queries.Any(query => query.Contains("AND (user:me org:ligershark) AND is:open AND review-requested:me")));
             Assert.IsTrue(queries.Any(query => query.Contains("AND (user:me org:ligershark) AND is:open AND mentions:me")));
@@ -89,6 +98,45 @@ namespace StartScreen.Test.DevHub
             Assert.IsTrue(results.Single(issue => issue.NumericId == 5).IsClosed);
             Assert.HasCount(6, queries);
             Assert.IsTrue(queries.Any(query => query.Contains("is:issue AND (user:me org:ligershark) AND is:open AND mentions:me")));
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void PullRequestParsing_PreservesAssignmentFromSearchAndRepositoryPayloads(bool repositoryPayload)
+        {
+            var json = Item(1, assigned: true, repoPayload: repositoryPayload);
+            var result = repositoryPayload
+                ? GitHubDevHubProvider.ParseRepoPullRequests("[" + json + "]", _repo, "me")
+                : GitHubDevHubProvider.ParsePullRequests("{\"items\":[" + json + "]}", "me");
+
+            Assert.IsTrue(result.Single().IsAssignedToCurrentUser);
+            Assert.IsFalse(result.Single().IsAuthoredByCurrentUser);
+        }
+
+        [TestMethod]
+        public async Task AssignedPullRequests_PaginateIndependentlyAndRemainPersonalWhenLanesOverlapAsync()
+        {
+            var assignedPages = new List<int>();
+            using var client = Client(request =>
+            {
+                var query = Query(request);
+                if (!query.Contains("assignee:me"))
+                    return query.Contains("org:incoming") ? Search(new[] { Item(1) }) : Search(Array.Empty<string>());
+                Assert.DoesNotContain("org:incoming", query);
+                var page = PageNumber(request);
+                assignedPages.Add(page);
+                return Search(Enumerable.Range((page - 1) * 100 + 1, 100).Select(id => Item(id, assigned: true)));
+            });
+
+            var results = await GitHubDevHubProvider.GetUserPullRequestsAsync(client, Credential(), "me",
+                new DevHubActivityOptions(125), CancellationToken.None, customQuery: "org:incoming", populateMetadata: false);
+
+            Assert.HasCount(125, results);
+            Assert.IsTrue(results.All(pr => pr.IsAssignedToCurrentUser));
+            Assert.HasCount(125, DevHubWorkItem.GetMyWork(results, [], []));
+            Assert.IsEmpty(DevHubWorkItem.GetIncoming(results, [], []));
+            CollectionAssert.AreEqual(new[] { 1, 2 }, assignedPages);
         }
 
         [TestMethod]
@@ -323,7 +371,7 @@ namespace StartScreen.Test.DevHub
             await GitHubDevHubProvider.GetUserPullRequestsAsync(client, Credential(), "me", new DevHubActivityOptions(), CancellationToken.None);
             await GitHubDevHubProvider.GetUserIssuesAsync(client, Credential(), "me", new DevHubActivityOptions(), CancellationToken.None);
 
-            Assert.HasCount(8, queries);
+            Assert.HasCount(9, queries);
             Assert.IsFalse(queries.Any(query => query.Contains("is:closed") || query.Contains("is:merged")));
         }
 
@@ -636,6 +684,7 @@ namespace StartScreen.Test.DevHub
             NumericId = 1,
             Status = "open",
             IsAuthoredByCurrentUser = true,
+            UpdatedAt = DateTime.UtcNow,
         };
 
         private static void Apply(DevHubPullRequest pr, string json)

@@ -68,6 +68,7 @@ namespace StartScreen.Models.DevHub
                 && left.CreatedAt == right.CreatedAt
                 && StringEquals(left.WebUrl, right.WebUrl)
                 && left.IsAuthoredByCurrentUser == right.IsAuthoredByCurrentUser
+                && left.IsAssignedToCurrentUser == right.IsAssignedToCurrentUser
                 && left.IsReviewRequestedForCurrentUser == right.IsReviewRequestedForCurrentUser;
         }
 

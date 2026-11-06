@@ -19,6 +19,7 @@ namespace StartScreen.ToolWindows.Controls
         private IReadOnlyList<DevHubCiRun> _activityBuilds = Array.Empty<DevHubCiRun>();
         private int _activityLoadCount;
         private int? _loadMoreStartingItemCount;
+        private bool _initialMyWorkTabPending = true;
         private DevHubDefaultTab _activeWorkView = DevHubDefaultTab.MyWork;
 
         internal DevHubActivityOptions ActivityOptions { get; private set; } = new DevHubActivityOptions();
@@ -35,6 +36,8 @@ namespace StartScreen.ToolWindows.Controls
                 _loadMoreStartingItemCount = null;
             }
             UpdateActivityLoadingState();
+            if (!loading && _activityLoadCount == 0)
+                SelectInitialMyWorkTab(loadingCompleted: true);
         }
 
         private int GetLoadedActivityCount() => _activityPullRequests.Count + _activityIssues.Count + _activityBuilds.Count;
@@ -86,11 +89,13 @@ namespace StartScreen.ToolWindows.Controls
         private void BeginWorkspaceVisit(object sender, RoutedEventArgs e)
         {
             _workspaceActivitySignature = null;
+            _initialMyWorkTabPending = true;
             _copilotLoaded = true;
             if (Options.Instance.ApplyWorkViewsDefault())
                 SaveOptionsAsync().FileAndForget(nameof(DevHubPanel));
             _defaultTabApplied = false;
             ApplyDefaultTab();
+            SelectInitialMyWorkTab();
             StartCopilotActivity();
         }
 
@@ -118,15 +123,57 @@ namespace StartScreen.ToolWindows.Controls
                 _incomingItems = incoming;
                 RenderWorkViews();
             }
+            SelectInitialMyWorkTab();
+        }
+
+        private void SelectInitialMyWorkTab(bool loadingCompleted = false)
+        {
+            if (!_initialMyWorkTabPending || _activityLoadCount > 0
+                || (_myWorkItems.Count == 0 && !loadingCompleted))
+                return;
+
+            _initialMyWorkTabPending = false;
+            if (MyWorkAttentionFilter.IsChecked != true)
+                return;
+
+            RadioButton selected = GetInitialMyWorkKind(_myWorkItems) switch
+            {
+                DevHubWorkItemKind.Copilot => MyWorkCopilotFilter,
+                DevHubWorkItemKind.PullRequest => MyWorkPrFilter,
+                DevHubWorkItemKind.Issue => MyWorkIssueFilter,
+                DevHubWorkItemKind.Build => MyWorkBuildFilter,
+                _ => MyWorkAttentionFilter,
+            };
+            selected.IsChecked = true;
+        }
+
+        internal static DevHubWorkItemKind GetInitialMyWorkKind(IReadOnlyList<DevHubWorkItem> items)
+        {
+            if (items.Any(item => item.NeedsAttention))
+                return DevHubWorkItemKind.All;
+
+            return new[] { DevHubWorkItemKind.Copilot, DevHubWorkItemKind.PullRequest, DevHubWorkItemKind.Issue, DevHubWorkItemKind.Build }
+                .FirstOrDefault(kind => items.Any(item => item.Kind == kind));
+        }
+
+        private void ActivityFilter_Click(object sender, RoutedEventArgs e)
+        {
+            if (e.OriginalSource is RadioButton filter && filter.GroupName == "MyWorkKind")
+                _initialMyWorkTabPending = false;
         }
 
         private void ActivityFilter_Changed(object sender, RoutedEventArgs e)
         {
             if (MyWorkList != null && IncomingList != null)
-                RenderWorkViews();
+            {
+                var group = (sender as RadioButton)?.GroupName;
+                if (group == "MyWorkKind")
+                    _initialMyWorkTabPending = false;
+                RenderWorkViews(refreshMyWork: group != "IncomingKind", refreshIncoming: group != "MyWorkKind");
+            }
         }
 
-        private void RenderWorkViews()
+        private void RenderWorkViews(bool refreshMyWork = true, bool refreshIncoming = true)
         {
             InvalidateBorderCache();
             var myWorkKind = MyWorkPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
@@ -137,29 +184,25 @@ namespace StartScreen.ToolWindows.Controls
                 : IncomingIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
                 : IncomingBuildFilter.IsChecked == true ? DevHubWorkItemKind.Build : DevHubWorkItemKind.All;
             var myWorkAttention = MyWorkAttentionFilter.IsChecked == true;
-            var incomingAttention = IncomingAttentionFilter.IsChecked == true;
             var myWork = DevHubWorkItem.Filter(_myWorkItems, myWorkKind, myWorkAttention);
-            var incoming = DevHubWorkItem.Filter(_incomingItems, incomingKind, incomingAttention);
+            var incoming = DevHubWorkItem.Filter(_incomingItems, incomingKind, false);
             MyWorkAttentionFilter.Content = $"Attention ({_myWorkItems.Count(item => item.NeedsAttention)})";
-            IncomingAttentionFilter.Content = $"Attention ({_incomingItems.Count(item => item.NeedsAttention)})";
-            MyWorkList.ItemsSource = CreateWorkItemView(myWork, !myWorkAttention);
-            IncomingList.ItemsSource = CreateWorkItemView(incoming, !incomingAttention);
+            if (refreshMyWork)
+                MyWorkList.ItemsSource = CreateWorkItemView(myWork);
+            if (refreshIncoming)
+                IncomingList.ItemsSource = CreateWorkItemView(incoming);
             MyWorkEmpty.Visibility = myWork.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             IncomingEmpty.Visibility = incoming.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             MyWorkEmpty.Text = myWorkAttention
                 ? "No items need your attention in this view." : "No matching personal work in the loaded activity.";
-            IncomingEmpty.Text = incomingAttention
-                ? "No items need your attention in this view." : "No matching team activity.";
+            IncomingEmpty.Text = "No matching team activity.";
             MyWorkCount.Text = _myWorkItems.Count == 0 ? string.Empty : $" {_myWorkItems.Count}";
             IncomingCount.Text = _incomingItems.Count == 0 ? string.Empty : $" {_incomingItems.Count}";
         }
 
-        internal static ListCollectionView CreateWorkItemView(IReadOnlyList<DevHubWorkItem> items, bool groupBySection = true)
+        internal static ListCollectionView CreateWorkItemView(IReadOnlyList<DevHubWorkItem> items)
         {
-            var view = new ListCollectionView(items.ToArray());
-            if (groupBySection)
-                view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DevHubWorkItem.Section)));
-            return view;
+            return new ListCollectionView(items.ToArray());
         }
 
         private void WorkItem_MouseUp(object sender, MouseButtonEventArgs e)

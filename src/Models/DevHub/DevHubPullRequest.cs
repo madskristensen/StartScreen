@@ -102,6 +102,8 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public bool IsAuthoredByCurrentUser { get; set; }
 
+        public bool IsAssignedToCurrentUser { get; set; }
+
         public bool IsReviewRequestedForCurrentUser { get; set; }
 
         public bool HasChangesRequested { get; set; }
@@ -121,8 +123,10 @@ namespace StartScreen.Models.DevHub
             || string.Equals(Status, "conflicts", StringComparison.OrdinalIgnoreCase) || IsDraft);
 
         [JsonIgnore]
-        public string AttentionReason => !IsOpen || IsDraft ? null
-            : !IsAuthoredByCurrentUser ? (IsReviewRequestedForCurrentUser ? "Review requested" : null)
+        public string AttentionReason => !IsOpen || IsDraft
+            || !DevHubAttentionPolicy.HasRecentActivity(UpdatedAt, CreatedAt, DateTime.UtcNow) ? null
+            : IsReviewRequestedForCurrentUser && !IsAuthoredByCurrentUser ? "Review requested"
+            : !IsAuthoredByCurrentUser && !IsAssignedToCurrentUser ? null
             : string.Equals(Status, "conflicts", StringComparison.OrdinalIgnoreCase) ? "Conflicts"
             : HasChangesRequested ? "Changes requested"
             : CiStatus == "failure" ? "Checks failing"
@@ -158,7 +162,8 @@ namespace StartScreen.Models.DevHub
         [JsonIgnore]
         public string NextActionText => !IsOpen ? null
             : IsDraft ? "Publish when ready"
-            : !IsAuthoredByCurrentUser ? (IsReviewRequestedForCurrentUser ? "Review this PR" : null)
+            : IsReviewRequestedForCurrentUser && !IsAuthoredByCurrentUser ? "Review this PR"
+            : !IsAuthoredByCurrentUser && !IsAssignedToCurrentUser ? null
             : Status == "conflicts" ? "Resolve merge conflicts"
             : HasChangesRequested ? "Address review feedback"
             : CiStatus == "failure" ? "Inspect failing checks"
@@ -179,6 +184,8 @@ namespace StartScreen.Models.DevHub
                 var details = new List<string>();
                 if (!string.IsNullOrEmpty(Author))
                     details.Add($"Author: {Author}");
+                if (IsAssignedToCurrentUser)
+                    details.Add("Assigned to you");
                 details.Add(StatusText);
                 if (HasChangesRequested && StatusText != "Changes requested")
                     details.Add("Changes requested");

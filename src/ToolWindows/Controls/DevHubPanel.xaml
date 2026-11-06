@@ -146,8 +146,18 @@
                             Visibility="{Binding StatusText, Converter={StaticResource NullToCollapsedConverter}}">
                         <TextBlock x:Name="RepositoryItemStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
                     </Border>
-                    <TextBlock Text="{Binding ActivityDateText}" FontSize="11" Opacity="0.65" Margin="0 2 0 2"
-                               VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border x:Name="AssignmentPill" CornerRadius="9" Padding="7 2" Margin="0 0 8 2" BorderThickness="1"
+                                BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                                Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
+                                Visibility="{Binding IsAssignedToCurrentUser, Converter={StaticResource BoolToVisibilityConverter}}"
+                                ToolTip="This issue or task is currently assigned to you.">
+                            <TextBlock Text="Assigned to you" FontSize="10" FontWeight="Bold"
+                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                        </Border>
+                        <TextBlock Text="{Binding ActivityDateText}" FontSize="11" Opacity="0.65" Margin="0 2 0 2"
+                                   VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
+                    </StackPanel>
                 </WrapPanel>
             </DockPanel>
         </DataTemplate>
@@ -179,14 +189,6 @@
                     </Style>
                 </Border.Style>
                 <StackPanel>
-                    <Border x:Name="AssignmentBanner" BorderThickness="3 0 0 0" Padding="8 4" Margin="0 0 0 6"
-                            BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
-                            Visibility="{Binding IsAssignedToCurrentUser, Converter={StaticResource BoolToVisibilityConverter}}"
-                            ToolTip="This issue or task is currently assigned to you.">
-                        <TextBlock Text="Assigned to you" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
-                    </Border>
                     <TextBlock Text="{Binding Detail}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}" Opacity="0.65" FontSize="11">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
@@ -201,14 +203,13 @@
                     <TextBlock Text="{Binding DisplayTitle}" FontSize="13" FontWeight="SemiBold">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
-                                <Setter Property="Margin" Value="0 3 0 5"/>
-                                <Setter Property="TextWrapping" Value="Wrap"/>
+                                <Setter Property="Margin" Value="0 3 24 5"/>
+                                <Setter Property="TextWrapping" Value="NoWrap"/>
+                                <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                <Setter Property="ToolTip" Value="{Binding Title}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsCopilot}" Value="True">
-                                        <Setter Property="TextWrapping" Value="NoWrap"/>
-                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
-                                        <Setter Property="Margin" Value="0 0 0 6"/>
-                                        <Setter Property="ToolTip" Value="{Binding Title}"/>
+                                        <Setter Property="Margin" Value="0 0 24 6"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -277,7 +278,33 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Name}" FontSize="11" Opacity="0.65" Margin="0 0 10 2"/>
+                                <Border x:Name="LabelPill" CornerRadius="9" Padding="7 2" Margin="0 0 6 2"
+                                        Tag="{DynamicResource {x:Static SystemParameters.HighContrastKey}}">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                                    <Setter Property="BorderThickness" Value="1"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="SemiBold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{Binding Color, Converter={StaticResource HexColorToForegroundConverter}}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -290,37 +317,32 @@
             </DataTemplate.Triggers>
         </DataTemplate>
         <Style x:Key="ActivityFilterStyle" TargetType="RadioButton">
-            <Setter Property="Margin" Value="0 0 6 6"/>
+            <Setter Property="Margin" Value="0 0 16 6"/>
             <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="FilterBorder" CornerRadius="11" Padding="8 3" BorderThickness="1"
-                                Background="Transparent" BorderBrush="Transparent">
-                            <ContentPresenter VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid x:Name="TabRoot">
+                            <ContentPresenter x:Name="TabContent" Margin="0 4" VerticalAlignment="Center"/>
+                            <Rectangle x:Name="SelectionIndicator" Height="2" VerticalAlignment="Bottom"
+                                       Fill="{TemplateBinding Foreground}" Visibility="Collapsed"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="FilterBorder" Property="Background"
-                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                                <Setter TargetName="SelectionIndicator" Property="Visibility" Value="Visible"/>
+                                <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="FilterBorder" Property="BorderBrush"
-                                        Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
-        <GroupStyle x:Key="WorkItemGroupStyle">
-            <GroupStyle.HeaderTemplate>
-                <DataTemplate>
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="8 12 0 6"/>
-                </DataTemplate>
-            </GroupStyle.HeaderTemplate>
-        </GroupStyle>
         <!-- Hover style for list item borders -->
         <Style x:Key="HoverItemBorderStyle" TargetType="Border">
             <Setter Property="Background" Value="Transparent"/>
@@ -932,22 +954,20 @@
                         </TextBlock>
                     </DockPanel>
                     <StackPanel>
-                        <WrapPanel Margin="8 0 0 6">
+                        <WrapPanel Margin="8 0 0 6" ButtonBase.Click="ActivityFilter_Click">
                             <RadioButton x:Name="MyWorkAttentionFilter" Content="Attention" GroupName="MyWorkKind" IsChecked="True"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"
                                          ToolTip="All items with a known action for you, newest updated first."/>
+                            <RadioButton x:Name="MyWorkCopilotFilter" Content="Copilot" GroupName="MyWorkKind"
+                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="MyWorkPrFilter" Content="PRs" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="MyWorkIssueFilter" Content="Issues" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
-                            <RadioButton x:Name="MyWorkCopilotFilter" Content="Copilot" GroupName="MyWorkKind"
-                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="MyWorkBuildFilter" Content="Builds" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                         </WrapPanel>
-                        <ItemsControl x:Name="MyWorkList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}">
-                            <ItemsControl.GroupStyle><StaticResource ResourceKey="WorkItemGroupStyle"/></ItemsControl.GroupStyle>
-                        </ItemsControl>
+                        <ItemsControl x:Name="MyWorkList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
                         <TextBlock x:Name="MyWorkEmpty" Text="No personal work in the loaded activity."
                                    TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
                         <StackPanel>
@@ -977,19 +997,14 @@
                     </DockPanel>
                     <StackPanel>
                         <WrapPanel Margin="8 0 0 6">
-                            <RadioButton x:Name="IncomingAttentionFilter" Content="Attention" GroupName="IncomingKind" IsChecked="True"
-                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"
-                                         ToolTip="All team activity with a known action for you, newest updated first."/>
-                            <RadioButton x:Name="IncomingPrFilter" Content="PRs" GroupName="IncomingKind"
+                            <RadioButton x:Name="IncomingPrFilter" Content="PRs" GroupName="IncomingKind" IsChecked="True"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="IncomingIssueFilter" Content="Issues" GroupName="IncomingKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="IncomingBuildFilter" Content="Builds" GroupName="IncomingKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                         </WrapPanel>
-                        <ItemsControl x:Name="IncomingList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}">
-                            <ItemsControl.GroupStyle><StaticResource ResourceKey="WorkItemGroupStyle"/></ItemsControl.GroupStyle>
-                        </ItemsControl>
+                        <ItemsControl x:Name="IncomingList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
                         <TextBlock x:Name="IncomingEmpty" Text="No team activity."
                                    TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
                     </StackPanel>

@@ -39,6 +39,7 @@ namespace StartScreen.Test.DevHub
                 IsReviewRequestedForCurrentUser = requested,
                 HasChangesRequested = changes,
                 CiStatus = ci,
+                UpdatedAt = DateTime.UtcNow,
             };
 
             Assert.AreEqual(expected, pr.AttentionReason);
@@ -680,6 +681,7 @@ namespace StartScreen.Test.DevHub
             RepoIdentifier = _gitHub,
             Status = "open",
             IsAuthoredByCurrentUser = true,
+            UpdatedAt = DateTime.UtcNow.Date,
         };
 
         private static string AdoPrJson(string status, bool draft, int vote) =>

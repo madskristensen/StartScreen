@@ -70,6 +70,7 @@ namespace StartScreen.ToolWindows.Controls
         public void ShowPullRequests()
         {
             _defaultTabApplied = true;
+            _initialMyWorkTabPending = false;
             MyWorkPrFilter.IsChecked = true;
             IncomingPrFilter.IsChecked = true;
         }
@@ -77,8 +78,9 @@ namespace StartScreen.ToolWindows.Controls
         public void ShowRequestedReviews()
         {
             _defaultTabApplied = true;
-            IncomingAttentionFilter.IsChecked = true;
-            SelectDefaultTab(DevHubDefaultTab.Incoming);
+            _initialMyWorkTabPending = false;
+            MyWorkAttentionFilter.IsChecked = true;
+            SelectDefaultTab(DevHubDefaultTab.MyWork);
         }
 
         /// <summary>

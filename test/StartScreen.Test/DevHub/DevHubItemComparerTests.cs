@@ -36,6 +36,16 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public void SamePullRequests_WithChangedAssignment_ReturnsFalse()
+        {
+            var left = CreatePullRequest("#1");
+            var right = CreatePullRequest("#1");
+            right.IsAssignedToCurrentUser = true;
+
+            Assert.IsFalse(DevHubItemComparer.SamePullRequests([left], [right]));
+        }
+
+        [TestMethod]
         public void SameIssues_WithSameLabels_ReturnsTrue()
         {
             var left = new List<DevHubIssue>

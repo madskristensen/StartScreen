@@ -165,7 +165,7 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        public bool IsRefreshingAny => _isRefreshingNews || _isRefreshingYouTube || _isRefreshingDevHub || _isRefreshingWorkspaceSignals;
+        public bool IsRefreshingAny => _isRefreshingNews || _isRefreshingYouTube || _isRefreshingDevHub || _isRefreshingWorkspaceSignals || IsRefreshingFeedback;
 
         public bool IsYouTubeUnavailable
         {
@@ -229,7 +229,7 @@ namespace StartScreen.ToolWindows
                 if (IsRefreshingAny)
                     return "Updating...";
 
-                var statuses = new[] { LastDevHubRefreshText, LastNewsRefreshText, LastYouTubeRefreshText };
+                var statuses = new[] { LastDevHubRefreshText, LastNewsRefreshText, LastYouTubeRefreshText, LastFeedbackRefreshText };
                 return statuses.FirstOrDefault(text => text == "Updated just now")
                     ?? statuses.FirstOrDefault(text => text?.StartsWith("Updated ", StringComparison.Ordinal) == true)
                     ?? (statuses.Any(text => !string.IsNullOrWhiteSpace(text)) ? "Not updated yet" : string.Empty);
@@ -247,6 +247,8 @@ namespace StartScreen.ToolWindows
                     refreshing.Add("news");
                 if (IsRefreshingYouTube)
                     refreshing.Add("videos");
+                if (IsRefreshingFeedback)
+                    refreshing.Add("feedback");
                 if (_isRefreshingWorkspaceSignals)
                     refreshing.Add("workspace status");
 
@@ -260,6 +262,8 @@ namespace StartScreen.ToolWindows
                     statuses.Add($"News: {LastNewsRefreshText}");
                 if (!string.IsNullOrWhiteSpace(LastYouTubeRefreshText))
                     statuses.Add($"Videos: {LastYouTubeRefreshText}");
+                if (_feedbackRequested)
+                    statuses.Add($"Feedback: {FeedbackStatus ?? LastFeedbackRefreshText}");
                 return string.Join("; ", statuses);
             }
         }
@@ -494,12 +498,16 @@ namespace StartScreen.ToolWindows
 
         internal StartScreenViewModel(CancellationToken shutdownToken,
             Func<CancellationToken, Task<ServiceHealthStatus>> getServiceHealthStatusAsync = null,
-            Func<JoinableTaskFactory> getServiceHealthTaskFactory = null)
+            Func<JoinableTaskFactory> getServiceHealthTaskFactory = null,
+            Func<bool, CancellationToken, Task<FeedbackSnapshot>> getFeedbackAsync = null,
+            Func<JoinableTaskFactory> getFeedbackTaskFactory = null)
         {
             _shutdownToken = shutdownToken;
             _repositorySummaries = new Services.DevHub.DevHubRepoSummaryService(shutdownToken);
             _getServiceHealthStatusAsync = getServiceHealthStatusAsync ?? ServiceHealthService.GetStatusAsync;
             _getServiceHealthTaskFactory = getServiceHealthTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
+            _getFeedbackAsync = getFeedbackAsync ?? new FeedbackService().GetTicketsAsync;
+            _getFeedbackTaskFactory = getFeedbackTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             NewsPosts = new ObservableCollection<NewsPost>();
             PinnedNewsPosts = new ObservableCollection<NewsPost>();
@@ -536,6 +544,7 @@ namespace StartScreen.ToolWindows
                 _lifetimeCancellation.Cancel();
                 _newsRefreshCancellation?.Cancel();
                 _youTubeRefreshCancellation?.Cancel();
+                _feedbackRefreshCancellation?.Cancel();
                 _mruMetadataCancellation?.Cancel();
                 _repositorySummaries.CancelPendingRequests();
                 _serviceHealthRefreshCancellation?.Cancel();
@@ -553,6 +562,10 @@ namespace StartScreen.ToolWindows
             }
             IsRefreshingNews = false;
             IsRefreshingYouTube = false;
+            IsRefreshingFeedback = false;
+            FeedbackTickets.Clear();
+            LastFeedbackRefreshText = null;
+            FeedbackStatus = "Select Feedback to load your Developer Community tickets.";
         }
 
         internal void EnsureDeferredContentInitialized()
@@ -809,6 +822,8 @@ namespace StartScreen.ToolWindows
 
             try
             {
+                if (_feedbackRequested)
+                    StartFeedbackRefresh(false);
                 Task newsTask = RefreshNewsAsync(cancellationToken);
                 Task youtubeTask = RefreshYouTubeAsync(cancellationToken);
                 Task versionTask = RefreshVersionTitleAsync(cancellationToken);

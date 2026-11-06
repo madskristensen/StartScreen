@@ -8,9 +8,7 @@ namespace StartScreen.Models.DevHub
     {
         public string Title { get; private set; }
         public bool IsCopilot => CopilotSessionId != null;
-        public string DisplayTitle => IsCopilot
-            ? string.Join(" ", (Title ?? string.Empty).Split((char[])null, StringSplitOptions.RemoveEmptyEntries))
-            : Title;
+        public string DisplayTitle => string.Join(" ", (Title ?? string.Empty).Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
         public string Detail { get; private set; }
         public string StatusText { get; private set; }
         public string StatusCategory => DevHubPullRequest.GetStatusCategory(StatusText);
@@ -79,7 +77,9 @@ namespace StartScreen.Models.DevHub
             var copilot = (sessions ?? Enumerable.Empty<CopilotActivitySession>()).ToArray();
             var prs = (pullRequests ?? Enumerable.Empty<DevHubPullRequest>()).ToArray();
             var tasks = (issues ?? Enumerable.Empty<DevHubIssue>()).ToArray();
-            var active = Sort(GetOwnPullRequests(prs), order)
+            var active = Sort(prs.Where(pr => pr.IsOpen
+                    && (pr.IsAuthoredByCurrentUser || pr.IsAssignedToCurrentUser || pr.IsReviewRequestedForCurrentUser)
+                    && !string.IsNullOrEmpty(pr.WebUrl)).Select(FromPullRequest), order)
                 .Concat(Sort(tasks
                     .Where(issue => !issue.IsClosed && (issue.IsAuthoredByCurrentUser || issue.IsAssignedToCurrentUser)
                         && !string.IsNullOrEmpty(issue.WebUrl)).Select(FromIssue), order))
@@ -92,7 +92,7 @@ namespace StartScreen.Models.DevHub
                 return active.ToArray();
 
             var since = DateTime.UtcNow.AddDays(-14);
-            var completed = prs.Where(pr => pr.IsAuthoredByCurrentUser && pr.IsMerged && !pr.IsOpen
+            var completed = prs.Where(pr => (pr.IsAuthoredByCurrentUser || pr.IsAssignedToCurrentUser) && pr.IsMerged && !pr.IsOpen
                     && pr.UpdatedAt >= since && !string.IsNullOrEmpty(pr.WebUrl)).Select(FromPullRequest)
                 .Concat(tasks.Where(issue => issue.IsClosed && (issue.IsAuthoredByCurrentUser || issue.IsAssignedToCurrentUser)
                     && issue.UpdatedAt >= since && !string.IsNullOrEmpty(issue.WebUrl)).Select(FromIssue))
@@ -107,16 +107,17 @@ namespace StartScreen.Models.DevHub
             IEnumerable<DevHubCiRun> builds, DevHubSortOrder order = DevHubSortOrder.MostRecent)
         {
             var items = (pullRequests ?? Enumerable.Empty<DevHubPullRequest>())
-                .Where(pr => pr.IsOpen && !pr.IsAuthoredByCurrentUser && !string.IsNullOrEmpty(pr.WebUrl))
+                .Where(pr => pr.IsOpen && !pr.IsAuthoredByCurrentUser && !pr.IsAssignedToCurrentUser && !pr.IsReviewRequestedForCurrentUser
+                    && !string.IsNullOrEmpty(pr.WebUrl))
                 .Select(FromPullRequest)
                 .Concat((issues ?? Enumerable.Empty<DevHubIssue>())
                     .Where(issue => !issue.IsClosed && !issue.IsAuthoredByCurrentUser && !issue.IsAssignedToCurrentUser
                         && !string.IsNullOrEmpty(issue.WebUrl)).Select(FromIssue))
                 .Concat((builds ?? Enumerable.Empty<DevHubCiRun>())
                     .Where(build => !build.IsTriggeredByCurrentUser && !string.IsNullOrEmpty(build.WebUrl)).Select(FromBuild));
-            var result = Sort(items, order).OrderByDescending(item => item.NeedsAttention).ToArray();
+            var result = Sort(items, order).ToArray();
             foreach (var item in result)
-                item.Section = item.NeedsAttention ? "Requests for you" : "Repository activity";
+                item.Section = "Repository activity";
             return result;
         }
 
@@ -158,11 +159,12 @@ namespace StartScreen.Models.DevHub
             return new DevHubWorkItem
             {
                 Title = build.Name,
-                Detail = $"{build.RepoDisplayName} / {build.Branch}",
+                Detail = build.RepoDisplayName,
                 StatusText = $"Build {build.Status}",
-                AttentionReason = build.IsTriggeredByCurrentUser && build.Status == "failure" ? "Build failing" : null,
                 NextActionText = build.Status == "failure" ? build.FailureSummary : null,
-                StatusDetails = build.FailureSummary,
+                StatusDetails = string.IsNullOrWhiteSpace(build.Branch) ? build.FailureSummary
+                    : string.Join(Environment.NewLine, new[] { $"Branch: {build.Branch}", build.FailureSummary }
+                        .Where(value => !string.IsNullOrWhiteSpace(value))),
                 RepoIdentifier = build.RepoIdentifier,
                 WebUrl = build.WebUrl,
                 IsBuild = true,
@@ -197,6 +199,7 @@ namespace StartScreen.Models.DevHub
                 Section = "Pull requests",
                 WebUrl = pr.WebUrl,
                 IsPullRequest = true,
+                IsAssignedToCurrentUser = pr.IsAssignedToCurrentUser && pr.IsOpen,
                 UpdatedAt = pr.UpdatedAt,
             };
         }
