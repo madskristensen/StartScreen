@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using Microsoft.VisualStudio.Settings;
+using Microsoft.VisualStudio.Shell.CodeContainerManagement;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Helpers;
@@ -22,8 +23,12 @@ namespace StartScreen.Services
     /// </summary>
     internal static class MruService
     {
-        private const string _recentProjectsListName = "CodeContainers.Offline";
         private const uint _maxVsItems = 50;
+
+        internal sealed class RecentProjectsRegistry(ISettingsManager settingsManager) : CodeContainerRegistry(settingsManager)
+        {
+            internal ISettingsList List => SettingsList;
+        }
 
         [Guid("9b164e40-c3a2-4363-9bc5-eb4039def653")]
         private sealed class SVsSettingsPersistenceManager
@@ -40,7 +45,7 @@ namespace StartScreen.Services
             // CodeContainers.Offline drives Visual Studio's Recent Projects UI. The legacy
             // store can omit current entries or retain entries after that list is cleared.
             ISettingsManager settingsManager = await VS.GetServiceAsync<SVsSettingsPersistenceManager, ISettingsManager>();
-            ISettingsList recentProjects = settingsManager?.GetOrCreateList(_recentProjectsListName, isMachineLocal: true);
+            ISettingsList recentProjects = GetRecentProjectsList(settingsManager);
             if (recentProjects != null)
                 await recentProjects.RefreshContentFromStoreAsync();
             cancellationToken.ThrowIfCancellationRequested();
@@ -156,6 +161,13 @@ namespace StartScreen.Services
 
             pinned.AddRange(unpinned);
             return pinned;
+        }
+
+        internal static ISettingsList GetRecentProjectsList(ISettingsManager settingsManager)
+        {
+            // Let the host select its serializer; creating the list directly can conflict
+            // with the serializer used by newer Visual Studio Recent Projects implementations.
+            return settingsManager == null ? null : new RecentProjectsRegistry(settingsManager).List;
         }
 
         internal static async Task<IReadOnlyList<string>> GetRepositoryRemoteUrlsAsync(CancellationToken cancellationToken)
@@ -274,7 +286,7 @@ namespace StartScreen.Services
             try
             {
                 ISettingsManager settingsManager = await VS.GetServiceAsync<SVsSettingsPersistenceManager, ISettingsManager>();
-                ISettingsList recentProjects = settingsManager?.GetOrCreateList(_recentProjectsListName, isMachineLocal: true);
+                ISettingsList recentProjects = GetRecentProjectsList(settingsManager);
                 if (recentProjects != null)
                 {
                     await recentProjects.RefreshContentFromStoreAsync();

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 using StartScreen.Services;
 using StartScreen.ToolWindows;
@@ -8,6 +9,75 @@ namespace StartScreen.Test
     [TestClass]
     public sealed class MruStartupTests
     {
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task InitialLoad_FailedOrCanceledTaskRetriesWithoutBlockingSecondaryContentAsync(bool canceled)
+        {
+            using var context = new JoinableTaskContext();
+            var load = context.Factory.RunAsync(() => canceled
+                ? Task.FromCanceled(new CancellationToken(true))
+                : Task.FromException(new InvalidOperationException("Initial MRU failed.")));
+            var reloads = 0;
+
+            await StartScreenControl.LoadInitialMruAsync(load, () =>
+            {
+                reloads++;
+                return Task.FromException(new InvalidOperationException("MRU retry failed."));
+            }, CancellationToken.None);
+
+            Assert.AreEqual(1, reloads);
+        }
+
+        [TestMethod]
+        public async Task InitialLoad_PendingFailureDoesNotBlockSecondaryContentAsync()
+        {
+            using var context = new JoinableTaskContext();
+            var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var load = context.Factory.RunAsync(() => completion.Task);
+            var reloads = 0;
+            var startup = StartScreenControl.LoadInitialMruAsync(load, () =>
+            {
+                reloads++;
+                return Task.CompletedTask;
+            }, CancellationToken.None);
+            Assert.IsFalse(startup.IsCompleted);
+
+            completion.SetException(new InvalidOperationException("MRU failed while starting."));
+            await startup;
+
+            Assert.AreEqual(0, reloads);
+        }
+
+        [TestMethod]
+        public async Task InitialLoad_SuccessDoesNotReloadAsync()
+        {
+            using var context = new JoinableTaskContext();
+            var load = context.Factory.RunAsync(() => Task.CompletedTask);
+            var reloads = 0;
+            await StartScreenControl.LoadInitialMruAsync(load, () =>
+            {
+                reloads++;
+                return Task.CompletedTask;
+            }, CancellationToken.None);
+            Assert.AreEqual(0, reloads);
+            Assert.AreEqual(TaskStatus.RanToCompletion, load.Task.Status);
+        }
+
+        [TestMethod]
+        public async Task InitialLoad_LifetimeCancellationPreventsSecondaryContentAsync()
+        {
+            using var context = new JoinableTaskContext();
+            var token = new CancellationToken(true);
+            var load = context.Factory.RunAsync(() => Task.FromCanceled(token));
+
+            var exception = await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                StartScreenControl.LoadInitialMruAsync(load,
+                    () => throw new AssertFailedException("Canceled startup must not retry MRU."), token));
+
+            Assert.AreEqual(token, exception.CancellationToken);
+        }
+
         [TestMethod]
         public void InitialParse_SkipsDiskTimestampAndPreservesOpenPath()
         {

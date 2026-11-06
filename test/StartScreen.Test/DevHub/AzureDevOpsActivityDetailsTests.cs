@@ -438,7 +438,10 @@ namespace StartScreen.Test.DevHub
         {
             var path = uri.AbsolutePath;
             if (path.Contains("connectionData"))
+            {
+                Assert.AreEqual("?api-version=3.0-preview", uri.Query);
                 return Json(Identity);
+            }
             if (path.EndsWith("/repositories/repo"))
                 return Json("{\"id\":\"" + RepositoryId + "\"}");
             if (path.EndsWith("/wiql"))

@@ -1,4 +1,7 @@
+using System.Runtime.Remoting.Messaging;
+using System.Runtime.Remoting.Proxies;
 using LibGit2Sharp;
+using Microsoft.VisualStudio.Settings;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -7,6 +10,36 @@ namespace StartScreen.Test
     [TestClass]
     public class MruServiceTests
     {
+        [TestMethod]
+        public void RecentProjectsList_UsesHostRegistryAndPreservesSharedList()
+        {
+            var list = (ISettingsList)new SettingsProxy(typeof(ISettingsList), _ =>
+                throw new AssertFailedException("Acquiring the registry must not modify the MRU list.")).GetTransparentProxy();
+            var acquisitions = 0;
+            var manager = (ISettingsManager)new SettingsProxy(typeof(ISettingsManager), call =>
+            {
+                Assert.AreEqual("GetOrCreateList", call.MethodName);
+                Assert.AreEqual("CodeContainers.Offline", call.Args[0]);
+                Assert.IsTrue((bool)call.Args[1]);
+                acquisitions++;
+                return list;
+            }).GetTransparentProxy();
+
+            Assert.AreSame(list, MruService.GetRecentProjectsList(manager));
+            Assert.AreSame(list, MruService.GetRecentProjectsList(manager));
+            Assert.AreEqual(2, acquisitions);
+            Assert.IsNull(MruService.GetRecentProjectsList(null));
+        }
+
+        private sealed class SettingsProxy(Type type, Func<IMethodCallMessage, object?> invoke) : RealProxy(type)
+        {
+            public override IMessage Invoke(IMessage message)
+            {
+                var call = (IMethodCallMessage)message;
+                return new ReturnMessage(invoke(call), null, 0, call.LogicalCallContext, call);
+            }
+        }
+
         [TestMethod]
         public async Task RepositoryRemoteUrls_ReadFreshMruPathsAcrossCheckoutLocationsWithoutFetchingAsync()
         {

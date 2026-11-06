@@ -190,14 +190,14 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     var server = AzureDevOpsServerHelper.GetServerUri(host);
                     if (server != null)
-                        profileTargets.Add((host, $"{server.AbsoluteUri.TrimEnd('/')}/_apis/connectionData?api-version=3.0"));
+                        profileTargets.Add((host, GetConnectionDataUrl(server.AbsoluteUri)));
                 }
             }
 
             var organizationUrls = await GetCloudProfileBaseUrlsAsync(context, cancellationToken);
             foreach (var organizationUrl in organizationUrls)
             {
-                var target = (AzureDevOpsServerHelper.CloudHost, $"{organizationUrl.TrimEnd('/')}/_apis/connectionData?api-version=3.0");
+                var target = (AzureDevOpsServerHelper.CloudHost, GetConnectionDataUrl(organizationUrl));
                 if (!profileTargets.Contains(target))
                     profileTargets.Add(target);
             }
@@ -411,7 +411,7 @@ namespace StartScreen.Services.DevHub.Providers
                             return new List<T>();
                         }
                         var identity = await _identityCache.GetAsync(credential,
-                            $"{GetBaseUrl(repo).TrimEnd('/')}/_apis/connectionData?api-version=3.0",
+                            GetConnectionDataUrl(GetBaseUrl(repo)),
                             (auth, url, token) => SendAuthenticatedGetAsync(host, auth, url, token), false, cancellationToken);
                         if (string.IsNullOrEmpty(identity))
                             throw new InvalidOperationException("Azure DevOps personal activity requires an authenticated identity.");
@@ -565,7 +565,7 @@ namespace StartScreen.Services.DevHub.Providers
                 // Newer numbers like 7.1 are preview on older on-prem releases and fail outright.
                 var apiVersion = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
                 var identity = await _identityCache.GetAsync(credential,
-                    $"{GetBaseUrl(repo).TrimEnd('/')}/_apis/connectionData?api-version=3.0",
+                    GetConnectionDataUrl(GetBaseUrl(repo)),
                     (auth, url, token) => SendAuthenticatedGetAsync(credentialHost, auth, url, token), false, cancellationToken);
                 string prJson = null;
 
@@ -711,6 +711,9 @@ namespace StartScreen.Services.DevHub.Providers
         }
 
         private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);
+
+        internal static string GetConnectionDataUrl(string baseUrl) =>
+            $"{baseUrl.TrimEnd('/')}/_apis/connectionData?api-version=3.0-preview";
 
         private static string GetProjectUrl(RemoteRepoIdentifier repo) =>
             $"{GetBaseUrl(repo).TrimEnd('/')}/{Uri.EscapeDataString(repo.Project)}";

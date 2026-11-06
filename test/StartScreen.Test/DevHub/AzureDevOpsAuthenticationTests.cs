@@ -14,6 +14,31 @@ namespace StartScreen.Test.DevHub
         private const string RepositoryId = "e2d789d1-67ab-405a-9704-c72759720867";
 
         [TestMethod]
+        [DataRow("https://dev.azure.com/org/project/_git/repo", "https://dev.azure.com/org")]
+        [DataRow("https://devdiv.visualstudio.com/DevDiv/_git/repo", "https://devdiv.visualstudio.com")]
+        [DataRow("https://tfs.contoso.com/tfs/Collection/Project/_git/Repo", "https://tfs.contoso.com/tfs/Collection")]
+        public async Task Authentication_ConnectionDataUsesPreviewForCloudLegacyAndServerAsync(string remote, string baseUrl)
+        {
+            var server = RemoteRepoIdentifier.TryParse(remote)!.IsAzureDevOpsServer;
+            var handler = new TestHttpMessageHandler((request, _) =>
+            {
+                if (request.RequestUri!.Query != "?api-version=3.0-preview")
+                    return new HttpResponseMessage(HttpStatusCode.BadRequest);
+                Assert.AreEqual(baseUrl + "/_apis/connectionData", request.RequestUri.GetLeftPart(UriPartial.Path));
+                return Json(Identity);
+            });
+            using var client = new HttpClient(handler);
+            var provider = new AzureDevOpsDevHubProvider(client, (_, _, _) => Task.FromResult(Credential(!server)), (_, _) => { },
+                _ => Task.FromResult<IReadOnlyList<string>>([remote]), () => server ? [baseUrl] : []);
+
+            var users = await provider.GetAuthenticatedUsersAsync(CancellationToken.None);
+
+            Assert.HasCount(1, users);
+            Assert.AreEqual("user@example.com", users[0].Username);
+            Assert.AreEqual(1, handler.RequestCount);
+        }
+
+        [TestMethod]
         [DataRow(true)]
         [DataRow(false)]
         public async Task Summary_UsesBearerForEntraAndBasicForPatOnEveryPageAsync(bool entra)
@@ -23,6 +48,8 @@ namespace StartScreen.Test.DevHub
             {
                 Assert.AreEqual(entra ? "Bearer" : "Basic", request.Headers.Authorization!.Scheme);
                 Assert.AreEqual(entra ? "token" : Convert.ToBase64String(Encoding.ASCII.GetBytes(":token")), request.Headers.Authorization.Parameter);
+                if (request.RequestUri!.AbsolutePath.Contains("connectionData"))
+                    Assert.AreEqual("?api-version=3.0-preview", request.RequestUri.Query);
                 return Json(request.RequestUri!.AbsolutePath.Contains("connectionData") ? Identity : "{\"value\":[]}");
             });
             using var client = new HttpClient(handler);
@@ -65,6 +92,8 @@ namespace StartScreen.Test.DevHub
             {
                 Assert.AreEqual(entra ? "Bearer" : "Basic", request.Headers.Authorization!.Scheme);
                 var path = request.RequestUri!.AbsolutePath;
+                if (path.Contains("connectionData"))
+                    Assert.AreEqual("?api-version=3.0-preview", request.RequestUri.Query);
                 return Json(path.EndsWith("/repositories/repo") ? $"{{\"id\":\"{RepositoryId}\"}}"
                     : path.EndsWith("/wiql") ? "{\"workItems\":[]}"
                     : path.Contains("connectionData") ? Identity : "{\"value\":[]}");

@@ -34,6 +34,10 @@ and avoids resetting it when the matching items and their groups have not change
 The saved recent-project column width is applied before the first render, so it
 does not shift when background content loads.
 Dev Hub does not read its cache or authenticate providers when disabled.
+Recent projects use the host's code-container registry so its persistence serializer
+remains compatible across Visual Studio versions. An initial MRU failure is logged
+without preventing Dev Hub or news from loading. Azure DevOps identity requests use
+the preview version required by the connection-data endpoint.
 
 Each dashboard refresh discovers its repository context once and shares that
 snapshot between personal and repository activity queries. Repository-detail

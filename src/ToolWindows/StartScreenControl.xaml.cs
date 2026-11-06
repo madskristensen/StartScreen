@@ -134,10 +134,7 @@ namespace StartScreen.ToolWindows
                 // Wait for MRU to finish so secondary loads (DevHub, news) don't
                 // contend with the MRU paint. The DataContext is already bound,
                 // so MRU items render the moment LoadMruAsync completes.
-                if (_loadTask.Task.IsCanceled)
-                    await _viewModel.LoadMruAsync();
-                else
-                    await _loadTask;
+                await LoadInitialMruAsync(_loadTask, _viewModel.LoadMruAsync, cancellationToken);
 
                 // Let rendering and pending user input run before secondary sections start.
                 await StartScreenPackage.BackgroundTaskFactory.YieldAsync(
@@ -168,6 +165,22 @@ namespace StartScreen.ToolWindows
         private void ReleaseNotesLink_Click(object sender, RoutedEventArgs e)
         {
             VS.Commands.ExecuteAsync("Help.ReleaseNotes").FileAndForget(nameof(StartScreenControl));
+        }
+
+        internal static async Task LoadInitialMruAsync(JoinableTask loadTask, Func<Task> reload, CancellationToken cancellationToken)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (loadTask.Task.IsCanceled || loadTask.Task.IsFaulted)
+                    await reload();
+                else
+                    await loadTask;
+            }
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+            }
         }
 
         internal static void ApplyInitialMruWidth(ColumnDefinition column, double splitterPosition)

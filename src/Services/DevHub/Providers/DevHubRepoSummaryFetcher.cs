@@ -38,7 +38,7 @@ namespace StartScreen.Services.DevHub.Providers
                 var baseUrl = (repo.BaseUrl ?? $"https://dev.azure.com/{Uri.EscapeDataString(repo.Owner)}").TrimEnd('/');
                 var apiVersion = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
                 var identityUrl = gitHub ? "https://api.github.com/user"
-                    : $"{baseUrl}/_apis/connectionData?api-version=3.0";
+                    : AzureDevOpsDevHubProvider.GetConnectionDataUrl(baseUrl);
                 var identity = identityCache != null
                     ? await identityCache.GetAsync(credential, identityUrl, send, gitHub, cancellationToken)
                     : await GetIdentityAsync(credential, identityUrl, send, gitHub, cancellationToken);
