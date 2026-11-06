@@ -156,13 +156,14 @@ namespace StartScreen.Models.DevHub
             {
                 var org = host.Substring(0, host.IndexOf('.'));
                 var parts = path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 3 && parts[1].Equals("_git", StringComparison.OrdinalIgnoreCase))
+                var projectIndex = parts.Length > 1 && parts[0].Equals("DefaultCollection", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                if (parts.Length >= projectIndex + 3 && parts[projectIndex + 1].Equals("_git", StringComparison.OrdinalIgnoreCase))
                 {
                     return new RemoteRepoIdentifier(
                         "dev.azure.com",
                         org,
-                        parts[2],
-                        parts[0],
+                        parts[projectIndex + 2],
+                        parts[projectIndex],
                         baseUrl: authority);
                 }
                 if (parts.Length >= 1)

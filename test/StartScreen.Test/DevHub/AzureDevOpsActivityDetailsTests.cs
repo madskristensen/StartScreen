@@ -17,6 +17,55 @@ namespace StartScreen.Test.DevHub
         private static readonly RemoteRepoIdentifier _repo = new("dev.azure.com", "org", "repo", "project");
 
         [TestMethod]
+        public async Task PersonalActivity_QueriesAliasedCloudProjectOnlyOnceAsync()
+        {
+            var buildRequests = 0;
+            using var client = Client(request =>
+            {
+                var uri = request.RequestUri!;
+                if (uri.AbsolutePath.EndsWith("/builds"))
+                    buildRequests++;
+                return DefaultResponse(uri);
+            });
+            var provider = new AzureDevOpsDevHubProvider(client,
+                (_, _, _) => Task.FromResult(new DevHubCredential("user", "test-token")), (_, _) => { },
+                _ => Task.FromResult<IReadOnlyList<string>>(new[]
+                {
+                    "https://dev.azure.com/org/project/_git/repo",
+                    "https://org.visualstudio.com/DefaultCollection/project/_git/another-repo",
+                }));
+
+            await provider.GetUserCiRunsAsync(new DevHubActivityOptions(), CancellationToken.None);
+
+            Assert.AreEqual(1, buildRequests);
+        }
+
+        [TestMethod]
+        public async Task PullRequestMetadata_UsesRepositoryGuidFromFeedAsync()
+        {
+            var threadsRead = false;
+            using var client = Client(request =>
+            {
+                var uri = request.RequestUri!;
+                if (uri.AbsolutePath.EndsWith("/pullrequests"))
+                    return uri.Query.Contains("reviewerId=") ? Values() : Values(PullRequest(1, draft: true));
+                if (uri.AbsolutePath.EndsWith("/threads"))
+                {
+                    Assert.AreEqual($"/org/project/_apis/git/repositories/{RepositoryId}/pullRequests/1/threads", uri.AbsolutePath);
+                    threadsRead = true;
+                    return Json("{\"value\":[]}");
+                }
+                return DefaultResponse(uri);
+            });
+
+            var result = await Provider(client).FetchActivityAsync(DevHubActivityKind.PullRequests, new DevHubActivityOptions(), null!, CancellationToken.None);
+
+            Assert.IsTrue(threadsRead);
+            Assert.AreEqual(DevHubActivityStatus.Success, result.Status);
+            Assert.AreEqual(0, result.PullRequests.Single().UnresolvedThreadCount);
+        }
+
+        [TestMethod]
         public async Task PersonalPullRequests_PagesAuthoredBeyondOneHundredAndFindsProjectReviewRequestsAsync()
         {
             var pages = new List<int>();
@@ -464,7 +513,7 @@ namespace StartScreen.Test.DevHub
                 isDraft = draft,
                 createdBy = new { displayName = "Author", id = author },
                 reviewers = reviewer ? new[] { new { id = "me", vote = 0 } } : new[] { new { id = "approver", vote = 10 } },
-                repository = new { name = repository, project = new { id = ProjectId } },
+                repository = new { id = RepositoryId, name = repository, project = new { id = ProjectId } },
                 sourceRefName = "refs/heads/feature",
                 targetRefName = "refs/heads/main",
                 mergeStatus = "succeeded",

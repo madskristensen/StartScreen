@@ -100,6 +100,22 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow("https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_git/VSWhatsNewContent")]
+        [DataRow("https://devdiv.visualstudio.com/defaultcollection/DevDiv/_git/_optimized/VSWhatsNewContent")]
+        public void ParseRemoteUrl_LegacyCollectionPrefixResolvesActualProject(string url)
+        {
+            var result = _provider.ParseRemoteUrl(url);
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual("devdiv", result.Owner);
+            Assert.AreEqual("DevDiv", result.Project);
+            Assert.AreEqual("VSWhatsNewContent", result.Repo);
+            Assert.AreEqual("https://devdiv.visualstudio.com", result.BaseUrl);
+            Assert.IsFalse(result.IsAzureDevOpsServer);
+            Assert.AreEqual(RemoteRepoIdentifier.TryParse("https://dev.azure.com/devdiv/DevDiv/_git/VSWhatsNewContent"), result);
+        }
+
+        [TestMethod]
         public void ParseRemoteUrl_NonAdoUrl_ReturnsNull()
         {
             var result = _provider.ParseRemoteUrl("https://github.com/owner/repo.git");

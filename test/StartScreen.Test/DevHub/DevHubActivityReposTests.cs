@@ -39,6 +39,21 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public async System.Threading.Tasks.Task Ado_DeduplicatesLegacyCollectionAndModernRemotesAsync()
+        {
+            var repos = await _ado.GetActivityReposAsync(new[]
+            {
+                "https://devdiv.visualstudio.com/DefaultCollection/DevDiv/_git/Repo",
+                "https://dev.azure.com/devdiv/DevDiv/_git/Repo",
+                "git@ssh.dev.azure.com:v3/devdiv/DevDiv/Repo",
+            }, CancellationToken.None);
+
+            Assert.HasCount(1, repos);
+            Assert.AreEqual("DevDiv", repos[0].Project);
+            Assert.AreEqual("Repo", repos[0].Repo);
+        }
+
+        [TestMethod]
         public async System.Threading.Tasks.Task Ado_IgnoresNonAdoUrlsAsync()
         {
             var urls = new[]

@@ -54,8 +54,9 @@ namespace StartScreen.Services.DevHub
             if (!response.IsSuccessStatusCode)
             {
                 Failed(response.StatusCode == HttpStatusCode.Unauthorized);
-                var host = response.RequestMessage?.RequestUri?.Host;
-                Warning($"{host ?? "The activity service"} returned HTTP {(int)response.StatusCode}. Refresh to retry.");
+                var uri = response.RequestMessage?.RequestUri;
+                var endpoint = uri == null ? "The activity service" : uri.Host + uri.AbsolutePath;
+                Warning($"{endpoint} returned HTTP {(int)response.StatusCode}. Refresh to retry.");
             }
             return response;
         }

@@ -395,7 +395,7 @@ namespace StartScreen.Services.DevHub.Providers
                     DevHubActivityRequest.Failed();
                 var remotes = options.RefreshContext?.RemoteUrls ?? await _getRemoteUrls(cancellationToken);
                 var repos = await GetActivityReposAsync(remotes, cancellationToken);
-                var projects = repos.GroupBy(repo => $"{GetBaseUrl(repo)}/{repo.Project}", StringComparer.OrdinalIgnoreCase)
+                var projects = repos.GroupBy(repo => $"{(repo.IsAzureDevOpsServer ? GetBaseUrl(repo) : $"https://dev.azure.com/{repo.Owner}")}/{repo.Project}", StringComparer.OrdinalIgnoreCase)
                     .Select(group => group.First()).ToList();
                 using var semaphore = new SemaphoreSlim(3, 3);
                 var results = await Task.WhenAll(projects.Select(async repo =>
@@ -966,7 +966,7 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     var repo = pr.RepoIdentifier;
                     var version = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
-                    var prUrl = $"{GetProjectUrl(repo)}/_apis/git/repositories/{Uri.EscapeDataString(repo.Repo)}/pullRequests/{pr.NumericId}";
+                    var prUrl = $"{GetProjectUrl(repo)}/_apis/git/repositories/{Uri.EscapeDataString(pr.AzureDevOpsRepositoryId ?? repo.Repo)}/pullRequests/{pr.NumericId}";
                     await OptionalAsync(async () =>
                     {
                         using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
@@ -1219,6 +1219,9 @@ namespace StartScreen.Services.DevHub.Providers
                     {
                         ProviderName = "Azure DevOps",
                         RepoIdentifier = prRepo,
+                        AzureDevOpsRepositoryId = pr.TryGetProperty("repository", out var repository)
+                            && Guid.TryParse(ReadString(repository, "id"), out var repositoryId) && repositoryId != Guid.Empty
+                            ? repositoryId.ToString("D") : null,
                         RepoDisplayName = prRepo.DisplayName,
                         Title = pr.GetProperty("title").GetString(),
                         Number = $"!{id}",

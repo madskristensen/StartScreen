@@ -30,6 +30,8 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public RemoteRepoIdentifier RepoIdentifier { get; set; }
 
+        internal string AzureDevOpsRepositoryId { get; set; }
+
         /// <summary>
         /// PR title.
         /// </summary>

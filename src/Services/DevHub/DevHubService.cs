@@ -693,12 +693,13 @@ namespace StartScreen.Services.DevHub
             var seen = new Dictionary<string, DevHubPullRequest>(StringComparer.OrdinalIgnoreCase);
             foreach (var pr in repositoryPullRequests.Concat(pullRequests))
             {
-                if (string.IsNullOrEmpty(pr.WebUrl))
+                var key = GetActivityItemKey(pr.WebUrl, pr.RepoIdentifier, pr.NumericId, false);
+                if (string.IsNullOrEmpty(key))
                 {
                     yield return pr;
                     continue;
                 }
-                if (seen.TryGetValue(pr.WebUrl, out var existing))
+                if (seen.TryGetValue(key, out var existing))
                 {
                     existing.IsAuthoredByCurrentUser |= pr.IsAuthoredByCurrentUser;
                     existing.IsAssignedToCurrentUser |= pr.IsAssignedToCurrentUser;
@@ -711,7 +712,7 @@ namespace StartScreen.Services.DevHub
                     existing.ChecksUrl = existing.ChecksUrl ?? pr.ChecksUrl;
                     continue;
                 }
-                seen.Add(pr.WebUrl, pr);
+                seen.Add(key, pr);
                 yield return pr;
             }
         }
@@ -719,12 +720,38 @@ namespace StartScreen.Services.DevHub
         internal static IEnumerable<DevHubIssue> MergeIssues(IEnumerable<DevHubIssue> issues, IEnumerable<DevHubIssue> repositoryIssues)
         {
             // Project-level ADO results may include the same work item as linked repository activity.
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seen = new Dictionary<string, DevHubIssue>(StringComparer.OrdinalIgnoreCase);
             foreach (var issue in repositoryIssues.Concat(issues))
             {
-                if (string.IsNullOrEmpty(issue.WebUrl) || seen.Add(issue.WebUrl))
+                var key = GetActivityItemKey(issue.WebUrl, issue.RepoIdentifier, issue.NumericId, true);
+                if (string.IsNullOrEmpty(key))
+                {
                     yield return issue;
+                    continue;
+                }
+                if (seen.TryGetValue(key, out var existing))
+                {
+                    existing.IsAuthoredByCurrentUser |= issue.IsAuthoredByCurrentUser;
+                    existing.IsAssignedToCurrentUser |= issue.IsAssignedToCurrentUser;
+                    existing.IsMentioned |= issue.IsMentioned;
+                    continue;
+                }
+                seen.Add(key, issue);
+                yield return issue;
             }
+        }
+
+        private static string GetActivityItemKey(string webUrl, RemoteRepoIdentifier repo, int id, bool workItem)
+        {
+            if (string.IsNullOrEmpty(webUrl) || repo == null || id <= 0)
+                return webUrl;
+            if (!repo.IsAzureDevOpsServer && !string.Equals(repo.Host, AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                return webUrl;
+            var collection = repo.IsAzureDevOpsServer ? repo.BaseUrl?.TrimEnd('/') : $"https://dev.azure.com/{repo.Owner}";
+            if (string.IsNullOrEmpty(collection))
+                return webUrl;
+            // ADO work item IDs are collection-wide; PRs retain repository scope.
+            return workItem ? $"{collection}/workitem/{id}" : $"{collection}/{repo.Project}/_git/{repo.Repo}/pullrequest/{id}";
         }
 
         /// <summary>

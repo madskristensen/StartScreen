@@ -127,6 +127,12 @@ without raw exception details or boolean status dumps. Unchanged refresh status
 messages are not repeated as activity sources finish loading. Exceptions are
 logged with the VSIX Community Toolkit's `ex.LogAsync()` in the **Extensions**
 Output pane, keeping stack traces separate from Start Screen status messages.
+Activity HTTP failures identify the endpoint path without query parameters.
+Legacy Azure DevOps `DefaultCollection` remotes resolve to their actual project
+and repository. Personal project queries coalesce modern and legacy cloud URLs,
+and activity merges use Azure DevOps item identities so cached and fresh URL
+aliases do not produce duplicate Attention cards. PR metadata requests use the
+repository GUID returned by Azure DevOps when available.
 Sign-in recovery links open **File > Account Settings** for Visual Studio-backed
 Azure DevOps and Feedback authentication. GitHub reconnect uses Git Credential
 Manager. Organization SAML SSO restrictions on optional metadata are logged only

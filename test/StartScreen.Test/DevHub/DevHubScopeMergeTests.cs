@@ -137,6 +137,86 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public void MergeActivity_CloudUrlAliasesProduceOneAttentionCardPerItem()
+        {
+            var legacyRepo = RemoteRepoIdentifier.TryParse("https://devdiv.visualstudio.com/DevDiv/_git/VSEditor");
+            var modernRepo = RemoteRepoIdentifier.TryParse("https://dev.azure.com/devdiv/DevDiv/_git/VSEditor");
+            var personalPr = new DevHubPullRequest
+            {
+                RepoIdentifier = modernRepo, NumericId = 791225, IsAuthoredByCurrentUser = true,
+                WebUrl = "https://dev.azure.com/devdiv/DevDiv/_git/VSEditor/pullrequest/791225",
+            };
+            var repositoryPr = new DevHubPullRequest
+            {
+                RepoIdentifier = legacyRepo, NumericId = 791225, Status = "open", CiStatus = "failure", UpdatedAt = DateTime.UtcNow,
+                WebUrl = "https://devdiv.visualstudio.com/DevDiv/_git/VSEditor/pullrequest/791225",
+            };
+            var personalIssue = new DevHubIssue
+            {
+                RepoIdentifier = modernRepo, NumericId = 3078702, IsAssignedToCurrentUser = true,
+                WebUrl = "https://dev.azure.com/devdiv/DevDiv/_workitems/edit/3078702",
+            };
+            var repositoryIssue = new DevHubIssue
+            {
+                RepoIdentifier = legacyRepo, NumericId = 3078702, State = "Resolved", UpdatedAt = DateTime.UtcNow,
+                WebUrl = "https://devdiv.visualstudio.com/DevDiv/_workitems/edit/3078702",
+            };
+
+            var prs = DevHubService.MergePullRequests([personalPr], [repositoryPr]).ToList();
+            var issues = DevHubService.MergeIssues([personalIssue], [repositoryIssue]).ToList();
+            var attention = DevHubWorkItem.Filter(DevHubWorkItem.GetMyWork(prs, issues, []), DevHubWorkItemKind.All, true);
+
+            Assert.AreSame(repositoryPr, prs.Single());
+            Assert.IsTrue(prs.Single().IsAuthoredByCurrentUser);
+            Assert.AreSame(repositoryIssue, issues.Single());
+            Assert.IsTrue(issues.Single().IsAssignedToCurrentUser);
+            Assert.HasCount(2, attention);
+        }
+
+        [TestMethod]
+        public void MergeIssues_WorkItemIdentityIsCollectionWideButNotCrossOrganization()
+        {
+            var first = new DevHubIssue
+            {
+                RepoIdentifier = new RemoteRepoIdentifier("dev.azure.com", "org", "one", "project"), NumericId = 1,
+                WebUrl = "https://dev.azure.com/org/project/_workitems/edit/1",
+            };
+            var linked = new DevHubIssue
+            {
+                RepoIdentifier = new RemoteRepoIdentifier("dev.azure.com", "org", "two", "other-project"), NumericId = 1,
+                WebUrl = "https://org.visualstudio.com/other-project/_workitems/edit/1",
+            };
+            var other = new DevHubIssue
+            {
+                RepoIdentifier = new RemoteRepoIdentifier("dev.azure.com", "other-org", "one", "project"), NumericId = 1,
+                WebUrl = "https://dev.azure.com/other-org/project/_workitems/edit/1",
+            };
+
+            var merged = DevHubService.MergeIssues([first, other], [linked]).ToList();
+
+            CollectionAssert.AreEqual(new[] { linked, other }, merged);
+        }
+
+        [TestMethod]
+        [DataRow("https://tfs.contoso.com/tfs/First", "https://tfs.contoso.com/tfs/Second")]
+        [DataRow("https://tfs.contoso.com:8080/tfs/First", "https://tfs.contoso.com:8081/tfs/First")]
+        public void MergeIssues_ServerCollectionsRemainDistinct(string firstUrl, string secondUrl)
+        {
+            var first = new DevHubIssue
+            {
+                RepoIdentifier = new RemoteRepoIdentifier("tfs.contoso.com", "First", "repo", "project", firstUrl, true),
+                NumericId = 1, WebUrl = firstUrl + "/project/_workitems/edit/1",
+            };
+            var second = new DevHubIssue
+            {
+                RepoIdentifier = new RemoteRepoIdentifier("tfs.contoso.com", "First", "repo", "project", secondUrl, true),
+                NumericId = 1, WebUrl = secondUrl + "/project/_workitems/edit/1",
+            };
+
+            Assert.HasCount(2, DevHubService.MergeIssues([first], [second]).ToList());
+        }
+
+        [TestMethod]
         public void MergeRepoDetail_WarningsRemainScopedAndClearAfterRecovery()
         {
             var dashboard = new DevHubDashboard();

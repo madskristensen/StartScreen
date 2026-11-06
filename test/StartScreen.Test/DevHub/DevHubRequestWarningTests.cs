@@ -49,7 +49,7 @@ namespace StartScreen.Test.DevHub
             }, items => items.Count > 0, CancellationToken.None);
 
             Assert.AreEqual(DevHubActivityStatus.Unavailable, result.Status);
-            Assert.AreEqual("api.github.com returned HTTP 403. Refresh to retry.", result.Message);
+            Assert.AreEqual("api.github.com/search/issues returned HTTP 403. Refresh to retry.", result.Message);
             Assert.IsEmpty(result.Value);
         }
 
