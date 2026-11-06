@@ -6,7 +6,7 @@ namespace StartScreen.Services
     // Keep the optional harness dependency late-bound, like CopilotHarnessAdapter.
     internal static class CopilotChatLauncher
     {
-        internal static async Task StartAsync(object backends, object navigator, string prompt, CancellationToken cancellationToken)
+        internal static async System.Threading.Tasks.Task<string> StartAsync(object backends, object navigator, string prompt, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(prompt))
                 throw new ArgumentException("A Copilot prompt is required.", nameof(prompt));
@@ -56,6 +56,38 @@ namespace StartScreen.Services
                 var error = CopilotHarnessAdapter.Read(response, "Error");
                 var message = error == null ? null : CopilotHarnessAdapter.Read(error, "Message") as string;
                 throw new InvalidOperationException("Copilot could not complete the request. " + message);
+            }
+            return ((Guid)CopilotHarnessAdapter.Read(CopilotHarnessAdapter.Read(session, "SessionId"), "Guid")).ToString("D");
+        }
+
+        internal static async System.Threading.Tasks.Task<bool> TryResumeAsync(object backends, object navigator, string sessionId, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Exception failure = null;
+            var gate = new object();
+            using var adapter = new CopilotHarnessAdapter(callback =>
+            {
+                lock (gate)
+                    callback();
+            }, error => failure = error);
+            lock (gate)
+                adapter.Start(backends);
+            while (true)
+            {
+                lock (gate)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (failure != null)
+                        throw new InvalidOperationException("Copilot conversations could not be verified.", failure);
+                    if (adapter.HasSession(sessionId))
+                    {
+                        adapter.OpenSession(navigator, sessionId);
+                        return true;
+                    }
+                    if (adapter.IsReady)
+                        return false;
+                }
+                await System.Threading.Tasks.Task.Delay(100, cancellationToken);
             }
         }
 

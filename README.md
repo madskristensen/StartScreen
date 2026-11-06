@@ -515,6 +515,13 @@ and sends a prompt beginning with `Fix <issue URL>`. Failed build cards offer
 and a failure-log link when supplied by the provider. These actions use the current
 VS workspace and ask Copilot to verify the repository before making changes.
 They do not clone repositories, switch branches, or grant tool permissions.
+Start Screen remembers the most recent conversation it successfully started for
+each issue or exact failed build run. Its action becomes **Continue in Copilot**,
+which verifies the conversation in the current VS backend and opens it without
+sending another prompt. **Start new Copilot chat** remains available. If the saved
+conversation is absent from the current catalog, starting a replacement requires
+confirmation. Associations are bounded to 500 entries and stored locally alongside
+Copilot metadata; they contain item URLs and conversation IDs, not chat messages.
 Access to issue details and private build logs depends on the tools and accounts
 available to Copilot. The optional, version-sensitive VS harness contracts must
 be installed; unsupported contracts and failed requests are reported explicitly.

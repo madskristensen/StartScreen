@@ -79,6 +79,14 @@
         <CommandFlag>TextChanges</CommandFlag>
         <Strings><ButtonText>Fix with Copilot</ButtonText></Strings>
       </Button>
+      <Button guid="StartScreen" id="DevHubNewCopilotChat" priority="0x0210" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemActions"/>
+        <Icon guid="ImageCatalogGuid" id="GitHubCopilot"/>
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Start new Copilot chat</ButtonText></Strings>
+      </Button>
       <Button guid="StartScreen" id="DevHubCopyUrl" priority="0x0100" type="Button">
         <Parent guid="StartScreen" id="DevHubWorkItemCopy"/>
         <Icon guid="ImageCatalogGuid" id="Copy"/>
@@ -183,6 +191,7 @@
       <IDSymbol name="DevHubShowAllRepos" value="0x0124" />
       <IDSymbol name="DevHubReviewInVisualStudio" value="0x0125" />
       <IDSymbol name="DevHubRequestCopilotReview" value="0x0126" />
+      <IDSymbol name="DevHubNewCopilotChat" value="0x0127" />
     </GuidSymbol>
     
     <GuidSymbol name="autoload" value="{4add43ae-71e4-4eec-b622-2e8ed3452025}" />

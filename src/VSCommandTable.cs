@@ -49,5 +49,6 @@ namespace StartScreen
         public const int DevHubShowAllRepos = 0x0124;
         public const int DevHubReviewInVisualStudio = 0x0125;
         public const int DevHubRequestCopilotReview = 0x0126;
+        public const int DevHubNewCopilotChat = 0x0127;
     }
 }

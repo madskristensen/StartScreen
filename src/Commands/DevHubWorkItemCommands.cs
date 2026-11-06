@@ -8,6 +8,7 @@ namespace StartScreen.Commands
         internal static DevHubWorkItemMenu Current { get; set; }
         internal DevHubWorkItem Item { get; set; }
         internal bool IsScoped { get; set; }
+        internal string CopilotSessionId { get; set; }
         internal Func<int, Task> ExecuteActionAsync { get; set; }
 
         internal static void Update(OleMenuCommand command, int id)
@@ -16,6 +17,7 @@ namespace StartScreen.Commands
             command.Visible = target != null && (id switch
             {
                 PackageIds.DevHubFixWithCopilot => CopilotWorkItemPrompt.CanStartChat(target.Item),
+                PackageIds.DevHubNewCopilotChat => CopilotWorkItemPrompt.CanStartChat(target.Item) && target.CopilotSessionId != null,
                 PackageIds.DevHubReviewInVisualStudio => target.Item.IsPullRequest
                     && Uri.TryCreate(target.Item.WebUrl, UriKind.Absolute, out var uri)
                     && PullRequestNavigationService.IsNativePullRequestUrl(uri),
@@ -32,7 +34,8 @@ namespace StartScreen.Commands
             if (id == PackageIds.DevHubOpenInBrowser)
                 command.Text = target?.Item.IsPullRequest == true ? "Review on the web" : "Open in Browser";
             if (id == PackageIds.DevHubFixWithCopilot)
-                command.Text = target?.Item.IsFailedBuild == true ? "Investigate with Copilot" : "Fix with Copilot";
+                command.Text = target?.CopilotSessionId != null ? "Continue in Copilot"
+                    : target?.Item.IsFailedBuild == true ? "Investigate with Copilot" : "Fix with Copilot";
         }
 
     [Command(PackageIds.DevHubReviewInVisualStudio)]

@@ -20,6 +20,8 @@ namespace StartScreen.ToolWindows.Controls
             }
             try
             {
+                var sessionId = CopilotWorkItemPrompt.CanStartChat(item)
+                    ? await CopilotWorkItemSessions.FindAsync(CopilotWorkItemSessions.DefaultFile, item, StartScreenPackage.ShutdownToken) : null;
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
                 if (_isDisposed || !IsVisible)
                     return;
@@ -28,6 +30,7 @@ namespace StartScreen.ToolWindows.Controls
                 DevHubWorkItemMenu.Current = new DevHubWorkItemMenu
                 {
                     Item = item,
+                    CopilotSessionId = sessionId,
                     IsScoped = _scopedRepo != null,
                     ExecuteActionAsync = id => ExecuteWorkItemActionAsync(item, id),
                 };
@@ -64,7 +67,8 @@ namespace StartScreen.ToolWindows.Controls
                         await PullRequestNavigationService.OpenAsync(item.WebUrl);
                         break;
                     case PackageIds.DevHubFixWithCopilot:
-                        await StartWorkItemChatAsync(CopilotWorkItemPrompt.Create(item));
+                    case PackageIds.DevHubNewCopilotChat:
+                        await StartWorkItemChatAsync(item, id == PackageIds.DevHubNewCopilotChat);
                         break;
                     case PackageIds.DevHubRequestCopilotReview:
                         var confirmed = await VS.MessageBox.ShowConfirmAsync("Request Copilot Review",
@@ -97,8 +101,11 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
-        private async Task StartWorkItemChatAsync(string prompt)
+        private async Task StartWorkItemChatAsync(DevHubWorkItem item, bool startNew)
         {
+            var sessionId = startNew ? null : await CopilotWorkItemSessions.FindAsync(
+                CopilotWorkItemSessions.DefaultFile, item, StartScreenPackage.ShutdownToken);
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(StartScreenPackage.ShutdownToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(15));
             _copilotComponentModel = await VS.GetServiceAsync<SComponentModel, IComponentModel>()
@@ -112,7 +119,16 @@ namespace StartScreen.ToolWindows.Controls
             object navigator;
             while ((navigator = CopilotHarnessAdapter.Read(registry, "Current")) == null)
                 await System.Threading.Tasks.Task.Delay(100, timeout.Token);
-            await CopilotChatLauncher.StartAsync(backends, navigator, prompt, StartScreenPackage.ShutdownToken);
+            if (sessionId != null)
+            {
+                if (await CopilotChatLauncher.TryResumeAsync(backends, navigator, sessionId, timeout.Token))
+                    return;
+                if (!await VS.MessageBox.ShowConfirmAsync("Copilot conversation unavailable",
+                    "The associated conversation is no longer available in the current Copilot catalog. Start a new chat for this item?"))
+                    return;
+            }
+            sessionId = await CopilotChatLauncher.StartAsync(backends, navigator, CopilotWorkItemPrompt.Create(item), StartScreenPackage.ShutdownToken);
+            await CopilotWorkItemSessions.SaveAsync(CopilotWorkItemSessions.DefaultFile, item, sessionId, StartScreenPackage.ShutdownToken);
         }
     }
 }

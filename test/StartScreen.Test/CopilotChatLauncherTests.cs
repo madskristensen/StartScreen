@@ -18,7 +18,9 @@ namespace StartScreen.Test
                 return Task.FromResult(new FakeChatResponse());
             };
 
-            await CopilotChatLauncher.StartAsync(new FakeBackends(backend), navigator, "Fix https://github.com/o/r/issues/1", CancellationToken.None);
+            var id = await CopilotChatLauncher.StartAsync(new FakeBackends(backend), navigator, "Fix https://github.com/o/r/issues/1", CancellationToken.None);
+
+            Assert.AreEqual(backend.NextSession.SessionId.Guid.ToString("D"), id);
 
             Assert.HasCount(1, backend.Created);
             Assert.AreNotSame(existing, navigator.OpenedSession);
@@ -36,6 +38,38 @@ namespace StartScreen.Test
             Assert.AreEqual("StartScreen", request.Feature?.Value);
             Assert.IsNull(existing.Request);
             Assert.AreEqual(0, backend.NextSession.DisposeCount);
+        }
+
+        [TestMethod]
+        public async Task Resume_VerifiesAndOpensTheExistingSessionWithoutSendingOrCreatingAsync()
+        {
+            var backend = new FakeBackend();
+            var session = new FakeSession();
+            backend.Sessions.Replace(session);
+            var navigator = new FakeNavigator();
+            Assert.IsTrue(await CopilotChatLauncher.TryResumeAsync(new FakeBackends(backend), navigator,
+                session.SessionId.Guid.ToString("D"), CancellationToken.None));
+            Assert.AreSame(session, navigator.OpenedSession);
+            Assert.IsTrue(navigator.UserInitiated);
+            Assert.IsEmpty(backend.Created);
+            Assert.IsNull(session.Request);
+            Assert.AreEqual(0, session.DisposeCount);
+            Assert.AreEqual(0, session.Title.SubscriberCount);
+        }
+
+        [TestMethod]
+        public async Task Resume_MissingAndCancelledSessionsNeverCreateOrSendAsync()
+        {
+            var backend = new FakeBackend();
+            var navigator = new FakeNavigator();
+            Assert.IsFalse(await CopilotChatLauncher.TryResumeAsync(new FakeBackends(backend), navigator,
+                Guid.NewGuid().ToString("D"), CancellationToken.None));
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => CopilotChatLauncher.TryResumeAsync(
+                new FakeBackends(backend), navigator, Guid.NewGuid().ToString("D"), cancellation.Token));
+            Assert.IsNull(navigator.OpenedSession);
+            Assert.IsEmpty(backend.Created);
         }
 
         [TestMethod]

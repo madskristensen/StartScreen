@@ -22,6 +22,7 @@ namespace StartScreen.Test
         [TestMethod]
         [DataRow("DevHubFixWithCopilot")]
         [DataRow("DevHubRequestCopilotReview")]
+        [DataRow("DevHubNewCopilotChat")]
         public void CopilotMenuCommands_UseTheGitHubCopilotMoniker(string commandId)
         {
             using var stream = typeof(DevHubCopilotActionsTests).Assembly.GetManifestResourceStream("VSCommandTable.vsct");
@@ -101,6 +102,20 @@ namespace StartScreen.Test
         public void InvalidIssueLinks_AreRejected(string url)
         {
             Assert.ThrowsExactly<ArgumentException>(() => CopilotWorkItemPrompt.Create(Issue(url)));
+        }
+
+        [TestMethod]
+        public void AssociatedItems_OfferContinueAndAnExplicitNewChat()
+        {
+            SetMenu(Issue("https://github.com/owner/repo/issues/42"));
+            Assert.IsFalse(Command(PackageIds.DevHubNewCopilotChat).Visible);
+            DevHubWorkItemMenu.Current.CopilotSessionId = Guid.NewGuid().ToString("D");
+            Assert.AreEqual("Continue in Copilot", Command(PackageIds.DevHubFixWithCopilot).Text);
+            Assert.IsTrue(Command(PackageIds.DevHubNewCopilotChat).Visible);
+            Assert.IsTrue(Command(PackageIds.DevHubNewCopilotChat).Enabled);
+            SetMenu(Build("failure"));
+            Assert.AreEqual("Investigate with Copilot", Command(PackageIds.DevHubFixWithCopilot).Text);
+            Assert.IsFalse(Command(PackageIds.DevHubNewCopilotChat).Visible);
         }
 
         [TestMethod]
