@@ -148,6 +148,15 @@ layouts. News and video cards share click and keyboard activation rules and
 live-themed hover/focus behavior. Recent projects retain selection and
 double-click opening.
 
+Arrow keys move between adjacent activity blades and News & updates. In activity,
+Up/Down move between the heading, selected filter, and cards; Left/Right select
+filters and move to the neighboring blade at the ends of the filter row. In News,
+Left/Right navigate the selected tab's card columns, and Up/Down navigate rows.
+Up from the first row returns to the tab header; Left/Right on headers select
+tabs, and Down enters their content. Left at the first column or first tab
+returns to Team activity. This also works for Feedback and Release notes, and
+empty tabs remain reachable through their headers.
+
 **See real repository activity.** A small PR icon and count beside the branch show
 repository-wide open pull requests for supported GitHub and Azure DevOps repositories.
 Zero counts are hidden. Recent items use compact 32-pixel single-line rows;
@@ -293,6 +302,11 @@ State pills use green for fixed/completed, blue for consideration/review, crimso
 for more information needed, brown for investigation/roadmap, and gray for closed
 or other states. New and triaged tickets are also blue. Short API state names are
 shown as readable labels, including **Not enough info** and **Closed - Duplicate**.
+Labels also respect the ticket type: suggestions show **Under Review** where
+problem reports show **Under Consideration**. A pending fix is green and displays
+**Fixed - Pending Release** for problems or **Completed - Preview** for suggestions.
+Released suggestions display **Completed - Release**. Older cached tickets without
+type information are refreshed before display instead of guessing their labels.
 High Contrast mode uses system colors instead.
 Select a ticket title to open it in your browser. Tickets you both created and
 upvoted appear only once. All activity pages are checked; canceled votes and

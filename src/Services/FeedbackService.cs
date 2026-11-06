@@ -203,6 +203,12 @@ namespace StartScreen.Services
                 Title = title,
                 Url = uri.AbsoluteUri,
                 State = state == null ? "No status" : state.Replace('_', ' '),
+                Type = item.GetProperty("type").GetInt32() switch
+                {
+                    0 => FeedbackTicketType.Problem,
+                    3 => FeedbackTicketType.Suggestion,
+                    _ => throw new InvalidDataException("Developer Community returned an unsupported ticket type."),
+                },
                 Votes = item.GetProperty("totalVotes").GetInt32(),
                 IsCreatedByUser = created,
                 IsUpvotedByUser = voted,

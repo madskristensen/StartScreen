@@ -370,7 +370,8 @@ namespace StartScreen.ToolWindows
 
         private void MruItemControl_FocusDevHubRequested(object sender, EventArgs e)
         {
-            DevHubPanelControl.FocusFirstItem();
+            if (!DevHubPanelControl.FocusFirstItem(DevHubDefaultTab.MyWork))
+                FocusFirstNewsItem();
         }
 
         private void DevHubPanel_FocusMruRequested(object sender, EventArgs e)
@@ -383,6 +384,10 @@ namespace StartScreen.ToolWindows
             {
                 mru.RootBorder.Focus();
             }
+            else
+            {
+                SearchBox.Focus();
+            }
         }
 
         private void DevHubPanel_FocusNewsRequested(object sender, EventArgs e)
@@ -392,22 +397,17 @@ namespace StartScreen.ToolWindows
 
         private void FocusFirstNewsItem()
         {
-            if (ReferenceEquals(NewsTabs.SelectedItem, FeedbackTab))
-            {
-                TextBlock title = FindFirstControl<TextBlock>(FeedbackItems);
-                Hyperlink link = title?.Inlines.OfType<Hyperlink>().FirstOrDefault();
-                if (link != null)
-                    link.Focus();
-                else
-                    FeedbackTab.Focus();
-                return;
-            }
+            NewsKeyboardNavigation.FocusFirstItem(NewsTabs);
+        }
 
-            NewsItemControl firstNews = FindFirstControl<NewsItemControl>(NewsPanel);
-            if (firstNews != null)
-            {
-                firstNews.RootBorder.Focus();
-            }
+        private void NewsTabs_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.None)
+                e.Handled = NewsKeyboardNavigation.HandleKey(NewsTabs, Keyboard.FocusedElement as DependencyObject, e.Key, () =>
+                {
+                    if (!DevHubPanelControl.FocusFirstItem(DevHubDefaultTab.Incoming))
+                        DevHubPanel_FocusMruRequested(this, EventArgs.Empty);
+                });
         }
 
         private void DevHubPanel_ActivityOptionsChanged(object sender, EventArgs e)
@@ -855,63 +855,6 @@ namespace StartScreen.ToolWindows
             DevHubPanelControl.UpdateView(_workspaceDashboard ?? dashboard, ViewModel.SelectedRepository);
         }
 
-        private void NewsItemControl_FocusDevHubRequested(object sender, EventArgs e)
-        {
-            DevHubPanelControl.FocusFirstItem();
-        }
-
-        private void NewsItemControl_FocusYouTubeRequested(object sender, EventArgs e)
-        {
-            FocusFirstYouTubeItem();
-        }
-
-        private void YouTubeVideoControl_FocusNewsRequested(object sender, EventArgs e)
-        {
-            FocusTopOfSecondNewsColumn();
-        }
-
-        private void FocusFirstYouTubeItem()
-        {
-            YouTubeVideoControl firstYt = FindFirstControl<YouTubeVideoControl>(NewsPanel);
-            if (firstYt != null)
-            {
-                firstYt.RootBorder.Focus();
-            }
-        }
-
-        private void FocusTopOfSecondNewsColumn()
-        {
-            var allItems = new System.Collections.Generic.List<NewsItemControl>();
-            CollectNewsItemControls(NewsPanel, allItems);
-
-            if (allItems.Count >= 2)
-            {
-                // The second column starts at index 1 in a multi-column grid
-                allItems[1].RootBorder.Focus();
-            }
-            else if (allItems.Count > 0)
-            {
-                allItems[0].RootBorder.Focus();
-            }
-        }
-
-        private static void CollectNewsItemControls(DependencyObject parent, System.Collections.Generic.List<NewsItemControl> results)
-        {
-            var count = VisualTreeHelper.GetChildrenCount(parent);
-            for (var i = 0; i < count; i++)
-            {
-                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
-                if (child is NewsItemControl news)
-                {
-                    results.Add(news);
-                }
-                else
-                {
-                    CollectNewsItemControls(child, results);
-                }
-            }
-        }
-
         private void ActionBar_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (!(e.OriginalSource is Button currentButton))
@@ -1030,22 +973,6 @@ namespace StartScreen.ToolWindows
         {
             MruItemControl firstMru = MruItemControl.GetItemControl(MruPanel, 0);
             firstMru?.FocusItem();
-        }
-
-        private static T FindFirstControl<T>(DependencyObject parent) where T : class
-        {
-            var count = VisualTreeHelper.GetChildrenCount(parent);
-            for (var i = 0; i < count; i++)
-            {
-                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T match)
-                    return match;
-
-                T result = FindFirstControl<T>(child);
-                if (result != null)
-                    return result;
-            }
-            return null;
         }
 
         private void FocusMruItemByPath(string path)

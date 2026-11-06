@@ -1278,23 +1278,22 @@ namespace StartScreen.ToolWindows.Controls
             return null;
         }
 
-        /// <summary>
-        /// Focuses the first item in the active work blade.
-        /// Returns true if focus was set successfully.
-        /// </summary>
-        private void FocusActiveBladeHeader()
+        private bool FocusActiveBladeHeader()
         {
-            (_activeWorkView == DevHubDefaultTab.Incoming ? IncomingHeading : WorkHeadingLine).Focus();
+            return (_activeWorkView == DevHubDefaultTab.Incoming ? IncomingHeading : WorkHeadingLine).Focus();
         }
 
-        internal bool FocusFirstItem()
+        internal bool FocusFirstItem(DevHubDefaultTab? blade = null)
         {
             if (DashboardPanel.Visibility != Visibility.Visible)
                 return false;
 
-            GetActiveItemsList();
-            FocusFirstItemInActiveBlade();
-            return true;
+            if (blade.HasValue)
+                SelectDefaultTab(blade.Value);
+            else
+                GetActiveItemsList();
+            UpdateLayout();
+            return FocusFirstItemInActiveBlade();
         }
 
         private DependencyObject GetActiveItemsList()
@@ -1318,6 +1317,33 @@ namespace StartScreen.ToolWindows.Controls
 
             // Check if the focused element is an item border in the active list
             var list = GetActiveItemsList();
+            var filters = GetActiveFilters();
+            if (focused is RadioButton filter && filters.Contains(filter) && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                if (e.Key == Key.Down)
+                    FocusFirstItemInActiveBlade();
+                else if (e.Key == Key.Up)
+                    FocusActiveBladeHeader();
+                else if (e.Key == Key.Left || e.Key == Key.Right)
+                {
+                    var right = e.Key == Key.Right;
+                    var next = Array.IndexOf(filters, filter) + (right ? 1 : -1);
+                    if (next >= 0 && next < filters.Length)
+                    {
+                        if (_activeWorkView == DevHubDefaultTab.MyWork)
+                            _activity.CancelInitialFilterSelection();
+                        filters[next].IsChecked = true;
+                        filters[next].Focus();
+                    }
+                    else
+                        MoveBetweenBlades(right);
+                }
+                else
+                    return;
+                e.Handled = true;
+                return;
+            }
+
             if (list != null)
             {
                 var borders = GetCachedBorders(list);
@@ -1342,7 +1368,7 @@ namespace StartScreen.ToolWindows.Controls
                         }
                         else
                         {
-                            FocusActiveBladeHeader();
+                            FocusActiveFilter();
                         }
                         e.Handled = true;
                     }
@@ -1381,7 +1407,7 @@ namespace StartScreen.ToolWindows.Controls
             {
                 if (e.Key == Key.Down)
                 {
-                    FocusFirstItem();
+                    FocusActiveFilter();
                     e.Handled = true;
                 }
                 else if (e.Key == Key.Left)
@@ -1415,14 +1441,26 @@ namespace StartScreen.ToolWindows.Controls
                 FocusMruRequested?.Invoke(this, EventArgs.Empty);
         }
 
-        private void FocusFirstItemInActiveBlade()
+        private RadioButton[] GetActiveFilters()
+        {
+            return _activeWorkView == DevHubDefaultTab.Incoming
+                ? new[] { IncomingPrFilter, IncomingIssueFilter, IncomingBuildFilter }
+                : new[] { MyWorkAttentionFilter, MyWorkCopilotFilter, MyWorkPrFilter, MyWorkIssueFilter, MyWorkBuildFilter };
+        }
+
+        private void FocusActiveFilter()
+        {
+            var filters = GetActiveFilters();
+            (filters.FirstOrDefault(filter => filter.IsChecked == true) ?? filters[0]).Focus();
+        }
+
+        private bool FocusFirstItemInActiveBlade()
         {
             var list = _activeWorkView == DevHubDefaultTab.Incoming ? IncomingList : MyWorkList;
             var borders = GetCachedBorders(list);
             if (borders.Count > 0)
-                borders[0].Focus();
-            else
-                FocusActiveBladeHeader();
+                return borders[0].Focus();
+            return FocusActiveBladeHeader();
         }
 
         private static bool IsInsideBlade(DependencyObject element, DependencyObject blade)

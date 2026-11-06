@@ -196,9 +196,7 @@
         </Style>
         <DataTemplate x:Key="NewsCardTemplate">
             <controls:NewsItemControl Margin="0 0 12 12" MaxWidth="360" HorizontalAlignment="Left"
-                                      PinToggleRequested="NewsItemControl_PinToggleRequested"
-                                      FocusDevHubRequested="NewsItemControl_FocusDevHubRequested"
-                                      FocusYouTubeRequested="NewsItemControl_FocusYouTubeRequested"/>
+                                      PinToggleRequested="NewsItemControl_PinToggleRequested"/>
         </DataTemplate>
         <ItemsPanelTemplate x:Key="NewsCardsPanel">
             <UniformGrid Columns="{Binding NewsColumnCount}"/>
@@ -517,6 +515,7 @@
                                         Background="Transparent"
                                         BorderThickness="0"
                                         Padding="0"
+                                        PreviewKeyDown="NewsTabs_PreviewKeyDown"
                                         SelectionChanged="NewsTabs_SelectionChanged">
                                 <TabControl.Template>
                                     <ControlTemplate TargetType="TabControl">
@@ -595,8 +594,7 @@
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <controls:YouTubeVideoControl Margin="0 0 12 16" MaxWidth="360" HorizontalAlignment="Left"
-                                                                                   FocusNewsRequested="YouTubeVideoControl_FocusNewsRequested"/>
+                                                    <controls:YouTubeVideoControl Margin="0 0 12 16" MaxWidth="360" HorizontalAlignment="Left"/>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>

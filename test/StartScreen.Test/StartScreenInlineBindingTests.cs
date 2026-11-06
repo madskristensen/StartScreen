@@ -815,6 +815,7 @@ namespace StartScreen.Test
             var headingDefinition = new XElement(panel.Element(p + "DockPanel")!);
             var tabsDefinition = new XElement(panel.Element(p + "TabControl")!);
             tabsDefinition.Attribute("SelectionChanged")!.Remove();
+            tabsDefinition.Attribute("PreviewKeyDown")!.Remove();
             foreach (var item in tabsDefinition.Elements(p + "TabItem"))
             {
                 var header = item.Attribute("Header")?.Value ?? item.Element(p + "TabItem.Header")!

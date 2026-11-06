@@ -6,6 +6,13 @@ using System.Text.Json.Serialization;
 
 namespace StartScreen.Models
 {
+    public enum FeedbackTicketType
+    {
+        Unknown = -1,
+        Problem = 0,
+        Suggestion = 3,
+    }
+
     public sealed class FeedbackTicket
     {
         [JsonInclude]
@@ -16,6 +23,8 @@ namespace StartScreen.Models
         public string Url { get; internal set; }
         [JsonInclude]
         public string State { get; internal set; }
+        [JsonInclude]
+        public FeedbackTicketType Type { get; internal set; } = FeedbackTicketType.Unknown;
         [JsonInclude]
         public int Votes { get; internal set; }
         [JsonInclude]
@@ -37,14 +46,19 @@ namespace StartScreen.Models
         {
             "new" => "New",
             "triaged" => "Triaged",
-            "pending" or "underreview" => "Under Review",
-            "consideration" or "underconsideration" => "Under Consideration",
+            "underreview" => "Under Review",
+            "pending" or "pendingrelease" or "fixedpendingrelease" => Type == FeedbackTicketType.Suggestion
+                ? "Completed - Preview" : "Fixed - Pending Release",
+            "consideration" or "underconsideration" => Type == FeedbackTicketType.Suggestion
+                ? "Under Review" : "Under Consideration",
             "investigation" or "underinvestigation" => "Under Investigation",
             "roadmap" or "onroadmap" => "On Roadmap",
             "notenoughinfo" => "Not enough info",
             "needmoreinfo" or "needsmoreinfo" or "needmoreinformation" or "needsmoreinformation" => "Need More Info",
             "duplicate" or "closedduplicate" => "Closed - Duplicate",
-            "fixed" or "closedfixed" => "Closed - Fixed",
+            "fixed" or "closedfixed" => Type == FeedbackTicketType.Suggestion ? "Completed - Release" : "Closed - Fixed",
+            "completedpreview" => "Completed - Preview",
+            "completedrelease" => "Completed - Release",
             _ => State,
         };
 
@@ -59,7 +73,8 @@ namespace StartScreen.Models
                 {
                     _ when state == "fixed" || state.StartsWith("closedfixed", StringComparison.Ordinal)
                         || state.StartsWith("completed", StringComparison.Ordinal) => "2E7D1C",
-                    "new" or "triaged" or "pending" or "consideration" or "underconsideration" or "underreview" => "2E6FC2",
+                    "pending" or "pendingrelease" or "fixedpendingrelease" => "2E7D1C",
+                    "new" or "triaged" or "consideration" or "underconsideration" or "underreview" => "2E6FC2",
                     "notenoughinfo" or "needmoreinfo" or "needsmoreinfo" or "needmoreinformation" or "needsmoreinformation" => "DC143C",
                     "investigation" or "roadmap" or "underinvestigation" or "onroadmap" => "925900",
                     _ => "606060",

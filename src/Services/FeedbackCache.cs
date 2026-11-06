@@ -32,7 +32,8 @@ namespace StartScreen.Services
                 var snapshot = JsonSerializer.Deserialize<FeedbackSnapshot>(json);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (snapshot == null || snapshot.PrincipalId != principalId || snapshot.Tickets == null
-                    || snapshot.UpdatedUtc == default || snapshot.Tickets.Any(ticket => ticket == null || ticket.Id <= 0))
+                    || snapshot.UpdatedUtc == default || snapshot.Tickets.Any(ticket => ticket == null || ticket.Id <= 0
+                        || ticket.Type != FeedbackTicketType.Problem && ticket.Type != FeedbackTicketType.Suggestion))
                     throw new InvalidDataException("The Feedback cache snapshot is invalid or belongs to a different account.");
                 return snapshot;
             }

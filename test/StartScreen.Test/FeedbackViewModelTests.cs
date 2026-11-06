@@ -454,16 +454,19 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        [DataRow("under review", "Under Review", "2E6FC2")]
-        [DataRow("new", "New", "2E6FC2")]
-        [DataRow("triaged", "Triaged", "2E6FC2")]
-        [DataRow("pending", "Under Review", "2E6FC2")]
-        [DataRow("consideration", "Under Consideration", "2E6FC2")]
-        [DataRow("investigation", "Under Investigation", "925900")]
-        [DataRow("roadmap", "On Roadmap", "925900")]
-        [DataRow("duplicate", "Closed - Duplicate", "606060")]
-        [DataRow("notenoughinfo", "Not enough info", "DC143C")]
-        public void FeedbackCard_RendersBoundTitleDetailsAndBrowserLink(string apiState, string stateText, string color)
+        [DataRow("under review", "Under Review", "2E6FC2", FeedbackTicketType.Problem)]
+        [DataRow("new", "New", "2E6FC2", FeedbackTicketType.Problem)]
+        [DataRow("triaged", "Triaged", "2E6FC2", FeedbackTicketType.Problem)]
+        [DataRow("pending", "Fixed - Pending Release", "2E7D1C", FeedbackTicketType.Problem)]
+        [DataRow("pending", "Completed - Preview", "2E7D1C", FeedbackTicketType.Suggestion)]
+        [DataRow("consideration", "Under Consideration", "2E6FC2", FeedbackTicketType.Problem)]
+        [DataRow("consideration", "Under Review", "2E6FC2", FeedbackTicketType.Suggestion)]
+        [DataRow("fixed", "Completed - Release", "2E7D1C", FeedbackTicketType.Suggestion)]
+        [DataRow("investigation", "Under Investigation", "925900", FeedbackTicketType.Problem)]
+        [DataRow("roadmap", "On Roadmap", "925900", FeedbackTicketType.Problem)]
+        [DataRow("duplicate", "Closed - Duplicate", "606060", FeedbackTicketType.Problem)]
+        [DataRow("notenoughinfo", "Not enough info", "DC143C", FeedbackTicketType.Problem)]
+        public void FeedbackCard_RendersBoundTitleDetailsAndBrowserLink(string apiState, string stateText, string color, FeedbackTicketType type)
         {
             using var stream = typeof(FeedbackViewModelTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
             var document = XDocument.Load(stream!);
@@ -488,6 +491,7 @@ namespace StartScreen.Test
                 Title = "A & B",
                 Url = "https://developercommunity.visualstudio.com/t/test/42",
                 State = apiState,
+                Type = type,
                 Votes = 12,
                 IsUpvotedByUser = true,
                 UpdatedUtc = DateTime.UtcNow,
@@ -552,7 +556,9 @@ namespace StartScreen.Test
         [DataRow("UnderReview", "2E6FC2")]
         [DataRow("new", "2E6FC2")]
         [DataRow("triaged", "2E6FC2")]
-        [DataRow("pending", "2E6FC2")]
+        [DataRow("pending", "2E7D1C")]
+        [DataRow("pending_release", "2E7D1C")]
+        [DataRow("Fixed - Pending Release", "2E7D1C")]
         [DataRow("consideration", "2E6FC2")]
         [DataRow("Need More Info", "DC143C")]
         [DataRow("Needs More Information", "DC143C")]

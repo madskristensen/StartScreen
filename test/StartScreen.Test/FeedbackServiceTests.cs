@@ -199,6 +199,7 @@ namespace StartScreen.Test
             Assert.AreEqual(expected.Title, actual.Title);
             Assert.AreEqual(expected.Url, actual.Url);
             Assert.AreEqual(expected.State, actual.State);
+            Assert.AreEqual(expected.Type, actual.Type);
             Assert.AreEqual(expected.Votes, actual.Votes);
             Assert.AreEqual(expected.IsCreatedByUser, actual.IsCreatedByUser);
             Assert.AreEqual(expected.IsUpvotedByUser, actual.IsUpvotedByUser);
@@ -207,6 +208,97 @@ namespace StartScreen.Test
             Assert.DoesNotContain(expected.Title, stored);
             Assert.DoesNotContain("test-token", stored);
             Assert.DoesNotContain("PrincipalId", stored);
+        }
+
+        [TestMethod]
+        public async Task Load_IncludesBothCreatedProblemReportsAndUpvotedSuggestionsInTheSameSnapshotAsync()
+        {
+            using var handler = new Handler((path, body) => path == "metadata" ? Json(new { Id = 7 })
+                : path == "getActivity" ? Json(new { totalCount = 2, activities = new[] { Action("posted", 10), Action("voted", 11) } })
+                : Json(new
+                {
+                    results = new[] { RequestedId(body) == 10
+                        ? Ticket(10, 7, false, type: 0, state: "consideration")
+                        : Ticket(11, 8, true, type: 3, state: "consideration") },
+                }));
+            using var client = new HttpClient(handler);
+            var downloaded = await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+            var restored = await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetCachedTicketsAsync(CancellationToken.None);
+
+            Assert.IsNotNull(restored);
+            foreach (var snapshot in new[] { downloaded, restored })
+            {
+                Assert.HasCount(2, snapshot.Tickets);
+                var problem = snapshot.Tickets.Single(ticket => ticket.Id == 10);
+                Assert.AreEqual(FeedbackTicketType.Problem, problem.Type);
+                Assert.IsTrue(problem.IsCreatedByUser);
+                Assert.AreEqual("Under Consideration", problem.StateText);
+                var suggestion = snapshot.Tickets.Single(ticket => ticket.Id == 11);
+                Assert.AreEqual(FeedbackTicketType.Suggestion, suggestion.Type);
+                Assert.IsTrue(suggestion.IsUpvotedByUser);
+                Assert.AreEqual("Under Review", suggestion.StateText);
+            }
+            Assert.AreEqual(5, handler.RequestCount);
+        }
+
+        [TestMethod]
+        [DataRow(FeedbackTicketType.Problem, "consideration", "Under Consideration", "2E6FC2")]
+        [DataRow(FeedbackTicketType.Suggestion, "consideration", "Under Review", "2E6FC2")]
+        [DataRow(FeedbackTicketType.Problem, "pending", "Fixed - Pending Release", "2E7D1C")]
+        [DataRow(FeedbackTicketType.Suggestion, "pending", "Completed - Preview", "2E7D1C")]
+        [DataRow(FeedbackTicketType.Problem, "closed_fixed", "Closed - Fixed", "2E7D1C")]
+        [DataRow(FeedbackTicketType.Suggestion, "fixed", "Completed - Release", "2E7D1C")]
+        public async Task TicketType_PreservesWebsiteLabelsAndColorsAcrossHydrationAndDiskCacheAsync(
+            FeedbackTicketType type, string state, string expectedText, string expectedColor)
+        {
+            using var handler = TicketHandler(Ticket(10, 7, false, type: (int)type, state: state));
+            using var client = new HttpClient(handler);
+            var downloaded = await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+            var restored = await Service(client, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
+
+            foreach (var snapshot in new[] { downloaded, restored })
+            {
+                var ticket = snapshot.Tickets.Single();
+                Assert.AreEqual(type, ticket.Type);
+                Assert.AreEqual(state.Replace('_', ' '), ticket.State);
+                Assert.AreEqual(expectedText, ticket.StateText);
+                Assert.AreEqual(expectedColor, ticket.StateColor);
+            }
+            Assert.AreEqual(4, handler.RequestCount, "A typed cache must retain labels without rehydrating tickets.");
+        }
+
+        [TestMethod]
+        [DataRow(-1)]
+        [DataRow(2)]
+        public async Task DiskCache_UnknownTicketTypeIsRefetchedBeforeDisplayAsync(int type)
+        {
+            var cache = new FeedbackCache(_cacheFolder);
+            var legacy = JsonSerializer.Deserialize<FeedbackTicket>("{\"Id\":10,\"State\":\"consideration\"}")!;
+            Assert.AreEqual(FeedbackTicketType.Unknown, legacy.Type, "Old snapshots must not silently default suggestions to problems.");
+            legacy.Type = (FeedbackTicketType)type;
+            await cache.WriteAsync(new FeedbackSnapshot(7, [legacy], DateTime.UtcNow), CancellationToken.None);
+            using var handler = TicketHandler(Ticket(10, 7, false, type: 3, state: "consideration"));
+            using var client = new HttpClient(handler);
+            var service = Service(client, diskCache: cache);
+
+            Assert.IsNull(await service.GetCachedTicketsAsync(CancellationToken.None));
+            var refreshed = await service.GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.AreEqual(FeedbackTicketType.Suggestion, refreshed.Tickets.Single().Type);
+            Assert.AreEqual("Under Review", refreshed.Tickets.Single().StateText);
+            Assert.AreEqual(4, handler.RequestCount);
+        }
+
+        [TestMethod]
+        [DataRow(1)]
+        [DataRow(2)]
+        [DataRow(42)]
+        public async Task Hydration_UnsupportedSearchTicketTypesAreRejectedAsync(int type)
+        {
+            using var handler = TicketHandler(Ticket(10, 7, false, type: type));
+            using var client = new HttpClient(handler);
+
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(() => Service(client).GetTicketsAsync(false, CancellationToken.None));
         }
 
         [TestMethod]
@@ -309,7 +401,7 @@ namespace StartScreen.Test
             var now = DateTime.UtcNow;
             var cache = new FeedbackCache(_cacheFolder);
             await cache.WriteAsync(new FeedbackSnapshot(7,
-                [new FeedbackTicket { Id = 10, Title = "Cached ticket" }], now.AddSeconds(-ageSeconds)), CancellationToken.None);
+                [new FeedbackTicket { Id = 10, Title = "Cached ticket", Type = FeedbackTicketType.Problem }], now.AddSeconds(-ageSeconds)), CancellationToken.None);
             using var handler = new Handler((path, _) =>
             {
                 Assert.AreEqual("metadata", path, "A cache-only read must never download activity or hydrate tickets.");
@@ -334,7 +426,7 @@ namespace StartScreen.Test
             var now = DateTime.UtcNow;
             var cache = new FeedbackCache(_cacheFolder);
             await cache.WriteAsync(new FeedbackSnapshot(7,
-                [new FeedbackTicket { Id = 1, Title = "Old ticket" }], now.AddDays(-3)), CancellationToken.None);
+                [new FeedbackTicket { Id = 1, Title = "Old ticket", Type = FeedbackTicketType.Problem }], now.AddDays(-3)), CancellationToken.None);
             using var handler = TicketHandler(Ticket(10, 7, false));
             using var client = new HttpClient(handler);
             var service = Service(client, () => now, diskCache: cache);
@@ -546,14 +638,15 @@ namespace StartScreen.Test
 
         private static object Action(string activity, long rootPostId) => new { activity, rootPostId };
 
-        private static object Ticket(long id, long author, bool voted, string? url = null) => new
+        private static object Ticket(long id, long author, bool voted, string? url = null, int type = 0, string state = "closed_fixed") => new
         {
             answerHubId = id,
             createdByPrincipalId = author.ToString(CultureInfo.InvariantCulture),
             hasVoted = voted,
             title = $"<p>Ticket &amp; {id}</p>",
             communityUrl = url ?? $"https://developercommunity.visualstudio.com/t/test/{id}",
-            state = "closed_fixed",
+            state,
+            type,
             totalVotes = 20,
             lastModifiedUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddDays(id),
         };
