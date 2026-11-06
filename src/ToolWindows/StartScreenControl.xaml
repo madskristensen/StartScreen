@@ -344,21 +344,17 @@
             </Grid>
         </Border>
             <ProgressBar x:Name="UnifiedProgressBar" Grid.Row="0" Height="2" VerticalAlignment="Bottom"
+                         Minimum="0" Maximum="100" Value="{Binding RefreshProgressValue, Mode=OneWay}" IsIndeterminate="False"
                          Margin="24 0 24 20" Panel.ZIndex="1" BorderThickness="0" Background="Transparent"
                          Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                         IsHitTestVisible="False" Focusable="False" AutomationProperties.Name="Start Screen background activity">
+                         IsHitTestVisible="False" Focusable="False" AutomationProperties.Name="Start Screen background activity"
+                         AutomationProperties.ItemStatus="{Binding RefreshProgressDetails}">
                 <ProgressBar.Style>
                     <Style TargetType="ProgressBar">
                         <Setter Property="Visibility" Value="Hidden"/>
-                        <Setter Property="IsIndeterminate" Value="False"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsRefreshingAny}" Value="True">
+                            <DataTrigger Binding="{Binding IsRefreshProgressActive}" Value="True">
                                 <Setter Property="Visibility" Value="Visible"/>
-                                <Setter Property="IsIndeterminate" Value="True"/>
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding IsBusy, ElementName=DevHubPanelControl}" Value="True">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Setter Property="IsIndeterminate" Value="True"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>

@@ -70,7 +70,10 @@ namespace StartScreen.Test
                 {
                     if (e.PropertyName != nameof(StartScreenViewModel.UnifiedRefreshStatus)
                         && e.PropertyName != nameof(StartScreenViewModel.UnifiedRefreshDetails)
-                        && e.PropertyName != nameof(StartScreenViewModel.IsRefreshingAny))
+                        && e.PropertyName != nameof(StartScreenViewModel.IsRefreshingAny)
+                        && e.PropertyName != nameof(StartScreenViewModel.IsRefreshProgressActive)
+                        && e.PropertyName != nameof(StartScreenViewModel.RefreshProgressValue)
+                        && e.PropertyName != nameof(StartScreenViewModel.RefreshProgressDetails))
                         changed.Add(e.PropertyName);
                 };
 

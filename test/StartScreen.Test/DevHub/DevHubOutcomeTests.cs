@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -852,6 +853,105 @@ namespace StartScreen.Test.DevHub
             Assert.AreNotSame(snapshots.First(), final);
         }
 
+        [TestMethod]
+        public async Task WorkProgress_ReportsEachAuthenticationWhileAnotherProviderIsPendingAsync()
+        {
+            var github = new Provider("GitHub");
+            var ado = new Provider("Azure DevOps") { Host = "dev.azure.com" };
+            var users = await ado.GetAuthenticatedUsersAsync(CancellationToken.None);
+            var pending = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var advanced = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reports = new ConcurrentQueue<(int Completed, int Total)>();
+            ado.Authenticate = token => pending.Task.WithCancellation(token);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var refresh = Service(github, ado).RefreshAsync(timeout.Token, workProgress: new InlineWorkProgress(value =>
+            {
+                reports.Enqueue(value);
+                if (value == (2, 4))
+                    advanced.TrySetResult(true);
+            }));
+            try
+            {
+                await advanced.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.AreEqual(0, github.ActivityCalls);
+                Assert.AreEqual(0, ado.ActivityCalls);
+            }
+            finally
+            {
+                pending.TrySetResult(users);
+            }
+            await refresh;
+            Assert.AreEqual((12, 12), reports.Last());
+        }
+
+        [TestMethod]
+        public async Task WorkProgress_DiscoveryAddsRealRepositoryWorkAndDoesNotCompleteBeforeItReturnsAsync()
+        {
+            var pending = new TaskCompletionSource<DevHubRepoDetail>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var advanced = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var provider = new Provider("GitHub")
+            {
+                ActivityRepositories = [_repo],
+                Detail = token => pending.Task.WithCancellation(token),
+            };
+            var reports = new ConcurrentQueue<(int Completed, int Total)>();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var refresh = Service(provider).RefreshAsync(timeout.Token, workProgress: new InlineWorkProgress(value =>
+            {
+                reports.Enqueue(value);
+                if (value == (6, 8))
+                    advanced.TrySetResult(true);
+            }));
+            try
+            {
+                await advanced.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.AreEqual((6, 8), reports.Last());
+            }
+            finally
+            {
+                pending.TrySetResult(new DevHubRepoDetail { RepoIdentifier = _repo });
+            }
+            await refresh;
+            Assert.AreEqual((8, 8), reports.Last());
+            Assert.IsTrue(reports.Any(value => value.Total == 7));
+            Assert.IsTrue(reports.Any(value => value.Total == 8 && value.Completed < 8));
+        }
+
+        [TestMethod]
+        public async Task WorkProgress_CacheVerificationCountsEachAccountWithoutRefetchingActivityAsync()
+        {
+            var github = new Provider("GitHub");
+            var ado = new Provider("Azure DevOps") { Host = "dev.azure.com" };
+            await Service(github, ado).RefreshAsync(CancellationToken.None);
+            var users = await ado.GetAuthenticatedUsersAsync(CancellationToken.None);
+            var pending = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var advanced = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reports = new ConcurrentQueue<(int Completed, int Total)>();
+            var calls = github.ActivityCalls + ado.ActivityCalls;
+            ado.Authenticate = token => pending.Task.WithCancellation(token);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var load = Service(github, ado).LoadFromCacheAsync(timeout.Token, workProgress: new InlineWorkProgress(value =>
+            {
+                reports.Enqueue(value);
+                if (value == (3, 4))
+                    advanced.TrySetResult(true);
+            }));
+            try
+            {
+                await advanced.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(load.IsCompleted);
+                Assert.AreEqual(calls, github.ActivityCalls + ado.ActivityCalls);
+            }
+            finally
+            {
+                pending.TrySetResult(users);
+            }
+            Assert.IsNotNull(await load);
+            Assert.AreEqual((4, 4), reports.Last());
+        }
+
         private DevHubIssue Issue(string title) => new DevHubIssue { Title = title, WebUrl = "https://github.com/owner/repo/issues/" + title, RepoIdentifier = _repo };
         private DevHubPullRequest PullRequest(string title) => new DevHubPullRequest
         {
@@ -865,6 +965,11 @@ namespace StartScreen.Test.DevHub
         private sealed class InlineProgress(Action<DevHubDashboard> report) : IProgress<DevHubDashboard>
         {
             public void Report(DevHubDashboard value) => report(value);
+        }
+
+        private sealed class InlineWorkProgress(Action<(int Completed, int Total)> report) : IProgress<(int Completed, int Total)>
+        {
+            public void Report((int Completed, int Total) value) => report(value);
         }
 
         private sealed class Provider(string name) : IDevHubProvider

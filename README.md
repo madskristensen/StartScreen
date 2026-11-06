@@ -22,7 +22,10 @@ gets you into code immediately - no clicking through menus, no waiting.
 The action bar and search are available before secondary content loads.
 One themed progress bar overlays the action-bar separator across the screen for
 Dev Hub, provider sign-in, Copilot connection, news, and other background refreshes.
-Its space does not change when work starts or finishes. Transient connecting and
+It counts completed authentication, activity categories, discovered repositories,
+cache reads/writes, Copilot connection stages, and other section refreshes. Totals
+expand as repositories are discovered; this is work-item progress, not an estimate
+of remaining time. Its space does not change when work starts or finishes. Transient connecting and
 updating labels are omitted; actionable failures and sign-in recovery links remain.
 Recent projects become clickable without waiting for filesystem timestamps, existence
 checks, Git metadata, or history writes. Those details are filled in afterward;

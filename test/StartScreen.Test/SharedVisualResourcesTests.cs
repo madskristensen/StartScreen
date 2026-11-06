@@ -209,8 +209,12 @@ namespace StartScreen.Test
             Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}",
                 progress.Attribute("Foreground")?.Value);
             var triggers = progress.Descendants(_presentation + "DataTrigger").ToArray();
-            CollectionAssert.AreEquivalent(new[] { "{Binding IsRefreshingAny}", "{Binding IsBusy, ElementName=DevHubPanelControl}" },
+            CollectionAssert.AreEquivalent(new[] { "{Binding IsRefreshProgressActive}" },
                 triggers.Select(trigger => trigger.Attribute("Binding")!.Value).ToArray());
+            Assert.AreEqual("{Binding RefreshProgressValue, Mode=OneWay}", progress.Attribute("Value")?.Value);
+            Assert.AreEqual("False", progress.Attribute("IsIndeterminate")?.Value);
+            Assert.IsFalse(progress.Descendants(_presentation + "Setter").Any(setter =>
+                setter.Attribute("Property")?.Value == "IsIndeterminate" && setter.Attribute("Value")?.Value == "True"));
 
             var panel = Read("DevHubPanel.xaml");
             Assert.IsFalse(panel.Descendants(_presentation + "ProgressBar").Any());
@@ -226,10 +230,6 @@ namespace StartScreen.Test
         {
             var layout = Read("StartScreenControl.xaml").Root!.Element(_presentation + "Grid")!;
             var progressElement = new XElement(layout.Elements(_presentation + "ProgressBar").Single());
-            // The standalone surface substitutes only the VS-hosted panel's busy-state source.
-            progressElement.Descendants(_presentation + "DataTrigger").Single(trigger =>
-                trigger.Attribute("Binding")?.Value == "{Binding IsBusy, ElementName=DevHubPanelControl}")
-                .SetAttributeValue("Binding", "{Binding IsBusy}");
             var header = new XElement(_presentation + "Border", layout.Elements(_presentation + "Border").First().Attributes(),
                 new XAttribute(_xaml + "Name", "TestHeader"), new XElement(_presentation + "TextBlock",
                     new XAttribute("Style", "{StaticResource StartScreen.Heading}"), new XAttribute("Text", "Start Screen")));
@@ -239,7 +239,7 @@ namespace StartScreen.Test
                     new XElement(_presentation + "Border", new XAttribute("Grid.Row", "1"), new XAttribute(_xaml + "Name", "TestContent")))).ToString());
             var root = (Grid)surface.Content;
             surface.Resources["TestEnvironmentFontSize"] = environmentSize;
-            root.DataContext = new { IsRefreshingAny = false, IsBusy = false };
+            root.DataContext = new { IsRefreshProgressActive = false, RefreshProgressValue = 0d };
             UpdateBindings(root);
             surface.Measure(new Size(900, 400));
             surface.Arrange(new Rect(0, 0, 900, 400));
@@ -253,9 +253,9 @@ namespace StartScreen.Test
             var surfaceSize = root.RenderSize;
             var toolbarSize = toolbar.RenderSize;
 
-            foreach (var state in new[] { (false, false), (true, false), (false, true), (true, true), (false, false) })
+            foreach (var state in new[] { (false, 0d), (true, 12.5d), (true, 50d), (true, 87.5d), (true, 100d), (false, 100d) })
             {
-                root.DataContext = new { IsRefreshingAny = state.Item1, IsBusy = state.Item2 };
+                root.DataContext = new { IsRefreshProgressActive = state.Item1, RefreshProgressValue = state.Item2 };
                 foreach (var brush in new[] { Brushes.DodgerBlue, Brushes.DarkBlue, SystemColors.HighlightBrush })
                 {
                     surface.Resources["TestThemeBrush"] = brush;
@@ -263,9 +263,10 @@ namespace StartScreen.Test
                     surface.Measure(new Size(900, 400));
                     surface.Arrange(new Rect(0, 0, 900, 400));
                     root.UpdateLayout();
-                    var busy = state.Item1 || state.Item2;
+                    var busy = state.Item1;
                     Assert.AreEqual(busy ? Visibility.Visible : Visibility.Hidden, progress.Visibility);
-                    Assert.AreEqual(busy, progress.IsIndeterminate);
+                    Assert.IsFalse(progress.IsIndeterminate);
+                    Assert.AreEqual(state.Item2, progress.Value);
                     Assert.AreSame(brush, progress.Foreground);
                     Assert.AreEqual(toolbar.ActualWidth, progress.ActualWidth);
                     Assert.AreEqual(contentOrigin, content.TranslatePoint(new Point(), root));

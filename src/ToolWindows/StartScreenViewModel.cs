@@ -183,6 +183,7 @@ namespace StartScreen.ToolWindows
 
         private void NotifyRefreshStatusChanged()
         {
+            UpdateSectionProgress();
             OnPropertyChanged(nameof(UnifiedRefreshStatus));
             OnPropertyChanged(nameof(UnifiedRefreshDetails));
         }
@@ -417,6 +418,7 @@ namespace StartScreen.ToolWindows
             VideoSection = videoSection ?? new VideoSectionViewModel(GetBackgroundCancellationToken);
             NewsSection.PropertyChanged += Section_PropertyChanged;
             VideoSection.PropertyChanged += Section_PropertyChanged;
+            BackgroundProgress.Changed += BackgroundProgress_Changed;
             RecentTemplates = new ObservableCollection<RecentTemplate>();
 
             _allMruItems = new ObservableCollection<MruItem>();
@@ -480,6 +482,8 @@ namespace StartScreen.ToolWindows
             LastFeedbackRefreshText = null;
             FeedbackStatus = "Feedback loads in the background.";
             FeedbackRequiresSignIn = false;
+            _sectionProgress.Clear();
+            BackgroundProgress.Reset();
         }
 
         public void Dispose()
@@ -492,6 +496,7 @@ namespace StartScreen.ToolWindows
                     return;
                 CancelBackgroundWork();
                 _isDisposed = true;
+                BackgroundProgress.Changed -= BackgroundProgress_Changed;
                 NewsSection.PropertyChanged -= Section_PropertyChanged;
                 VideoSection.PropertyChanged -= Section_PropertyChanged;
                 NewsSection.Dispose();

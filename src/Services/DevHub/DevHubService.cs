@@ -80,15 +80,20 @@ namespace StartScreen.Services.DevHub
         /// Returns null if no cache exists.
         /// </summary>
         public async Task<DevHubDashboard> LoadFromCacheAsync(CancellationToken cancellationToken = default, DevHubActivityOptions options = null,
-            IProgress<DevHubDashboard> progress = null)
+            IProgress<DevHubDashboard> progress = null, IProgress<(int Completed, int Total)> workProgress = null)
         {
+            var completedWork = 0;
+            var totalWork = 2;
+            workProgress?.Report((completedWork, totalWork));
             _cacheNeedsRefresh = false;
             var cached = await _cache.ReadDashboardAsync(cancellationToken);
+            workProgress?.Report((++completedWork, totalWork));
             if (cached == null || string.IsNullOrEmpty(cached.CacheContext))
                 return _currentDashboard = null;
             var generation = _getCredentialGeneration();
             var queryContext = _getQueryContext();
             var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken), urls => urls.Count > 0, cancellationToken);
+            workProgress?.Report((++completedWork, totalWork));
             options = options ?? new DevHubActivityOptions();
             if (candidates.Status != DevHubActivityStatus.Success || generation != _getCredentialGeneration() || queryContext != _getQueryContext()
                 || cached.CacheContext != CreateContext(cached.Users, options, candidates.Value))
@@ -103,7 +108,10 @@ namespace StartScreen.Services.DevHub
                 CredentialGeneration = generation,
                 QueryContext = queryContext,
             };
-            var authentications = _getProviders().Select(async provider =>
+            var providers = _getProviders();
+            totalWork += providers.Count;
+            workProgress?.Report((completedWork, totalWork));
+            var authentications = providers.Select(async provider =>
                 (Provider: provider, Result: await AuthenticateAsync(provider, cancellationToken, refreshContext))).ToList();
             var restored = false;
             while (authentications.Count > 0)
@@ -112,6 +120,7 @@ namespace StartScreen.Services.DevHub
                 cancellationToken.ThrowIfCancellationRequested();
                 authentications.Remove(completed);
                 var (provider, result) = await completed;
+                workProgress?.Report((++completedWork, totalWork));
                 if (generation != _getCredentialGeneration() || queryContext != _getQueryContext())
                 {
                     SetCurrentDashboard(null);
@@ -165,7 +174,7 @@ namespace StartScreen.Services.DevHub
         /// A forced refresh waits for an active refresh and then fetches fresh authentication and data.
         /// </summary>
         public async Task<DevHubDashboard> RefreshAsync(CancellationToken cancellationToken, IProgress<DevHubDashboard> progress = null,
-            bool forceRefresh = false, DevHubActivityOptions options = null)
+            bool forceRefresh = false, DevHubActivityOptions options = null, IProgress<(int Completed, int Total)> workProgress = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             options = options ?? new DevHubActivityOptions();
@@ -177,11 +186,15 @@ namespace StartScreen.Services.DevHub
 
             try
             {
+                var completedWork = 0;
+                var totalWork = 2;
+                workProgress?.Report((completedWork, totalWork));
                 var previousDashboard = _currentDashboard;
                 var authenticationGeneration = _getCredentialGeneration();
                 var queryContext = _getQueryContext();
                 var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken),
                     urls => urls.Count > 0, cancellationToken);
+                workProgress?.Report((++completedWork, totalWork));
                 var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status);
                 options = new DevHubActivityOptions(options.MaxItems, options.IncludeCompleted, refreshContext);
                 var dashboard = new DevHubDashboard
@@ -197,9 +210,13 @@ namespace StartScreen.Services.DevHub
                 // Phase 1: Authenticate all providers in parallel. A single provider may
                 // surface multiple authenticated users when it spans multiple hosts (e.g.
                 // Azure DevOps cloud + on-premises Server).
-                var authTasks = _getProviders().Select(async provider =>
+                var providers = _getProviders();
+                totalWork += providers.Count;
+                workProgress?.Report((completedWork, totalWork));
+                var authTasks = providers.Select(async provider =>
                 {
                     var result = await AuthenticateAsync(provider, cancellationToken, refreshContext);
+                    workProgress?.Report((Interlocked.Increment(ref completedWork), totalWork));
                     return (provider, result);
                 }).ToList();
 
@@ -248,12 +265,15 @@ namespace StartScreen.Services.DevHub
                 {
                     dashboard.IsRefreshing = false;
                     await _cache.WriteDashboardAsync(dashboard, cancellationToken);
+                    workProgress?.Report((++completedWork, totalWork));
                     _cacheNeedsRefresh = false;
                     SetCurrentDashboard(dashboard);
                     progress?.Report(dashboard);
                     return dashboard;
                 }
 
+                totalWork += authenticated.Count * 4;
+                workProgress?.Report((completedWork, totalWork));
                 foreach (var pair in previousDashboard?.Sources ?? new Dictionary<string, DevHubActivitySnapshot>())
                 {
                     if (!pair.Key.EndsWith("/authentication", StringComparison.Ordinal))
@@ -327,7 +347,9 @@ namespace StartScreen.Services.DevHub
 
                             foreach (var repo in snapshot.ActivityRepositories)
                                 repositoryQueue.Enqueue((provider, repo));
+                            totalWork += snapshot.ActivityRepositories.Count;
                         }
+                        workProgress?.Report((++completedWork, totalWork));
                         Publish(dashboard, progress);
                     }
                 }
@@ -350,6 +372,7 @@ namespace StartScreen.Services.DevHub
                 dashboard.FetchedAt = DateTime.UtcNow;
                 var final = Publish(dashboard, progress);
                 await _cache.WriteDashboardAsync(final, cancellationToken);
+                workProgress?.Report((++completedWork, totalWork));
                 _cacheNeedsRefresh = false;
 
                 return final;

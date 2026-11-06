@@ -38,6 +38,9 @@ namespace StartScreen.ToolWindows.Controls
         private bool _copilotCacheSavedForConnection;
         private string _copilotCacheError;
         private int _copilotGeneration;
+        private BackgroundProgress.Operation _copilotProgress;
+
+        internal BackgroundProgress Progress { get; set; }
 
         internal void SetCopilotWorkspace(IEnumerable<string> roots, bool scoped)
         {
@@ -77,6 +80,9 @@ namespace StartScreen.ToolWindows.Controls
         private async Task ConnectCopilotActivityAsync()
         {
             int generation = ++_copilotGeneration;
+            var totalSteps = _copilotDiskCacheLoaded ? 2 : 3;
+            _copilotProgress = Progress?.Start(totalSteps);
+            _copilotProgress?.Report((0, totalSteps));
             _copilotConnecting = true;
             CopilotActivityStatus = string.Empty;
             RenderCopilotActivity();
@@ -110,6 +116,7 @@ namespace StartScreen.ToolWindows.Controls
                         CopilotActivityStatus = _copilotCacheError;
                     }
                 }
+                _copilotProgress?.Report((totalSteps - 2, totalSteps));
                 await StartScreenPackage.BackgroundTaskFactory.YieldAsync(DispatcherPriority.Background, StartScreenPackage.ShutdownToken);
                 if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                     return;
@@ -133,6 +140,7 @@ namespace StartScreen.ToolWindows.Controls
                 }, ReportCopilotFailure);
                 _copilotAdapter.Changed += CopilotActivityChanged;
                 _copilotAdapter.Start(backends);
+                _copilotProgress?.Report((totalSteps - 1, totalSteps));
                 StartupDiagnostics.Mark("Copilot harness attached");
                 RenderCopilotActivity();
             }
@@ -201,6 +209,11 @@ namespace StartScreen.ToolWindows.Controls
             if (_isDisposed)
                 return;
             UpdateBusyState();
+            if (_copilotAdapter?.IsReady == true)
+            {
+                _copilotProgress?.Complete();
+                _copilotProgress = null;
+            }
             if (_copilotAdapter != null)
             {
                 CopilotActivityStatus = _copilotCacheError ?? string.Empty;
@@ -253,6 +266,8 @@ namespace StartScreen.ToolWindows.Controls
         {
             _copilotGeneration++;
             _copilotConnecting = false;
+            _copilotProgress?.Dispose();
+            _copilotProgress = null;
             if (_copilotRenderTimer != null)
             {
                 _copilotRenderTimer.Stop();

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
@@ -6,6 +7,39 @@ namespace StartScreen.ToolWindows
 {
     public partial class StartScreenViewModel
     {
+        internal BackgroundProgress BackgroundProgress { get; } = new BackgroundProgress();
+        private readonly Dictionary<string, BackgroundProgress.Operation> _sectionProgress = new Dictionary<string, BackgroundProgress.Operation>();
+
+        public bool IsRefreshProgressActive => BackgroundProgress.IsBusy;
+        public double RefreshProgressValue => BackgroundProgress.PercentComplete;
+        public string RefreshProgressDetails => BackgroundProgress.Details;
+
+        private void BackgroundProgress_Changed(object sender, EventArgs e)
+        {
+            OnPropertyChanged(nameof(IsRefreshProgressActive));
+            OnPropertyChanged(nameof(RefreshProgressValue));
+            OnPropertyChanged(nameof(RefreshProgressDetails));
+        }
+
+        private void UpdateSectionProgress()
+        {
+            SetSectionProgress("News", IsRefreshingNews);
+            SetSectionProgress("Videos", IsRefreshingYouTube);
+            SetSectionProgress("Feedback", IsRefreshingFeedback);
+            SetSectionProgress("Workspace", _isRefreshingWorkspaceSignals || WorkspaceRefreshState.IsLoading);
+        }
+
+        private void SetSectionProgress(string section, bool loading)
+        {
+            if (loading && !_sectionProgress.ContainsKey(section))
+                _sectionProgress[section] = BackgroundProgress.Start();
+            else if (!loading && _sectionProgress.TryGetValue(section, out var operation))
+            {
+                _sectionProgress.Remove(section);
+                operation.Dispose();
+            }
+        }
+
         internal SectionRefreshState NewsRefreshState => NewsSection.RefreshState;
         internal SectionRefreshState VideoRefreshState => VideoSection.RefreshState;
         internal SectionRefreshState FeedbackRefreshState { get; } = new SectionRefreshState();

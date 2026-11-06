@@ -47,6 +47,7 @@ namespace StartScreen.ToolWindows
             _loadTask = loadTask;
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             InitializeComponent();
+            DevHubPanelControl.Progress = viewModel.BackgroundProgress;
             ApplyInitialMruWidth(LeftColumn, splitterPosition);
 
             // Bind the ViewModel up front so the MRU list pops in as soon as
@@ -496,6 +497,7 @@ namespace StartScreen.ToolWindows
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
+                using var work = _viewModel.BackgroundProgress.Start();
                 var loadingStarted = false;
                 try
                 {
@@ -604,6 +606,7 @@ namespace StartScreen.ToolWindows
                 .FileAndForget(nameof(StartScreenControl));
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
+                using var work = _viewModel.BackgroundProgress.Start();
                 try
                 {
                     await TaskScheduler.Default;
@@ -740,7 +743,9 @@ namespace StartScreen.ToolWindows
                         UpdateDevHubPanel(dashboard, cached: true);
                 });
                 await TaskScheduler.Default;
-                var cached = await _devHubService.LoadFromCacheAsync(cancellationToken, activityOptions, progress);
+                using var work = _viewModel.BackgroundProgress.Start();
+                var cached = await _devHubService.LoadFromCacheAsync(cancellationToken, activityOptions, progress, work);
+                work.Dispose();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (cached != null && cached.HasAuthentication)
@@ -792,6 +797,7 @@ namespace StartScreen.ToolWindows
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            using var work = _viewModel.BackgroundProgress.Start();
             var activityOptions = DevHubPanelControl.ActivityOptions;
             DevHubPanelControl.SetActivityLoading(true);
             int generation = ++_devHubRefreshGeneration;
@@ -816,7 +822,7 @@ namespace StartScreen.ToolWindows
                 // we stayed on the captured UI SynchronizationContext.
                 await TaskScheduler.Default;
 
-                await _devHubService.RefreshAsync(cancellationToken, progress, forceRefresh, activityOptions);
+                await _devHubService.RefreshAsync(cancellationToken, progress, forceRefresh, activityOptions, work);
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 cancellationToken.ThrowIfCancellationRequested();
