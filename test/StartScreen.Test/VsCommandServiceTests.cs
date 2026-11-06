@@ -7,6 +7,36 @@ namespace StartScreen.Test
     public class VsCommandServiceTests
     {
         [TestMethod]
+        public async Task AccountSettings_ExecutesTheNativeCommandAsync()
+        {
+            string? executed = null;
+            await VsCommandService.OpenAccountSettingsCoreAsync(command =>
+            {
+                executed = command;
+                return Task.FromResult(true);
+            });
+
+            Assert.AreEqual("File.AccountSettings", executed);
+        }
+
+        [TestMethod]
+        public async Task AccountSettings_UnavailableCommandIsNotReportedAsSuccessAsync()
+        {
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+                VsCommandService.OpenAccountSettingsCoreAsync(_ => Task.FromResult(false)));
+        }
+
+        [TestMethod]
+        public async Task AccountSettings_CommandExceptionsReachTheNotificationHandlerAsync()
+        {
+            var failure = new InvalidOperationException("Test command failure");
+            var result = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+                VsCommandService.OpenAccountSettingsCoreAsync(_ => Task.FromException<bool>(failure)));
+
+            Assert.AreSame(failure, result);
+        }
+
+        [TestMethod]
         [DataRow(@"C:\Code\App.sln")]
         [DataRow(@"C:\Code\App.slnx")]
         [DataRow(@"C:\Code\App.slnf")]

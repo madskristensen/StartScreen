@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Xml.Linq;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
 using StartScreen.ToolWindows;
@@ -10,6 +11,51 @@ namespace StartScreen.Test.DevHub
     [TestClass]
     public class DevHubPanelStateTests
     {
+        [TestMethod]
+        [DataRow("github.com", "GitHub/pulls")]
+        [DataRow("dev.azure.com", "Azure DevOps/pulls")]
+        public void AccountRecovery_IsHiddenDuringRefreshAndAfterSuccessfulAuthentication(string host, string source)
+        {
+            var dashboard = new DevHubDashboard { IsRefreshing = true };
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, host, true));
+            dashboard.IsRefreshing = false;
+            Assert.IsTrue(DevHubPanel.NeedsAccountRecovery(dashboard, host, true));
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, host, false));
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(null, host, true));
+            dashboard.Users.Add(new DevHubUser { Host = host });
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, host, true));
+            dashboard.Sources[source] = new DevHubActivitySnapshot { Status = DevHubActivityStatus.Unavailable };
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, host, true), "Network failures are not rejected credentials.");
+            dashboard.Sources[source].Status = DevHubActivityStatus.Unauthorized;
+            Assert.IsTrue(DevHubPanel.NeedsAccountRecovery(dashboard, host, true), "Cached identities can have rejected credentials.");
+            dashboard.Sources[source].Status = DevHubActivityStatus.Success;
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, host, true));
+            dashboard.Sources["repository"] = new DevHubActivitySnapshot
+            {
+                RepoIdentifier = new RemoteRepoIdentifier(host, "owner", "repo"),
+                Status = DevHubActivityStatus.Unauthorized,
+            };
+            Assert.IsTrue(DevHubPanel.NeedsAccountRecovery(dashboard, host, true));
+        }
+
+        [TestMethod]
+        public void OrganizationAuthorization_IsOptionalAndOnlyShownInAccountSettings()
+        {
+            using var stream = typeof(DevHubPanelStateTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
+            var document = XDocument.Load(stream!);
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var link = document.Descendants(p + "Hyperlink").Single(item =>
+                item.Attribute("Click")?.Value == "OpenGitHubOrganizationAuthorization_Click");
+
+            Assert.IsTrue(link.Ancestors().Any(item => item.Attribute(x + "Name")?.Value == "ConnectedGitHubStatus"));
+            Assert.IsTrue(link.Ancestors().Any(item => item.Attribute(x + "Name")?.Value == "SettingsPanel"));
+            Assert.IsFalse(link.Ancestors().Any(item => item.Attribute(x + "Name")?.Value == "DashboardPanel"));
+            StringAssert.Contains(link.Attribute("ToolTip")!.Value, "Optional");
+            StringAssert.Contains(link.Attribute("ToolTip")!.Value, "organization permissions vary");
+            Assert.IsNull(link.Attribute("Focusable"));
+        }
+
         [TestMethod]
         [DataRow(DevHubActivityStatus.Partial, "partial")]
         [DataRow(DevHubActivityStatus.Unavailable, "unavailable")]

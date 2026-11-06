@@ -68,6 +68,7 @@ namespace StartScreen.Services.DevHub
                 {
                     await ex.LogAsync();
                     cancellationToken.ThrowIfCancellationRequested();
+                    OutputLog.Info("Azure DevOps", SignInMessage);
                     result = null;
                     until = _utcNow().AddSeconds(30);
                 }

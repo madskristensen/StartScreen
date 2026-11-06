@@ -479,6 +479,7 @@ namespace StartScreen.ToolWindows
             FeedbackTickets.Clear();
             LastFeedbackRefreshText = null;
             FeedbackStatus = "Feedback loads in the background.";
+            FeedbackRequiresSignIn = false;
         }
 
         public void Dispose()

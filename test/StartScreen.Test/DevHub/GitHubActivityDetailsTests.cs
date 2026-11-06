@@ -501,18 +501,25 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async Task OptionalSamlRestriction_PreservesInventoryWithoutAPageWarningAsync()
+        public async Task OptionalSamlRestriction_PreservesOtherOrganizationsWithoutAPageWarningAsync()
         {
             using var client = Client(request => request.Method == HttpMethod.Post
-                ? Json("{\"errors\":[{\"message\":\"Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.\",\"path\":[\"r0\"]}],\"data\":{\"r0\":null}}")
-                : Query(request).Contains("author:me") ? Search([Item(1, "me")]) : Search([]));
+                ? Json("{\"errors\":[{\"message\":\"Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.\",\"path\":[\"r0\"]}],\"data\":{\"r0\":null,\"r1\":{\"pullRequest\":" + Metadata() + "}}}")
+                : Query(request).Contains("author:me") ? Search([
+                    Item(1, "me").Replace("owner/repo", "restricted-org/repo"),
+                    Item(2, "me").Replace("owner/repo", "permitted-org/repo")]) : Search([]));
 
             var result = await DevHubActivityRequest.RunAsync(() => GitHubDevHubProvider.GetUserPullRequestsAsync(
                 client, Credential(), "me", new DevHubActivityOptions(), CancellationToken.None), prs => prs.Count > 0, CancellationToken.None);
 
             Assert.AreEqual(DevHubActivityStatus.Success, result.Status);
-            Assert.HasCount(1, result.Value);
-            Assert.IsNull(result.Value[0].CanMerge);
+            Assert.HasCount(2, result.Value);
+            var restricted = result.Value.Single(pr => pr.NumericId == 1);
+            var permitted = result.Value.Single(pr => pr.NumericId == 2);
+            Assert.AreEqual("restricted-org", restricted.RepoIdentifier.Owner);
+            Assert.AreEqual("permitted-org", permitted.RepoIdentifier.Owner);
+            Assert.IsNull(restricted.CanMerge);
+            Assert.IsTrue(permitted.CanMerge);
             Assert.IsNull(result.Message);
         }
 
@@ -534,6 +541,45 @@ namespace StartScreen.Test.DevHub
             Assert.IsTrue(result.Value.Single(pr => pr.NumericId == 3).CanMerge);
             StringAssert.Contains(result.Message, "Checks permission denied");
             Assert.DoesNotContain("SAML", result.Message);
+        }
+
+        [TestMethod]
+        [DataRow(false, false)]
+        [DataRow(false, true)]
+        [DataRow(true, false)]
+        [DataRow(true, true)]
+        public async Task CachedOptionalSamlWarning_IsRemovedWithoutLosingDataOrUnrelatedFailuresAsync(bool otherFailure, bool samlFirst)
+        {
+            var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "StartScreen-Saml-" + Guid.NewGuid().ToString("N"));
+            var cache = new DevHubCacheService(folder);
+            const string saml = "Review/check metadata is restricted by organization SAML SSO for org/repo#1. Authorize the existing OAuth app under GitHub Settings > Applications > Authorized OAuth Apps for that organization. Loaded pull requests remain available.";
+            const string failure = "Checks permission denied";
+            var message = !otherFailure ? saml : samlFirst ? saml + " " + failure : failure + " " + saml;
+            try
+            {
+                var dashboard = new DevHubDashboard();
+                dashboard.PullRequests.Add(new DevHubPullRequest { NumericId = 1 });
+                dashboard.Sources["GitHub/pulls"] = new DevHubActivitySnapshot { Message = message };
+                dashboard.ActivityWarnings["GitHub/pulls"] = message;
+                dashboard.ActivityWarnings["Other"] = "Network unavailable";
+                await cache.WriteDashboardAsync(dashboard);
+
+                var restored = await cache.ReadDashboardAsync();
+
+                Assert.IsNotNull(restored);
+                Assert.HasCount(1, restored.PullRequests);
+                Assert.AreEqual(1, restored.PullRequests[0].NumericId);
+                Assert.AreEqual(otherFailure ? failure : null, restored.Sources["GitHub/pulls"].Message);
+                Assert.AreEqual(otherFailure, restored.ActivityWarnings.ContainsKey("GitHub/pulls"));
+                if (otherFailure)
+                    Assert.AreEqual(failure, restored.ActivityWarnings["GitHub/pulls"]);
+                Assert.AreEqual("Network unavailable", restored.ActivityWarnings["Other"]);
+            }
+            finally
+            {
+                if (System.IO.Directory.Exists(folder))
+                    System.IO.Directory.Delete(folder, true);
+            }
         }
 
         [TestMethod]

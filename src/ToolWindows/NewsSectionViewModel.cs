@@ -324,7 +324,7 @@ namespace StartScreen.ToolWindows
             RefreshState.Message = LastNewsRefreshText;
             if (successfulUtc.HasValue)
                 RefreshState.LastSuccessfulRefreshUtc = successfulUtc;
-            OutputLog.Info("News", $"{LastNewsRefreshText}; {_allNewsPosts.Count} articles (cache={cached}, stale={stale}, unavailable={unavailable}).");
+            OutputLog.Refresh("News", $"{LastNewsRefreshText}; {_allNewsPosts.Count} articles.", RefreshState);
             OnPropertyChanged(nameof(RefreshState));
         }
 

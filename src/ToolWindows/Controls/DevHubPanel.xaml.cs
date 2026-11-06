@@ -149,6 +149,7 @@ namespace StartScreen.ToolWindows.Controls
                 var warning = string.Join("\n", dashboard.GetVisibleActivityWarnings().Select(pair => pair.Value).Distinct());
                 if (!string.IsNullOrEmpty(warning))
                     ShowActivityError(warning);
+                UpdateAccountRecovery(dashboard);
                 LastRefreshChanged?.Invoke(this, GetActivityRefreshStatus(dashboard) ?? string.Empty);
                 return;
             }
@@ -182,6 +183,31 @@ namespace StartScreen.ToolWindows.Controls
             if (refreshStatus != null)
                 LastRefreshChanged?.Invoke(this, refreshStatus);
             ShowDashboard();
+            UpdateAccountRecovery(dashboard);
+        }
+
+        private void UpdateAccountRecovery(DevHubDashboard dashboard)
+        {
+            VisualStudioAccountRecoveryText.Visibility = NeedsAccountRecovery(dashboard, AzureDevOpsServerHelper.CloudHost,
+                Options.Instance.DevHubAzureDevOpsEnabled
+                    && Options.Instance.DevHubAdoAuthentication != AzureDevOpsAuthenticationMode.Disconnected
+                    && Options.Instance.DevHubAdoAuthentication != AzureDevOpsAuthenticationMode.PersonalAccessToken)
+                ? Visibility.Visible : Visibility.Collapsed;
+            GitHubAccountRecoveryText.Visibility = NeedsAccountRecovery(dashboard, "github.com", Options.Instance.DevHubGitHubEnabled)
+                ? Visibility.Visible : Visibility.Collapsed;
+            AccountRecoveryPanel.Visibility = VisualStudioAccountRecoveryText.Visibility == Visibility.Visible
+                || GitHubAccountRecoveryText.Visibility == Visibility.Visible
+                ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        internal static bool NeedsAccountRecovery(DevHubDashboard dashboard, string host, bool enabled)
+        {
+            if (!enabled || dashboard == null || dashboard.IsRefreshing)
+                return false;
+            var provider = host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ? "GitHub/" : "Azure DevOps/";
+            return !dashboard.HasProvider(host) || dashboard.Sources.Any(pair => (pair.Key.StartsWith(provider, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(pair.Value.RepoIdentifier?.Host, host, StringComparison.OrdinalIgnoreCase))
+                && pair.Value.Status == DevHubActivityStatus.Unauthorized);
         }
 
         internal static string GetActivityRefreshStatus(DevHubDashboard dashboard)
@@ -246,6 +272,7 @@ namespace StartScreen.ToolWindows.Controls
             ClearInactiveActivityItems();
             ActivityWarningText.Text = null;
             ActivityWarningText.Visibility = Visibility.Collapsed;
+            AccountRecoveryPanel.Visibility = Visibility.Collapsed;
             ActivityCoveragePanel.Visibility = Visibility.Collapsed;
             UpdateWorkspaceActivity(Array.Empty<DevHubPullRequest>(), Array.Empty<DevHubIssue>(), Array.Empty<DevHubCiRun>());
         }
@@ -919,6 +946,18 @@ namespace StartScreen.ToolWindows.Controls
         {
             OpenUrl("https://github.com/settings/tokens");
         }
+
+        private void OpenAccountSettings_Click(object sender, RoutedEventArgs e)
+        {
+            OpenAccountSettingsRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void OpenGitHubOrganizationAuthorization_Click(object sender, RoutedEventArgs e)
+        {
+            OpenUrl("https://github.com/settings/applications");
+        }
+
+        public event EventHandler OpenAccountSettingsRequested;
 
         // ---- Azure DevOps server list (cloud + on-prem) ----
 

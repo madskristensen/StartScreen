@@ -501,6 +501,7 @@
                                                       RefreshRequested="DevHubPanel_RefreshRequested" LastRefreshChanged="DevHubPanel_LastRefreshChanged"
                                                       ActivityOptionsChanged="DevHubPanel_ActivityOptionsChanged"
                                                       ConnectAccountRequested="DevHubPanel_ConnectAccountRequested" ScopeToRepoRequested="DevHubPanel_ScopeToRepoRequested"
+                                                      OpenAccountSettingsRequested="OpenAccountSettings_Click"
                                                       FocusMruRequested="DevHubPanel_FocusMruRequested" FocusNewsRequested="DevHubPanel_FocusNewsRequested"/>
                                 <Grid x:Name="NewsColumnPanel" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" VerticalAlignment="Top">
                                     <Grid.RowDefinitions>
@@ -606,6 +607,13 @@
                                         <TextBlock Text="{Binding FeedbackStatus}" TextWrapping="Wrap" Margin="8 0 0 12"
                                                    Visibility="{Binding FeedbackStatus, Converter={StaticResource NullToCollapsedConverter}}"
                                                    AutomationProperties.LiveSetting="Polite"/>
+                                        <TextBlock Margin="8 0 0 12"
+                                                   Visibility="{Binding FeedbackRequiresSignIn, Converter={StaticResource BoolToVisibilityConverter}}">
+                                            <Hyperlink Click="OpenAccountSettings_Click"
+                                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                                                Open Visual Studio account settings...
+                                            </Hyperlink>
+                                        </TextBlock>
                                         <ItemsControl x:Name="FeedbackItems" ItemsSource="{Binding FeedbackTickets}" Focusable="False"
                                                       Opacity="{Binding IsRefreshingFeedback, Converter={StaticResource RefreshingToOpacityConverter}}">
                                             <ItemsControl.ItemsPanel>

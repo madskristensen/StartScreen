@@ -18,8 +18,21 @@ namespace StartScreen.ToolWindows
         private bool _isRefreshingFeedback;
         private string _lastFeedbackRefreshText;
         private string _feedbackStatus = "Feedback loads in the background.";
+        private bool _feedbackRequiresSignIn;
 
         public ObservableCollection<FeedbackTicket> FeedbackTickets { get; } = new ObservableCollection<FeedbackTicket>();
+
+        public bool FeedbackRequiresSignIn
+        {
+            get => _feedbackRequiresSignIn;
+            private set
+            {
+                if (_feedbackRequiresSignIn == value)
+                    return;
+                _feedbackRequiresSignIn = value;
+                OnPropertyChanged();
+            }
+        }
 
         public bool IsRefreshingFeedback
         {
@@ -110,6 +123,7 @@ namespace StartScreen.ToolWindows
             FeedbackTickets.Clear();
             LastFeedbackRefreshText = null;
             FeedbackStatus = "Feedback loading...";
+            FeedbackRequiresSignIn = false;
             FeedbackSnapshot cached = null;
             try
             {
@@ -138,6 +152,7 @@ namespace StartScreen.ToolWindows
                 if (!token.IsCancellationRequested)
                 {
                     var authentication = ex is UnauthorizedAccessException || ex is CredentialUnavailableException || ex is AuthenticationFailedException;
+                    FeedbackRequiresSignIn = authentication;
                     var retainCache = cached != null && !authentication;
                     if (!retainCache)
                         FeedbackTickets.Clear();

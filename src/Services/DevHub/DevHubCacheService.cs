@@ -68,12 +68,18 @@ namespace StartScreen.Services.DevHub
                 var dashboard = await AtomicJsonCache.ReadAsync<DevHubDashboard>(filePath, cancellationToken, _jsonOptions).ConfigureAwait(false);
                 if (dashboard != null)
                 {
-                    foreach (var source in dashboard.Sources.Values.Where(source => IsLegacySamlWarning(source.Message)))
-                        source.Message = null;
-                    foreach (var warning in dashboard.ActivityWarnings.Where(pair => IsLegacySamlWarning(pair.Value)).ToArray())
+                    foreach (var source in dashboard.Sources.Values)
+                        source.Message = RemoveOptionalSamlWarnings(source.Message);
+                    foreach (var warning in dashboard.ActivityWarnings.ToArray())
                     {
+                        var remaining = RemoveOptionalSamlWarnings(warning.Value);
+                        if (remaining == warning.Value)
+                            continue;
                         OutputLog.Info("GitHub", warning.Value);
-                        dashboard.ActivityWarnings.Remove(warning.Key);
+                        if (remaining == null)
+                            dashboard.ActivityWarnings.Remove(warning.Key);
+                        else
+                            dashboard.ActivityWarnings[warning.Key] = remaining;
                     }
                 }
                 return dashboard;
@@ -89,8 +95,24 @@ namespace StartScreen.Services.DevHub
             }
         }
 
-        private static bool IsLegacySamlWarning(string message) => message?.Contains(
-            "GitHub is connected. Some organizations restrict review/check details with SAML SSO.") == true;
+        private static string RemoveOptionalSamlWarnings(string message)
+        {
+            if (string.IsNullOrEmpty(message))
+                return message;
+            var remaining = message.Replace(
+                "Pull requests loaded. GitHub is connected. Some organizations restrict review/check details with SAML SSO.", string.Empty);
+            const string prefix = "Review/check metadata is restricted by organization SAML SSO for ";
+            const string suffix = ". Loaded pull requests remain available.";
+            while (true)
+            {
+                var start = remaining.IndexOf(prefix, StringComparison.Ordinal);
+                var end = start < 0 ? -1 : remaining.IndexOf(suffix, start, StringComparison.Ordinal);
+                if (end < 0)
+                    break;
+                remaining = remaining.Remove(start, end + suffix.Length - start);
+            }
+            return remaining == message ? message : string.IsNullOrWhiteSpace(remaining) ? null : remaining.Trim();
+        }
 
         /// <summary>
         /// Writes the dashboard data to disk cache.

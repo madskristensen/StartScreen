@@ -435,6 +435,13 @@
                                   SelectionChanged="GitHubAccountsComboBox_SelectionChanged"
                                   />
                     </StackPanel>
+                    <TextBlock typography:Typography.Role="Metadata" Margin="18 8 0 0" TextWrapping="Wrap">
+                        <Hyperlink Click="OpenGitHubOrganizationAuthorization_Click"
+                                   ToolTip="Optional: organization permissions vary. Authorize the existing OAuth app for organizations whose review/check details you want to access."
+                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                            Authorize GitHub organization access...
+                        </Hyperlink>
+                    </TextBlock>
                 </StackPanel>
                 <TextBlock x:Name="SettingsConnectGitHubTextBlock" typography:Typography.Role="Metadata" Margin="0 0 0 4"
                            IsEnabled="{Binding IsChecked, ElementName=GitHubProviderEnabled}">
@@ -490,6 +497,13 @@
                 <!-- Azure DevOps section: cloud + on-prem servers -->
                 <TextBlock x:Name="AdoAuthenticationHelpText" Visibility="Collapsed"
                            typography:Typography.Role="Metadata" Opacity="0.8" TextWrapping="Wrap" Margin="0 0 0 6"/>
+                <TextBlock typography:Typography.Role="Metadata" Margin="0 0 0 8"
+                           IsEnabled="{Binding IsChecked, ElementName=AdoProviderEnabled}">
+                    <Hyperlink Click="OpenAccountSettings_Click"
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                        Open Visual Studio account settings...
+                    </Hyperlink>
+                </TextBlock>
                 <ItemsControl x:Name="AdoServersList" Focusable="False"
                               IsEnabled="{Binding IsChecked, ElementName=AdoProviderEnabled}">
                     <ItemsControl.ItemTemplate>
@@ -826,6 +840,25 @@
             <TextBlock x:Name="ActivityWarningText" DockPanel.Dock="Top" Visibility="Collapsed"
                        Margin="8 0 0 8" TextWrapping="Wrap" typography:Typography.Role="Body"
                        Foreground="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
+
+            <StackPanel x:Name="AccountRecoveryPanel" DockPanel.Dock="Top" Visibility="Collapsed" Margin="8 0 0 12">
+                <TextBlock x:Name="VisualStudioAccountRecoveryText" TextWrapping="Wrap" Visibility="Collapsed">
+                    <Run Text="Azure DevOps isn't connected or needs reauthentication. "/>
+                    <Hyperlink Click="OpenAccountSettings_Click"
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                        Open Visual Studio account settings
+                    </Hyperlink>
+                    <Run Text=", reauthenticate, then refresh."/>
+                </TextBlock>
+                <TextBlock x:Name="GitHubAccountRecoveryText" TextWrapping="Wrap" Visibility="Collapsed">
+                    <Run Text="GitHub isn't connected or needs reauthentication. "/>
+                    <Hyperlink Click="ConnectGitHub_Click"
+                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                        Reconnect GitHub account
+                    </Hyperlink>
+                    <Run Text=" using Git Credential Manager, then refresh."/>
+                </TextBlock>
+            </StackPanel>
 
             <StackPanel x:Name="ActivityCoveragePanel" DockPanel.Dock="Bottom" Margin="8 10 0 0" Visibility="Collapsed">
                 <WrapPanel>

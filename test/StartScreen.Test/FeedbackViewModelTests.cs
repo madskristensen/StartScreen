@@ -114,6 +114,7 @@ namespace StartScreen.Test
                 Assert.AreEqual(!authentication, model.FeedbackRefreshState.IsCached);
                 Assert.AreEqual(!authentication, model.FeedbackRefreshState.IsStale);
                 Assert.AreEqual(authentication, model.FeedbackRefreshState.IsUnavailable);
+                Assert.AreEqual(authentication, model.FeedbackRequiresSignIn);
                 Assert.IsFalse(model.IsRefreshingFeedback);
                 if (authentication)
                 {
@@ -130,6 +131,29 @@ namespace StartScreen.Test
             {
                 model.CancelBackgroundWork();
             }
+        }
+
+        [STATestMethod]
+        public void FeedbackSignInRecovery_ClearsAfterSuccessfulRetryAndWhenHidden()
+        {
+            using var context = CreateContext();
+            var fail = true;
+            using var model = Model(context, (_, _) => fail
+                ? Task.FromException<FeedbackSnapshot>(new UnauthorizedAccessException("Test reauthentication required"))
+                : Task.FromResult(Snapshot(7)));
+            context.Factory.Run(() => model.RefreshFeedbackAsync(true));
+            Assert.IsTrue(model.FeedbackRequiresSignIn);
+
+            fail = false;
+            context.Factory.Run(() => model.RefreshFeedbackAsync(true));
+            Assert.IsFalse(model.FeedbackRequiresSignIn);
+            Assert.HasCount(1, model.FeedbackTickets);
+
+            fail = true;
+            context.Factory.Run(() => model.RefreshFeedbackAsync(true));
+            Assert.IsTrue(model.FeedbackRequiresSignIn);
+            model.CancelBackgroundWork();
+            Assert.IsFalse(model.FeedbackRequiresSignIn);
         }
 
         [STATestMethod]
@@ -401,10 +425,14 @@ namespace StartScreen.Test
 
             Assert.AreEqual("Feedback", tab.Attribute("Header")?.Value);
             Assert.AreEqual("{StaticResource NewsTabItemStyle}", tab.Attribute("Style")?.Value);
-            Assert.AreEqual("{Binding FeedbackStatus}", tab.Element(p + "StackPanel")!.Elements(p + "TextBlock").Single().Attribute("Text")?.Value);
+            Assert.AreEqual("{Binding FeedbackStatus}", tab.Element(p + "StackPanel")!.Elements(p + "TextBlock").First().Attribute("Text")?.Value);
             Assert.IsTrue(tab.Descendants(p + "TextBlock").Any(item => item.Attribute("Text")?.Value == "{Binding FeedbackStatus}"));
             Assert.AreEqual("{Binding FeedbackTickets}", tab.Descendants(p + "ItemsControl").Single().Attribute("ItemsSource")?.Value);
-            var link = tab.Descendants(p + "Hyperlink").Single();
+            var recovery = tab.Descendants(p + "Hyperlink").Single(item => item.Attribute("Click")?.Value == "OpenAccountSettings_Click");
+            Assert.AreEqual("{Binding FeedbackRequiresSignIn, Converter={StaticResource BoolToVisibilityConverter}}",
+                recovery.Parent!.Attribute("Visibility")?.Value);
+            Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}", recovery.Attribute("Foreground")?.Value);
+            var link = tab.Descendants(p + "Hyperlink").Single(item => item.Attribute("NavigateUri") != null);
             Assert.AreEqual("{Binding Url}", link.Attribute("NavigateUri")?.Value);
             Assert.AreEqual("FeedbackTicket_RequestNavigate", link.Attribute("RequestNavigate")?.Value);
             Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}", link.Attribute("Foreground")?.Value);

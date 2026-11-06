@@ -555,6 +555,14 @@ namespace StartScreen.ToolWindows
             }).FileAndForget(nameof(StartScreenControl));
         }
 
+        private void OpenAccountSettings_Click(object sender, EventArgs e)
+        {
+            if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
+                return;
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(VsCommandService.OpenAccountSettingsAsync)
+                .FileAndForget(nameof(StartScreenControl));
+        }
+
         private void DevHubPanel_ScopeToRepoRequested(object sender, RemoteRepoIdentifier repo)
         {
             ViewModel.SelectedMruItem = null;

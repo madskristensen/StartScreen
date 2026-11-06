@@ -292,7 +292,7 @@ namespace StartScreen.ToolWindows
             RefreshState.Message = LastYouTubeRefreshText;
             if (successfulUtc.HasValue)
                 RefreshState.LastSuccessfulRefreshUtc = successfulUtc;
-            OutputLog.Info("Videos", $"{LastYouTubeRefreshText}; {_allYouTubeVideos.Count} videos (cache={cached}, stale={stale}, unavailable={unavailable}).");
+            OutputLog.Refresh("Videos", $"{LastYouTubeRefreshText}; {_allYouTubeVideos.Count} videos.", RefreshState);
             OnPropertyChanged(nameof(RefreshState));
         }
 

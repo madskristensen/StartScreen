@@ -31,7 +31,7 @@ namespace StartScreen.ToolWindows
                 state.LastSuccessfulRefreshUtc = successfulUtc;
             string section = ReferenceEquals(state, FeedbackRefreshState) ? "Feedback"
                 : ReferenceEquals(state, DevHubRefreshState) ? "Activity" : "Service status";
-            OutputLog.Info(section, $"{message} (cache={cached}, stale={stale}, partial={partial}, unavailable={unavailable}).");
+            OutputLog.Refresh(section, message, state);
             NotifyRefreshStatusChanged();
         }
 

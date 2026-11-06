@@ -67,6 +67,27 @@ namespace StartScreen.Services
             await VS.Commands.ExecuteAsync("File.NewProject");
         }
 
+        public static async Task OpenAccountSettingsAsync()
+        {
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                await OpenAccountSettingsCoreAsync(command => VS.Commands.ExecuteAsync(command));
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen",
+                    "Could not open account settings. Use File > Account Settings to sign in or reauthenticate, then refresh Start Screen.");
+            }
+        }
+
+        internal static async Task OpenAccountSettingsCoreAsync(Func<string, System.Threading.Tasks.Task<bool>> executeAsync)
+        {
+            if (!await executeAsync("File.AccountSettings"))
+                throw new InvalidOperationException("Visual Studio's account settings command is unavailable.");
+        }
+
         /// <summary>
         /// Opens the New Project dialog with a specific template pre-selected (if possible).
         /// Falls back to opening the dialog normally if template selection isn't supported.

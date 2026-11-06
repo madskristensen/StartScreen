@@ -1,4 +1,6 @@
 using System.IO;
+using System.Linq.Expressions;
+using StartScreen.Models;
 
 namespace StartScreen.Test
 {
@@ -6,14 +8,67 @@ namespace StartScreen.Test
     public class OutputLogTests
     {
         [TestMethod]
-        public async Task DiagnosticsBeforeInitialization_DoNotRequireVisualStudioAsync()
+        public void ExceptionLogging_ResolvesToTheToolkitInsteadOfTheStatusPane()
         {
-            OutputLog.Info("Test", "Logging before the Output pane exists.");
-            Task operation = new InvalidOperationException("Handled test failure.").LogAsync();
+            Expression<Func<Exception, Task>> log = exception => exception.LogAsync();
+            var method = ((MethodCallExpression)log.Body).Method;
 
-            Assert.AreEqual(TaskStatus.RanToCompletion, operation.Status,
-                "Diagnostics must buffer without waiting for Visual Studio services.");
-            await operation;
+            Assert.AreEqual("System.ExceptionExtensions", method.DeclaringType!.FullName);
+            Assert.AreEqual("Community.VisualStudio.Toolkit", method.DeclaringType.Assembly.GetName().Name);
+        }
+
+        [TestMethod]
+        [DataRow(false, false, false, false, "Activity updated")]
+        [DataRow(true, false, false, false, "Activity updated (cached content)")]
+        [DataRow(false, true, false, false, "Activity updated (may be out of date)")]
+        [DataRow(false, false, true, false, "Activity updated (some sources unavailable)")]
+        [DataRow(false, false, false, true, "Activity updated (unavailable)")]
+        [DataRow(true, true, true, true, "Activity updated (cached content, may be out of date, some sources unavailable, unavailable)")]
+        public void RefreshMessages_DescribeOnlyRelevantStates(bool cached, bool stale, bool partial, bool unavailable, string expected)
+        {
+            var state = new SectionRefreshState { IsCached = cached, IsStale = stale, IsPartial = partial, IsUnavailable = unavailable };
+
+            Assert.AreEqual(expected, OutputLog.FormatRefreshMessage("Activity updated", state));
+        }
+
+        [TestMethod]
+        public async Task RepeatedStatuses_AreSuppressedPerSourceWithoutHidingTransitionsOrDiagnosticsAsync()
+        {
+            var log = new OutputLogBuffer();
+            var lines = new List<string>();
+            Task initial = log.WriteAsync("Activity", "Refreshing", suppressRepeated: true);
+            Assert.AreEqual(TaskStatus.RanToCompletion, initial.Status);
+            await initial;
+            await log.WriteAsync("Activity", "Refreshing", suppressRepeated: true);
+            await log.WriteAsync("Feedback", "Refreshing", suppressRepeated: true);
+            await log.InitializeAsync(line => { lines.Add(line); return Task.CompletedTask; });
+            await log.WriteAsync("Activity", "Source finished");
+            await log.WriteAsync("Activity", "Refreshing", suppressRepeated: true);
+            await log.WriteAsync("Activity", "Updated", suppressRepeated: true);
+            await log.WriteAsync("Activity", "Updated", suppressRepeated: true);
+            await log.WriteAsync("Activity", "Refreshing", suppressRepeated: true);
+            await log.WriteAsync("Activity", "Source finished");
+
+            Assert.HasCount(6, lines);
+            StringAssert.Contains(lines[0], "[Activity] Refreshing");
+            StringAssert.Contains(lines[1], "[Feedback] Refreshing");
+            StringAssert.Contains(lines[2], "[Activity] Source finished");
+            StringAssert.Contains(lines[3], "[Activity] Updated");
+            StringAssert.Contains(lines[4], "[Activity] Refreshing");
+            StringAssert.Contains(lines[5], "[Activity] Source finished");
+        }
+
+        [TestMethod]
+        public async Task ConcurrentIdenticalStatuses_AreWrittenOnceAsync()
+        {
+            var log = new OutputLogBuffer();
+            var lines = new List<string>();
+            await log.InitializeAsync(line => { lines.Add(line); return Task.CompletedTask; });
+
+            await Task.WhenAll(Enumerable.Range(0, 64).Select(_ => Task.Run(() => log.WriteAsync("Activity", "Updated", suppressRepeated: true))));
+
+            Assert.HasCount(1, lines);
+            StringAssert.Contains(lines[0], "[Activity] Updated");
         }
 
         [TestMethod]

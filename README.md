@@ -92,14 +92,26 @@ Automatic Bitbucket authentication runs only when a Bitbucket repository is in
 the workspace or a matching credential exists in Start Screen or Windows Git
 Credential Manager. Detection checks Git credential target names without reading
 their passwords. Other credential-store backends require a matching repository
-or a token stored through Start Screen. Bitbucket failures remain in the Output
-window instead of the activity warning banner.
+or a token stored through Start Screen. Bitbucket failures are logged through the
+VSIX Toolkit instead of the activity warning banner.
 The Dev Hub account settings include independent GitHub, Azure DevOps, and
 Bitbucket checkboxes. Turning off a provider stops its authentication, activity,
 and repository-summary requests without deleting its stored credentials.
 Git status detection uses version-matched native libraries bundled with the
 extension for x64 and ARM64 Visual Studio. No separate libgit2 installation is
 required.
+
+The **Start Screen** Output pane shows readable progress and recovery guidance,
+without raw exception details or boolean status dumps. Unchanged refresh status
+messages are not repeated as activity sources finish loading. Exceptions are
+logged with the VSIX Community Toolkit's `ex.LogAsync()` in the **Extensions**
+Output pane, keeping stack traces separate from Start Screen status messages.
+Sign-in recovery links open **File > Account Settings** for Visual Studio-backed
+Azure DevOps and Feedback authentication. GitHub reconnect uses Git Credential
+Manager. Organization SAML SSO restrictions on optional metadata are logged only
+in the Output pane, not the dashboard warning banner. The GitHub account settings
+include an optional organization-authorization link, since permissions vary by
+organization and do not prevent using the rest of Start Screen.
 
 For startup profiling, Debug builds emit `[StartScreen startup]` trace milestones
 for control creation, loading, MRU display, and secondary content. These are
@@ -343,7 +355,8 @@ than waiting for news, videos, or feedback to finish.
 
 Open **View > Output > Start Screen** for diagnostics. The pane uses `Vsix.Name`
 and records timestamped refresh summaries, source counts, cache decisions,
-handled exceptions, and SAML details without automatically activating the window.
+and SAML details without automatically activating the window. Handled exceptions
+are logged separately to the Toolkit's **Extensions** pane.
 MRU retrieval is separate and unchanged.
 
 ## Drag and drop

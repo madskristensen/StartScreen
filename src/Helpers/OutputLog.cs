@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
-using System.IO;
-using System.Runtime.CompilerServices;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Threading;
+using StartScreen.Models;
 
 namespace StartScreen
 {
@@ -30,18 +30,30 @@ namespace StartScreen
             WriteAsync(source, message).Forget();
         }
 
-        internal static Task LogAsync(this Exception exception,
-            [CallerMemberName] string operation = null, [CallerFilePath] string sourceFile = null)
+        internal static void Refresh(string source, string message, SectionRefreshState state)
         {
-            string detail = exception is OperationCanceledException ? "Canceled." : exception.ToString();
-            return WriteAsync(Path.GetFileNameWithoutExtension(sourceFile) ?? Vsix.Name, $"{operation}: {detail}");
+            WriteAsync(source, FormatRefreshMessage(message, state), suppressRepeated: true).Forget();
         }
 
-        private static async Task WriteAsync(string source, string message)
+        internal static string FormatRefreshMessage(string message, SectionRefreshState state)
+        {
+            var details = new List<string>();
+            if (state.IsCached)
+                details.Add("cached content");
+            if (state.IsStale)
+                details.Add("may be out of date");
+            if (state.IsPartial)
+                details.Add("some sources unavailable");
+            if (state.IsUnavailable)
+                details.Add("unavailable");
+            return details.Count == 0 ? message : $"{message} ({string.Join(", ", details)})";
+        }
+
+        private static async Task WriteAsync(string source, string message, bool suppressRepeated = false)
         {
             try
             {
-                await _buffer.WriteAsync(source, message);
+                await _buffer.WriteAsync(source, message, suppressRepeated);
             }
             catch (Exception ex)
             {
@@ -53,6 +65,7 @@ namespace StartScreen
     internal sealed class OutputLogBuffer
     {
         private readonly ConcurrentQueue<string> _messages = new ConcurrentQueue<string>();
+        private readonly Dictionary<string, string> _lastStatusMessages = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
         private Func<string, Task> _writeLineAsync;
 
@@ -72,9 +85,15 @@ namespace StartScreen
             await FlushAsync();
         }
 
-        internal Task WriteAsync(string source, string message)
+        internal Task WriteAsync(string source, string message, bool suppressRepeated = false)
         {
-            _messages.Enqueue($"[{DateTimeOffset.Now:HH:mm:ss}] [{source}] {message}");
+            lock (_messages)
+            {
+                if (!suppressRepeated || !_lastStatusMessages.TryGetValue(source, out var previous) || previous != message)
+                    _messages.Enqueue($"[{DateTimeOffset.Now:HH:mm:ss}] [{source}] {message}");
+                if (suppressRepeated)
+                    _lastStatusMessages[source] = message;
+            }
             return FlushAsync();
         }
 
