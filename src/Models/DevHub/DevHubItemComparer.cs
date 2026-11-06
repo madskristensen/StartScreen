@@ -52,6 +52,10 @@ namespace StartScreen.Models.DevHub
                 && StringEquals(left.Author, right.Author)
                 && StringEquals(left.TargetBranch, right.TargetBranch)
                 && StringEquals(left.SourceBranch, right.SourceBranch)
+                && Equals(left.SourceRepoIdentifier, right.SourceRepoIdentifier)
+                && StringEquals(left.HeadCommitId, right.HeadCommitId)
+                && StringEquals(left.ChecksCommitId, right.ChecksCommitId)
+                && SameLinks(left.LinkedWorkItems, right.LinkedWorkItems)
                 && StringEquals(left.Status, right.Status)
                 && StringEquals(left.CiStatus, right.CiStatus)
                 && left.ApprovalCount == right.ApprovalCount
@@ -70,6 +74,20 @@ namespace StartScreen.Models.DevHub
                 && left.IsAuthoredByCurrentUser == right.IsAuthoredByCurrentUser
                 && left.IsAssignedToCurrentUser == right.IsAssignedToCurrentUser
                 && left.IsReviewRequestedForCurrentUser == right.IsReviewRequestedForCurrentUser;
+        }
+
+        private static bool SameLinks(IReadOnlyDictionary<string, string> left, IReadOnlyDictionary<string, string> right)
+        {
+            if (ReferenceEquals(left, right))
+                return true;
+            if (left == null || right == null || left.Count != right.Count)
+                return false;
+            foreach (var pair in left)
+            {
+                if (!right.TryGetValue(pair.Key, out var value) || !StringEquals(pair.Value, value))
+                    return false;
+            }
+            return true;
         }
 
         private static bool SameIssue(DevHubIssue left, DevHubIssue right)

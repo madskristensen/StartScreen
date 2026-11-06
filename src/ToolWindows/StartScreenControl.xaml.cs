@@ -891,6 +891,8 @@ namespace StartScreen.ToolWindows
                 _workspaceCancellation?.Cancel();
             }
             ViewModel.SetDevHubRefreshState(_workspaceDashboard ?? dashboard, cached, error ?? _workspaceError);
+            ViewModel.UpdateWorkspaceActivity(Options.Instance.DevHubEnabled ? dashboard : null,
+                Options.Instance.DevHubEnabled ? _workspaceDashboard : null, cached);
             DevHubPanelControl.SetCopilotWorkspace(ViewModel.GetCopilotWorkspaceRoots(),
                 ViewModel.SelectedMruItem != null || ViewModel.SelectedRepository != null);
             if (ViewModel.HasSelectedMruItem && ViewModel.SelectedRepository == null)

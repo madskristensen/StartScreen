@@ -12,6 +12,8 @@ namespace StartScreen.Models
         /// Null if not a Git repository.
         /// </summary>
         public string BranchName { get; set; }
+        public string HeadCommitId { get; set; }
+        public bool IsDetachedHead { get; set; }
 
         /// <summary>
         /// Number of commits ahead of the upstream tracking branch.

@@ -398,6 +398,7 @@ namespace StartScreen.Services.DevHub.Providers
                 Author = author,
                 TargetBranch = targetBranch,
                 SourceBranch = sourceBranch,
+                SourceRepoIdentifier = ParsePrRepository(item, "source"),
                 Status = MapBitbucketPrState(item.GetProperty("state").GetString()),
                 UpdatedAt = item.GetProperty("updated_on").GetDateTime().ToUniversalTime(),
                 CreatedAt = item.GetProperty("created_on").GetDateTime().ToUniversalTime(),
@@ -456,6 +457,7 @@ namespace StartScreen.Services.DevHub.Providers
                         Author = author,
                         TargetBranch = targetBranch,
                         SourceBranch = sourceBranch,
+                        SourceRepoIdentifier = ParsePrRepository(item, "source"),
                         Status = MapBitbucketPrState(item.GetProperty("state").GetString()),
                         UpdatedAt = item.GetProperty("updated_on").GetDateTime().ToUniversalTime(),
                         CreatedAt = item.GetProperty("created_on").GetDateTime().ToUniversalTime(),
@@ -581,7 +583,12 @@ namespace StartScreen.Services.DevHub.Providers
         /// </summary>
         private static RemoteRepoIdentifier ParseRepoFromPrSource(JsonElement prItem)
         {
-            if (prItem.TryGetProperty("destination", out var dest)
+            return ParsePrRepository(prItem, "destination");
+        }
+
+        private static RemoteRepoIdentifier ParsePrRepository(JsonElement prItem, string side)
+        {
+            if (prItem.TryGetProperty(side, out var dest)
                 && dest.TryGetProperty("repository", out var repoEl)
                 && repoEl.TryGetProperty("full_name", out var fullName))
             {

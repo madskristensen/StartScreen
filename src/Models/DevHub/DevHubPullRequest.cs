@@ -61,6 +61,10 @@ namespace StartScreen.Models.DevHub
         /// The source branch name.
         /// </summary>
         public string SourceBranch { get; set; }
+        public RemoteRepoIdentifier SourceRepoIdentifier { get; set; }
+        public string HeadCommitId { get; set; }
+        public string ChecksCommitId { get; set; }
+        public Dictionary<string, string> LinkedWorkItems { get; set; } = new();
 
         /// <summary>
         /// PR status (e.g., "open", "draft", "conflicts").

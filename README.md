@@ -261,6 +261,18 @@ found. With a workspace selected, it refreshes that repository directly.
 **Include completed work (14 days)** optionally shows your recently merged PRs
 and completed issues and tasks, separately from your active work.
 
+**Connect your branch to its work.**
+The MRU tooltip also connects the current branch to matching open PRs in already
+loaded activity, showing review/check status and explicit linked work items when
+the provider supplies them. Matching requires the source repository and exact
+branch, so similarly named branches in forks are not confused. Checks identify
+whether their commit matches local HEAD; unknown and different commits never
+claim to validate local changes. Detached checkouts are not matched by branch.
+Only two PRs and two linked items per PR are previewed, with additional counts.
+Cached or incomplete activity is labeled, and no match is not proof of no PR.
+Hovering does not authenticate, fetch data, or invoke Copilot. Existing row-level
+branch and repository-wide counts are unchanged.
+
 **See your Git status at a glance.** Every repo shows its current branch,
 ahead/behind counts, uncommitted changes, and the last commit time - all
 loaded in the background so the UI stays snappy. Hover for the full

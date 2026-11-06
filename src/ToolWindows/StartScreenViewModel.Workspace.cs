@@ -28,6 +28,24 @@ namespace StartScreen.ToolWindows
         private readonly Func<JoinableTaskFactory> _getServiceHealthTaskFactory;
         private CancellationTokenSource _serviceHealthRefreshCancellation;
         private System.Windows.Threading.DispatcherTimer _serviceHealthRefreshTimer;
+        private IReadOnlyList<DevHubPullRequest> _workspacePullRequests = Array.Empty<DevHubPullRequest>();
+        private bool _workspaceActivityIncomplete;
+
+        internal void UpdateWorkspaceActivity(DevHubDashboard dashboard, DevHubDashboard scoped = null, bool cached = false)
+        {
+            var snapshots = new[] { scoped, dashboard }.Where(snapshot => snapshot?.HasAuthentication == true).ToArray();
+            _workspacePullRequests = snapshots.SelectMany(snapshot => snapshot.PullRequests)
+                .GroupBy(pr => pr.WebUrl, StringComparer.Ordinal).Select(group => group.First()).ToArray();
+            _workspaceActivityIncomplete = cached || snapshots.Any(snapshot => snapshot.IsRefreshing
+                || snapshot.Status != DevHubActivityStatus.Success || snapshot.ActivityWarnings.Count > 0);
+            RefreshWorkspaceActivity(_allMruItems?.AsEnumerable() ?? Enumerable.Empty<MruItem>());
+        }
+
+        private void RefreshWorkspaceActivity(IEnumerable<MruItem> items)
+        {
+            foreach (var item in items)
+                item.ApplyBranchActivity(WorkspaceActivity.Format(item, _workspacePullRequests, _workspaceActivityIncomplete));
+        }
 
         public string WorkSectionTitle => _repositoryScopeOverride?.Repo ?? SelectedMruItem?.Name ?? "Your work";
 

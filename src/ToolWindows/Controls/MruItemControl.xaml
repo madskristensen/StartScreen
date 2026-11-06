@@ -140,6 +140,9 @@
                     <TextBlock Text="{Binding CopilotChatTooltip}" Margin="0 4 0 0"
                                Visibility="{Binding HasCopilotChatSessions, Converter={StaticResource BoolToVisibilityConverter}}"/>
 
+                    <TextBlock Text="{Binding BranchActivityTooltip}" Margin="0 4 0 0" MaxWidth="400" TextWrapping="Wrap"
+                               Visibility="{Binding BranchActivityTooltip, Converter={StaticResource NullToCollapsedConverter}}"/>
+
                     <!-- Path -->
                     <StackPanel Orientation="Horizontal" Margin="0 6 0 0">
                         <TextBlock Text="Path: " Opacity="0.7"/>

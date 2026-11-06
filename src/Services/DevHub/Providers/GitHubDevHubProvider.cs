@@ -742,7 +742,7 @@ namespace StartScreen.Services.DevHub.Providers
                 pr.CanMerge = null;
                 pr.UnresolvedThreadCount = null;
                 pr.MergeBlockReason = "Merge readiness could not be verified.";
-                query.Append($"r{i}: repository(owner:{JsonSerializer.Serialize(pr.RepoIdentifier.Owner)}, name:{JsonSerializer.Serialize(pr.RepoIdentifier.Repo)}) {{ pullRequest(number:{pr.NumericId}) {{ state isDraft merged mergeable mergeStateStatus reviewDecision reviewThreads(first:100) {{ nodes {{ isResolved }} pageInfo {{ hasNextPage }} }} commits(last:1) {{ nodes {{ commit {{ statusCheckRollup {{ state contexts(first:100) {{ nodes {{ ... on CheckRun {{ name status conclusion detailsUrl }} ... on StatusContext {{ context state targetUrl }} }} pageInfo {{ hasNextPage }} }} }} }} }} }} }} }}");
+                query.Append($"r{i}: repository(owner:{JsonSerializer.Serialize(pr.RepoIdentifier.Owner)}, name:{JsonSerializer.Serialize(pr.RepoIdentifier.Repo)}) {{ pullRequest(number:{pr.NumericId}) {{ headRefName headRefOid headRepository {{ url }} closingIssuesReferences(first:10) {{ nodes {{ url title }} }} state isDraft merged mergeable mergeStateStatus reviewDecision reviewThreads(first:100) {{ nodes {{ isResolved }} pageInfo {{ hasNextPage }} }} commits(last:1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state contexts(first:100) {{ nodes {{ ... on CheckRun {{ name status conclusion detailsUrl }} ... on StatusContext {{ context state targetUrl }} }} pageInfo {{ hasNextPage }} }} }} }} }} }} }} }}");
             }
             query.Append('}');
             using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.github.com/graphql");
@@ -820,6 +820,25 @@ namespace StartScreen.Services.DevHub.Providers
             pr.MergeBlockReason = "Merge readiness could not be verified.";
             pr.ChecksSummary = null;
             pr.ChecksUrl = null;
+            pr.ChecksCommitId = null;
+            if (metadata.TryGetProperty("headRefName", out var sourceBranch))
+                pr.SourceBranch = sourceBranch.ValueKind == JsonValueKind.String ? sourceBranch.GetString() : null;
+            if (metadata.TryGetProperty("headRefOid", out var head))
+                pr.HeadCommitId = head.ValueKind == JsonValueKind.String ? head.GetString() : null;
+            if (metadata.TryGetProperty("headRepository", out var sourceRepository))
+                pr.SourceRepoIdentifier = sourceRepository.ValueKind == JsonValueKind.Object
+                    ? RemoteRepoIdentifier.TryParse(GetString(sourceRepository, "url")) : null;
+            pr.LinkedWorkItems.Clear();
+            if (metadata.TryGetProperty("closingIssuesReferences", out var linked) && linked.ValueKind == JsonValueKind.Object
+                && linked.TryGetProperty("nodes", out var linkedNodes) && linkedNodes.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var issue in linkedNodes.EnumerateArray().Where(issue => issue.ValueKind == JsonValueKind.Object))
+                {
+                    var url = GetString(issue, "url");
+                    if (!string.IsNullOrEmpty(url))
+                        pr.LinkedWorkItems[url] = GetString(issue, "title");
+                }
+            }
             if (metadata.TryGetProperty("state", out var state) && state.ValueKind == JsonValueKind.String)
                 pr.Status = state.GetString() == "OPEN"
                     ? pr.IsDraft && (!metadata.TryGetProperty("isDraft", out var explicitDraft) || explicitDraft.ValueKind != JsonValueKind.False) ? "draft" : "open"
@@ -847,6 +866,7 @@ namespace StartScreen.Services.DevHub.Providers
                 && commit.TryGetProperty("statusCheckRollup", out var rollup) && rollup.ValueKind == JsonValueKind.Object
                 && rollup.TryGetProperty("state", out var checkState))
             {
+                pr.ChecksCommitId = GetString(commit, "oid");
                 pr.CiStatus = checkState.GetString() switch
                 {
                     "FAILURE" or "ERROR" => "failure",
@@ -1045,6 +1065,9 @@ namespace StartScreen.Services.DevHub.Providers
                         Author = author,
                         TargetBranch = item.GetProperty("base").GetProperty("ref").GetString(),
                         SourceBranch = item.GetProperty("head").GetProperty("ref").GetString(),
+                        SourceRepoIdentifier = item.GetProperty("head").TryGetProperty("repo", out var headRepo)
+                            && headRepo.ValueKind == JsonValueKind.Object ? RemoteRepoIdentifier.TryParse(GetString(headRepo, "html_url")) : null,
+                        HeadCommitId = GetString(item.GetProperty("head"), "sha"),
                         Status = GetPrStatus(item),
                         IsMerged = IsMergedPullRequest(item),
                         UpdatedAt = item.GetProperty("updated_at").GetDateTime().ToUniversalTime(),

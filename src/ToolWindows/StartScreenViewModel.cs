@@ -642,7 +642,11 @@ namespace StartScreen.ToolWindows
                     {
                         await Task.WhenAll(
                             MruService.PopulateGitStatusAsync(prioritized, refreshCancellation.Token,
-                                batch => summaryTasks.Add(RefreshRepositorySummariesAsync(batch, refreshCancellation.Token))),
+                                batch =>
+                                {
+                                    RefreshWorkspaceActivity(batch);
+                                    summaryTasks.Add(RefreshRepositorySummariesAsync(batch, refreshCancellation.Token));
+                                }),
                             MruService.PopulateExistenceAsync(prioritized, refreshCancellation.Token));
                     }
                     finally

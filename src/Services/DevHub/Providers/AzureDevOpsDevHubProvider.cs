@@ -989,10 +989,11 @@ namespace StartScreen.Services.DevHub.Providers
                     await OptionalAsync(async () =>
                     {
                         using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
-                            $"{prUrl}?api-version={version}", cancellationToken);
+                            $"{prUrl}?includeWorkItemRefs=true&api-version={version}", cancellationToken);
                         response.EnsureSuccessStatusCode();
                         using var metadata = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
                         var root = metadata.RootElement;
+                        pr.LinkedWorkItems = ReadLinkedWorkItems(root, repo);
                         if (!string.Equals(ReadString(root, "status"), "active", StringComparison.OrdinalIgnoreCase)
                             || (root.TryGetProperty("isDraft", out var draft) && draft.ValueKind == JsonValueKind.True))
                             return pr;
@@ -1034,6 +1035,8 @@ namespace StartScreen.Services.DevHub.Providers
                             .Select(group => group.OrderByDescending(status => status.GetProperty("id").GetInt32()).First()).ToList();
                         if (latest.Count > 0)
                         {
+                            pr.HeadCommitId = ReadString(currentSource, "commitId");
+                            pr.ChecksCommitId = pr.HeadCommitId;
                             var failed = latest.Any(status => ReadString(status, "state") == "failed" || ReadString(status, "state") == "error");
                             pr.CiStatus = failed ? "failure" : latest.All(status => ReadString(status, "state") == "succeeded") ? "success" : "pending";
                             pr.ChecksSummary = $"{latest.Count(status => ReadString(status, "state") == "succeeded")}/{latest.Count} checks passed";
@@ -1175,6 +1178,7 @@ namespace StartScreen.Services.DevHub.Providers
                     .ToList();
                 pr.CiStatus = latest.Contains("failure") ? "failure" : latest.Contains("pending") ? "pending"
                     : latest.Count > 0 && latest.All(status => status == "success") ? "success" : null;
+                pr.ChecksCommitId = latest.Count > 0 ? commit.GetString() : null;
             }
         }
 
@@ -1229,6 +1233,12 @@ namespace StartScreen.Services.DevHub.Providers
                         Author = author,
                         TargetBranch = StripRefsPrefix(pr.GetProperty("targetRefName").GetString()),
                         SourceBranch = StripRefsPrefix(pr.GetProperty("sourceRefName").GetString()),
+                        SourceRepoIdentifier = pr.TryGetProperty("forkSource", out var fork) && fork.ValueKind == JsonValueKind.Object
+                            ? fork.TryGetProperty("repository", out var forkRepo) ? RemoteRepoIdentifier.TryParse(ReadString(forkRepo, "remoteUrl")) : null
+                            : prRepo,
+                        HeadCommitId = pr.TryGetProperty("lastMergeSourceCommit", out var sourceCommit)
+                            ? ReadString(sourceCommit, "commitId") : null,
+                        LinkedWorkItems = ReadLinkedWorkItems(pr, prRepo),
                         Status = status,
                         IsMerged = status == "merged",
                         UpdatedAt = pr.TryGetProperty("closedDate", out var closed) && closed.ValueKind != JsonValueKind.Null
@@ -1253,6 +1263,20 @@ namespace StartScreen.Services.DevHub.Providers
             }
 
             return results;
+        }
+
+        private static Dictionary<string, string> ReadLinkedWorkItems(JsonElement pr, RemoteRepoIdentifier repo)
+        {
+            var result = new Dictionary<string, string>();
+            if (pr.TryGetProperty("workItemRefs", out var refs) && refs.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in refs.EnumerateArray().Take(10))
+                {
+                    if (int.TryParse(ReadString(item, "id"), out var id) && id > 0)
+                        result[$"{GetBaseUrl(repo)}/{Uri.EscapeDataString(repo.Project)}/_workitems/edit/{id}"] = $"Work item {id}";
+                }
+            }
+            return result;
         }
 
         internal static List<DevHubCiRun> ParseAdoBuilds(string json, RemoteRepoIdentifier repo, string currentUserId = null, bool projectWide = false)

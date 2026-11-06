@@ -53,6 +53,8 @@ namespace StartScreen.Helpers
                 using (var repo = new Repository(repoPath))
                 {
                     var status = new GitStatus();
+                    status.HeadCommitId = repo.Head.Tip?.Sha;
+                    status.IsDetachedHead = repo.Info.IsHeadDetached;
 
                     // Branch name (or tag/detached HEAD SHA)
                     if (repo.Head.FriendlyName == "(no branch)")

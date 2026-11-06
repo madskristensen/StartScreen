@@ -41,6 +41,20 @@ namespace StartScreen.Models
         private string _repositorySummaryTooltip;
         private int? _repositoryOpenPullRequests;
         private int? _repositoryRequestedReviews;
+        private string _branchActivityTooltip;
+
+        internal string HeadCommitId { get; private set; }
+        internal bool IsDetachedHead { get; private set; }
+        public string BranchActivityTooltip => _branchActivityTooltip;
+
+        internal void ApplyBranchActivity(string text)
+        {
+            if (_branchActivityTooltip == text)
+                return;
+            _branchActivityTooltip = text;
+            OnPropertyChanged(nameof(BranchActivityTooltip));
+            OnPropertyChanged(nameof(ToolTipText));
+        }
 
         /// <summary>
         /// The raw MRU entry strings from IVsMRUItemsStore, used for deletion.
@@ -129,6 +143,7 @@ namespace StartScreen.Models
                 if (_gitBranch != value)
                 {
                     _gitBranch = value;
+                    ApplyBranchActivity(null);
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(HasGitBranch));
                     OnPropertyChanged(nameof(ToolTipText));
@@ -359,6 +374,9 @@ namespace StartScreen.Models
                 if (HasCurrentOperation)
                     lines.Add($"Operation: {CurrentOperation} in progress");
 
+                if (!string.IsNullOrEmpty(BranchActivityTooltip))
+                    lines.Add(BranchActivityTooltip);
+
                 return string.Join("\n", lines);
             }
         }
@@ -445,6 +463,7 @@ namespace StartScreen.Models
                 if (_remoteUrl != value)
                 {
                     _remoteUrl = value;
+                    ApplyBranchActivity(null);
                     _repositorySummaryText = null;
                     _repositorySummaryTooltip = null;
                     _repositoryOpenPullRequests = null;
@@ -555,6 +574,9 @@ namespace StartScreen.Models
             if (status == null)
                 return;
 
+            HeadCommitId = status.HeadCommitId;
+            IsDetachedHead = status.IsDetachedHead;
+            ApplyBranchActivity(null);
             GitBranch = status.BranchName;
             CommitsAhead = status.CommitsAhead;
             CommitsBehind = status.CommitsBehind;
