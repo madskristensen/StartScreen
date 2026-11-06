@@ -721,8 +721,13 @@ namespace StartScreen.ToolWindows
                     return;
 
                 var activityOptions = DevHubPanelControl.ActivityOptions;
+                var progress = new Progress<DevHubDashboard>(dashboard =>
+                {
+                    if (!cancellationToken.IsCancellationRequested && ReferenceEquals(dashboard, _devHubService.CurrentDashboard))
+                        UpdateDevHubPanel(dashboard, cached: true);
+                });
                 await TaskScheduler.Default;
-                var cached = await _devHubService.LoadFromCacheAsync(cancellationToken, activityOptions);
+                var cached = await _devHubService.LoadFromCacheAsync(cancellationToken, activityOptions, progress);
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (cached != null && cached.HasAuthentication)

@@ -92,6 +92,188 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public async Task Cache_TeamActivityIsPublishedAfterItsProviderIsVerifiedWithoutWaitingForOtherProvidersAsync()
+        {
+            var teamPull = PullRequest("cached team pull");
+            teamPull.IsAuthoredByCurrentUser = false;
+            teamPull.Status = "open";
+            var github = new Provider("GitHub")
+            {
+                ActivityRepositories = [_repo],
+                Detail = _ => Task.FromResult(new DevHubRepoDetail
+                {
+                    RepoIdentifier = _repo,
+                    PullRequests = [teamPull],
+                    Issues = [Issue("cached team issue")],
+                    CiRuns = [new DevHubCiRun { Name = "cached team build", RepoIdentifier = _repo }],
+                }),
+            };
+            var ado = new Provider("Azure DevOps")
+            {
+                Host = "dev.azure.com",
+                Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("cached ADO pull")]),
+            };
+            await Service(github, ado).RefreshAsync(CancellationToken.None);
+            var githubUsers = await github.GetAuthenticatedUsersAsync(CancellationToken.None);
+            var adoUsers = await ado.GetAuthenticatedUsersAsync(CancellationToken.None);
+            var githubVerified = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var adoVerified = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var displayed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var authentications = 0;
+            github.Authenticate = token =>
+            {
+                if (Interlocked.Increment(ref authentications) == 2)
+                    started.TrySetResult(true);
+                return githubVerified.Task.WithCancellation(token);
+            };
+            ado.Authenticate = token =>
+            {
+                if (Interlocked.Increment(ref authentications) == 2)
+                    started.TrySetResult(true);
+                return adoVerified.Task.WithCancellation(token);
+            };
+            var activityCalls = github.ActivityCalls + ado.ActivityCalls;
+            var reopened = Service(github, ado);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var snapshots = new List<DevHubDashboard>();
+            var load = reopened.LoadFromCacheAsync(timeout.Token, progress: new InlineProgress(value =>
+            {
+                snapshots.Add(value);
+                if (value.PullRequests.Any(pr => pr.Title == teamPull.Title))
+                    displayed.TrySetResult(true);
+            }));
+            try
+            {
+                await started.Task.WithCancellation(timeout.Token);
+                Assert.IsNull(reopened.CurrentDashboard, "No account's cached activity is visible before identity verification.");
+                Assert.IsEmpty(snapshots);
+                githubVerified.SetResult(githubUsers);
+                await displayed.Task.WithCancellation(timeout.Token);
+
+                Assert.IsFalse(load.IsCompleted, "Azure DevOps is still authenticating.");
+                var visible = reopened.CurrentDashboard;
+                Assert.IsNotNull(visible);
+                Assert.AreEqual("cached team pull", visible.PullRequests.Single().Title);
+                Assert.AreEqual("cached team issue", visible.Issues.Single().Title);
+                Assert.AreEqual("cached team build", visible.CiRuns.Single().Name);
+                Assert.HasCount(1, DevHubWorkItem.GetIncoming(visible.PullRequests, [], []));
+                Assert.IsTrue(visible.IsRefreshing);
+                Assert.IsTrue(visible.Sources.Keys.All(key => key.StartsWith("GitHub/", StringComparison.Ordinal)));
+                Assert.AreEqual(activityCalls, github.ActivityCalls + ado.ActivityCalls, "Cache display must not fetch online activity.");
+            }
+            finally
+            {
+                githubVerified.TrySetResult(githubUsers);
+                adoVerified.TrySetResult(adoUsers);
+            }
+            var final = await load;
+            Assert.IsNotNull(final);
+            Assert.IsFalse(final.IsRefreshing);
+            Assert.HasCount(2, final.PullRequests);
+            Assert.IsFalse(reopened.IsCacheStale());
+        }
+
+        [TestMethod]
+        [DataRow("signed out")]
+        [DataRow("changed account")]
+        [DataRow("changed identity")]
+        [DataRow("disabled")]
+        public async Task Cache_AccountChangesOnlyRemoveTheAffectedProvidersDataAndKeepTeamActivityDuringRefreshAsync(string change)
+        {
+            var teamPull = PullRequest("cached team pull");
+            teamPull.IsAuthoredByCurrentUser = false;
+            teamPull.Status = "open";
+            var github = new Provider("GitHub")
+            {
+                ActivityRepositories = [_repo],
+                Detail = _ => Task.FromResult(new DevHubRepoDetail { RepoIdentifier = _repo, PullRequests = [teamPull] }),
+            };
+            var ado = new Provider("Azure DevOps")
+            {
+                Host = "dev.azure.com",
+                Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("previous ADO account")]),
+            };
+            await Service(github, ado).RefreshAsync(CancellationToken.None);
+            switch (change)
+            {
+                case "signed out": ado.Authenticated = false; break;
+                case "changed account": ado.Username = "new account"; break;
+                case "changed identity": ado.IdentityId = "new identity"; break;
+            }
+            ado.Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("current ADO account")]);
+            var reopened = Service(change == "disabled" ? [github] : [github, ado]);
+            var cached = await reopened.LoadFromCacheAsync();
+            Assert.IsNotNull(cached);
+            Assert.AreEqual("cached team pull", cached.PullRequests.Single().Title);
+            Assert.IsTrue(cached.Sources.Keys.All(key => key.StartsWith("GitHub/", StringComparison.Ordinal)));
+            Assert.IsTrue(reopened.IsCacheStale(), "A partial cache must still request current activity.");
+
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var repository = new TaskCompletionSource<DevHubRepoDetail>(TaskCreationOptions.RunContinuationsAsynchronously);
+            github.Detail = token => { started.TrySetResult(true); return repository.Task.WithCancellation(token); };
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var refresh = reopened.RefreshAsync(timeout.Token);
+            try
+            {
+                await started.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.IsTrue(reopened.CurrentDashboard.IsRefreshing);
+                Assert.IsTrue(reopened.CurrentDashboard.PullRequests.Any(pr => pr.Title == "cached team pull"),
+                    "Starting online refresh must not clear the verified team cache when another account changed.");
+                Assert.IsFalse(reopened.CurrentDashboard.PullRequests.Any(pr => pr.Title == "previous ADO account"));
+            }
+            finally
+            {
+                repository.TrySetResult(new DevHubRepoDetail { RepoIdentifier = _repo, PullRequests = [teamPull] });
+            }
+            await refresh;
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task Cache_ContextChangesDuringProviderVerificationClearAlreadyPublishedActivityAsync(bool credentialChanged)
+        {
+            var github = new Provider("GitHub") { Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("cached")]) };
+            var ado = new Provider("Azure DevOps") { Host = "dev.azure.com" };
+            var query = "first";
+            var generation = 0;
+            DevHubService CreateService() => new(new DevHubCacheService(_folder), [github, ado],
+                _ => Task.FromResult<IReadOnlyList<string>>([]), () => DevHubSortOrder.MostRecent, () => query, () => generation);
+            await CreateService().RefreshAsync(CancellationToken.None);
+            var adoUsers = await ado.GetAuthenticatedUsersAsync(CancellationToken.None);
+            var pending = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            ado.Authenticate = token => pending.Task.WithCancellation(token);
+            var displayed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var cleared = false;
+            var reopened = CreateService();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var load = reopened.LoadFromCacheAsync(timeout.Token, progress: new InlineProgress(value =>
+            {
+                cleared |= value == null;
+                if (value?.HasData == true)
+                    displayed.TrySetResult(true);
+            }));
+            try
+            {
+                await displayed.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(load.IsCompleted);
+                if (credentialChanged)
+                    generation++;
+                else
+                    query = "changed";
+            }
+            finally
+            {
+                pending.TrySetResult(adoUsers);
+            }
+            Assert.IsNull(await load);
+            Assert.IsNull(reopened.CurrentDashboard);
+            Assert.IsTrue(cleared, "The UI must be told to clear a cache whose context changed.");
+        }
+
+        [TestMethod]
         [DoNotParallelize]
         public async Task Cache_BitbucketUnauthorizedDoesNotDiscardOtherVerifiedAccountsAsync()
         {
@@ -691,6 +873,10 @@ namespace StartScreen.Test.DevHub
             public string Username { get; set; } = "account";
             public string IdentityId { get; set; } = "identity";
             public bool Authenticated { get; set; } = true;
+            public string Host { get; set; } = "github.com";
+            public Func<CancellationToken, Task<IReadOnlyList<DevHubUser>>>? Authenticate { get; set; }
+            public IReadOnlyList<RemoteRepoIdentifier> ActivityRepositories { get; set; } = [];
+            public int ActivityCalls { get; private set; }
             public Action? OnAuthenticate { get; set; }
             public Func<CancellationToken, Task<IReadOnlyList<DevHubIssue>>> Issues { get; set; } = _ => Task.FromResult<IReadOnlyList<DevHubIssue>>([]);
             public Func<CancellationToken, Task<IReadOnlyList<DevHubPullRequest>>> Pulls { get; set; } = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([]);
@@ -701,16 +887,37 @@ namespace StartScreen.Test.DevHub
             public Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken) => Task.FromResult(User());
             public Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)
             {
+                if (Authenticate != null)
+                    return Authenticate(cancellationToken);
                 OnAuthenticate?.Invoke();
                 return Task.FromResult<IReadOnlyList<DevHubUser>>(Authenticated ? [User()] : []);
             }
-            private DevHubUser User() => new DevHubUser { Username = Username, IdentityId = IdentityId, Host = "github.com", ProviderName = name };
-            public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken) => Issues(cancellationToken);
-            public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken) => Pulls(cancellationToken);
-            public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken) => Builds(cancellationToken);
+            private DevHubUser User() => new DevHubUser { Username = Username, IdentityId = IdentityId, Host = Host, ProviderName = name };
+            public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken)
+            {
+                ActivityCalls++;
+                return Issues(cancellationToken);
+            }
+            public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken cancellationToken)
+            {
+                ActivityCalls++;
+                return Pulls(cancellationToken);
+            }
+            public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken)
+            {
+                ActivityCalls++;
+                return Builds(cancellationToken);
+            }
             public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> urls, CancellationToken cancellationToken)
-                => Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>([]);
-            public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken) => Detail(cancellationToken);
+            {
+                ActivityCalls++;
+                return Task.FromResult(ActivityRepositories);
+            }
+            public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
+            {
+                ActivityCalls++;
+                return Detail(cancellationToken);
+            }
             public Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken) => throw new NotSupportedException();
             public string GetRepoWebUrl(RemoteRepoIdentifier repo) => throw new NotSupportedException();
             public string GetPullRequestsWebUrl(RemoteRepoIdentifier repo) => throw new NotSupportedException();

@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models.DevHub;
 
 namespace StartScreen.Services.DevHub
@@ -36,6 +37,7 @@ namespace StartScreen.Services.DevHub
         private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
         private volatile DevHubDashboard _currentDashboard;
         private volatile bool _isRefreshing;
+        private volatile bool _cacheNeedsRefresh;
 
         public DevHubService() : this(new DevHubCacheService())
         {
@@ -77,22 +79,73 @@ namespace StartScreen.Services.DevHub
         /// Loads the dashboard from cache for immediate display.
         /// Returns null if no cache exists.
         /// </summary>
-        public async Task<DevHubDashboard> LoadFromCacheAsync(CancellationToken cancellationToken = default, DevHubActivityOptions options = null)
+        public async Task<DevHubDashboard> LoadFromCacheAsync(CancellationToken cancellationToken = default, DevHubActivityOptions options = null,
+            IProgress<DevHubDashboard> progress = null)
         {
+            _cacheNeedsRefresh = false;
             var cached = await _cache.ReadDashboardAsync(cancellationToken);
             if (cached == null || string.IsNullOrEmpty(cached.CacheContext))
                 return _currentDashboard = null;
             var generation = _getCredentialGeneration();
             var queryContext = _getQueryContext();
             var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken), urls => urls.Count > 0, cancellationToken);
-            var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status);
-            var users = await Task.WhenAll(_getProviders().Select(provider => AuthenticateAsync(provider, cancellationToken, refreshContext)));
-            if (candidates.Status != DevHubActivityStatus.Success || generation != _getCredentialGeneration() || queryContext != _getQueryContext())
+            options = options ?? new DevHubActivityOptions();
+            if (candidates.Status != DevHubActivityStatus.Success || generation != _getCredentialGeneration() || queryContext != _getQueryContext()
+                || cached.CacheContext != CreateContext(cached.Users, options, candidates.Value))
                 return _currentDashboard = null;
-            var context = CreateContext(users.SelectMany(value => value.Value ?? Array.Empty<DevHubUser>()), options ?? new DevHubActivityOptions(), candidates.Value);
-            cached.CredentialGeneration = generation;
-            cached.QueryContext = queryContext;
-            SetCurrentDashboard(cached.CacheContext == context ? cached : null);
+
+            var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status);
+            var dashboard = new DevHubDashboard
+            {
+                FetchedAt = cached.FetchedAt,
+                ActivityLimit = cached.ActivityLimit,
+                IncludesCompleted = cached.IncludesCompleted,
+                CredentialGeneration = generation,
+                QueryContext = queryContext,
+            };
+            var authentications = _getProviders().Select(async provider =>
+                (Provider: provider, Result: await AuthenticateAsync(provider, cancellationToken, refreshContext))).ToList();
+            var restored = false;
+            while (authentications.Count > 0)
+            {
+                var completed = await Task.WhenAny(authentications).WithCancellation(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                authentications.Remove(completed);
+                var (provider, result) = await completed;
+                if (generation != _getCredentialGeneration() || queryContext != _getQueryContext())
+                {
+                    SetCurrentDashboard(null);
+                    progress?.Report(null);
+                    return null;
+                }
+                var users = result.Value ?? Array.Empty<DevHubUser>();
+                _cacheNeedsRefresh |= result.Status != DevHubActivityStatus.Success;
+                dashboard.Users.AddRange(users);
+                var previousUsers = cached.Users.Where(user => user.ProviderName == provider.DisplayName).ToList();
+                if (users.Count > 0 && CreateIdentityContext(users) == CreateIdentityContext(previousUsers))
+                {
+                    var prefix = provider.DisplayName + "/";
+                    foreach (var source in cached.Sources.Where(pair => pair.Key.StartsWith(prefix, StringComparison.Ordinal)))
+                        dashboard.Sources[source.Key] = source.Value;
+                    restored = true;
+                }
+                else if (previousUsers.Count > 0 || users.Count > 0)
+                    _cacheNeedsRefresh = true;
+
+                if (restored)
+                {
+                    dashboard.IsRefreshing = authentications.Count > 0;
+                    dashboard.IdentityContext = CreateIdentityContext(dashboard.Users);
+                    dashboard.CacheContext = CreateContext(dashboard.Users, options, candidates.Value);
+                    Publish(dashboard, progress);
+                }
+            }
+            if (!restored)
+            {
+                SetCurrentDashboard(null);
+                return null;
+            }
+            _cacheNeedsRefresh |= dashboard.CacheContext != cached.CacheContext;
             return CurrentDashboard;
         }
 
@@ -102,7 +155,7 @@ namespace StartScreen.Services.DevHub
         public bool IsCacheStale()
         {
             var current = CurrentDashboard;
-            return current == null || current.Status != DevHubActivityStatus.Success || _cache.IsCacheStale();
+            return _cacheNeedsRefresh || current == null || current.Status != DevHubActivityStatus.Success || _cache.IsCacheStale();
         }
 
         /// <summary>
@@ -195,6 +248,7 @@ namespace StartScreen.Services.DevHub
                 {
                     dashboard.IsRefreshing = false;
                     await _cache.WriteDashboardAsync(dashboard, cancellationToken);
+                    _cacheNeedsRefresh = false;
                     SetCurrentDashboard(dashboard);
                     progress?.Report(dashboard);
                     return dashboard;
@@ -296,6 +350,7 @@ namespace StartScreen.Services.DevHub
                 dashboard.FetchedAt = DateTime.UtcNow;
                 var final = Publish(dashboard, progress);
                 await _cache.WriteDashboardAsync(final, cancellationToken);
+                _cacheNeedsRefresh = false;
 
                 return final;
             }

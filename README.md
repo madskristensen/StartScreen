@@ -42,6 +42,11 @@ the preview version required by the connection-data endpoint.
 Each dashboard refresh discovers its repository context once and shares that
 snapshot between personal and repository activity queries. Repository-detail
 requests use a shared concurrency limit, including cancellation while queued.
+Cached personal and team activity is restored independently for each provider as
+its current identity is verified, without waiting for other providers to finish
+signing in. A slow or signed-out provider does not discard another provider's
+verified cache. Account changes and activity-setting or repository-context changes
+still prevent mismatched cached activity from being displayed.
 News, video, dashboard, and Copilot history caches use bounded JSON reads and
 atomic file replacement so interrupted writes preserve the previous snapshot.
 Feed configuration edits are also published atomically, and concurrent add/remove
