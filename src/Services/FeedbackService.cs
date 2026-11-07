@@ -21,6 +21,7 @@ namespace StartScreen.Services
 {
     internal sealed class FeedbackService
     {
+        internal const int MaximumTicketCount = 20;
         private const string _baseUrl = "https://sendvsfeedback2.azurewebsites.net/api/";
         private const int _pageSize = 500;
         private const int _concurrency = 4;
@@ -138,7 +139,8 @@ namespace StartScreen.Services
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var snapshot = new FeedbackSnapshot(principalId,
-                    tickets.OrderByDescending(ticket => ticket.UpdatedUtc).ThenByDescending(ticket => ticket.Id).ToArray(), _utcNow());
+                    tickets.OrderByDescending(ticket => ticket.UpdatedUtc).ThenByDescending(ticket => ticket.Id)
+                        .Take(MaximumTicketCount).ToArray(), _utcNow());
                 if (_diskCache != null)
                     await _diskCache.WriteAsync(snapshot, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();

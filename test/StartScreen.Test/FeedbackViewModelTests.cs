@@ -99,6 +99,51 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
+        [DataRow(0)]
+        [DataRow(5)]
+        [DataRow(20)]
+        [DataRow(30)]
+        public void Feedback_LimitsCachedAndFreshDisplayToTwentyNewestTickets(int count)
+        {
+            using var context = CreateContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var now = DateTime.UtcNow;
+            var tickets = Enumerable.Range(1, count).Select(id => new FeedbackTicket
+            {
+                Id = id,
+                Title = "Ticket",
+                IsCreatedByUser = true,
+                UpdatedUtc = id == 1 ? now : now.AddDays(-1),
+            }).ToArray();
+            var cached = new FeedbackSnapshot(7, tickets, now.AddDays(-3));
+            var fresh = new FeedbackSnapshot(7, tickets.AsEnumerable().Reverse().ToArray(), now);
+            var expected = count == 0 ? Array.Empty<long>()
+                : new long[] { 1 }.Concat(Enumerable.Range(2, count - 1).Reverse().Select(id => (long)id)).Take(20).ToArray();
+            using var model = Model(context, (_, _) => pending.Task, _ => Task.FromResult(cached));
+            try
+            {
+                context.Factory.Run(async () =>
+                {
+                    Task refresh = model.RefreshFeedbackInBackgroundAsync();
+                    CollectionAssert.AreEqual(expected, model.FeedbackTickets.Select(ticket => ticket.Id).ToArray());
+                    Assert.IsTrue(model.FeedbackRefreshState.IsCached);
+
+                    pending.SetResult(fresh);
+                    await refresh.WithCancellation(timeout.Token);
+
+                    CollectionAssert.AreEqual(expected, model.FeedbackTickets.Select(ticket => ticket.Id).ToArray());
+                    Assert.IsFalse(model.FeedbackRefreshState.IsCached);
+                });
+            }
+            finally
+            {
+                pending.TrySetCanceled();
+                model.CancelBackgroundWork();
+            }
+        }
+
+        [STATestMethod]
         [DataRow(true)]
         [DataRow(false)]
         public void StartupFailure_RetainsVerifiedCacheOnlyForTransientFailures(bool authentication)

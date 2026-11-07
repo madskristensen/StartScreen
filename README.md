@@ -389,6 +389,8 @@ any time.
 
 The **Feedback** tab in the News panel lists Developer Community tickets you
 created or currently upvoted, with status, vote count, and last update date.
+Only the 20 most recently updated tickets are shown, newest first, including
+when displaying cached feedback.
 Ticket titles use the normal themed card text color, with compact muted metadata.
 No created/upvoted count summary is shown above the cards; loading, empty, and error messages remain visible when applicable.
 State pills use green for fixed/completed, blue for consideration/review, crimson

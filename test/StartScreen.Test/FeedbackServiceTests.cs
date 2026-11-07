@@ -81,6 +81,30 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task Load_KeepsOnlyTwentyMostRecentlyUpdatedEligibleTicketsInMemoryAndOnDiskAsync()
+        {
+            var actions = Enumerable.Range(1, 30).Select(id => Action("posted", id)).ToArray();
+            using var handler = new Handler((path, body) => path == "metadata" ? Json(new { Id = 7 })
+                : path == "getActivity" ? Json(new { totalCount = actions.Length, activities = actions })
+                : Json(new { results = new[] { Ticket(RequestedId(body), RequestedId(body) <= 28 ? 7 : 8,
+                    RequestedId(body) == 29, updatedUtc: RequestedId(body) == 1 ? DateTime.UtcNow : null) } }));
+            using var client = new HttpClient(handler);
+            var diskCache = new FeedbackCache(_cacheFolder);
+            var service = Service(client, diskCache: diskCache);
+            var expected = new long[] { 1 }.Concat(Enumerable.Range(11, 19).Reverse().Select(id => (long)id)).ToArray();
+
+            FeedbackSnapshot result = await service.GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.HasCount(20, result.Tickets);
+            CollectionAssert.AreEqual(expected, result.Tickets.Select(ticket => ticket.Id).ToArray());
+            Assert.AreSame(result, await service.GetTicketsAsync(false, CancellationToken.None));
+            var requests = handler.RequestCount;
+            FeedbackSnapshot restored = await Service(client, diskCache: diskCache).GetCachedTicketsAsync(CancellationToken.None);
+            CollectionAssert.AreEqual(expected, restored.Tickets.Select(ticket => ticket.Id).ToArray());
+            Assert.AreEqual(requests + 1, handler.RequestCount, "Restoring the cache should only verify account identity.");
+        }
+
+        [TestMethod]
         public async Task Cache_RevalidatesIdentityExpiresAndSupportsForcedRefreshAsync()
         {
             var principal = 7L;
@@ -638,7 +662,8 @@ namespace StartScreen.Test
 
         private static object Action(string activity, long rootPostId) => new { activity, rootPostId };
 
-        private static object Ticket(long id, long author, bool voted, string? url = null, int type = 0, string state = "closed_fixed") => new
+        private static object Ticket(long id, long author, bool voted, string? url = null, int type = 0,
+            string state = "closed_fixed", DateTime? updatedUtc = null) => new
         {
             answerHubId = id,
             createdByPrincipalId = author.ToString(CultureInfo.InvariantCulture),
@@ -648,7 +673,7 @@ namespace StartScreen.Test
             state,
             type,
             totalVotes = 20,
-            lastModifiedUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddDays(id),
+            lastModifiedUtc = updatedUtc ?? new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddDays(id),
         };
 
         private static long RequestedId(JsonElement? body) => long.Parse(body!.Value.GetProperty("searchFor").GetProperty("title").GetString()!, CultureInfo.InvariantCulture);

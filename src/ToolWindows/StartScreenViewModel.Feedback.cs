@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure.Identity;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
+using StartScreen.Services;
 
 namespace StartScreen.ToolWindows
 {
@@ -175,7 +177,8 @@ namespace StartScreen.ToolWindows
         private void ApplyFeedbackSnapshot(FeedbackSnapshot snapshot, bool cached)
         {
             FeedbackTickets.Clear();
-            foreach (FeedbackTicket ticket in snapshot.Tickets)
+            foreach (FeedbackTicket ticket in snapshot.Tickets.OrderByDescending(ticket => ticket.UpdatedUtc)
+                .ThenByDescending(ticket => ticket.Id).Take(FeedbackService.MaximumTicketCount))
                 FeedbackTickets.Add(ticket);
             LastFeedbackRefreshText = DateTime.UtcNow - snapshot.UpdatedUtc < TimeSpan.FromMinutes(1)
                 ? "Updated just now" : $"Updated at {snapshot.UpdatedUtc.ToLocalTime():t}";
