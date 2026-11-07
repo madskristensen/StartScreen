@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using StartScreen.Models;
 
 namespace StartScreen.Services
@@ -37,9 +38,39 @@ namespace StartScreen.Services
             if (_started || _disposed)
                 throw new InvalidOperationException("This Copilot activity connection cannot be started again.");
             _started = true;
+            AttachBackend(ResolveBackend(backends));
+        }
+
+        internal static async System.Threading.Tasks.Task<object> ResolveBackendAsync(Func<object> getBackends, CancellationToken cancellationToken)
+        {
+            return await System.Threading.Tasks.Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var backend = ResolveBackend(getBackends());
+                cancellationToken.ThrowIfCancellationRequested();
+                return backend;
+            }, cancellationToken);
+        }
+
+        private static object ResolveBackend(object backends)
+        {
             var contract = RequireContract(backends, BackendsContract);
             var backend = contract.GetMethod("GetDefault", Type.EmptyTypes)?.Invoke(backends, null)
                 ?? throw new NotSupportedException("The selected Copilot backend is unavailable.");
+            RequireContract(backend, ContractNamespace + "ICopilotBackend");
+            return backend;
+        }
+
+        internal void StartBackend(object backend)
+        {
+            if (_started || _disposed)
+                throw new InvalidOperationException("This Copilot activity connection cannot be started again.");
+            _started = true;
+            AttachBackend(backend);
+        }
+
+        private void AttachBackend(object backend)
+        {
             RequireContract(backend, ContractNamespace + "ICopilotBackend");
             _cache = Read(backend, "Sessions");
             _subscriptions.Add(Observe(Read(backend, "SessionsReady"), value =>

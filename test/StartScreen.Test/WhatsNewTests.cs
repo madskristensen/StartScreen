@@ -357,7 +357,11 @@ namespace StartScreen.Test
             Assert.AreEqual("72", image.Attribute("Width")?.Value);
             Assert.AreEqual("48", image.Attribute("Height")?.Value);
             Assert.AreEqual("{Binding Thumbnail, Converter={StaticResource NullToCollapsedConverter}}", image.Attribute("Visibility")?.Value);
-            Assert.IsFalse(tab.Descendants(p + "UniformGrid").Any());
+            var panel = tab.Descendants(p + "UniformGrid").Single();
+            Assert.AreEqual("2", panel.Descendants(p + "Setter").First().Attribute("Value")?.Value);
+            var trigger = panel.Descendants(p + "DataTrigger").Single();
+            Assert.AreEqual("1", trigger.Attribute("Value")?.Value);
+            Assert.AreEqual("1", trigger.Element(p + "Setter")!.Attribute("Value")?.Value);
             var link = tab.Descendants(p + "Hyperlink").Single();
             Assert.AreEqual("ReleaseNotesLink_Click", link.Attribute("Click")?.Value);
             Assert.AreSame(link.Parent, tab.Element(p + "StackPanel")!.Elements().First());
@@ -367,6 +371,7 @@ namespace StartScreen.Test
         [STATestMethod]
         [DataRow(240d, 12d, true)]
         [DataRow(360d, 12d, true)]
+        [DataRow(600d, 12d, true)]
         [DataRow(240d, 20d, true)]
         [DataRow(240d, 12d, false)]
         public void FeatureRow_WrapsWithinSidebarAndReclaimsMissingThumbnailSpace(double width, double fontSize, bool hasThumbnail)
@@ -400,12 +405,88 @@ namespace StartScreen.Test
             var text = (StackPanel)row.Children[1];
             Assert.AreEqual(hasThumbnail ? Visibility.Visible : Visibility.Collapsed, image.Visibility);
             Assert.AreEqual(hasThumbnail ? 82d : 0d, text.TranslatePoint(new Point(), row).X, 0.01);
-            Assert.AreEqual(width - (hasThumbnail ? 82d : 0d), text.ActualWidth, 0.01);
+            Assert.AreEqual(row.ActualWidth - (hasThumbnail ? 82d : 0d), text.ActualWidth, 0.01);
+            Assert.IsLessThanOrEqualTo(440d, row.ActualWidth);
             Assert.AreEqual(FontWeights.Bold, ((TextBlock)text.Children[0]).FontWeight);
             Assert.AreEqual(TextWrapping.Wrap, ((TextBlock)text.Children[1]).TextWrapping);
             Assert.AreEqual(FontWeights.Normal, ((TextBlock)text.Children[1]).FontWeight);
             if (fontSize == 12d)
                 Assert.IsLessThanOrEqualTo(110d, row.ActualHeight);
+        }
+
+        [STATestMethod]
+        [DataRow(440d, 1, 1)]
+        [DataRow(900d, 2, 2)]
+        [DataRow(1300d, 3, 2)]
+        public void AreaLayout_UsesAtMostTwoBoundedColumnsAndPreservesFeatureOrder(double width, int newsColumns, int expectedColumns)
+        {
+            using var stream = typeof(WhatsNewTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
+            var document = XDocument.Load(stream!);
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var definition = new XElement(document.Descendants(p + "ItemsControl")
+                .Single(element => element.Attribute("ItemsSource")?.Value == "{Binding Items}"));
+            var wrapper = new XElement(p + "TabControl",
+                new XElement(p + "TabControl.Resources", new XElement(
+                    XName.Get("NullToCollapsedConverter", "clr-namespace:StartScreen.ToolWindows.Controls;assembly=StartScreen"),
+                    new XAttribute(x + "Key", "NullToCollapsedConverter"))),
+                new XElement(p + "TabItem", new XAttribute("Header", "What's New"), definition));
+            var tab = (TabControl)SharedXamlReader.Parse(wrapper.ToString());
+            var items = Enumerable.Range(1, 3).Select(index => new WhatsNewItem
+            {
+                Title = $"Feature {index}",
+                Description = "A feature description that wraps inside its column instead of spanning the entire screen.",
+            }).ToArray();
+
+            void Layout(double availableWidth, int columns)
+            {
+                tab.DataContext = new { Items = items, NewsColumnCount = columns };
+                for (var pass = 0; pass < 2; pass++)
+                {
+                    tab.Measure(new Size(availableWidth, double.PositiveInfinity));
+                    tab.Arrange(new Rect(0, 0, availableWidth, tab.DesiredSize.Height));
+                    tab.UpdateLayout();
+                }
+            }
+
+            Layout(width, newsColumns);
+            var panel = Descendants(tab).OfType<System.Windows.Controls.Primitives.UniformGrid>().Single();
+            var rows = Descendants(panel).OfType<Grid>().Where(grid => grid.Children.OfType<Image>().Any()).ToArray();
+            Assert.AreEqual(expectedColumns, panel.Columns);
+            Assert.IsLessThanOrEqualTo(880d, panel.ActualWidth);
+            Assert.HasCount(3, rows);
+            CollectionAssert.AreEqual(new[] { "Feature 1", "Feature 2", "Feature 3" }, rows.Select(row =>
+                ((TextBlock)((StackPanel)row.Children[1]).Children[0]).Text).ToArray());
+            foreach (var row in rows)
+                Assert.IsLessThanOrEqualTo(440d, row.ActualWidth);
+            var first = rows[0].TranslatePoint(new Point(), panel);
+            var second = rows[1].TranslatePoint(new Point(), panel);
+            if (expectedColumns == 2)
+            {
+                Assert.AreEqual(first.Y, second.Y, 0.01);
+                Assert.IsGreaterThan(first.X, second.X);
+            }
+            else
+            {
+                Assert.AreEqual(first.X, second.X, 0.01);
+                Assert.IsGreaterThan(first.Y, second.Y);
+            }
+            Assert.IsGreaterThan(first.Y, rows[2].TranslatePoint(new Point(), panel).Y);
+
+            Layout(440, 1);
+            Assert.AreEqual(1, panel.Columns, "Resizing back to the sidebar must restore one column.");
+            Assert.IsGreaterThan(rows[0].TranslatePoint(new Point(), panel).Y, rows[1].TranslatePoint(new Point(), panel).Y);
+        }
+
+        private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, index);
+                yield return child;
+                foreach (var descendant in Descendants(child))
+                    yield return descendant;
+            }
         }
 
         private Task<WhatsNewContent> ReadAsync()

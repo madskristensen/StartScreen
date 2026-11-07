@@ -3,11 +3,13 @@ using System.ComponentModel.Composition;
 using System.ComponentModel.Composition.Primitives;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Helpers;
 using StartScreen.Models;
 using StartScreen.Services;
@@ -116,12 +118,15 @@ namespace StartScreen.ToolWindows.Controls
                 if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                     return;
                 StartupDiagnostics.Mark("Copilot service connection started");
-                var componentModel = await VS.GetServiceAsync<SComponentModel, IComponentModel>();
+                await TaskScheduler.Default;
+                var componentModel = await VS.GetServiceAsync<SComponentModel, IComponentModel>()
+                    ?? throw new NotSupportedException("Visual Studio's component model is unavailable.");
+                var backend = await CopilotHarnessAdapter.ResolveBackendAsync(
+                    () => GetCopilotExport(componentModel, CopilotHarnessAdapter.BackendsContract), StartScreenPackage.ShutdownToken);
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
                 if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                     return;
-                _copilotComponentModel = componentModel ?? throw new NotSupportedException("Visual Studio's component model is unavailable.");
-                var backends = GetCopilotExport(CopilotHarnessAdapter.BackendsContract);
+                _copilotComponentModel = componentModel;
                 _copilotAdapter = new CopilotHarnessAdapter(callback =>
                 {
                     if (Dispatcher.CheckAccess())
@@ -134,7 +139,7 @@ namespace StartScreen.ToolWindows.Controls
                         }).FileAndForget(nameof(DevHubPanel));
                 }, ReportCopilotFailure);
                 _copilotAdapter.Changed += CopilotActivityChanged;
-                _copilotAdapter.Start(backends);
+                _copilotAdapter.StartBackend(backend);
                 _copilotProgress?.Report((totalSteps - 1, totalSteps));
                 _copilotProgress?.Report("Discovering local Copilot sessions...");
                 StartupDiagnostics.Mark("Copilot harness attached");
@@ -143,10 +148,13 @@ namespace StartScreen.ToolWindows.Controls
             catch (OperationCanceledException ex) when (StartScreenPackage.ShutdownToken.IsCancellationRequested)
             {
                 await ex.LogAsync();
-                StopCopilotActivity();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (generation == _copilotGeneration)
+                    StopCopilotActivity();
             }
             catch (Exception ex)
             {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (generation == _copilotGeneration)
                     ReportCopilotFailure(ex);
                 else
@@ -154,6 +162,7 @@ namespace StartScreen.ToolWindows.Controls
             }
             finally
             {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (generation == _copilotGeneration)
                 {
                     _copilotConnecting = false;
@@ -164,9 +173,14 @@ namespace StartScreen.ToolWindows.Controls
 
         private object GetCopilotExport(string contract)
         {
+            return GetCopilotExport(_copilotComponentModel, contract);
+        }
+
+        private static object GetCopilotExport(IComponentModel componentModel, string contract)
+        {
             var definition = new ContractBasedImportDefinition(contract, null, null,
                 ImportCardinality.ZeroOrOne, false, false, CreationPolicy.Any);
-            return _copilotComponentModel.DefaultExportProvider.GetExports(definition).SingleOrDefault()?.Value
+            return componentModel.DefaultExportProvider.GetExports(definition).SingleOrDefault()?.Value
                 ?? throw new NotSupportedException($"The installed Copilot does not export {contract}.");
         }
 

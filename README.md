@@ -107,8 +107,10 @@ preserving its existing bindings and stable item collections.
 
 The **What's New** tab in News shows features shipped with the running Visual Studio
 installation. Area headings group compact rows with small optional thumbnails,
-bold titles, and regular-weight descriptions, without the full article body. The
-installed YAML index controls area and feature order; unlisted articles are not shown.
+bold titles, and regular-weight descriptions, without the full article body. Features
+use one column in the sidebar and up to two columns on wider screens, with a maximum
+feature width of 440 pixels. The installed YAML index controls area and feature order;
+unlisted articles are not shown.
 Content uses the IDE's UI locale, falling back to English for missing translations.
 Content loads in the background only when the tab is first selected, with no disk
 cache or periodic refresh. Unavailable content is reported in the tab. The release-notes
@@ -660,6 +662,9 @@ discovery and when leaving the page. It contains conversation IDs, titles, worki
 directories, timestamps, and saved-conversation markers, not messages or live state.
 On a new VS launch, cached metadata is loaded off the UI thread and bound before
 Copilot service initialization, with a dispatcher yield to allow rendering first.
+Component-model acquisition, Copilot MEF activation, and backend selection run on
+background threads. Session subscriptions and UI updates remain on the UI thread;
+a connection that finishes after the page is hidden or closed is not attached.
 The first launch without a cache still depends on VS discovery. Cached entries show
 no state badge and never retain old running or permission state. Completed discovery
 replaces stale entries, including deleting history when the catalog is empty.

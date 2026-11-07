@@ -2,12 +2,140 @@ using StartScreen.Models;
 using StartScreen.Models.DevHub;
 using StartScreen.Services;
 using Microsoft.VisualStudio.Copilot.Harness;
+using Microsoft.VisualStudio.Threading;
 
 namespace StartScreen.Test
 {
     [TestClass]
     public class CopilotHarnessAdapterTests
     {
+        [STATestMethod]
+        public void ResolveBackendAsync_SlowActivationLeavesCallerFreeAndDefersSubscriptions()
+        {
+            using var context = new JoinableTaskContext();
+            using var entered = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            var callerThread = Environment.CurrentManagedThreadId;
+            var activationThread = 0;
+            var backend = new FakeBackend();
+            backend.Sessions.Replace(new FakeSession());
+            var backends = new RecordingBackends(backend);
+            JoinableTask<object> resolution = context.Factory.RunAsync(() => CopilotHarnessAdapter.ResolveBackendAsync(() =>
+            {
+                activationThread = Environment.CurrentManagedThreadId;
+                entered.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(5)))
+                    throw new TimeoutException("The test did not release backend activation.");
+                return backends;
+            }, CancellationToken.None));
+
+            try
+            {
+                Assert.IsTrue(entered.Wait(TimeSpan.FromSeconds(5)));
+                Assert.IsFalse(resolution.IsCompleted, "The caller must return while activation is still blocked.");
+                Assert.AreNotEqual(callerThread, activationThread);
+                Assert.AreEqual(0, backend.Sessions.Changes.SubscriberCount);
+            }
+            finally
+            {
+                release.Set();
+            }
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var resolved = resolution.Join(timeout.Token);
+            Assert.AreSame(backend, resolved);
+            Assert.AreEqual(activationThread, backends.SelectionThread);
+            Assert.AreEqual(0, backend.SessionsReady.SubscriberCount);
+            using var adapter = CreateAdapter();
+            adapter.StartBackend(resolved);
+            Assert.IsTrue(adapter.IsReady);
+            Assert.HasCount(1, adapter.Sessions);
+            Assert.AreEqual(1, backend.Sessions.Changes.SubscriberCount);
+        }
+
+        [TestMethod]
+        public async Task ResolveBackendAsync_PreCanceledConnectionDoesNotActivateExportsAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            var activated = false;
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => CopilotHarnessAdapter.ResolveBackendAsync(() =>
+            {
+                activated = true;
+                return new FakeBackends(new FakeBackend());
+            }, cancellation.Token));
+
+            Assert.IsFalse(activated);
+        }
+
+        [TestMethod]
+        public async Task ResolveBackendAsync_CancellationDuringActivationDoesNotReturnBackendAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            var backend = new FakeBackend();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => CopilotHarnessAdapter.ResolveBackendAsync(() =>
+            {
+                cancellation.Cancel();
+                return new FakeBackends(backend);
+            }, cancellation.Token));
+
+            Assert.AreEqual(0, backend.Sessions.Changes.SubscriberCount);
+            Assert.AreEqual(0, backend.SessionsReady.SubscriberCount);
+        }
+
+        [TestMethod]
+        public async Task ResolveBackendAsync_PropagatesActivationAndCompatibilityFailuresAsync()
+        {
+            var failure = new InvalidOperationException("Simulated MEF activation failure");
+
+            var actual = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+                CopilotHarnessAdapter.ResolveBackendAsync(() => throw failure, CancellationToken.None));
+            Assert.AreSame(failure, actual);
+            await Assert.ThrowsExactlyAsync<NotSupportedException>(() =>
+                CopilotHarnessAdapter.ResolveBackendAsync(() => new object(), CancellationToken.None));
+        }
+
+        [TestMethod]
+        public void StartBackend_DisposedConnectionDoesNotSubscribe()
+        {
+            var backend = new FakeBackend();
+            var adapter = CreateAdapter();
+            adapter.Dispose();
+
+            Assert.ThrowsExactly<InvalidOperationException>(() => adapter.StartBackend(backend));
+
+            Assert.AreEqual(0, backend.Sessions.Changes.SubscriberCount);
+            Assert.AreEqual(0, backend.SessionsReady.SubscriberCount);
+        }
+
+        [TestMethod]
+        public void Start_DoesNotResolveBackendAgainAfterStartingOrDisposal()
+        {
+            var backends = new RecordingBackends(new FakeBackend());
+            using var adapter = CreateAdapter();
+            adapter.Start(backends);
+
+            Assert.ThrowsExactly<InvalidOperationException>(() => adapter.Start(backends));
+            adapter.Dispose();
+            Assert.ThrowsExactly<InvalidOperationException>(() => adapter.Start(backends));
+            Assert.AreEqual(1, backends.SelectionCount);
+        }
+
+        private sealed class RecordingBackends(FakeBackend backend) : ICopilotBackends
+        {
+            internal int SelectionThread { get; private set; }
+            internal int SelectionCount { get; private set; }
+
+            public ICopilotBackend GetDefault()
+            {
+                SelectionThread = Environment.CurrentManagedThreadId;
+                SelectionCount++;
+                return backend;
+            }
+        }
+
         [TestMethod]
         public void Start_DiscoversExistingSessionsWithoutActivatingOrOwningThem()
         {

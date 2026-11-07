@@ -703,10 +703,27 @@
                                                         <TextBlock Text="{Binding Area}" TextWrapping="Wrap"
                                                                    Style="{StaticResource StartScreen.Heading}"/>
                                                         <Border Style="{StaticResource StartScreen.Separator}" Margin="0 6 0 10"/>
-                                                        <ItemsControl ItemsSource="{Binding Items}" Focusable="False">
+                                                        <ItemsControl ItemsSource="{Binding Items}" Focusable="False"
+                                                                      MaxWidth="880" HorizontalAlignment="Left">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <UniformGrid>
+                                                                        <UniformGrid.Style>
+                                                                            <Style TargetType="UniformGrid">
+                                                                                <Setter Property="Columns" Value="2"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding DataContext.NewsColumnCount, RelativeSource={RelativeSource AncestorType=TabControl}}" Value="1">
+                                                                                        <Setter Property="Columns" Value="1"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </UniformGrid.Style>
+                                                                    </UniformGrid>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate>
-                                                                    <Grid Margin="0 0 0 12">
+                                                                    <Grid Margin="0 0 20 12" MaxWidth="440" HorizontalAlignment="Left">
                                                                         <Grid.ColumnDefinitions>
                                                                             <ColumnDefinition Width="Auto"/>
                                                                             <ColumnDefinition Width="*"/>
