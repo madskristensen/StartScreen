@@ -292,21 +292,48 @@ namespace StartScreen.Test.DevHub
         }
 
         [STATestMethod]
-        public void EnrichedCards_CollapseMissingDetailsAndWrapWithoutClipping()
+        [DataRow(180d, 12d, true)]
+        [DataRow(400d, 12d, false)]
+        [DataRow(180d, 24d, false)]
+        [DataRow(400d, 24d, true)]
+        public void BuildMessages_StayWithinTwoLinesAndKeepFullTextOnHover(double width, double fontSize, bool personal)
         {
             using var stream = typeof(DevHubActivityPresentationTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
             var document = XDocument.Load(stream);
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-            var action = document.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding NextActionText}");
+            var action = new XElement(document.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding NextActionText}"));
             Assert.AreEqual("Wrap", action.Attribute("TextWrapping")?.Value);
             Assert.AreEqual("{Binding NextActionText, Converter={StaticResource NullToCollapsedConverter}}", action.Attribute("Visibility")?.Value);
-            var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Width = 180 };
-            text.SetBinding(TextBlock.TextProperty, new Binding(nameof(DevHubPullRequest.NextActionText)));
-            text.DataContext = new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, MergeBlockReason = "Waiting for required policy approval and additional validation" };
-            text.Measure(new Size(180, double.PositiveInfinity));
-            Assert.IsGreaterThan(0d, text.DesiredSize.Height);
-            Assert.IsLessThanOrEqualTo(180d, text.DesiredSize.Width);
+            action.Attribute("Visibility")!.Remove();
+            var message = string.Join(Environment.NewLine, Enumerable.Repeat(
+                "NU1109: Detected package downgrade: System.Security.Cryptography.Pkcs from 10.0.1 to centrally defined 9.0.15.", 20));
+            var build = new DevHubCiRun
+            {
+                Name = "Build", Status = "failure", FailureSummary = message,
+                IsTriggeredByCurrentUser = personal, WebUrl = "https://example.com/build/1",
+            };
+            var item = (personal ? DevHubWorkItem.GetMyWork([], [], [], builds: [build])
+                : DevHubWorkItem.GetIncoming([], [], [build])).Single();
+            var text = (TextBlock)XamlReader.Parse(action.ToString());
+            StartScreen.ToolWindows.Typography.SetEnvironmentSize(text, fontSize);
+            text.DataContext = item;
+            text.Measure(new Size(width, double.PositiveInfinity));
+            text.Arrange(new Rect(0, 0, width, text.DesiredSize.Height));
+            text.UpdateLayout();
+
+            Assert.AreEqual(TextTrimming.CharacterEllipsis, text.TextTrimming);
+            Assert.AreEqual(2, StartScreen.ToolWindows.Typography.GetMaxLineCount(text));
+            Assert.IsGreaterThan(0d, text.ActualHeight);
+            Assert.IsLessThanOrEqualTo(2 * text.LineHeight + 0.1, text.ActualHeight);
+            Assert.IsLessThanOrEqualTo(width, text.DesiredSize.Width);
+            Assert.AreEqual(message, text.Text);
+            Assert.AreEqual(message, text.ToolTip);
+            StringAssert.Contains(item.StatusDetails, message);
+
+            var unbounded = new TextBlock { Text = message, FontSize = text.FontSize, FontFamily = text.FontFamily, TextWrapping = TextWrapping.Wrap };
+            unbounded.Measure(new Size(width, double.PositiveInfinity));
+            Assert.IsGreaterThan(text.ActualHeight, unbounded.DesiredSize.Height);
         }
 
         [TestMethod]

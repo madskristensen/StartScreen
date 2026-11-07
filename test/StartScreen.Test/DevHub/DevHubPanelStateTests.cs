@@ -39,6 +39,20 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public void ActivityFailures_HaveNoDashboardBannerOrErrorPanel()
+        {
+            using var stream = typeof(DevHubPanelStateTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
+            var document = XDocument.Load(stream!);
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+
+            Assert.IsEmpty(document.Descendants().Where(element => new[] { "ActivityWarningText", "ErrorPanel", "ErrorMessageText" }
+                .Contains(element.Attribute(x + "Name")?.Value)));
+            Assert.IsFalse(document.Descendants().Any(element => element.Attribute("Text")?.Value == "Something went wrong"));
+            Assert.IsTrue(document.Descendants().Any(element => element.Attribute(x + "Name")?.Value == "AccountRecoveryPanel"),
+                "Output-only errors must not remove account connection actions.");
+        }
+
+        [TestMethod]
         public void OrganizationAuthorization_IsOptionalAndOnlyShownInAccountSettings()
         {
             using var stream = typeof(DevHubPanelStateTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");

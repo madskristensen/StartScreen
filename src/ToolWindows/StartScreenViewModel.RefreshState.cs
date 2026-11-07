@@ -83,7 +83,7 @@ namespace StartScreen.ToolWindows
             DevHubRefreshState.IsLoading = IsRefreshingDevHub || dashboard?.IsRefreshing == true;
             string message = error ?? (dashboard?.IsRefreshing == true ? "Refreshing activity..."
                 : unavailable ? "Activity unavailable. Refresh to retry."
-                : partial ? "Some activity sources could not be refreshed. See activity details."
+                : partial ? "Some activity sources could not be refreshed. See the Start Screen Output pane."
                 : cached ? "Showing cached activity" : "Activity updated");
             SetRefreshState(DevHubRefreshState, message, cached,
                 stale: unavailable || partial, partial: partial, unavailable: unavailable,

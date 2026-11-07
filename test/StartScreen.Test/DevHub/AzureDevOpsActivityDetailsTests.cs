@@ -460,6 +460,43 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow("null", false)]
+        [DataRow("null", true)]
+        [DataRow("{}", false)]
+        [DataRow("{}", true)]
+        [DataRow(null, false)]
+        [DataRow(null, true)]
+        public async Task BuildFailureTimeline_AbsentLogDoesNotMarkLoadedBuildsPartialAsync(string? logJson, bool repositoryScoped)
+        {
+            var timelineRequests = 0;
+            using var client = Client(request =>
+            {
+                var uri = request.RequestUri!;
+                if (uri.AbsolutePath.EndsWith("/builds"))
+                    return Values(Build(1, "me", "failed"));
+                if (uri.AbsolutePath.EndsWith("/timeline"))
+                {
+                    timelineRequests++;
+                    return Json("{\"records\":[{\"name\":\"Compile\",\"result\":\"failed\",\"issues\":[{\"type\":\"error\",\"message\":\"Compilation failed\"}]"
+                        + (logJson == null ? string.Empty : ",\"log\":" + logJson) + "}]}");
+                }
+                return DefaultResponse(uri);
+            });
+
+            var result = await Provider(client).FetchActivityAsync(repositoryScoped ? DevHubActivityKind.Repository : DevHubActivityKind.CiRuns,
+                new DevHubActivityOptions(), repositoryScoped ? _repo : null!, CancellationToken.None);
+
+            Assert.AreEqual(1, timelineRequests);
+            var run = result.CiRuns.Single();
+            Assert.IsTrue(run.IsTriggeredByCurrentUser);
+            Assert.AreEqual("failure", run.Status);
+            Assert.AreEqual("Compilation failed", run.FailureSummary);
+            Assert.AreEqual(run.WebUrl, run.FailureUrl, "A missing task log should retain the build page as the failure link.");
+            Assert.AreEqual(DevHubActivityStatus.Success, result.Status, "Optional null log metadata must not invalidate the loaded inventory.");
+            Assert.IsNull(result.Message);
+        }
+
+        [TestMethod]
         public async Task BuildOwnershipAndFailureTimeline_AreMappedAsync()
         {
             using var client = Client(request =>

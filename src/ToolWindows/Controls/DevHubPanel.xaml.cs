@@ -139,12 +139,15 @@ namespace StartScreen.ToolWindows.Controls
             if (dashboard == null)
             {
                 LastRefreshChanged?.Invoke(this, string.Empty);
-                if (dashboardChanged || filterChanged || ErrorPanel.Visibility == Visibility.Visible || _isConnectionLoading)
+                if (dashboardChanged || filterChanged || _isConnectionLoading)
                 {
                     ShowNotConnected(hasGitHub: false, hasAdo: false);
                 }
                 return;
             }
+
+            foreach (var warning in dashboard.ActivityWarnings)
+                OutputLog.Info($"Activity/{warning.Key}", warning.Value, suppressRepeated: true);
 
             bool hasGitHub = dashboard.HasProvider("github.com");
             bool hasAdo = HasAnyAdoConnection(dashboard);
@@ -152,9 +155,6 @@ namespace StartScreen.ToolWindows.Controls
             if (!dashboard.HasAuthentication)
             {
                 ShowNotConnected(hasGitHub, hasAdo);
-                var warning = string.Join("\n", dashboard.GetVisibleActivityWarnings().Select(pair => pair.Value).Distinct());
-                if (!string.IsNullOrEmpty(warning))
-                    ShowActivityError(warning);
                 UpdateAccountRecovery(dashboard);
                 LastRefreshChanged?.Invoke(this, GetActivityRefreshStatus(dashboard) ?? string.Empty);
                 return;
@@ -170,17 +170,14 @@ namespace StartScreen.ToolWindows.Controls
                 prs = detail.PullRequests;
                 issues = detail.Issues;
                 ciRuns = detail.CiRuns;
-                ActivityWarningText.Text = detail.ActivityWarning;
             }
             else
             {
                 prs = dashboard.PullRequests;
                 issues = dashboard.Issues;
                 ciRuns = dashboard.CiRuns;
-                ActivityWarningText.Text = string.Join("\n", dashboard.GetVisibleActivityWarnings().Select(pair => pair.Value).Distinct());
             }
 
-            ActivityWarningText.Visibility = string.IsNullOrEmpty(ActivityWarningText.Text) ? Visibility.Collapsed : Visibility.Visible;
             UpdateBusyState();
             UpdateSettingsAccountStatus(hasGitHub, hasAdo);
             UpdateWorkspaceActivity(prs, issues, ciRuns);
@@ -229,29 +226,23 @@ namespace StartScreen.ToolWindows.Controls
         {
             OutputLog.Info("Activity", message ?? "Loading your activity...");
             _isConnectionLoading = true;
-            ResetStatusPanels(NotConnectedPanel, ErrorPanel);
+            ResetStatusPanels(NotConnectedPanel);
             DashboardPanel.Visibility = Visibility.Visible;
             UpdateBusyState();
         }
 
         /// <summary>
-        /// Shows an error state with a message.
+        /// Logs a failure without replacing loaded activity with an error state.
         /// </summary>
         public void ShowError(string message)
         {
-            _isConnectionLoading = false;
-            ResetStatusPanels(NotConnectedPanel, ErrorPanel);
-            DashboardPanel.Visibility = Visibility.Visible;
-            ErrorPanel.Visibility = Visibility.Visible;
-            ErrorMessageText.Text = message;
-            ClearRepositoryActivity();
-            UpdateBusyState();
+            ShowActivityError(message);
+            ShowDashboard();
         }
 
         internal void ShowActivityError(string message)
         {
-            ActivityWarningText.Text = message;
-            ActivityWarningText.Visibility = Visibility.Visible;
+            OutputLog.Info("Activity", message, suppressRepeated: true);
         }
 
         public void ShowLocalWorkspace()
@@ -266,7 +257,7 @@ namespace StartScreen.ToolWindows.Controls
         private void ShowNotConnected(bool hasGitHub, bool hasAdo)
         {
             _isConnectionLoading = false;
-            ResetStatusPanels(NotConnectedPanel, ErrorPanel);
+            ResetStatusPanels(NotConnectedPanel);
             DashboardPanel.Visibility = Visibility.Visible;
             NotConnectedPanel.Visibility = Options.Instance.DevHubGitHubEnabled || Options.Instance.DevHubAzureDevOpsEnabled
                 ? Visibility.Visible : Visibility.Collapsed;
@@ -281,8 +272,6 @@ namespace StartScreen.ToolWindows.Controls
         private void ClearRepositoryActivity()
         {
             ClearInactiveActivityItems();
-            ActivityWarningText.Text = null;
-            ActivityWarningText.Visibility = Visibility.Collapsed;
             AccountRecoveryPanel.Visibility = Visibility.Collapsed;
             UpdateWorkspaceActivity(Array.Empty<DevHubPullRequest>(), Array.Empty<DevHubIssue>(), Array.Empty<DevHubCiRun>());
         }
@@ -355,7 +344,7 @@ namespace StartScreen.ToolWindows.Controls
         private void ShowDashboard()
         {
             _isConnectionLoading = false;
-            ResetStatusPanels(NotConnectedPanel, ErrorPanel);
+            ResetStatusPanels(NotConnectedPanel);
             DashboardPanel.Visibility = Visibility.Visible;
 
             UpdateBusyState();

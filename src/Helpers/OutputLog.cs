@@ -25,9 +25,9 @@ namespace StartScreen
             }
         }
 
-        internal static void Info(string source, string message)
+        internal static void Info(string source, string message, bool suppressRepeated = false)
         {
-            WriteAsync(source, message).Forget();
+            WriteAsync(source, message, suppressRepeated).Forget();
         }
 
         internal static void Refresh(string source, string message, SectionRefreshState state)

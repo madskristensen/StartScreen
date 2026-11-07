@@ -1115,7 +1115,8 @@ namespace StartScreen.Services.DevHub.Providers
                     if (run.FailureSummary?.Length > 500)
                         run.FailureSummary = run.FailureSummary.Substring(0, 500);
                     run.FailureUrl = run.WebUrl;
-                    if (failed.TryGetProperty("log", out var log) && log.TryGetProperty("id", out var logId) && logId.TryGetInt32(out var number))
+                    if (failed.TryGetProperty("log", out var log) && log.ValueKind == JsonValueKind.Object
+                        && log.TryGetProperty("id", out var logId) && logId.TryGetInt32(out var number))
                         run.FailureUrl = $"{GetProjectUrl(repo)}/_apis/build/builds/{id.GetInt32()}/logs/{number}?api-version={version}";
                     return run;
                 }, cancellationToken);

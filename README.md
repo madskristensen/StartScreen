@@ -30,7 +30,7 @@ The header's last-updated caption shows the current step while work is running,
 including account checks, provider activity, and Copilot discovery, then returns to
 the last successful update time. Parallel operations continue independently; the
 caption describes one active operation. Extra connecting and updating labels are
-omitted; actionable failures and sign-in recovery links remain.
+omitted; refresh failures are reported in Output, while sign-in recovery links remain.
 Recent projects become clickable without waiting for filesystem timestamps, existence
 checks, Git metadata, or history writes. Those details are filled in afterward;
 Your Work can load independently. Repository summaries, dashboard refreshes, and
@@ -85,6 +85,10 @@ retains at most 100 images. Repository-scope activity caches evict older entries
 and changing scope releases hidden activity cards from the previous context.
 Large activity reorders rebuild the visible collection instead of repeatedly
 searching and moving items. Unchanged refreshes retain existing item instances.
+Activity card messages, including build failures, are limited to two lines with
+ellipsis trimming. Hover over the message to read its full available text.
+Azure DevOps timeline records with a null task-log reference retain the build-page
+link and failure summary without incorrectly marking loaded activity as partial.
 
 News and videos have focused section view models that own their inventories,
 filters, unread markers, and refresh state. Dev Hub activity presentation is
@@ -129,7 +133,9 @@ extension for x64 and ARM64 Visual Studio. No separate libgit2 installation is
 required.
 
 The **Start Screen** Output pane shows readable progress and recovery guidance,
-without raw exception details or boolean status dumps. Unchanged refresh status
+without raw exception details or boolean status dumps. Activity source warnings and
+refresh errors appear here instead of a banner or error panel on the dashboard;
+loaded activity remains available after a refresh failure. Unchanged refresh status
 messages are not repeated as activity sources finish loading. Exceptions are
 logged with the VSIX Community Toolkit's `ex.LogAsync()` in the **Extensions**
 Output pane, keeping stack traces separate from Start Screen status messages.

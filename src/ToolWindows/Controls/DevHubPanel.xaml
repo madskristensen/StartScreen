@@ -236,6 +236,7 @@
                         </ContentControl.Style>
                     </ContentControl>
                     <TextBlock Text="{Binding NextActionText}" Style="{StaticResource StartScreen.Metadata}" Margin="0 2 0 0" TextWrapping="Wrap"
+                               TextTrimming="CharacterEllipsis" typography:Typography.MaxLineCount="2" ToolTip="{Binding NextActionText}"
                                Visibility="{Binding NextActionText, Converter={StaticResource NullToCollapsedConverter}}"/>
                     </StackPanel>
                     <TextBlock Grid.Column="2" Grid.RowSpan="3" Text="{Binding ActivityDateText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
@@ -901,10 +902,6 @@
         <!-- Dashboard Content -->
         <DockPanel x:Name="DashboardPanel" Grid.Row="1">
 
-            <TextBlock x:Name="ActivityWarningText" DockPanel.Dock="Top" Visibility="Collapsed"
-                       Margin="8 0 0 8" TextWrapping="Wrap" typography:Typography.Role="Body"
-                       Foreground="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
-
             <StackPanel x:Name="AccountRecoveryPanel" DockPanel.Dock="Top" Visibility="Collapsed" Margin="8 0 0 12">
                 <TextBlock x:Name="VisualStudioAccountRecoveryText" TextWrapping="Wrap" Visibility="Collapsed">
                     <Run Text="Azure DevOps isn't connected or needs reauthentication. "/>
@@ -1057,23 +1054,6 @@
             </Grid>
         </DockPanel>
 
-        <!-- Error State -->
-        <StackPanel x:Name="ErrorPanel" Visibility="Collapsed">
-            <TextBlock Text="Something went wrong"
-                       typography:Typography.Role="Body"
-                       FontWeight="SemiBold"
-                       Margin="0 0 0 8"/>
-            <TextBlock x:Name="ErrorMessageText"
-                       typography:Typography.Role="Body"
-                       Opacity="0.7"
-                       TextWrapping="Wrap"
-                       Margin="0 0 0 12"/>
-            <Button Click="Refresh_Click"
-                    Style="{DynamicResource ActionButtonStyle}"
-                    Padding="8 4"
-                    BorderThickness="0"
-                    Content="Try again"/>
-        </StackPanel>
         </Grid>
         </Grid>
     </Grid>
