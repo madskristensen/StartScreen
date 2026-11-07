@@ -1446,7 +1446,8 @@ namespace StartScreen.ToolWindows
             }
             else if (ReferenceEquals(selected, WhatsNewTab))
             {
-                ViewModel.EnsureWhatsNewLoadedAsync().FileAndForget(nameof(StartScreenControl));
+                ViewModel.EnsureWhatsNewLoadedAsync(factory: StartScreenPackage.BackgroundTaskFactory)
+                    .FileAndForget(nameof(StartScreenControl));
             }
         }
 
