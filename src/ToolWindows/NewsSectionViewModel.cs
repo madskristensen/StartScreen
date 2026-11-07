@@ -178,7 +178,7 @@ namespace StartScreen.ToolWindows
             {
                 token.ThrowIfCancellationRequested();
                 List<NewsPost> posts = await _getCachedPostsAsync(token);
-                var hasCachedItems = posts != null && posts.Count > 0;
+                var hasCachedItems = posts != null;
                 if (hasCachedItems)
                 {
                     await UpdateOnUIThreadAsync(posts, token);

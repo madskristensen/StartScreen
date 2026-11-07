@@ -160,14 +160,15 @@ namespace StartScreen.ToolWindows
             {
                 token.ThrowIfCancellationRequested();
                 List<YouTubeVideo> videos = await _getCachedVideosAsync(token);
-                var hasCachedItems = videos != null && videos.Count > 0;
+                var hasCachedItems = videos != null;
                 if (hasCachedItems)
                 {
-                    await _loadThumbnailsAsync(videos, token);
                     await UpdateOnUIThreadAsync(videos, token);
                     LastYouTubeRefreshText = "Showing cached content";
                     SetRefreshState(cached: true);
                     StartupDiagnostics.Mark("video cache displayed");
+                    await _loadThumbnailsAsync(videos, token);
+                    await UpdateOnUIThreadAsync(videos, token);
                 }
                 await TaskScheduler.Default;
                 var needsRefresh = !hasCachedItems || _isCacheStale();
@@ -226,7 +227,6 @@ namespace StartScreen.ToolWindows
                 List<YouTubeVideo> videos = await _downloadAsync(token);
                 if (videos != null)
                 {
-                    await _loadThumbnailsAsync(videos, token);
                     await UpdateOnUIThreadAsync(videos, token);
                     await factory.SwitchToMainThreadAsync(token);
                     token.ThrowIfCancellationRequested();
@@ -234,6 +234,8 @@ namespace StartScreen.ToolWindows
                     LastYouTubeRefreshText = "Updated just now";
                     SetRefreshState(successfulUtc: DateTimeOffset.UtcNow);
                     StartupDiagnostics.Mark("video remote refresh completed");
+                    await _loadThumbnailsAsync(videos, token);
+                    await UpdateOnUIThreadAsync(videos, token);
                 }
                 else
                 {

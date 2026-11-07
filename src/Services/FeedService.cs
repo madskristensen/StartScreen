@@ -76,7 +76,7 @@ namespace StartScreen.Services
         }
 
         /// <summary>
-        /// Returns true if any source validation is at least four hours old or the snapshot is missing.
+        /// Returns true if any source validation is at least six hours old or the snapshot is missing.
         /// </summary>
         public static bool IsCacheStale()
         {

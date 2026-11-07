@@ -127,6 +127,51 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
+        public void EmptyFreshCaches_DoNotDownload()
+        {
+            using var context = CreateContext();
+            var downloads = 0;
+            using var news = new NewsSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedPostsAsync: _ => Task.FromResult(new List<NewsPost>()),
+                downloadAsync: (_, _) => { downloads++; return Task.FromResult(new FeedRefreshResult([], 1, [], [])); },
+                isCacheStale: () => false, getOptionsAsync: () => Task.FromResult(new Options()));
+            using var videos = new VideoSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedVideosAsync: _ => Task.FromResult(new List<YouTubeVideo>()),
+                downloadAsync: _ => { downloads++; return Task.FromResult(new List<YouTubeVideo>()); },
+                loadThumbnailsAsync: (_, _) => Task.CompletedTask, isCacheStale: () => false,
+                getOptionsAsync: () => Task.FromResult(new Options()));
+            context.Factory.Run(() => Task.WhenAll(news.LoadAsync(default), videos.LoadAsync(default)));
+            Assert.AreEqual(0, downloads);
+            Assert.IsTrue(news.RefreshState.IsCached);
+            Assert.IsTrue(videos.RefreshState.IsCached);
+        }
+
+        [STATestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void VideoCards_ArePublishedBeforeThumbnails(bool cached)
+        {
+            using var context = CreateContext();
+            var pending = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var items = new List<YouTubeVideo> { Video("visible") };
+            using var section = new VideoSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedVideosAsync: _ => Task.FromResult(items), downloadAsync: _ => Task.FromResult(items),
+                loadThumbnailsAsync: (_, _) => { started.SetResult(true); return pending.Task; }, isCacheStale: () => false,
+                getOptionsAsync: () => Task.FromResult(new Options()));
+            context.Factory.Run(async () =>
+            {
+                Task load = cached ? section.LoadAsync(default) : section.RefreshAsync();
+                await started.Task;
+                await context.Factory.SwitchToMainThreadAsync();
+                Assert.AreSame(items[0], section.YouTubeVideos.Single());
+                Assert.IsFalse(load.IsCompleted);
+                pending.SetResult(true);
+                await load;
+            });
+        }
+
+        [STATestMethod]
         public void Sections_LoadFreshCachesWithoutRemoteRequests()
         {
             using var context = CreateContext();
