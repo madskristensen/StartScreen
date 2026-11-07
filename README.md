@@ -338,7 +338,7 @@ for overflow and full text on hover. Pinned and unpinned cards use the same layo
 their heights scale with Visual Studio's environment font settings.
 
 The Refresh button checks every enabled blog feed even when its local cache is
-less than four hours old. Unchanged feeds can be validated without downloading
+less than six hours old. Unchanged feeds can be validated without downloading
 them again. Automatic refreshes continue to reuse fresh caches.
 Feed caches are identified by source URL rather than display name. Renaming a
 feed preserves its cache, changing its URL does not reuse the previous source,

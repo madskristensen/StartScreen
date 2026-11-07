@@ -156,7 +156,7 @@ namespace StartScreen.Services
         }
 
         private bool HasFreshCache() => _cached != null && _utcNow() >= _cached.UpdatedUtc
-            && _utcNow() - _cached.UpdatedUtc < TimeSpan.FromDays(7);
+            && _utcNow() - _cached.UpdatedUtc < TimeSpan.FromHours(24);
 
         private async Task<FeedbackTicket> GetTicketAsync(long id, long principalId, string token, CancellationToken cancellationToken)
         {

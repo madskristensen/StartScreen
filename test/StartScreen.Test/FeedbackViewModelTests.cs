@@ -67,7 +67,7 @@ namespace StartScreen.Test
             var requests = 0;
             var model = Model(context, (force, _) =>
             {
-                Assert.IsTrue(force);
+                Assert.IsFalse(force);
                 requests++;
                 return pending.Task;
             }, _ => Task.FromResult(cached));
@@ -243,7 +243,7 @@ namespace StartScreen.Test
             var requests = 0;
             var model = Model(context, (force, _) =>
             {
-                Assert.IsTrue(force);
+                Assert.IsFalse(force);
                 requests++;
                 return pending.Task;
             });
@@ -279,7 +279,7 @@ namespace StartScreen.Test
             var requests = 0;
             var model = Model(context, (force, _) =>
             {
-                Assert.IsTrue(force);
+                Assert.IsFalse(force);
                 return Task.FromResult(Snapshot(++requests));
             });
             try
@@ -319,7 +319,7 @@ namespace StartScreen.Test
                 model.ForceRefreshFeedback();
                 model.EnsureFeedbackLoaded();
 
-                CollectionAssert.AreEqual(new[] { true, true }, requests);
+                CollectionAssert.AreEqual(new[] { false, true }, requests);
                 Assert.AreEqual(2L, model.FeedbackTickets.Single().Id);
                 Assert.IsFalse(model.IsRefreshingFeedback);
             }

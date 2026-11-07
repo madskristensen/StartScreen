@@ -134,7 +134,7 @@ namespace StartScreen.Test
             Assert.AreEqual(1, activityRequests);
             Assert.AreEqual(3, handler.RequestCount);
 
-            now = now.AddDays(6).AddHours(23).AddMinutes(59);
+            now = now.AddHours(23).AddMinutes(59);
             Assert.AreSame(first, await service.GetTicketsAsync(false, CancellationToken.None));
             Assert.AreEqual(1, metadataRequests);
             Assert.AreEqual(1, activityRequests);
@@ -143,7 +143,7 @@ namespace StartScreen.Test
             Assert.AreNotSame(first, forced);
             Assert.AreEqual(now, forced.UpdatedUtc);
             Assert.AreEqual(2, activityRequests);
-            now = now.AddDays(7).AddSeconds(-1);
+            now = now.AddHours(24).AddSeconds(-1);
             Assert.AreSame(forced, await service.GetTicketsAsync(false, CancellationToken.None));
             Assert.AreEqual(2, activityRequests);
 
@@ -346,7 +346,7 @@ namespace StartScreen.Test
             using var handler = TicketHandler(Ticket(10, 7, false));
             using var client = new HttpClient(handler);
             await Service(client, () => now, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
-            now = now.AddDays(7);
+            now = now.AddHours(24);
 
             var refreshed = await Service(client, () => now, diskCache: new FeedbackCache(_cacheFolder)).GetTicketsAsync(false, CancellationToken.None);
 
@@ -378,7 +378,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public async Task DiskCache_CorruptEncryptedDataIsReplacedByACompleteOnlineSnapshotAsync()
+        public async Task DiskCache_CorruptEncryptedDataIsReplacedByAcompleteOnlineSnapshotAsync()
         {
             await AtomicJsonCache.WriteAsync(Path.Combine(_cacheFolder, "7.json"), new byte[] { 1, 2, 3 });
             using var handler = TicketHandler(Ticket(10, 7, false));
@@ -417,8 +417,8 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        [DataRow(604799, true)]
-        [DataRow(604800, false)]
+        [DataRow(86399, true)]
+        [DataRow(86400, false)]
         [DataRow(-1, false)]
         public async Task CacheOnly_EnforcesSevenDayBoundaryWithoutDownloadingActivityAsync(int ageSeconds, bool usable)
         {
@@ -450,7 +450,7 @@ namespace StartScreen.Test
             var now = DateTime.UtcNow;
             var cache = new FeedbackCache(_cacheFolder);
             await cache.WriteAsync(new FeedbackSnapshot(7,
-                [new FeedbackTicket { Id = 1, Title = "Old ticket", Type = FeedbackTicketType.Problem }], now.AddDays(-3)), CancellationToken.None);
+                [new FeedbackTicket { Id = 1, Title = "Old ticket", Type = FeedbackTicketType.Problem }], now.AddHours(-3)), CancellationToken.None);
             using var handler = TicketHandler(Ticket(10, 7, false));
             using var client = new HttpClient(handler);
             var service = Service(client, () => now, diskCache: cache);

@@ -73,7 +73,7 @@ namespace StartScreen.Test
             AtomicJsonCache.Write(cacheFile, new { Entries = Array.Empty<FeedCacheEntry>(), ValidatedUtc = new[] { now.AddHours(-3) } });
             Assert.IsFalse(FeedService.IsCacheStale(cacheFile, now));
 
-            AtomicJsonCache.Write(cacheFile, new { Entries = Array.Empty<FeedCacheEntry>(), ValidatedUtc = new[] { now.AddHours(-4) } });
+            AtomicJsonCache.Write(cacheFile, new { Entries = Array.Empty<FeedCacheEntry>(), ValidatedUtc = new[] { now.AddHours(-6) } });
             Assert.IsTrue(FeedService.IsCacheStale(cacheFile, now));
         }
 
@@ -326,7 +326,7 @@ namespace StartScreen.Test
         public async Task DownloadFeedsAsync_NotModifiedValidatesCacheAndResetsCheckTimeAsync(bool forceRefresh)
         {
             using var directory = new TemporaryDirectory();
-            var oldCheck = DateTime.UtcNow.AddHours(-5);
+            var oldCheck = DateTime.UtcNow.AddHours(-7);
             WriteSourceCache(directory, "Example", "Cached post", oldCheck);
             var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotModified));
             using var client = new HttpClient(handler);
@@ -372,7 +372,7 @@ namespace StartScreen.Test
         public async Task DownloadFeedsAsync_FailureRetainsCacheWithoutAdvancingFreshnessAsync()
         {
             using var directory = new TemporaryDirectory();
-            var oldCheck = DateTime.UtcNow.AddHours(-5);
+            var oldCheck = DateTime.UtcNow.AddHours(-7);
             WriteSourceCache(directory, "Example", "Cached post", oldCheck);
             var combinedFile = directory.GetPath("_feed.json");
             const string originalCache = "[{\"Title\":\"Previous combined content\"}]";
@@ -571,13 +571,13 @@ namespace StartScreen.Test
 
             Assert.IsTrue(result.Success);
             Assert.AreEqual(1, handler.RequestCount);
-            Assert.IsFalse(FeedService.IsCacheStale(combinedPath, oldestCheck.AddHours(4).AddTicks(-1)));
-            Assert.IsTrue(FeedService.IsCacheStale(combinedPath, oldestCheck.AddHours(4)));
+            Assert.IsFalse(FeedService.IsCacheStale(combinedPath, oldestCheck.AddHours(6).AddTicks(-1)));
+            Assert.IsTrue(FeedService.IsCacheStale(combinedPath, oldestCheck.AddHours(6)));
 
             await FeedService.DownloadFeedsAsync(client, [CreateFeed("Example"), CreateFeed("Other")], directory.Path, _ => Task.CompletedTask);
 
             Assert.AreEqual(1, handler.RequestCount);
-            Assert.IsTrue(FeedService.IsCacheStale(combinedPath, oldestCheck.AddHours(4)));
+            Assert.IsTrue(FeedService.IsCacheStale(combinedPath, oldestCheck.AddHours(6)));
         }
 
         [TestMethod]

@@ -138,7 +138,7 @@ namespace StartScreen.ToolWindows
                         ApplyFeedbackSnapshot(cached, cached: true);
                 }
 
-                FeedbackSnapshot snapshot = await _getFeedbackAsync(true, token);
+                FeedbackSnapshot snapshot = await _getFeedbackAsync(force, token);
                 await factory.SwitchToMainThreadAsync(token);
                 token.ThrowIfCancellationRequested();
                 ApplyFeedbackSnapshot(snapshot, cached: false);

@@ -29,7 +29,7 @@ namespace StartScreen.Services
         private static readonly string _combinedFeedFile = Path.Combine(_cacheFolder, "_feed.json");
 
         private static readonly HttpClient _httpClient = new HttpClient();
-        private static readonly TimeSpan _staleThreshold = TimeSpan.FromHours(4);
+        private static readonly TimeSpan _staleThreshold = TimeSpan.FromHours(6);
         private const int _maxConcurrentDownloads = 6;
         private const int _maxNewsItems = 40;
         internal const int MaxFeedBytes = 4 * 1024 * 1024;

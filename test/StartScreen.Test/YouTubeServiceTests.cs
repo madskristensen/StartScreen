@@ -67,10 +67,10 @@ namespace StartScreen.Test
             File.WriteAllText(cacheFile, "[]");
             var now = new DateTime(2026, 9, 12, 12, 0, 0, DateTimeKind.Utc);
 
-            File.SetLastWriteTimeUtc(cacheFile, now.AddHours(-3));
+            File.SetLastWriteTimeUtc(cacheFile, now.AddHours(-5));
             Assert.IsFalse(YouTubeService.IsCacheStale(cacheFile, now));
 
-            File.SetLastWriteTimeUtc(cacheFile, now.AddHours(-4));
+            File.SetLastWriteTimeUtc(cacheFile, now.AddHours(-6));
             Assert.IsTrue(YouTubeService.IsCacheStale(cacheFile, now));
         }
 

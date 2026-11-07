@@ -34,7 +34,7 @@ namespace StartScreen.Services
 
         private static readonly HttpClient _httpClient = new HttpClient();
         private static readonly SemaphoreSlim _thumbnailPublishGate = new SemaphoreSlim(1, 1);
-        private static readonly TimeSpan _staleThreshold = TimeSpan.FromHours(4);
+        private static readonly TimeSpan _staleThreshold = TimeSpan.FromHours(6);
 
         static YouTubeService()
         {
@@ -77,7 +77,7 @@ namespace StartScreen.Services
         }
 
         /// <summary>
-        /// Returns true if the YouTube cache is stale (>4 hours old) or doesn't exist.
+        /// Returns true if the YouTube cache is stale (6 hours old) or doesn't exist.
         /// </summary>
         public static bool IsCacheStale()
         {
