@@ -201,7 +201,7 @@ namespace StartScreen.Test
 
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetTicketsAsync(true, CancellationToken.None));
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetTicketsAsync(false, CancellationToken.None));
-            Assert.AreEqual(4, handler.RequestCount);
+            Assert.AreEqual(3, handler.RequestCount, "Automatic retries must reuse the failure during backoff.");
         }
 
         [TestMethod]
@@ -525,7 +525,7 @@ namespace StartScreen.Test
 
             await Assert.ThrowsAsync<HttpRequestException>(() => service.GetTicketsAsync(false, CancellationToken.None));
             fail = false;
-            Assert.HasCount(1, (await service.GetTicketsAsync(false, CancellationToken.None)).Tickets);
+            Assert.HasCount(1, (await service.GetTicketsAsync(true, CancellationToken.None)).Tickets);
             Assert.AreEqual(2, activityRequests);
         }
 
@@ -596,7 +596,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public async Task CancellationDuringHydration_DoesNotCacheTheResultAsync()
+        public async Task CancellationDuringHydration_CancelsWaitButRetainsSharedWorkAsync()
         {
             using var cancellation = new CancellationTokenSource();
             var cancel = true;
@@ -616,7 +616,7 @@ namespace StartScreen.Test
             await Assert.ThrowsAsync<OperationCanceledException>(() => service.GetTicketsAsync(false, cancellation.Token));
             cancel = false;
             Assert.HasCount(1, (await service.GetTicketsAsync(false, CancellationToken.None)).Tickets);
-            Assert.AreEqual(6, handler.RequestCount);
+            Assert.AreEqual(3, handler.RequestCount);
         }
 
         [TestMethod]

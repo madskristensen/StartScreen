@@ -19,7 +19,7 @@ namespace StartScreen.ToolWindows
         private readonly Func<CancellationToken> _getLifetimeToken;
         private readonly Func<JoinableTaskFactory> _getTaskFactory;
         private readonly Func<CancellationToken, Task<List<YouTubeVideo>>> _getCachedVideosAsync;
-        private readonly Func<CancellationToken, Task<List<YouTubeVideo>>> _downloadAsync;
+        private readonly Func<bool, CancellationToken, Task<List<YouTubeVideo>>> _downloadAsync;
         private readonly Func<List<YouTubeVideo>, CancellationToken, Task> _loadThumbnailsAsync;
         private readonly Func<bool> _isCacheStale;
         private readonly Func<Task<Options>> _getOptionsAsync;
@@ -45,7 +45,7 @@ namespace StartScreen.ToolWindows
             _getLifetimeToken = getLifetimeToken ?? (() => CancellationToken.None);
             _getTaskFactory = getTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
             _getCachedVideosAsync = getCachedVideosAsync ?? YouTubeService.GetCachedVideosAsync;
-            _downloadAsync = downloadAsync ?? YouTubeService.DownloadVideosAsync;
+            _downloadAsync = downloadAsync == null ? YouTubeService.RefreshVideosAsync : (_, token) => downloadAsync(token);
             _loadThumbnailsAsync = loadThumbnailsAsync ?? YouTubeService.LoadThumbnailsAsync;
             _isCacheStale = isCacheStale ?? YouTubeService.IsCacheStale;
             _getOptionsAsync = getOptionsAsync ?? Options.GetLiveInstanceAsync;
@@ -176,7 +176,7 @@ namespace StartScreen.ToolWindows
                 token.ThrowIfCancellationRequested();
                 RefreshState.IsStale = hasCachedItems && needsRefresh;
                 if (needsRefresh)
-                    StartRefresh();
+                    StartRefresh(false);
             }
             catch (OperationCanceledException ex) when (token.IsCancellationRequested)
             {
@@ -191,10 +191,10 @@ namespace StartScreen.ToolWindows
         internal void RefreshIfStale()
         {
             if (!IsWorkCanceled() && !IsRefreshingYouTube && _isCacheStale())
-                StartRefresh();
+                StartRefresh(false);
         }
 
-        internal void StartRefresh()
+        internal void StartRefresh(bool force = true)
         {
             if (IsWorkCanceled() || IsRefreshingYouTube)
                 return;
@@ -204,12 +204,12 @@ namespace StartScreen.ToolWindows
                 using (request)
                 {
                     if (!request.IsCancellationRequested)
-                        await RefreshAsync(request.Token);
+                        await RefreshAsync(request.Token, force);
                 }
             }).FileAndForget(nameof(VideoSectionViewModel));
         }
 
-        internal async Task RefreshAsync(CancellationToken cancellationToken = default)
+        internal async Task RefreshAsync(CancellationToken cancellationToken = default, bool force = true)
         {
             JoinableTaskFactory factory = _getTaskFactory();
             await factory.SwitchToMainThreadAsync(cancellationToken);
@@ -224,7 +224,7 @@ namespace StartScreen.ToolWindows
             {
                 await TaskScheduler.Default;
                 token.ThrowIfCancellationRequested();
-                List<YouTubeVideo> videos = await _downloadAsync(token);
+                List<YouTubeVideo> videos = await _downloadAsync(force, token);
                 if (videos != null)
                 {
                     await UpdateOnUIThreadAsync(videos, token);

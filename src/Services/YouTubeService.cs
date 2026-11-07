@@ -35,6 +35,7 @@ namespace StartScreen.Services
         private static readonly HttpClient _httpClient = new HttpClient();
         private static readonly SemaphoreSlim _thumbnailPublishGate = new SemaphoreSlim(1, 1);
         private static readonly TimeSpan _staleThreshold = TimeSpan.FromHours(6);
+        private static readonly SharedRefresh<List<YouTubeVideo>> _refresh = new SharedRefresh<List<YouTubeVideo>>();
 
         static YouTubeService()
         {
@@ -98,15 +99,20 @@ namespace StartScreen.Services
         /// Retries up to 3 times with exponential backoff for transient failures.
         /// Returns the updated videos, or null if all attempts failed.
         /// </summary>
-        public static async Task<List<YouTubeVideo>> DownloadVideosAsync(
+        public static Task<List<YouTubeVideo>> DownloadVideosAsync(
             CancellationToken cancellationToken = default)
         {
-            const int baseDelayMs = 2000;
-            return await DownloadVideosAsync(
-                _httpClient,
-                attempt => Task.Delay(baseDelayMs * attempt, cancellationToken),
-                _cacheFile,
-                cancellationToken);
+            return RefreshVideosAsync(false, cancellationToken);
+        }
+
+        internal static Task<List<YouTubeVideo>> RefreshVideosAsync(bool force, CancellationToken cancellationToken)
+        {
+            return _refresh.RunAsync(_feedUrl, force, async token =>
+            {
+                if (!force && HttpRetryBackoff.IsDeferred(_feedUrl))
+                    return null;
+                return await DownloadVideosAsync(_httpClient, attempt => Task.Delay(2000 * attempt, token), _cacheFile, token);
+            }, result => result != null, cancellationToken);
         }
 
         internal static async Task<List<YouTubeVideo>> DownloadVideosAsync(
@@ -128,7 +134,11 @@ namespace StartScreen.Services
                     {
                         if (!response.IsSuccessStatusCode)
                         {
+                            HttpRetryBackoff.Observe(_feedUrl, response);
                             Trace.TraceWarning($"YouTube feed returned {(int)response.StatusCode} on attempt {attempt}/{maxAttempts}.");
+
+                            if (HttpRetryBackoff.IsDeferred(_feedUrl))
+                                return null;
 
                             if (attempt < maxAttempts)
                             {

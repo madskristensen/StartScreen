@@ -30,6 +30,7 @@ namespace StartScreen.Services
 
         private static readonly HttpClient _httpClient = new HttpClient();
         private static readonly TimeSpan _staleThreshold = TimeSpan.FromHours(6);
+        private static readonly SharedRefresh<FeedRefreshResult> _refresh = new SharedRefresh<FeedRefreshResult>();
         private const int _maxConcurrentDownloads = 6;
         private const int _maxNewsItems = 40;
         internal const int MaxFeedBytes = 4 * 1024 * 1024;
@@ -108,8 +109,12 @@ namespace StartScreen.Services
             bool forceRefresh = false)
         {
             const int baseDelayMs = 3000;
-            return DownloadFeedsAsync(_httpClient, feeds, _cacheFolder,
-                attempt => Task.Delay(baseDelayMs * attempt, cancellationToken), cancellationToken, forceRefresh);
+            var selected = feeds.Where(feed => feed.Enabled).ToArray();
+            var key = string.Join(";", selected.Select(feed => feed.Url + "|" + feed.Name));
+            return _refresh.RunAsync(key, forceRefresh,
+                token => DownloadFeedsAsync(_httpClient, selected, _cacheFolder,
+                    attempt => Task.Delay(baseDelayMs * attempt, token), token, forceRefresh),
+                result => result.Success, cancellationToken);
         }
 
         internal static async Task<FeedRefreshResult> DownloadFeedsAsync(
@@ -229,6 +234,9 @@ namespace StartScreen.Services
             if (cachedFeed != null && !forceRefresh && validatedUtc <= DateTime.UtcNow && DateTime.UtcNow - validatedUtc < _staleThreshold)
                 return (cachedFeed, false, false, validatedUtc);
 
+            if (!forceRefresh && HttpRetryBackoff.IsDeferred(feedInfo.Url))
+                return (cachedFeed, false, true, validatedUtc);
+
             DateTime? lastModified = cachedFeed?.LastUpdatedTime > DateTimeOffset.MinValue
                 ? cachedFeed.LastUpdatedTime.UtcDateTime : (DateTime?)null;
 
@@ -252,6 +260,8 @@ namespace StartScreen.Services
                     return (cachedFeed, true, false, checkedUtc);
                 }
 
+                if (HttpRetryBackoff.IsDeferred(feedInfo.Url))
+                    break;
                 if (attempt < maxAttempts)
                     await delayAsync(attempt);
             }
@@ -289,6 +299,7 @@ namespace StartScreen.Services
                         if (response.StatusCode == HttpStatusCode.NotModified && lastModified.HasValue)
                             return (null, true);
 
+                        HttpRetryBackoff.Observe(url, response);
                         response.EnsureSuccessStatusCode();
                         var bytes = await HttpResponseReader.ReadBytesAsync(response, cancellationToken, MaxFeedBytes);
                         using (var stream = new MemoryStream(bytes, writable: false))

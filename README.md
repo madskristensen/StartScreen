@@ -343,6 +343,9 @@ them again. Automatic refreshes continue to reuse fresh caches.
 News and video caches, including valid empty results, are reused for six hours;
 verified account-scoped feedback is reused for 24 hours. Manual Refresh bypasses
 these windows. Video cards appear before their thumbnails finish loading.
+Concurrent screens share discovery requests and credential-scoped feedback work.
+Canceling one screen only cancels its wait. Failed automatic refreshes pause for
+one minute, or the server's Retry-After delay; manual Refresh retries immediately.
 Feed caches are identified by source URL rather than display name. Renaming a
 feed preserves its cache, changing its URL does not reuse the previous source,
 and combining cached articles does not extend individual source freshness.

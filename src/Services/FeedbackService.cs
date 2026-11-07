@@ -37,6 +37,7 @@ namespace StartScreen.Services
         private readonly Func<DateTime> _utcNow;
         private readonly FeedbackCache _diskCache;
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
+        private readonly SharedRefresh<FeedbackSnapshot> _refresh = new SharedRefresh<FeedbackSnapshot>();
         private FeedbackSnapshot _cached;
         private string _cachedCredentialHash;
 
@@ -50,8 +51,18 @@ namespace StartScreen.Services
             _diskCache = diskCache;
         }
 
-        internal Task<FeedbackSnapshot> GetTicketsAsync(bool forceRefresh, CancellationToken cancellationToken) =>
-            GetTicketsCoreAsync(forceRefresh, false, cancellationToken);
+        internal async Task<FeedbackSnapshot> GetTicketsAsync(bool forceRefresh, CancellationToken cancellationToken)
+        {
+            await TaskScheduler.Default;
+            cancellationToken.ThrowIfCancellationRequested();
+            AccessToken token = await _getTokenAsync(cancellationToken);
+            string key;
+            using (var hash = SHA256.Create())
+                key = Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(token.Token ?? string.Empty)));
+            return await _refresh.RunAsync(key, forceRefresh,
+                sharedToken => GetTicketsCoreAsync(forceRefresh, false, sharedToken),
+                snapshot => snapshot != null, cancellationToken);
+        }
 
         internal Task<FeedbackSnapshot> GetCachedTicketsAsync(CancellationToken cancellationToken) =>
             GetTicketsCoreAsync(false, true, cancellationToken);
@@ -80,6 +91,8 @@ namespace StartScreen.Services
                     return _cached;
                 }
 
+                if (!forceRefresh && !cacheOnly && HttpRetryBackoff.IsDeferred(_baseUrl))
+                    throw new HttpRequestException("Developer Community requested a retry delay. Use Refresh to retry manually.");
                 using JsonDocument metadata = await SendAsync("userProperties/metadata", token.Token, null, cancellationToken);
                 long principalId = ReadId(metadata.RootElement.GetProperty("Id"));
                 // Confirm identity before reusing data, including after a VS account switch.
@@ -230,6 +243,7 @@ namespace StartScreen.Services
             cancellationToken.ThrowIfCancellationRequested();
             if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
                 throw new UnauthorizedAccessException("Developer Community needs a signed-in Visual Studio account.");
+            HttpRetryBackoff.Observe(_baseUrl, response);
             response.EnsureSuccessStatusCode();
             using Stream stream = await response.Content.ReadAsStreamAsync();
             return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
