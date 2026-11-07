@@ -707,7 +707,8 @@ namespace StartScreen.Services.DevHub.Providers
                 ? new AuthenticationHeaderValue("Bearer", credential.Token)
                 : new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.ASCII.GetBytes($":{credential.Token}")));
 
-            return await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var readOnlyPost = json != null && new Uri(url).AbsolutePath.EndsWith("/_apis/wit/wiql", StringComparison.OrdinalIgnoreCase);
+            return await DevHubReadRequestSharing.Instance.SendAsync(_httpClient, request, credential, cancellationToken, readOnlyPost);
         }
 
         private static int NormalizeMaxItems(int maxItems) => maxItems < 1 ? 1 : (maxItems > 100 ? 100 : maxItems);

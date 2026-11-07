@@ -56,7 +56,7 @@ namespace StartScreen.Services.DevHub.Providers
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {credential.Token}");
-            var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var response = await DevHubReadRequestSharing.Instance.SendAsync(_client, request, credential, cancellationToken);
             return observe ? DevHubActivityRequest.Observe(response) : response;
         }
 

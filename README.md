@@ -344,8 +344,17 @@ News and video caches, including valid empty results, are reused for six hours;
 verified account-scoped feedback is reused for 24 hours. Manual Refresh bypasses
 these windows. Video cards appear before their thumbnails finish loading.
 Concurrent screens share discovery requests and credential-scoped feedback work.
-Canceling one screen only cancels its wait. Failed automatic refreshes pause for
-one minute, or the server's Retry-After delay; manual Refresh retries immediately.
+Failed automatic discovery or feedback refreshes pause for one minute, or the
+server's Retry-After delay; manual Refresh retries immediately.
+Dev Hub providers also share identical in-flight inventory and enrichment HTTP
+reads: GitHub, Azure DevOps, and Bitbucket GETs, GitHub read-only GraphQL, and
+Azure DevOps WIQL queries. Credential/account generation, transport, URL, headers,
+and request body remain distinct. Each waiter owns a separate buffered response
+and parses its own models. Completed or failed responses are not retained by
+this transport layer, so later manual refreshes obtain fresh readiness/check data.
+Canceling a waiter leaves other waiters running; the last departing waiter or
+Visual Studio shutdown cancels the bounded transport operation. Action writes
+are never shared.
 News and video requests send cached ETags or Last-Modified validators when
 available. A 304 response reuses the validated body and advances freshness;
 missing or invalid caches never count as successfully validated empty content.

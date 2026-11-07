@@ -40,7 +40,7 @@ namespace StartScreen.Services.DevHub.Providers
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {credential.Token}");
-            var response = await (httpClient ?? _httpClient).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var response = await DevHubReadRequestSharing.Instance.SendAsync(httpClient ?? _httpClient, request, credential, cancellationToken);
             return observe ? DevHubActivityRequest.Observe(response) : response;
         }
 
@@ -781,7 +781,7 @@ namespace StartScreen.Services.DevHub.Providers
             using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.github.com/graphql");
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", credential.Token);
             request.Content = new StringContent(JsonSerializer.Serialize(new { query = query.ToString() }), Encoding.UTF8, "application/json");
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await DevHubReadRequestSharing.Instance.SendAsync(client, request, credential, cancellationToken, readOnlyPost: true);
             if (!response.IsSuccessStatusCode)
             {
                 var rateLimited = (int)response.StatusCode == 429
