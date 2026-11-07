@@ -13,7 +13,8 @@ namespace StartScreen.ToolWindows.Controls
         {
             InitializeComponent();
             _clickGesture = CardInteractionHelper.TrackPress(RootBorder);
-            RootBorder.ContextMenu = ThemedContextMenuHelper.CreateLinkMenu(() => (DataContext as YouTubeVideo)?.Url);
+            ThemedContextMenuHelper.AttachLazyContextMenu(RootBorder,
+                () => ThemedContextMenuHelper.CreateLinkMenu(() => (DataContext as YouTubeVideo)?.Url));
             RootBorder.MouseLeftButtonDown += (sender, e) =>
             {
                 if (CardInteractionHelper.IsCardSurface(RootBorder, e.OriginalSource as DependencyObject))

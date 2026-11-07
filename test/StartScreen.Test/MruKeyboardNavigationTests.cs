@@ -83,6 +83,9 @@ namespace StartScreen.Test
                 var first = MruItemControl.RealizeItemContainer(list, 0);
                 Assert.IsNotNull(first);
                 Assert.AreSame(items[0], first.Content);
+                list.InvalidateMeasure();
+                Assert.AreSame(first, MruItemControl.RealizeItemContainer(list, 0));
+                Assert.IsFalse(list.IsMeasureValid, "An already-realized target must not force a synchronous layout pass.");
                 Assert.IsNull(MruItemControl.RealizeItemContainer(list, -1));
                 Assert.IsNull(MruItemControl.RealizeItemContainer(list, items.Length));
             }

@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
+using Microsoft.VisualStudio.Threading;
 
 namespace StartScreen.Services
 {
@@ -160,13 +162,15 @@ namespace StartScreen.Services
             if (string.IsNullOrWhiteSpace(path))
                 return;
 
+            await TaskScheduler.Default;
+            var isDirectory = Directory.Exists(path);
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             EnvDTE.DTE dte = await VS.GetServiceAsync<EnvDTE.DTE, EnvDTE.DTE>();
             if (dte == null)
                 return;
 
-            if (Directory.Exists(path))
+            if (isDirectory)
             {
                 // Quote the path so spaces don't break command argument parsing
                 await VS.Commands.ExecuteAsync("File.OpenFolder", $"\"{path}\"");

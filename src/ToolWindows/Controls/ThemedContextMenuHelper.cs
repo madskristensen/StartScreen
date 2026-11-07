@@ -19,6 +19,19 @@ namespace StartScreen.ToolWindows.Controls
         private static Style _menuItemStyle;
         private static Style _separatorStyle;
 
+        internal static void AttachLazyContextMenu(FrameworkElement element, Func<ContextMenu> createMenu)
+        {
+            // WPF needs a placeholder to display the menu on the first mouse or keyboard request.
+            element.ContextMenu = new ContextMenu();
+            element.ContextMenuOpening += CreateMenuOnOpening;
+
+            void CreateMenuOnOpening(object sender, ContextMenuEventArgs e)
+            {
+                element.ContextMenu = createMenu();
+                element.ContextMenuOpening -= CreateMenuOnOpening;
+            }
+        }
+
         internal static MenuItem CreateMenuItem(string name, string header, RoutedEventHandler handler,
             ImageMoniker moniker, string gesture = null)
         {

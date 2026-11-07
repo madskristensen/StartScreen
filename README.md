@@ -44,6 +44,12 @@ for workspaces using the same directories. Search keeps the existing bound list
 and avoids resetting it when the matching items and their groups have not changed.
 The saved recent-project column width is applied before the first render, so it
 does not shift when background content loads.
+Recent-project, news, and video cards build their menu commands and icons only
+when first requested, including keyboard requests. Keyboard navigation reuses
+realized recent-project cards without forcing a layout pass. Workspace shell
+launches, folder probes during open and drag-and-drop, feed configuration disk
+work, and Copilot session recounts run off the UI thread. Drag-over events share
+their pending folder probe instead of repeatedly accessing the filesystem.
 Dev Hub does not read its cache or authenticate providers when disabled.
 Recent projects use the host's code-container registry so its persistence serializer
 remains compatible across Visual Studio versions. An initial MRU failure is logged

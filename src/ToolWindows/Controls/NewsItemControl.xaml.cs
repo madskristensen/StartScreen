@@ -20,7 +20,8 @@ namespace StartScreen.ToolWindows.Controls
             InitializeComponent();
             DataContextChanged += OnDataContextChanged;
             _clickGesture = CardInteractionHelper.TrackPress(RootBorder);
-            RootBorder.ContextMenu = ThemedContextMenuHelper.CreateLinkMenu(() => NewsPost?.Url);
+            ThemedContextMenuHelper.AttachLazyContextMenu(RootBorder,
+                () => ThemedContextMenuHelper.CreateLinkMenu(() => NewsPost?.Url));
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)

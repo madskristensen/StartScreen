@@ -142,6 +142,52 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
+        [DataRow(-1.0, -1.0)]
+        [DataRow(20.0, 30.0)]
+        public void LazyMenu_FirstMouseOrKeyboardRequestBuildsOnceAndUsesCurrentContext(double left, double top)
+        {
+            var border = new Border { DataContext = "initial" };
+            var builds = 0;
+            object? invokedContext = null;
+            ThemedContextMenuHelper.AttachLazyContextMenu(border, () =>
+            {
+                builds++;
+                var menu = new ContextMenu { Tag = border.DataContext };
+                var command = new MenuItem { Header = "Open" };
+                command.Click += (_, _) => invokedContext = border.DataContext;
+                menu.Items.Add(command);
+                return menu;
+            });
+            var placeholder = border.ContextMenu;
+            Assert.IsNotNull(placeholder);
+            Assert.AreEqual(0, builds);
+            Assert.IsEmpty(placeholder.Items);
+            border.DataContext = "first request";
+
+            RaiseOpening();
+
+            var populated = border.ContextMenu;
+            Assert.AreNotSame(placeholder, populated);
+            Assert.HasCount(1, populated.Items);
+            Assert.AreEqual("first request", populated.Tag);
+            border.DataContext = "recycled card";
+            RaiseOpening();
+            Assert.AreEqual(1, builds);
+            Assert.AreSame(populated, border.ContextMenu);
+            ((MenuItem)populated.Items[0]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            Assert.AreEqual("recycled card", invokedContext);
+
+            void RaiseOpening()
+            {
+                var args = (ContextMenuEventArgs)Activator.CreateInstance(typeof(ContextMenuEventArgs),
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                    null, [border, true, left, top], null)!;
+                border.RaiseEvent(args);
+                Assert.IsFalse(args.Handled, "WPF must still perform normal placement and open the menu on the first request.");
+            }
+        }
+
+        [STATestMethod]
         public void MenuTheme_RepeatedAttachmentKeepsOneOpeningHandler()
         {
             var menu = new ContextMenu();

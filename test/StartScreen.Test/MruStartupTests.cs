@@ -79,6 +79,33 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        [DataRow(@"C:\Code\App.sln")]
+        [DataRow(@"\\unavailable\share\App.slnx")]
+        [DataRow(@"C:\Code\App.CSPROJ")]
+        public async Task DragClassification_SupportedExtensionsNeedNoDirectoryProbeAsync(string path)
+        {
+            Task<bool> classification = StartScreenControl.IsOpenablePathAsync(path);
+
+            Assert.IsTrue(classification.IsCompleted, "Known extensions should be classified without scheduling filesystem work.");
+            Assert.IsTrue(await classification);
+        }
+
+        [TestMethod]
+        public async Task DragClassification_RecognizesFoldersAndRejectsOtherFilesAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            string folder = directory.GetPath("Workspace.txt");
+            Directory.CreateDirectory(folder);
+            string file = directory.GetPath("File.txt");
+            File.WriteAllText(file, string.Empty);
+
+            Assert.IsTrue(await StartScreenControl.IsOpenablePathAsync(folder));
+            Assert.IsFalse(await StartScreenControl.IsOpenablePathAsync(file));
+            Assert.IsFalse(await StartScreenControl.IsOpenablePathAsync(directory.GetPath("Missing")));
+            Assert.IsFalse(await StartScreenControl.IsOpenablePathAsync(string.Empty));
+        }
+
+        [TestMethod]
         public void InitialParse_SkipsDiskTimestampAndPreservesOpenPath()
         {
             using var directory = new TemporaryDirectory();

@@ -16,9 +16,9 @@ namespace StartScreen.ToolWindows.Controls
     public partial class MruItemControl : UserControl
     {
         private MruItem MruItem => DataContext as MruItem;
-        private readonly MenuItem _pinMenuItem;
-        private readonly MenuItem _gitPullMenuItem;
-        private readonly MenuItem _deleteCopilotChatMenuItem;
+        private MenuItem _pinMenuItem;
+        private MenuItem _gitPullMenuItem;
+        private MenuItem _deleteCopilotChatMenuItem;
         private Point? _dragStartPoint;
         private bool _isGitPullRunning;
 
@@ -38,6 +38,11 @@ namespace StartScreen.ToolWindows.Controls
             // Only show tooltip on mouse hover, not keyboard focus
             ToolTipService.SetIsEnabled(RootBorder, false);
 
+            ThemedContextMenuHelper.AttachLazyContextMenu(RootBorder, CreateContextMenu);
+        }
+
+        private ContextMenu CreateContextMenu()
+        {
             var menu = new ContextMenu();
             menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("Open", "Open", OpenMenuItem_Click, KnownMonikers.Open, "Enter"));
             menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("OpenInNewInstance", "Open in New Instance", OpenInNewInstanceMenuItem_Click, KnownMonikers.NewWindow, "Ctrl+Enter"));
@@ -55,7 +60,7 @@ namespace StartScreen.ToolWindows.Controls
             menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("Remove", "Remove from List", RemoveMenuItem_Click, KnownMonikers.Cancel, "Del"));
             ThemedContextMenuHelper.ApplyVsTheme(menu);
             menu.Opened += ContextMenu_Opened;
-            RootBorder.ContextMenu = menu;
+            return menu;
         }
 
         private void RepositoryReviews_Click(object sender, RoutedEventArgs e)
@@ -262,6 +267,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ContextMenu_Opened(object sender, RoutedEventArgs e)
         {
+            UpdatePinState();
             UpdateGitPullState();
             UpdateDeleteCopilotChatState();
         }
@@ -304,6 +310,12 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (index < 0 || index >= list.Items.Count)
                 return null;
+
+            if (list.ItemContainerGenerator.ContainerFromIndex(index) is ListBoxItem realized && realized.IsMeasureValid)
+            {
+                realized.BringIntoView();
+                return realized;
+            }
 
             // Initialize the generator before scrolling, including when returning from another section.
             list.ApplyTemplate();
@@ -368,53 +380,45 @@ namespace StartScreen.ToolWindows.Controls
 
         private void OpenInNewInstanceMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (MruItem == null || string.IsNullOrWhiteSpace(MruItem.Path))
-                return;
-
-            try
-            {
-                VsCommandService.OpenInNewInstance(MruItem.Path);
-            }
-            catch (Exception ex)
-            {
-                ex.Log();
-            }
+            RunWorkspaceActionAsync(item => VsCommandService.OpenInNewInstance(item.Path))
+                .FileAndForget(nameof(MruItemControl));
         }
 
         private void OpenFolderMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (MruItem == null || string.IsNullOrWhiteSpace(MruItem.Path))
-                return;
-
-            try
+            RunWorkspaceActionAsync(item =>
             {
-                var folder = MruItem.Type == MruItemType.Folder
-                    ? MruItem.Path
-                    : Path.GetDirectoryName(MruItem.Path);
+                var folder = item.Type == MruItemType.Folder
+                    ? item.Path
+                    : Path.GetDirectoryName(item.Path);
 
-                if (Directory.Exists(folder))
-                {
-                    Process.Start("explorer.exe", folder);
-                }
-            }
-            catch (Exception ex)
-            {
-                ex.Log();
-            }
+                if (!Directory.Exists(folder))
+                    throw new DirectoryNotFoundException($"The workspace folder could not be found: {folder}");
+
+                Process.Start("explorer.exe", folder);
+            }).FileAndForget(nameof(MruItemControl));
         }
 
         private void OpenTerminalMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (MruItem == null || string.IsNullOrWhiteSpace(MruItem.Path))
+            RunWorkspaceActionAsync(item => VsCommandService.OpenTerminalAtPath(item.Path))
+                .FileAndForget(nameof(MruItemControl));
+        }
+
+        private async Task RunWorkspaceActionAsync(Action<MruItem> action)
+        {
+            MruItem item = MruItem;
+            if (item == null || string.IsNullOrWhiteSpace(item.Path))
                 return;
 
             try
             {
-                VsCommandService.OpenTerminalAtPath(MruItem.Path);
+                await System.Threading.Tasks.Task.Run(() => action(item));
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen", $"Failed to open {item.Name}: {ex.Message}");
             }
         }
 
@@ -533,13 +537,17 @@ namespace StartScreen.ToolWindows.Controls
                 var path = item.Path;
                 MruItemType type = item.Type;
 
-                var deleted = await System.Threading.Tasks.Task.Run(() => CopilotChatHelper.DeleteAllSessions(path, type));
+                var result = await System.Threading.Tasks.Task.Run(() =>
+                {
+                    var deleted = CopilotChatHelper.DeleteAllSessions(path, type);
+                    return (Deleted: deleted, Remaining: CopilotChatHelper.CountSessions(path, type));
+                });
 
-                item.CopilotChatSessionCount = CopilotChatHelper.CountSessions(path, type);
+                item.CopilotChatSessionCount = result.Remaining;
 
-                await VS.StatusBar.ShowMessageAsync(deleted == 1
+                await VS.StatusBar.ShowMessageAsync(result.Deleted == 1
                     ? $"Deleted 1 Copilot Chat session for {item.Name}."
-                    : $"Deleted {deleted} Copilot Chat sessions for {item.Name}.");
+                    : $"Deleted {result.Deleted} Copilot Chat sessions for {item.Name}.");
             }
             catch (Exception ex)
             {
