@@ -68,13 +68,18 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual("cached build", cached.CiRuns.Single().Name);
 
             var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var published = new TaskCompletionSource<DevHubDashboard>(TaskCreationOptions.RunContinuationsAsynchronously);
             var pending = new TaskCompletionSource<IReadOnlyList<DevHubPullRequest>>(TaskCreationOptions.RunContinuationsAsynchronously);
             provider.Pulls = _ => { started.TrySetResult(true); return pending.Task; };
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var refresh = reopened.RefreshAsync(timeout.Token);
+            var refresh = reopened.RefreshAsync(timeout.Token, new InlineProgress(dashboard =>
+            {
+                if (dashboard.IsRefreshing)
+                    published.TrySetResult(dashboard);
+            }));
             try
             {
-                await started.Task.WithCancellation(timeout.Token);
+                await Task.WhenAll(started.Task, published.Task).WithCancellation(timeout.Token);
                 Assert.IsFalse(refresh.IsCompleted);
                 Assert.IsNotNull(reopened.CurrentDashboard);
                 Assert.AreEqual("cached pull", reopened.CurrentDashboard.PullRequests.Single().Title);
@@ -85,6 +90,7 @@ namespace StartScreen.Test.DevHub
             finally
             {
                 pending.TrySetResult([PullRequest("latest pull")]);
+                await refresh;
             }
             var latest = await refresh;
             Assert.AreEqual("latest pull", latest.PullRequests.Single().Title);
