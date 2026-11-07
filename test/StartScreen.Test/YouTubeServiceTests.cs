@@ -60,7 +60,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void IsCacheStale_UsesFourHourBoundary()
+        public void IsCacheStale_UsesSixHourBoundary()
         {
             using var directory = new TemporaryDirectory();
             var cacheFile = directory.GetPath("youtube.json");
@@ -72,6 +72,42 @@ namespace StartScreen.Test
 
             File.SetLastWriteTimeUtc(cacheFile, now.AddHours(-6));
             Assert.IsTrue(YouTubeService.IsCacheStale(cacheFile, now));
+        }
+
+        [TestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public async Task ConditionalVideoRefresh_ReusesValidEmptyCacheAsync(bool etag)
+        {
+            using var directory = new TemporaryDirectory();
+            var cacheFile = directory.GetPath("youtube.json");
+            var handler = new TestHttpMessageHandler((request, attempt) =>
+            {
+                if (attempt == 1)
+                {
+                    var response = new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>Empty</title></feed>"),
+                    };
+                    if (etag)
+                        response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"version\"", true);
+                    else
+                        response.Content.Headers.LastModified = DateTimeOffset.UtcNow.AddDays(-1);
+                    return response;
+                }
+                if (etag)
+                    Assert.AreEqual("W/\"version\"", request.Headers.IfNoneMatch.Single().ToString());
+                else
+                    Assert.IsNotNull(request.Headers.IfModifiedSince);
+                return new HttpResponseMessage(HttpStatusCode.NotModified);
+            });
+            using var client = new HttpClient(handler);
+            Assert.IsEmpty(await YouTubeService.DownloadVideosAsync(client, _ => Task.CompletedTask, cacheFile));
+            File.SetLastWriteTimeUtc(cacheFile, DateTime.UtcNow.AddDays(-1));
+            Assert.IsEmpty(await YouTubeService.DownloadVideosAsync(client, _ => Task.CompletedTask, cacheFile));
+            Assert.IsFalse(YouTubeService.IsCacheStale(cacheFile, DateTime.UtcNow));
+            Assert.IsEmpty(await YouTubeService.GetCachedVideosAsync(cacheFile));
+            Assert.AreEqual(2, handler.RequestCount);
         }
 
         [TestMethod]

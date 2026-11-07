@@ -208,6 +208,7 @@ namespace StartScreen.Services
             var cacheFile = GetSourceCachePath(cacheFolder, feedInfo.Url);
             SyndicationFeed cachedFeed = null;
             var validatedUtc = DateTime.MinValue;
+            string etag = null;
 
             try
             {
@@ -220,6 +221,7 @@ namespace StartScreen.Services
                         cachedFeed = SyndicationFeed.Load(reader);
                     }
                     validatedUtc = snapshot.ValidatedUtc;
+                    etag = snapshot.ETag;
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -245,18 +247,18 @@ namespace StartScreen.Services
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var download = await DownloadFromUrlWithStatusAsync(httpClient,
-                    feedInfo.Url, lastModified, cancellationToken);
+                    feedInfo.Url, lastModified, cancellationToken, etag);
                 if (download.Feed != null)
                 {
                     var checkedUtc = DateTime.UtcNow;
-                    await WriteFeedToDiskAsync(cacheFile, download.Feed, checkedUtc, cancellationToken);
+                    await WriteFeedToDiskAsync(cacheFile, download.Feed, checkedUtc, cancellationToken, download.ETag);
                     return (download.Feed, true, false, checkedUtc);
                 }
 
                 if (download.NotModified && cachedFeed != null)
                 {
                     var checkedUtc = DateTime.UtcNow;
-                    await WriteFeedToDiskAsync(cacheFile, cachedFeed, checkedUtc, cancellationToken);
+                    await WriteFeedToDiskAsync(cacheFile, cachedFeed, checkedUtc, cancellationToken, download.ETag ?? etag);
                     return (cachedFeed, true, false, checkedUtc);
                 }
 
@@ -279,11 +281,11 @@ namespace StartScreen.Services
             return result.Feed;
         }
 
-        private static async Task<(SyndicationFeed Feed, bool NotModified)> DownloadFromUrlWithStatusAsync(
+        private static async Task<(SyndicationFeed Feed, bool NotModified, string ETag)> DownloadFromUrlWithStatusAsync(
             HttpClient httpClient,
             string url,
             DateTime? lastModified,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken, string etag = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -292,12 +294,14 @@ namespace StartScreen.Services
                 using (var request = new HttpRequestMessage(HttpMethod.Get, url))
                 {
                     request.Headers.IfModifiedSince = lastModified;
+                    if (System.Net.Http.Headers.EntityTagHeaderValue.TryParse(etag, out var validator))
+                        request.Headers.IfNoneMatch.Add(validator);
 
                     using (HttpResponseMessage response = await httpClient.SendAsync(request,
                         HttpCompletionOption.ResponseHeadersRead, cancellationToken))
                     {
-                        if (response.StatusCode == HttpStatusCode.NotModified && lastModified.HasValue)
-                            return (null, true);
+                        if (response.StatusCode == HttpStatusCode.NotModified && (lastModified.HasValue || validator != null))
+                            return (null, true, response.Headers.ETag?.ToString());
 
                         HttpRetryBackoff.Observe(url, response);
                         response.EnsureSuccessStatusCode();
@@ -313,7 +317,7 @@ namespace StartScreen.Services
                                 feed.LastUpdatedTime = response.Content.Headers.LastModified.Value;
                             }
 
-                            return (feed, false);
+                            return (feed, false, response.Headers.ETag?.ToString());
                         }
                     }
                 }
@@ -327,7 +331,7 @@ namespace StartScreen.Services
                 await ex.LogAsync();
             }
 
-            return (null, false);
+            return (null, false, null);
         }
 
         internal static XmlReaderSettings CreateReaderSettings()
@@ -343,7 +347,7 @@ namespace StartScreen.Services
         /// <summary>
         /// Writes feed to disk cache.
         /// </summary>
-        internal static async Task WriteFeedToDiskAsync(string filePath, SyndicationFeed feed, DateTime validatedUtc, CancellationToken cancellationToken = default)
+        internal static async Task WriteFeedToDiskAsync(string filePath, SyndicationFeed feed, DateTime validatedUtc, CancellationToken cancellationToken = default, string etag = null)
         {
             try
             {
@@ -354,7 +358,7 @@ namespace StartScreen.Services
                         feed.Items = feed.Items.Take(_maxNewsItems).ToArray();
                         feed.SaveAsRss20(writer);
                     }
-                    await AtomicJsonCache.WriteAsync(filePath, new SourceCache { Xml = text.ToString(), ValidatedUtc = validatedUtc },
+                    await AtomicJsonCache.WriteAsync(filePath, new SourceCache { Xml = text.ToString(), ValidatedUtc = validatedUtc, ETag = etag },
                         cancellationToken).ConfigureAwait(false);
                 }
             }
@@ -458,6 +462,7 @@ namespace StartScreen.Services
         {
             public SourceCache() { }
             public string Xml { get; set; }
+            public string ETag { get; set; }
             public DateTime ValidatedUtc { get; set; }
         }
 

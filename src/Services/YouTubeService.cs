@@ -2,8 +2,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.ServiceModel.Syndication;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
@@ -59,7 +62,8 @@ namespace StartScreen.Services
 
             try
             {
-                var entries = await AtomicJsonCache.ReadAsync<List<YouTubeCacheEntry>>(cacheFile, cancellationToken).ConfigureAwait(false);
+                var snapshot = await ReadSnapshotAsync(cacheFile, cancellationToken);
+                var entries = snapshot?.Entries;
 
                 return entries
                     ?.Select(YouTubeVideo.FromCacheEntry)
@@ -122,6 +126,18 @@ namespace StartScreen.Services
             CancellationToken cancellationToken = default)
         {
             const int maxAttempts = 3;
+            VideoCache cached = null;
+            try
+            {
+                cached = await ReadSnapshotAsync(cacheFile, cancellationToken);
+                if (cached?.Entries == null || cached.Entries.Any(entry => YouTubeVideo.FromCacheEntry(entry) == null))
+                    cached = null;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
 
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
@@ -129,9 +145,24 @@ namespace StartScreen.Services
 
                 try
                 {
-                    using (var response = await httpClient.GetAsync(_feedUrl,
+                    using var request = new HttpRequestMessage(HttpMethod.Get, _feedUrl);
+                    if (cached != null)
+                    {
+                        request.Headers.IfModifiedSince = cached.LastModified;
+                        if (EntityTagHeaderValue.TryParse(cached.ETag, out var etag))
+                            request.Headers.IfNoneMatch.Add(etag);
+                    }
+                    using (var response = await httpClient.SendAsync(request,
                         HttpCompletionOption.ResponseHeadersRead, cancellationToken))
                     {
+                        if (response.StatusCode == HttpStatusCode.NotModified && cached != null
+                            && (request.Headers.IfNoneMatch.Count > 0 || request.Headers.IfModifiedSince.HasValue))
+                        {
+                            cached.ETag = response.Headers.ETag?.ToString() ?? cached.ETag;
+                            cached.LastModified = response.Content?.Headers.LastModified ?? cached.LastModified;
+                            await AtomicJsonCache.WriteAsync(cacheFile, cached, cancellationToken);
+                            return cached.Entries.Select(YouTubeVideo.FromCacheEntry).ToList();
+                        }
                         if (!response.IsSuccessStatusCode)
                         {
                             HttpRetryBackoff.Observe(_feedUrl, response);
@@ -165,7 +196,8 @@ namespace StartScreen.Services
                                 .Where(v => v != null)
                                 .ToList();
 
-                            await WriteCacheToDiskAsync(videos, cacheFile, cancellationToken).ConfigureAwait(false);
+                            await WriteCacheToDiskAsync(videos, cacheFile, cancellationToken,
+                                response.Headers.ETag?.ToString(), response.Content.Headers.LastModified).ConfigureAwait(false);
 
                             Trace.TraceInformation("YouTube feed cache refreshed successfully.");
 
@@ -395,11 +427,17 @@ namespace StartScreen.Services
             }
         }
 
-        internal static async Task WriteCacheToDiskAsync(List<YouTubeVideo> videos, string cacheFile, CancellationToken cancellationToken = default)
+        internal static async Task WriteCacheToDiskAsync(List<YouTubeVideo> videos, string cacheFile, CancellationToken cancellationToken = default,
+            string etag = null, DateTimeOffset? lastModified = null)
         {
             try
             {
-                await AtomicJsonCache.WriteAsync(cacheFile, videos.Select(v => v.ToCacheEntry()).ToList(), cancellationToken).ConfigureAwait(false);
+                await AtomicJsonCache.WriteAsync(cacheFile, new VideoCache
+                {
+                    Entries = videos.Select(v => v.ToCacheEntry()).ToList(),
+                    ETag = etag,
+                    LastModified = lastModified,
+                }, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -409,6 +447,21 @@ namespace StartScreen.Services
             {
                 await ex.LogAsync();
             }
+        }
+
+        private static async Task<VideoCache> ReadSnapshotAsync(string cacheFile, CancellationToken token)
+        {
+            JsonElement json = await AtomicJsonCache.ReadAsync<JsonElement>(cacheFile, token);
+            return json.ValueKind == JsonValueKind.Array ? new VideoCache { Entries = json.Deserialize<List<YouTubeCacheEntry>>() }
+                : json.ValueKind == JsonValueKind.Object ? json.Deserialize<VideoCache>() : null;
+        }
+
+        private sealed class VideoCache
+        {
+            public VideoCache() { }
+            public List<YouTubeCacheEntry> Entries { get; set; }
+            public string ETag { get; set; }
+            public DateTimeOffset? LastModified { get; set; }
         }
     }
 }

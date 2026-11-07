@@ -345,6 +345,32 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task ConditionalRefresh_PreservesWeakETagAcrossNotModifiedAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var handler = new TestHttpMessageHandler((request, attempt) =>
+            {
+                if (attempt == 1)
+                {
+                    var response = CreateFeedResponse("Cached post");
+                    response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"version\"", true);
+                    return response;
+                }
+                Assert.AreEqual("W/\"version\"", request.Headers.IfNoneMatch.Single().ToString());
+                return new HttpResponseMessage(HttpStatusCode.NotModified);
+            });
+            using var client = new HttpClient(handler);
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                var result = await FeedService.DownloadFeedsAsync(client, [CreateFeed("Example")], directory.Path,
+                    _ => Task.CompletedTask, forceRefresh: true);
+                Assert.IsTrue(result.Success);
+                Assert.AreEqual("Cached post", result.Posts.Single().Title);
+            }
+            Assert.AreEqual(3, handler.RequestCount);
+        }
+
+        [TestMethod]
         public async Task DownloadFeedsAsync_RetriesFailedSourceBeforeUsingCacheAsync()
         {
             using var directory = new TemporaryDirectory();

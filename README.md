@@ -346,6 +346,9 @@ these windows. Video cards appear before their thumbnails finish loading.
 Concurrent screens share discovery requests and credential-scoped feedback work.
 Canceling one screen only cancels its wait. Failed automatic refreshes pause for
 one minute, or the server's Retry-After delay; manual Refresh retries immediately.
+News and video requests send cached ETags or Last-Modified validators when
+available. A 304 response reuses the validated body and advances freshness;
+missing or invalid caches never count as successfully validated empty content.
 Feed caches are identified by source URL rather than display name. Renaming a
 feed preserves its cache, changing its URL does not reuse the previous source,
 and combining cached articles does not extend individual source freshness.
