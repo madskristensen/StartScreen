@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
 using StartScreen.Services.DevHub.Providers;
@@ -19,6 +20,50 @@ namespace StartScreen.Test.DevHub
         {
             if (Directory.Exists(_cacheFolder))
                 Directory.Delete(_cacheFolder, recursive: true);
+        }
+
+        [TestMethod]
+        public async Task Cache_RepositoryDependentAuthenticationReusesValidatedDiscoveryAsync()
+        {
+            const string remote = "https://example.com/owner/repo";
+            var provider = new BudgetProvider("one", 0);
+            await Service([provider], _ => Task.FromResult<IReadOnlyList<string>>([remote])).RefreshAsync(CancellationToken.None);
+            provider.Contexts.Clear();
+            var authentications = 0;
+            DevHubRefreshContext? authenticationContext = null;
+            provider.Authenticate = context =>
+            {
+                authentications++;
+                authenticationContext = context;
+            };
+            var discoveryStarted = Signal();
+            var pending = new TaskCompletionSource<IReadOnlyList<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var discoveries = 0;
+            var service = Service([provider], token =>
+            {
+                discoveries++;
+                discoveryStarted.TrySetResult(true);
+                return pending.Task.WithCancellation(token);
+            });
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var load = service.LoadFromCacheAsync(timeout.Token);
+            try
+            {
+                await discoveryStarted.Task.WithCancellation(timeout.Token);
+                Assert.AreEqual(0, authentications, "Repository-dependent identities must wait for the shared discovery result.");
+                Assert.IsFalse(load.IsCompleted);
+            }
+            finally
+            {
+                pending.TrySetResult([remote]);
+            }
+
+            Assert.IsNotNull(await load);
+            Assert.AreEqual(1, discoveries);
+            Assert.AreEqual(1, authentications);
+            Assert.IsNotNull(authenticationContext);
+            CollectionAssert.AreEqual(new[] { remote }, authenticationContext.RemoteUrls.ToArray());
+            Assert.IsEmpty(provider.Contexts, "Restoring the cache must not fetch fresh activity.");
         }
 
         [TestMethod]

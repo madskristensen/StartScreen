@@ -5,6 +5,8 @@ using System.Windows;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Helpers;
+using StartScreen.Models.DevHub;
+using StartScreen.Services.DevHub;
 
 namespace StartScreen.ToolWindows
 {
@@ -15,6 +17,7 @@ namespace StartScreen.ToolWindows
     {
         private StartScreenViewModel _viewModel;
         private StartScreenControl _control;
+        private DevHubStartupLoad _devHubStartup;
         private static StartScreenWindow _currentWindow;
 
         internal static StartScreenViewModel CurrentViewModel { get; private set; }
@@ -52,7 +55,14 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 StartScreenPackage.ShutdownToken.ThrowIfCancellationRequested();
-                _control = new StartScreenControl(_viewModel, loadTask, options.SplitterPosition);
+                if (options.DevHubEnabled)
+                {
+                    var progress = new Progress<DevHubDashboard>(dashboard => _control?.ApplyStartupDevHubDashboard(dashboard));
+                    _devHubStartup = new DevHubStartupLoad(new DevHubService(), StartScreenPackage.BackgroundTaskFactory,
+                        StartScreenPackage.ShutdownToken, viewModel.BackgroundProgress, progress);
+                    _devHubStartup.LoadTask.FileAndForget(nameof(StartScreenWindow));
+                }
+                _control = new StartScreenControl(_viewModel, loadTask, options, _devHubStartup);
                 return _control;
             }
             catch (Exception ex)
@@ -74,6 +84,8 @@ namespace StartScreen.ToolWindows
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             _control?.Dispose();
+            _devHubStartup?.Dispose();
+            _devHubStartup = null;
             _viewModel?.Dispose();
             if (ReferenceEquals(CurrentViewModel, _viewModel))
                 CurrentViewModel = null;

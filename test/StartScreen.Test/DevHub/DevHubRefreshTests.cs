@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
 
@@ -81,19 +82,32 @@ namespace StartScreen.Test.DevHub
         public async Task ForcedRefresh_WaitsAndChecksAuthenticationAgainAsync()
         {
             var release = Signal();
+            var started = Signal();
             var calls = 0;
             var service = Service(async _ =>
             {
                 if (Interlocked.Increment(ref calls) == 1)
+                {
+                    started.TrySetResult(true);
                     await release.Task;
+                }
                 return Array.Empty<DevHubUser>();
             });
 
             var first = service.RefreshAsync(CancellationToken.None);
             var forced = service.RefreshAsync(CancellationToken.None, forceRefresh: true);
             var waited = !forced.IsCompleted;
-            var callsBeforeRelease = calls;
-            release.SetResult(true);
+            var callsBeforeRelease = 0;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                await started.Task.WithCancellation(timeout.Token);
+                callsBeforeRelease = calls;
+            }
+            finally
+            {
+                release.SetResult(true);
+            }
             var results = await Task.WhenAll(first, forced);
 
             Assert.IsTrue(waited);
@@ -132,18 +146,24 @@ namespace StartScreen.Test.DevHub
         public async Task ForcedRefresh_CancellationDoesNotInterruptActiveRefreshOrBlockRetryAsync()
         {
             var release = Signal();
+            var started = Signal();
             var calls = 0;
             var service = Service(async _ =>
             {
                 if (Interlocked.Increment(ref calls) == 1)
+                {
+                    started.TrySetResult(true);
                     await release.Task;
+                }
                 return Array.Empty<DevHubUser>();
             });
             using var cancellation = new CancellationTokenSource();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var first = service.RefreshAsync(CancellationToken.None);
 
             try
             {
+                await started.Task.WithCancellation(timeout.Token);
                 var exception = await Assert.ThrowsAsync<OperationCanceledException>(async () =>
                 {
                     var forced = service.RefreshAsync(cancellation.Token, forceRefresh: true);

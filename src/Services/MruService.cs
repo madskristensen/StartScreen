@@ -172,7 +172,7 @@ namespace StartScreen.Services
 
         internal static async Task<IReadOnlyList<string>> GetRepositoryRemoteUrlsAsync(CancellationToken cancellationToken)
         {
-            var items = await GetMruItemsAsync(cancellationToken: cancellationToken);
+            var items = await GetMruItemsAsync(cancellationToken: cancellationToken, includeMetadata: false);
             return await GetRepositoryRemoteUrlsAsync(items, cancellationToken);
         }
 

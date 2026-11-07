@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using Microsoft.VisualStudio.Threading;
+using StartScreen.Models;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
 using StartScreen.Services.DevHub.Providers;
@@ -94,7 +95,159 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async Task Cache_TeamActivityIsPublishedAfterItsProviderIsVerifiedWithoutWaitingForOtherProvidersAsync()
+        [DataRow("matching repositories")]
+        [DataRow("changed repositories")]
+        [DataRow("discovery failure")]
+        public async Task Cache_AccountVerificationOverlapsDiscoveryWithoutPublishingUnvalidatedTeamPrsAsync(string discoveryResult)
+        {
+            var teamPull = PullRequest("cached team pull");
+            teamPull.IsAuthoredByCurrentUser = false;
+            teamPull.Status = "open";
+            var provider = new Provider("GitHub")
+            {
+                Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([teamPull]),
+            };
+            await Service(provider).RefreshAsync(CancellationToken.None);
+            var users = await provider.GetAuthenticatedUsersAsync(CancellationToken.None);
+            var authenticationStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var verified = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var authenticationCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var discoveryStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var discovery = new TaskCompletionSource<IReadOnlyList<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var authentications = 0;
+            var discoveries = 0;
+            provider.Authenticate = async token =>
+            {
+                Interlocked.Increment(ref authentications);
+                authenticationStarted.TrySetResult(true);
+                var result = await verified.Task.WithCancellation(token);
+                authenticationCompleted.TrySetResult(true);
+                return result;
+            };
+            var activityCalls = provider.ActivityCalls;
+            var service = new DevHubService(new DevHubCacheService(_folder), [provider], async token =>
+            {
+                discoveries++;
+                discoveryStarted.TrySetResult(true);
+                var urls = await discovery.Task.WithCancellation(token);
+                if (discoveryResult == "discovery failure")
+                    DevHubActivityRequest.Failed();
+                return urls;
+            }, () => DevHubSortOrder.MostRecent, () => string.Empty, () => 0);
+            var snapshots = new ConcurrentQueue<DevHubDashboard>();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var load = service.LoadFromCacheAsync(timeout.Token, progress: new InlineProgress(snapshots.Enqueue));
+            try
+            {
+                await Task.WhenAll(authenticationStarted.Task, discoveryStarted.Task).WithCancellation(timeout.Token);
+                Assert.IsFalse(discovery.Task.IsCompleted, "Account verification must not wait for repository discovery.");
+                verified.SetResult(users);
+                await authenticationCompleted.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(load.IsCompleted);
+                Assert.IsNull(service.CurrentDashboard);
+                Assert.IsEmpty(snapshots, "A verified account alone must not expose activity from a different repository context.");
+            }
+            finally
+            {
+                verified.TrySetResult(users);
+                discovery.TrySetResult(discoveryResult == "changed repositories" ? ["https://github.com/other/repo"] : []);
+            }
+            var dashboard = await load;
+            if (discoveryResult == "matching repositories")
+            {
+                Assert.IsNotNull(dashboard);
+                Assert.AreEqual("cached team pull", dashboard.PullRequests.Single().Title);
+                Assert.HasCount(1, DevHubWorkItem.GetIncoming(dashboard.PullRequests, [], []));
+                Assert.HasCount(1, snapshots);
+            }
+            else
+            {
+                Assert.IsNull(dashboard);
+                Assert.IsNull(service.CurrentDashboard);
+                Assert.IsEmpty(snapshots);
+            }
+            Assert.AreEqual(1, authentications);
+            Assert.AreEqual(1, discoveries);
+            Assert.AreEqual(activityCalls, provider.ActivityCalls, "Painting cached PRs must not fetch fresh categories.");
+        }
+
+        [TestMethod]
+        public async Task Cache_ContextMismatchCancelsEarlyAccountVerificationAsync()
+        {
+            var provider = new Provider("GitHub");
+            await Service(provider).RefreshAsync(CancellationToken.None);
+            var authenticationStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var discovery = new TaskCompletionSource<IReadOnlyList<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var authenticationToken = CancellationToken.None;
+            provider.Authenticate = token =>
+            {
+                authenticationToken = token;
+                authenticationStarted.TrySetResult(true);
+                return pending.Task.WithCancellation(token);
+            };
+            var service = new DevHubService(new DevHubCacheService(_folder), [provider], token => discovery.Task.WithCancellation(token),
+                () => DevHubSortOrder.MostRecent, () => string.Empty, () => 0);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var load = service.LoadFromCacheAsync(timeout.Token);
+            await authenticationStarted.Task.WithCancellation(timeout.Token);
+
+            discovery.SetResult(["https://github.com/other/repo"]);
+            Assert.IsNull(await load.WithCancellation(timeout.Token));
+            Assert.IsTrue(authenticationToken.IsCancellationRequested);
+            Assert.IsNull(service.CurrentDashboard);
+            Assert.IsFalse(pending.Task.IsCompleted, "Rejecting the cache must cancel rather than wait for the account endpoint.");
+        }
+
+        [TestMethod]
+        public async Task Cache_SynchronousCredentialAcquisitionCannotBlockAnotherProvidersTeamPrsAsync()
+        {
+            var teamPull = PullRequest("cached GitHub team pull");
+            teamPull.IsAuthoredByCurrentUser = false;
+            teamPull.Status = "open";
+            var github = new Provider("GitHub")
+            {
+                Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([teamPull]),
+            };
+            var ado = new Provider("Azure DevOps") { Host = "dev.azure.com" };
+            await Service(ado, github).RefreshAsync(CancellationToken.None);
+            var users = await ado.GetAuthenticatedUsersAsync(CancellationToken.None);
+            var credentialStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var displayed = new TaskCompletionSource<DevHubDashboard>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var releaseCredential = new ManualResetEventSlim();
+            ado.Authenticate = token =>
+            {
+                credentialStarted.TrySetResult(true);
+                releaseCredential.Wait(token);
+                return Task.FromResult(users);
+            };
+            var service = Service(ado, github);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var load = service.LoadFromCacheAsync(timeout.Token, progress: new InlineProgress(dashboard =>
+            {
+                if (dashboard.PullRequests.Any(pr => pr.Title == teamPull.Title))
+                    displayed.TrySetResult(dashboard);
+            }));
+            try
+            {
+                await credentialStarted.Task.WithCancellation(timeout.Token);
+                var dashboard = await displayed.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(load.IsCompleted, "The slow provider is still synchronously acquiring credentials.");
+                Assert.AreEqual("cached GitHub team pull", dashboard.PullRequests.Single().Title);
+                Assert.HasCount(1, dashboard.Users);
+                Assert.IsTrue(dashboard.IsRefreshing);
+            }
+            finally
+            {
+                releaseCredential.Set();
+                await load;
+            }
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task Cache_TeamActivityIsPublishedAfterItsProviderIsVerifiedWithoutWaitingForOtherProvidersAsync(bool duringStartup)
         {
             var teamPull = PullRequest("cached team pull");
             teamPull.IsAuthoredByCurrentUser = false;
@@ -139,12 +292,19 @@ namespace StartScreen.Test.DevHub
             var reopened = Service(github, ado);
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var snapshots = new List<DevHubDashboard>();
-            var load = reopened.LoadFromCacheAsync(timeout.Token, progress: new InlineProgress(value =>
+            var progress = new InlineProgress(value =>
             {
                 snapshots.Add(value);
                 if (value.PullRequests.Any(pr => pr.Title == teamPull.Title))
                     displayed.TrySetResult(true);
-            }));
+            });
+            using var context = new JoinableTaskContext();
+            using var startup = duringStartup
+                ? new DevHubStartupLoad(reopened, context.Factory, timeout.Token, new BackgroundProgress(), progress)
+                : null;
+            var load = startup != null ? startup.LoadAsync(timeout.Token,
+                () => throw new AssertFailedException("The control must reuse the factory's cache load."))
+                : reopened.LoadFromCacheAsync(timeout.Token, progress: progress);
             try
             {
                 await started.Task.WithCancellation(timeout.Token);
@@ -174,6 +334,153 @@ namespace StartScreen.Test.DevHub
             Assert.IsFalse(final.IsRefreshing);
             Assert.HasCount(2, final.PullRequests);
             Assert.IsFalse(reopened.IsCacheStale());
+        }
+
+        [TestMethod]
+        public async Task Startup_CacheVerificationStartsBeforeControlConsumesItAndDoesNotFetchFreshActivityAsync()
+        {
+            var provider = new Provider("GitHub")
+            {
+                Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("cached pull")]),
+            };
+            await Service(provider).RefreshAsync(CancellationToken.None);
+            var users = await provider.GetAuthenticatedUsersAsync(CancellationToken.None);
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var verified = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var authentications = 0;
+            provider.Authenticate = token =>
+            {
+                Interlocked.Increment(ref authentications);
+                started.TrySetResult(true);
+                return verified.Task.WithCancellation(token);
+            };
+            var activityCalls = provider.ActivityCalls;
+            var service = Service(provider);
+            var progress = new BackgroundProgress();
+            using var context = new JoinableTaskContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var displayed = new TaskCompletionSource<DevHubDashboard>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var startup = new DevHubStartupLoad(service, context.Factory, timeout.Token, progress,
+                new InlineProgress(value => displayed.TrySetResult(value)));
+
+            await started.Task.WithCancellation(timeout.Token);
+            Assert.IsFalse(startup.LoadTask.IsCompleted, "Constructing startup state must not wait for network verification.");
+            Assert.IsNull(service.CurrentDashboard, "Unverified disk data must not be exposed.");
+            Assert.IsTrue(progress.IsBusy);
+
+            verified.SetResult(users);
+            var cached = await displayed.Task.WithCancellation(timeout.Token);
+            var result = await startup.LoadAsync(timeout.Token,
+                () => throw new AssertFailedException("The initial load must not read or authenticate twice."));
+
+            Assert.AreSame(service, startup.Service);
+            Assert.AreSame(cached, result);
+            Assert.AreSame(result, service.CurrentDashboard);
+            Assert.AreEqual("cached pull", result.PullRequests.Single().Title);
+            Assert.AreEqual(1, authentications);
+            Assert.AreEqual(activityCalls, provider.ActivityCalls);
+            Assert.IsFalse(progress.IsBusy);
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task Startup_CompletedLoadCannotRestoreAnAccountOrQueryChangedBeforeControlCreationAsync(bool credentialChanged)
+        {
+            var generation = 0;
+            var query = "first";
+            var provider = new Provider("GitHub")
+            {
+                Issues = _ => Task.FromResult<IReadOnlyList<DevHubIssue>>([Issue("old context")]),
+            };
+            var service = new DevHubService(new DevHubCacheService(_folder), [provider], _ => Task.FromResult<IReadOnlyList<string>>([]),
+                () => DevHubSortOrder.MostRecent, () => query, () => generation);
+            await service.RefreshAsync(CancellationToken.None);
+            using var context = new JoinableTaskContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var startup = new DevHubStartupLoad(service, context.Factory, timeout.Token, new BackgroundProgress(),
+                new InlineProgress(_ => { }));
+            Assert.IsNotNull(await startup.LoadTask.JoinAsync(timeout.Token));
+
+            if (credentialChanged)
+                generation++;
+            else
+                query = "changed";
+
+            var result = await startup.LoadAsync(timeout.Token,
+                () => throw new AssertFailedException("Invalidated startup data must be left for the normal refresh path."));
+
+            Assert.IsNull(result);
+            Assert.IsNull(service.CurrentDashboard);
+        }
+
+        [TestMethod]
+        public async Task Startup_UnloadCancelsVerificationAndReopeningRetriesCacheAsync()
+        {
+            var provider = new Provider("GitHub")
+            {
+                Issues = _ => Task.FromResult<IReadOnlyList<DevHubIssue>>([Issue("cached issue")]),
+            };
+            await Service(provider).RefreshAsync(CancellationToken.None);
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            provider.Authenticate = token =>
+            {
+                started.TrySetResult(true);
+                return pending.Task.WithCancellation(token);
+            };
+            var service = Service(provider);
+            var progress = new BackgroundProgress();
+            using var context = new JoinableTaskContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var startup = new DevHubStartupLoad(service, context.Factory, timeout.Token, progress,
+                new InlineProgress(_ => Assert.Fail("Canceled verification must not publish cached activity.")));
+            await started.Task.WithCancellation(timeout.Token);
+
+            startup.Cancel();
+            await Assert.ThrowsAsync<OperationCanceledException>(() => startup.LoadTask.JoinAsync(timeout.Token));
+            Assert.IsNull(service.CurrentDashboard);
+            Assert.IsFalse(progress.IsBusy);
+
+            provider.Authenticate = null;
+            var reloads = 0;
+            Task<DevHubDashboard> ReloadAsync()
+            {
+                reloads++;
+                return service.LoadFromCacheAsync(timeout.Token);
+            }
+            var restored = await startup.LoadAsync(timeout.Token, ReloadAsync);
+            Assert.AreEqual("cached issue", restored.Issues.Single().Title);
+            Assert.AreEqual(1, reloads);
+
+            await startup.LoadAsync(timeout.Token, ReloadAsync);
+            Assert.AreEqual(2, reloads, "Later activations must not reuse the original startup snapshot.");
+        }
+
+        [TestMethod]
+        public async Task Startup_ShutdownCancelsVerificationWithoutRetryingAsync()
+        {
+            var provider = new Provider("GitHub");
+            await Service(provider).RefreshAsync(CancellationToken.None);
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            provider.Authenticate = token =>
+            {
+                started.TrySetResult(true);
+                return pending.Task.WithCancellation(token);
+            };
+            using var context = new JoinableTaskContext();
+            using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var service = Service(provider);
+            using var startup = new DevHubStartupLoad(service, context.Factory, shutdown.Token, new BackgroundProgress(),
+                new InlineProgress(_ => Assert.Fail("Shutdown must not publish cached activity.")));
+            await started.Task.WithCancellation(shutdown.Token);
+            shutdown.Cancel();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => startup.LoadAsync(shutdown.Token,
+                () => throw new AssertFailedException("Shutdown must not retry the cache load.")));
+            await Assert.ThrowsAsync<OperationCanceledException>(() => startup.LoadTask.JoinAsync());
+            Assert.IsNull(service.CurrentDashboard);
         }
 
         [TestMethod]

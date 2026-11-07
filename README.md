@@ -33,9 +33,19 @@ caption describes one active operation. Extra connecting and updating labels are
 omitted; refresh failures are reported in Output, while sign-in recovery links remain.
 Recent projects become clickable without waiting for filesystem timestamps, existence
 checks, Git metadata, or history writes. Those details are filled in afterward;
-Your Work can load independently. Repository summaries, dashboard refreshes, and
-news start after the UI has yielded to rendering and user input. Cache reads, feed parsing, and thumbnail
+Your Work and activity loading run alongside recent projects, so PRs can appear
+without waiting for MRU completion. Repository summaries and news start after the
+UI has yielded to rendering and user input. Cache reads, feed parsing, and thumbnail
 decoding run on background threads with bounded disk and network concurrency.
+The async tool window factory starts the activity cache read, repository discovery,
+and account verification alongside recent-project loading, before constructing the
+content. The control reuses that work and displays each provider's verified cached
+activity as it becomes available, without waiting for recent projects or other
+providers. Network verification does not delay creation of the window itself.
+Account checks that do not need repository discovery overlap the local repository
+scan. That scan reads recent-project paths without loading solution timestamps or
+other unrelated MRU metadata. Repository-dependent providers reuse the scan result,
+and cached PRs still wait for both repository-context and account validation.
 Local workspace metadata is published progressively by two background workers in
 batches of up to eight, with selected and pinned workspaces scheduled first.
 Repository summaries start as local metadata arrives, independently of remote Git

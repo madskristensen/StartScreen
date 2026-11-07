@@ -25,7 +25,8 @@ namespace StartScreen.ToolWindows
         private readonly StartScreenViewModel _viewModel;
         private readonly JoinableTask _loadTask;
         private DropIndicatorAdorner _dropAdorner;
-        private readonly DevHubService _devHubService = new DevHubService();
+        private readonly DevHubService _devHubService;
+        private readonly DevHubStartupLoad _devHubStartup;
         private JoinableTask _controlLoadTask;
         private bool _isInitialized;
         private bool _isSynchronizingContentHorizontalScroll;
@@ -43,19 +44,25 @@ namespace StartScreen.ToolWindows
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
-        public StartScreenControl(StartScreenViewModel viewModel, JoinableTask loadTask, double splitterPosition)
+        internal StartScreenControl(StartScreenViewModel viewModel, JoinableTask loadTask, Options options, DevHubStartupLoad devHubStartup)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             _viewModel = viewModel;
             _loadTask = loadTask;
+            _devHubStartup = devHubStartup;
+            _devHubService = devHubStartup?.Service ?? new DevHubService();
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             InitializeComponent();
             DevHubPanelControl.Progress = viewModel.BackgroundProgress;
-            ApplyInitialMruWidth(LeftColumn, splitterPosition);
+            ApplyInitialMruWidth(LeftColumn, options.SplitterPosition);
 
             // Bind the ViewModel up front so the MRU list pops in as soon as
             // LoadMruAsync raises PropertyChanged on GroupedMruItems, instead of
             // waiting until the Loaded handler awaits _loadTask before binding.
             DataContext = _viewModel;
+            ApplyDevHubVisibility(options.DevHubEnabled);
+            if (options.DevHubEnabled && _devHubService.CurrentDashboard != null)
+                ApplyStartupDevHubDashboard(_devHubService.CurrentDashboard);
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenSolution += WorkspaceSolutionOpened;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder += WorkspaceFolderOpened;
@@ -136,6 +143,7 @@ namespace StartScreen.ToolWindows
             _dragPath = null;
             _isDragPathOpenable = false;
             _lifetimeCancellation.Cancel();
+            _devHubStartup?.Cancel();
             _workspaceCancellation?.Cancel();
             _devHubRefreshGeneration++;
             _isGlobalDevHubRefreshing = false;
@@ -150,6 +158,7 @@ namespace StartScreen.ToolWindows
                 return;
             _isDisposed = true;
             _lifetimeCancellation.Cancel();
+            _devHubStartup?.Dispose();
             _workspaceCancellation?.Cancel();
             _workspaceCancellation?.Dispose();
             _workspaceCancellation = null;
@@ -182,9 +191,9 @@ namespace StartScreen.ToolWindows
 
                 UpdateResponsiveColumns();
 
-                // Wait for MRU to finish so secondary loads (DevHub, news) don't
-                // contend with the MRU paint. The DataContext is already bound,
-                // so MRU items render the moment LoadMruAsync completes.
+                JoinableTask devHubTask = StartScreenPackage.BackgroundTaskFactory.RunAsync(LoadDevHubAsync);
+                devHubTask.FileAndForget(nameof(StartScreenControl));
+
                 await LoadInitialMruAsync(_loadTask, _viewModel.LoadMruAsync, cancellationToken);
 
                 // Let rendering and pending user input run before secondary sections start.
@@ -195,11 +204,10 @@ namespace StartScreen.ToolWindows
 
                 _viewModel.EnsureDeferredContentInitialized();
 
-                Task devHubTask = LoadDevHubAsync();
                 Task newsTask = _viewModel.RefreshInBackgroundAsync(refreshMru: false);
                 RefreshWorkspaceSignalsAsync(false).FileAndForget(nameof(StartScreenControl));
 
-                await Task.WhenAll(newsTask, devHubTask);
+                await Task.WhenAll(newsTask, devHubTask.Task);
                 cancellationToken.ThrowIfCancellationRequested();
                 _isInitialized = true;
             }
@@ -760,6 +768,16 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        internal void ApplyStartupDevHubDashboard(DevHubDashboard dashboard)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (!_isDisposed && !_lifetimeCancellation.IsCancellationRequested && Options.Instance.DevHubEnabled
+                && ReferenceEquals(dashboard, _devHubService.CurrentDashboard))
+            {
+                UpdateDevHubPanel(dashboard, cached: true);
+            }
+        }
+
         private async Task LoadDevHubAsync()
         {
             if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
@@ -782,9 +800,14 @@ namespace StartScreen.ToolWindows
                         UpdateDevHubPanel(dashboard, cached: true);
                 });
                 await TaskScheduler.Default;
-                using var work = _viewModel.BackgroundProgress.Start(step: "Reading cached activity...");
-                var cached = await _devHubService.LoadFromCacheAsync(cancellationToken, activityOptions, progress, work, work);
-                work.Dispose();
+                async Task<DevHubDashboard> ReloadCacheAsync()
+                {
+                    using var work = _viewModel.BackgroundProgress.Start(step: "Reading cached activity...");
+                    return await _devHubService.LoadFromCacheAsync(cancellationToken, activityOptions, progress, work, work);
+                }
+                var cached = _devHubStartup != null
+                    ? await _devHubStartup.LoadAsync(cancellationToken, ReloadCacheAsync)
+                    : await ReloadCacheAsync();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (cached != null && cached.HasAuthentication)
