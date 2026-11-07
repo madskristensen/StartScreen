@@ -10,6 +10,21 @@ namespace StartScreen.Test
     public class SharedRefreshTests
     {
         [TestMethod]
+        public void DashboardPublicationWindowPreservesFirstFinalAndExactDebounceBoundary()
+        {
+            var now = DateTimeOffset.UtcNow;
+            var window = new DashboardPublicationWindow(() => now);
+            Assert.IsTrue(window.ShouldPublish());
+            Assert.AreEqual(TimeSpan.FromMilliseconds(200), window.Delay);
+            now = now.AddMilliseconds(199);
+            Assert.IsFalse(window.ShouldPublish());
+            now = now.AddMilliseconds(1);
+            Assert.IsTrue(window.ShouldPublish());
+            Assert.IsFalse(window.ShouldPublish());
+            Assert.IsTrue(window.ShouldPublish(force: true));
+        }
+
+        [TestMethod]
         public async Task CompletedRunCacheSeparatesAccountsAndRerunsAsync()
         {
             var resource = Guid.NewGuid().ToString();

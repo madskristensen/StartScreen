@@ -264,6 +264,18 @@ namespace StartScreen.Services.DevHub
                 var repositoryTasks = new HashSet<Task<(string Key, DevHubActivitySnapshot Snapshot)>>();
                 var repositoryQueue = new Queue<(IDevHubProvider Provider, RemoteRepoIdentifier Repo)>();
                 var steps = new Dictionary<Task<(string Key, DevHubActivitySnapshot Snapshot)>, string>();
+                var publications = new DashboardPublicationWindow();
+                Task publicationDelay = null;
+                void PublishUpdate(bool force = false)
+                {
+                    if (publications.ShouldPublish(force))
+                    {
+                        Publish(dashboard, progress);
+                        publicationDelay = null;
+                    }
+                    else if (publicationDelay == null)
+                        publicationDelay = Task.Delay(publications.Delay, requestToken);
+                }
                 void AddSource(string key, string step, Func<Task<DevHubActivitySnapshot>> fetch, bool repository = false)
                 {
                     var task = FetchSourceAsync(key, fetch);
@@ -306,10 +318,18 @@ namespace StartScreen.Services.DevHub
                         }
 
                         stepProgress?.Report(remaining.Count > 0 ? steps[remaining[0]] : "Checking connected provider accounts...");
-                        var completedTask = await Task.WhenAny(authentications.Cast<Task>().Concat(remaining)).WithCancellation(cancellationToken);
+                        var pendingTasks = authentications.Cast<Task>().Concat(remaining);
+                        if (publicationDelay != null)
+                            pendingTasks = pendingTasks.Append(publicationDelay);
+                        var completedTask = await Task.WhenAny(pendingTasks).WithCancellation(cancellationToken);
                         cancellationToken.ThrowIfCancellationRequested();
                         if (generation != _getCredentialGeneration() || queryContext != _getQueryContext())
                             return InvalidateContext(progress);
+                        if (ReferenceEquals(completedTask, publicationDelay))
+                        {
+                            PublishUpdate(true);
+                            continue;
+                        }
                         var authentication = authentications.FirstOrDefault(task => ReferenceEquals(task, completedTask));
                         if (authentication != null)
                         {
@@ -342,7 +362,7 @@ namespace StartScreen.Services.DevHub
                             dashboard.CacheContext = candidates.Status == DevHubActivityStatus.Success
                                 ? CreateContext(dashboard.Users, options, candidateUrls) : null;
                             workProgress?.Report((++completedWork, totalWork));
-                            Publish(dashboard, progress);
+                            PublishUpdate(force: true);
                             continue;
                         }
                         var completed = remaining.First(task => ReferenceEquals(task, completedTask));
@@ -374,7 +394,7 @@ namespace StartScreen.Services.DevHub
                             totalWork += snapshot.ActivityRepositories.Count;
                         }
                         workProgress?.Report((++completedWork, totalWork));
-                        Publish(dashboard, progress);
+                        PublishUpdate();
                     }
                 }
                 finally

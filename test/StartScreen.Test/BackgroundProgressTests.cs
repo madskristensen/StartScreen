@@ -10,6 +10,19 @@ namespace StartScreen.Test
     public class BackgroundProgressTests
     {
         [TestMethod]
+        public void ProgressAppearanceIsDebouncedAndCompletionRemovesItsAnimation()
+        {
+            using var stream = typeof(BackgroundProgressTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
+            var document = System.Xml.Linq.XDocument.Load(stream!);
+            var progress = document.Descendants().Single(element => element.Name.LocalName == "ProgressBar"
+                && element.Attributes().Any(attribute => attribute.Name.LocalName == "Name" && attribute.Value == "UnifiedProgressBar"));
+            var frame = progress.Descendants().Single(element => element.Name.LocalName == "DiscreteDoubleKeyFrame");
+            Assert.AreEqual("0:0:0.2", frame.Attribute("KeyTime")!.Value);
+            Assert.AreEqual("ShowRefreshProgress", progress.Descendants()
+                .Single(element => element.Name.LocalName == "RemoveStoryboard").Attribute("BeginStoryboardName")!.Value);
+        }
+
+        [TestMethod]
         public void CurrentStep_FollowsReportsAndFallsBackToUnfinishedWork()
         {
             var progress = new BackgroundProgress();

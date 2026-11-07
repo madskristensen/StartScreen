@@ -188,6 +188,19 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task SharedRefreshUsesTheSameCredentialForItsKeyAndAccountVerificationAsync()
+        {
+            using var handler = TicketHandler(Ticket(10, 7, false));
+            using var client = new HttpClient(handler);
+            var acquisitions = 0;
+            var service = Service(client, getToken: () => ++acquisitions == 1 ? "test-token" : "other-account-token");
+            var snapshot = await service.GetTicketsAsync(false, CancellationToken.None);
+            Assert.AreEqual(7L, snapshot.PrincipalId);
+            Assert.AreEqual(1, acquisitions, "Identity requests must use the credential that keyed shared work.");
+            Assert.AreEqual(3, handler.RequestCount);
+        }
+
+        [TestMethod]
         public async Task ForcedRefreshFailure_DoesNotLeaveAReusableCachedSuccessAsync()
         {
             var fail = false;

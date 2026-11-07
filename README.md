@@ -357,6 +357,10 @@ Complete repository totals are shared for ten minutes after account verification
 manual Refresh invalidates those totals. Completed build details are reused for
 24 hours by credential, run URL, and update timestamp. A rerun or account change
 does not reuse prior details. Merge readiness and current checks remain fresh.
+Dashboard updates are coalesced over 200 milliseconds, retaining the first and
+final results and publishing pending content even while a slow source runs.
+The progress bar appears only after 200 milliseconds of work and disappears
+as soon as work finishes; refreshes no longer wait for a one-second minimum.
 Feed caches are identified by source URL rather than display name. Renaming a
 feed preserves its cache, changing its URL does not reuse the previous source,
 and combining cached articles does not extend individual source freshness.

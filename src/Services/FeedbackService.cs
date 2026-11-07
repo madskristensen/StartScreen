@@ -60,14 +60,15 @@ namespace StartScreen.Services
             using (var hash = SHA256.Create())
                 key = Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(token.Token ?? string.Empty)));
             return await _refresh.RunAsync(key, forceRefresh,
-                sharedToken => GetTicketsCoreAsync(forceRefresh, false, sharedToken),
+                sharedToken => GetTicketsCoreAsync(forceRefresh, false, sharedToken, token),
                 snapshot => snapshot != null, cancellationToken);
         }
 
         internal Task<FeedbackSnapshot> GetCachedTicketsAsync(CancellationToken cancellationToken) =>
             GetTicketsCoreAsync(false, true, cancellationToken);
 
-        private async Task<FeedbackSnapshot> GetTicketsCoreAsync(bool forceRefresh, bool cacheOnly, CancellationToken cancellationToken)
+        private async Task<FeedbackSnapshot> GetTicketsCoreAsync(bool forceRefresh, bool cacheOnly, CancellationToken cancellationToken,
+            AccessToken? credential = null)
         {
             await TaskScheduler.Default;
             cancellationToken.ThrowIfCancellationRequested();
@@ -76,7 +77,7 @@ namespace StartScreen.Services
             {
                 if (forceRefresh)
                     _cached = null;
-                AccessToken token = await _getTokenAsync(cancellationToken);
+                AccessToken token = credential ?? await _getTokenAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (string.IsNullOrEmpty(token.Token) || token.ExpiresOn <= new DateTimeOffset(_utcNow()))
                     throw new UnauthorizedAccessException("Visual Studio did not return a valid Developer Community credential.");

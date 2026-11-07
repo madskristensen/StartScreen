@@ -235,7 +235,6 @@ namespace StartScreen.ToolWindows
             _refreshCancellation = refresh;
             CancellationToken token = refresh.Token;
             IsRefreshingNews = true;
-            var minDisplay = Task.Delay(1000, token);
             try
             {
                 await TaskScheduler.Default;
@@ -261,14 +260,6 @@ namespace StartScreen.ToolWindows
             }
             finally
             {
-                try
-                {
-                    await minDisplay;
-                }
-                catch (OperationCanceledException ex) when (token.IsCancellationRequested)
-                {
-                    await ex.LogAsync();
-                }
                 await factory.SwitchToMainThreadAsync();
                 if (ReferenceEquals(_refreshCancellation, refresh))
                 {

@@ -1165,6 +1165,36 @@ namespace StartScreen.Test.DevHub
             Assert.IsFalse(final.IsRefreshing);
             Assert.AreSame(final, service.CurrentDashboard);
             Assert.AreNotSame(snapshots.First(), final);
+            Assert.HasCount(2, snapshots, "A burst keeps only the first and final publication.");
+        }
+
+        [TestMethod]
+        public async Task Refresh_CoalescedDataPublishesWhileAnotherSourceIsPendingAsync()
+        {
+            var pending = new TaskCompletionSource<IReadOnlyList<DevHubCiRun>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var displayed = new TaskCompletionSource<DevHubDashboard>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var provider = new Provider("GitHub")
+            {
+                Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("fresh")]),
+                Builds = token => pending.Task.WithCancellation(token),
+            };
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var refresh = Service(provider).RefreshAsync(timeout.Token, new InlineProgress(value =>
+            {
+                if (value.IsRefreshing && value.PullRequests.Count > 0)
+                    displayed.TrySetResult(value);
+            }));
+            try
+            {
+                var interim = await displayed.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.AreEqual("fresh", interim.PullRequests.Single().Title);
+            }
+            finally
+            {
+                pending.TrySetResult([]);
+                await refresh;
+            }
         }
 
         [TestMethod]
