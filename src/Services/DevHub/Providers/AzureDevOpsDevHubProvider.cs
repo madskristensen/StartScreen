@@ -959,7 +959,9 @@ namespace StartScreen.Services.DevHub.Providers
             CancellationToken cancellationToken)
         {
             using var semaphore = new SemaphoreSlim(3, 3);
-            await Task.WhenAll(pullRequests.Where(pr => pr.IsOpen).Select(async pr =>
+            await Task.WhenAll(pullRequests.Where(pr => pr.IsOpen)
+                .OrderByDescending(pr => pr.IsAuthoredByCurrentUser && !pr.IsDraft)
+                .ThenByDescending(pr => pr.UpdatedAt).Select(async pr =>
             {
                 await semaphore.WaitAsync(cancellationToken);
                 try

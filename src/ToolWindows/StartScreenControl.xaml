@@ -443,6 +443,8 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <controls:MruItemControl
+                                    Loaded="MruItemControl_Loaded" Unloaded="MruItemControl_Unloaded"
+                                    DataContextChanged="MruItemControl_DataContextChanged"
                                     SelectionRequested="MruItemControl_SelectionRequested"
                                     RepositorySummaryRequested="MruItemControl_RepositorySummaryRequested"
                                     RepositoryReviewsRequested="MruItemControl_RepositoryReviewsRequested"

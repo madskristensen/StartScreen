@@ -12,6 +12,28 @@ namespace StartScreen.Test
     [TestClass]
     public class WorkspaceTests
     {
+        [TestMethod]
+        public void RepositorySummaryGroups_DeferOffscreenItemsButKeepPinnedAndSelected()
+        {
+            var items = Enumerable.Range(0, 4).Select(index => new MruItem
+            {
+                Name = "repo" + index,
+                Path = @"C:\repos\repo" + index + @"\App.sln",
+                RemoteUrl = "https://github.com/owner/repo" + index,
+            }).ToArray();
+            using var model = new StartScreenViewModel(items);
+            model.EnableMruViewportTracking();
+            items[1].IsPinned = true;
+            model.SelectedMruItem = items[2];
+            model.SetMruItemRealized(items[0], true);
+            CollectionAssert.AreEquivalent(items.Take(3).ToArray(),
+                model.GetRepositorySummaryGroups(items).SelectMany(group => group).ToArray());
+            model.SetMruItemRealized(items[0], false);
+            model.SetMruItemRealized(items[3], true);
+            CollectionAssert.AreEquivalent(items.Skip(1).ToArray(),
+                model.GetRepositorySummaryGroups(items).SelectMany(group => group).ToArray());
+        }
+
         [STATestMethod]
         [DataRow(true)]
         [DataRow(false)]

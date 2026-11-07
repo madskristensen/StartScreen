@@ -21,6 +21,22 @@ namespace StartScreen.ToolWindows
         private bool _hasServiceHealthStatus = true;
         private RemoteRepoIdentifier _repositoryScopeOverride;
         private readonly DevHubRepoSummaryService _repositorySummaries;
+        private HashSet<MruItem> _realizedMruItems;
+
+        internal void EnableMruViewportTracking()
+        {
+            _realizedMruItems = new HashSet<MruItem>();
+        }
+
+        internal void SetMruItemRealized(MruItem item, bool realized)
+        {
+            if (item == null || _realizedMruItems == null)
+                return;
+            if (realized)
+                _realizedMruItems.Add(item);
+            else
+                _realizedMruItems.Remove(item);
+        }
         private bool _isRefreshingWorkspaceSignals;
         private int _workspaceSignalsGeneration;
         private int _repositorySummaryGeneration;
@@ -314,7 +330,9 @@ namespace StartScreen.ToolWindows
         internal IGrouping<RemoteRepoIdentifier, MruItem>[] GetRepositorySummaryGroups(IEnumerable<MruItem> items)
         {
             var visible = new HashSet<MruItem>(VisibleMruItems);
-            return items.Where(item => visible.Contains(item) && item.HasRemoteUrl)
+            return items.Where(item => visible.Contains(item) && item.HasRemoteUrl
+                    && (_realizedMruItems == null || _realizedMruItems.Contains(item)
+                        || item.IsPinned || ReferenceEquals(item, SelectedMruItem)))
                 .OrderByDescending(item => ReferenceEquals(item, SelectedMruItem))
                 .ThenByDescending(item => item.IsPinned)
                 .GroupBy(item => RemoteRepoIdentifier.TryParse(item.RemoteUrl))

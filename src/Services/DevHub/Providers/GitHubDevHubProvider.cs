@@ -594,32 +594,44 @@ namespace StartScreen.Services.DevHub.Providers
                 await semaphore.WaitAsync(cancellationToken);
                 try
                 {
-                    return await ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken);
+                    return await ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken, false);
                 }
                 finally
                 {
                     semaphore.Release();
                 }
             }));
-            return pages.SelectMany(page => page).OrderByDescending(run => run.Timestamp).Take(options.MaxItems).ToList();
+            var visible = pages.SelectMany(page => page).OrderByDescending(run => run.Timestamp).Take(options.MaxItems).ToList();
+            await EnrichCiRunFailuresAsync(client, credential, visible, cancellationToken);
+            return visible;
         }
 
         private static async Task<List<DevHubCiRun>> ReadCiRunsAsync(HttpClient client, DevHubCredential credential,
-            RemoteRepoIdentifier repo, string login, int maxItems, CancellationToken cancellationToken)
+            RemoteRepoIdentifier repo, string login, int maxItems, CancellationToken cancellationToken, bool enrich = true)
         {
             var root = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs";
-            var ids = new Dictionary<DevHubCiRun, long>();
             var runs = await ReadPagesAsync(client, credential, root + "?exclude_pull_requests=false", "workflow_runs", maxItems, item =>
             {
                 var run = ParseCiRuns("{\"workflow_runs\":[" + item.GetRawText() + "]}", repo, login).Single();
-                if (item.TryGetProperty("id", out var id) && id.TryGetInt64(out var number))
-                    ids[run] = number;
                 return new[] { run };
             }, cancellationToken);
-            foreach (var run in runs.Where(run => run.Status == "failure" && ids.ContainsKey(run))
+            if (enrich)
+                await EnrichCiRunFailuresAsync(client, credential, runs, cancellationToken);
+            return runs;
+        }
+
+        private static async Task EnrichCiRunFailuresAsync(HttpClient client, DevHubCredential credential,
+            IReadOnlyList<DevHubCiRun> runs, CancellationToken cancellationToken)
+        {
+            foreach (var run in runs.Where(run => run.Status == "failure" && run.RepoIdentifier != null)
                 .OrderByDescending(run => run.Timestamp).Take(DevHubActivityOptions.FailureDetailLimit))
             {
-                var jobs = await ReadPagesAsync(client, credential, $"{root}/{ids[run]}/jobs?filter=latest", "jobs", 100,
+                if (!Uri.TryCreate(run.WebUrl, UriKind.Absolute, out var uri)
+                    || !long.TryParse(uri.Segments.Last().Trim('/'), out var id))
+                    continue;
+                var repo = run.RepoIdentifier;
+                var root = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs";
+                var jobs = await ReadPagesAsync(client, credential, $"{root}/{id}/jobs?filter=latest", "jobs", 100,
                     item => new[] { item.Clone() }, cancellationToken);
                 var failed = jobs.Where(job => GetString(job, "conclusion") == "failure" || GetString(job, "conclusion") == "timed_out").ToList();
                 if (failed.Count > 0)
@@ -628,7 +640,6 @@ namespace StartScreen.Services.DevHub.Providers
                     run.FailureUrl = failed.Select(job => GetString(job, "html_url")).FirstOrDefault(url => !string.IsNullOrEmpty(url));
                 }
             }
-            return runs;
         }
 
         public string GetRepoWebUrl(RemoteRepoIdentifier repo) =>
@@ -707,7 +718,9 @@ namespace StartScreen.Services.DevHub.Providers
         private static async Task PopulateActivityMetadataAsync(HttpClient client, DevHubCredential credential,
             IReadOnlyList<DevHubPullRequest> pullRequests, CancellationToken cancellationToken)
         {
-            var active = pullRequests.Where(pr => pr.IsOpen && pr.RepoIdentifier != null).ToList();
+            var active = pullRequests.Where(pr => pr.IsOpen && pr.RepoIdentifier != null)
+                .OrderByDescending(pr => pr.IsAuthoredByCurrentUser && !pr.IsDraft)
+                .ThenByDescending(pr => pr.UpdatedAt).ToList();
             for (var offset = 0; offset < active.Count; offset += 25)
             {
                 try

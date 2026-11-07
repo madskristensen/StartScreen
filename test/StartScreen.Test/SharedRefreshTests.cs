@@ -20,7 +20,9 @@ namespace StartScreen.Test
             Task<int> first = refresh.RunAsync("account", false, Fetch, value => value > 0, canceled.Token);
             Task<int> second = refresh.RunAsync("account", false, Fetch, value => value > 0, default);
             canceled.Cancel();
+#pragma warning disable VSTHRD003 // Deliberately await the independently shared request to verify waiter cancellation.
             await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () => await first);
+#pragma warning restore VSTHRD003
             pending.SetResult(0);
             Assert.AreEqual(0, await second);
             Assert.AreEqual(1, requests);

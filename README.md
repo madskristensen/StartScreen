@@ -349,6 +349,10 @@ one minute, or the server's Retry-After delay; manual Refresh retries immediatel
 News and video requests send cached ETags or Last-Modified validators when
 available. A 304 response reuses the validated body and advances freshness;
 missing or invalid caches never count as successfully validated empty content.
+Repository counts load for realized MRU cards, selected items, and pinned items;
+scrolling loads deferred counts. Actionable PRs receive fresh readiness metadata
+first, without reusing stale merge flags. GitHub failed-job details are fetched
+only after selecting the displayed runs, with a global two-run detail budget.
 Feed caches are identified by source URL rather than display name. Renaming a
 feed preserves its cache, changing its URL does not reuse the previous source,
 and combining cached articles does not extend individual source freshness.

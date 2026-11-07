@@ -637,7 +637,8 @@ namespace StartScreen.ToolWindows
                 try
                 {
                     var prioritized = items.OrderByDescending(item => ReferenceEquals(item, SelectedMruItem))
-                        .ThenByDescending(item => item.IsPinned).ToArray();
+                        .ThenByDescending(item => item.IsPinned)
+                        .ThenByDescending(item => _realizedMruItems?.Contains(item) == true).ToArray();
                     await LoadWorkspaceVisitsAsync(refreshCancellation.Token);
                     try
                     {

@@ -64,6 +64,7 @@ namespace StartScreen.ToolWindows
             if (options.DevHubEnabled && _devHubService.CurrentDashboard != null)
                 ApplyStartupDevHubDashboard(_devHubService.CurrentDashboard);
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+            _viewModel.EnableMruViewportTracking();
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenSolution += WorkspaceSolutionOpened;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder += WorkspaceFolderOpened;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenProject += WorkspaceProjectOpened;
@@ -378,6 +379,32 @@ namespace StartScreen.ToolWindows
                 }
                 e.Handled = true;
             }
+        }
+
+        private void MruItemControl_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is MruItemControl control && control.DataContext is MruItem item)
+            {
+                ViewModel?.SetMruItemRealized(item, true);
+                if (!_isDisposed && ViewModel != null)
+                    StartScreenPackage.BackgroundTaskFactory.RunAsync(() =>
+                        ViewModel.RefreshSelectedRepositorySummaryAsync(item, _lifetimeCancellation.Token))
+                        .FileAndForget(nameof(StartScreenControl));
+            }
+        }
+
+        private void MruItemControl_Unloaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is MruItemControl control && control.DataContext is MruItem item)
+                ViewModel?.SetMruItemRealized(item, false);
+        }
+
+        private void MruItemControl_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (e.OldValue is MruItem previous)
+                ViewModel?.SetMruItemRealized(previous, false);
+            if (sender is MruItemControl control && control.IsLoaded)
+                MruItemControl_Loaded(sender, new RoutedEventArgs());
         }
 
         private void MruItemControl_PinToggleRequested(object sender, MruItem item)
