@@ -36,7 +36,7 @@ namespace StartScreen.Models.DevHub
         /// </summary>
         public DateTime FetchedAt { get; set; }
 
-        public int ActivityLimit { get; set; } = 30;
+        public int ActivityLimit { get; set; } = 20;
         public bool IncludesCompleted { get; set; }
 
         [JsonIgnore]

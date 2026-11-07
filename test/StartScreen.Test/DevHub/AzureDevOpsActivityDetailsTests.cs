@@ -41,6 +41,29 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public async Task PersonalPullRequestsAndIssues_DefaultRequestsAreLimitedToTwentyPerFeedAsync()
+        {
+            var pullLimits = new List<int>();
+            var issueLimits = new List<int>();
+            using var client = Client(request =>
+            {
+                var uri = request.RequestUri!;
+                if (uri.AbsolutePath.EndsWith("/pullrequests"))
+                    pullLimits.Add(QueryInt(uri, "$top"));
+                if (uri.AbsolutePath.EndsWith("/wiql"))
+                    issueLimits.Add(QueryInt(uri, "$top"));
+                return DefaultResponse(uri);
+            });
+            var provider = Provider(client);
+
+            await provider.GetUserPullRequestsAsync(new DevHubActivityOptions(), CancellationToken.None);
+            await provider.GetUserIssuesAsync(new DevHubActivityOptions(), CancellationToken.None);
+
+            CollectionAssert.AreEqual(new[] { 20, 20 }, pullLimits);
+            CollectionAssert.AreEqual(new[] { 20 }, issueLimits);
+        }
+
+        [TestMethod]
         public async Task PullRequestMetadata_UsesRepositoryGuidFromFeedAsync()
         {
             var threadsRead = false;
@@ -497,6 +520,43 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task BuildFailures_EnrichOnlyTwoNewestPerRepositoryWithoutDroppingOlderRunsAsync(bool scoped)
+        {
+            var timelineIds = new List<int>();
+            var now = new DateTime(2026, 11, 7, 0, 0, 0, DateTimeKind.Utc);
+            var failedCount = scoped ? 6 : 12;
+            using var client = Client(request =>
+            {
+                var uri = request.RequestUri!;
+                if (uri.AbsolutePath.EndsWith("/builds"))
+                    return Values(Enumerable.Range(1, failedCount + 1).Select(id => Build(id, "me",
+                        id > failedCount ? "succeeded" : "failed", now.AddMinutes(id), id <= 6 ? "repo" : "other")).ToArray());
+                if (uri.AbsolutePath.EndsWith("/timeline"))
+                {
+                    timelineIds.Add(int.Parse(uri.AbsolutePath.Split('/').AsEnumerable().Reverse().Skip(1).First()));
+                    return Json("{\"records\":[{\"name\":\"Compile\",\"result\":\"failed\"}]}");
+                }
+                return DefaultResponse(uri);
+            });
+
+            var result = await Provider(client).FetchActivityAsync(scoped ? DevHubActivityKind.Repository : DevHubActivityKind.CiRuns,
+                new DevHubActivityOptions(), scoped ? _repo : null!, CancellationToken.None);
+
+            Assert.AreEqual(DevHubActivityStatus.Success, result.Status);
+            Assert.HasCount(failedCount + 1, result.CiRuns);
+            CollectionAssert.AreEquivalent(scoped ? new[] { 5, 6 } : new[] { 5, 6, 11, 12 }, timelineIds);
+            foreach (var group in result.CiRuns.Where(run => run.Status == "failure").GroupBy(run => run.RepoIdentifier))
+            {
+                var ordered = group.OrderByDescending(run => run.Timestamp).ToArray();
+                Assert.IsTrue(ordered.Take(2).All(run => run.FailureSummary == "Compile"));
+                Assert.IsTrue(ordered.Skip(2).All(run => run.FailureSummary == null && run.FailureUrl == null));
+            }
+            Assert.IsTrue(result.CiRuns.All(run => !string.IsNullOrEmpty(run.WebUrl)));
+        }
+
+        [TestMethod]
         public async Task BuildOwnershipAndFailureTimeline_AreMappedAsync()
         {
             using var client = Client(request =>
@@ -588,15 +648,16 @@ namespace StartScreen.Test.DevHub
             });
         }
 
-        private static string Build(int id, string requestedFor = "other", string result = "succeeded") => JsonSerializer.Serialize(new
+        private static string Build(int id, string requestedFor = "other", string result = "succeeded",
+            DateTime? finishedAt = null, string repositoryName = "repo") => JsonSerializer.Serialize(new
         {
             id,
             status = "completed",
             result,
             definition = new { name = "CI", id = 1 },
-            repository = new { name = "repo" },
+            repository = new { name = repositoryName },
             sourceBranch = "refs/heads/main",
-            finishTime = DateTime.UtcNow,
+            finishTime = finishedAt ?? DateTime.UtcNow,
             requestedFor = new { id = requestedFor },
             _links = new { web = new { href = $"https://dev.azure.com/org/project/_build/results?buildId={id}" } },
         });

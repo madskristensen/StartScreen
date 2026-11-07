@@ -616,7 +616,8 @@ namespace StartScreen.Services.DevHub.Providers
                     ids[run] = number;
                 return new[] { run };
             }, cancellationToken);
-            foreach (var run in runs.Where(run => run.Status == "failure" && ids.ContainsKey(run)).Take(5))
+            foreach (var run in runs.Where(run => run.Status == "failure" && ids.ContainsKey(run))
+                .OrderByDescending(run => run.Timestamp).Take(DevHubActivityOptions.FailureDetailLimit))
             {
                 var jobs = await ReadPagesAsync(client, credential, $"{root}/{ids[run]}/jobs?filter=latest", "jobs", 100,
                     item => new[] { item.Clone() }, cancellationToken);
@@ -647,7 +648,7 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 var query = Uri.EscapeDataString(BuildPersonalSearchQuery("is:pr", login, "author", repo));
                 using var response = await SendGetAsync(credential,
-                    $"https://api.github.com/search/issues?q={query}&advanced_search=true&sort=updated&order=desc&per_page=30",
+                    $"https://api.github.com/search/issues?q={query}&advanced_search=true&sort=updated&order=desc&per_page={DevHubActivityOptions.DefaultLimit}",
                     cancellationToken, client);
                 response.EnsureSuccessStatusCode();
                 foreach (var pr in ParsePullRequests(await HttpResponseReader.ReadStringAsync(response, cancellationToken), login)

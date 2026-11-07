@@ -1088,7 +1088,8 @@ namespace StartScreen.Services.DevHub.Providers
         {
             using var builds = JsonDocument.Parse(buildJson);
             var metadata = builds.RootElement.GetProperty("value").EnumerateArray().ToList();
-            foreach (var run in runs.Where(item => item.Status == "failure").Take(10))
+            foreach (var run in runs.Where(item => item.Status == "failure").GroupBy(item => item.RepoIdentifier)
+                .SelectMany(group => group.OrderByDescending(item => item.Timestamp).Take(DevHubActivityOptions.FailureDetailLimit)))
             {
                 await OptionalAsync(async () =>
                 {

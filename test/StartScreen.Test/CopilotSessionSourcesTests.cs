@@ -459,6 +459,32 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task CloudDiscovery_RequestsAndProcessesOnlyThirtyRecentTasksAsync()
+        {
+            var tasks = Enumerable.Range(1, 40).Select(index =>
+            {
+                var id = Guid.NewGuid().ToString("D");
+                return new
+                {
+                    id,
+                    name = "Cloud work " + index,
+                    agent_collaborators = new[] { new { slug = "copilot-swe-agent" } },
+                    state = "in_progress",
+                    html_url = "https://github.com/owner/repo/agents/tasks/" + id,
+                    updated_at = new DateTime(2026, 11, 7, 0, 0, 0, DateTimeKind.Utc).AddMinutes(-index),
+                };
+            }).ToArray();
+            using var handler = new FakeApi(JsonSerializer.Serialize(new { tasks }));
+            using var client = new HttpClient(handler);
+
+            var result = await CopilotCloudSessions.ReadAsync(client, new DevHubCredential("user", "test-token"), CancellationToken.None);
+
+            Assert.AreEqual("?per_page=30&sort=updated_at&direction=desc", handler.RequestUri!.Query);
+            Assert.HasCount(30, result.Sessions);
+            CollectionAssert.AreEqual(tasks.Take(30).Select(task => task.id).ToArray(), result.Sessions.Select(session => session.Id).ToArray());
+        }
+
+        [TestMethod]
         public async Task CloudDiscovery_SurfacesAuthorizationFailureAsync()
         {
             using var client = new HttpClient(new FakeApi("{}", HttpStatusCode.Forbidden));
@@ -570,9 +596,11 @@ namespace StartScreen.Test
         private sealed class FakeApi(string json, HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler
         {
             internal string? Authorization { get; private set; }
+            internal Uri? RequestUri { get; private set; }
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
                 Authorization = request.Headers.Authorization?.ToString();
+                RequestUri = request.RequestUri;
                 return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(json) });
             }
         }

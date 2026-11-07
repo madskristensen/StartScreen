@@ -14,6 +14,7 @@ namespace StartScreen.Services
 {
     internal static class CopilotCloudSessions
     {
+        private const int _maximumTasks = 30;
         private static readonly HttpClient _client = new(new HttpClientHandler { AllowAutoRedirect = false })
         {
             Timeout = TimeSpan.FromSeconds(15),
@@ -30,13 +31,13 @@ namespace StartScreen.Services
         internal static async Task<CopilotSessionDiscovery> ReadAsync(HttpClient client, DevHubCredential credential, CancellationToken token)
         {
             using var json = await GetAsync(client, credential,
-                "https://api.github.com/agents/tasks?per_page=100&sort=updated_at&direction=desc", token);
+                $"https://api.github.com/agents/tasks?per_page={_maximumTasks}&sort=updated_at&direction=desc", token);
             if (!json.RootElement.TryGetProperty("tasks", out var tasks) || tasks.ValueKind != JsonValueKind.Array)
                 throw new JsonException("GitHub returned no agent task list.");
             var sessions = new List<CopilotActivitySession>();
             var unidentified = false;
             var repositories = new Dictionary<long, string>();
-            foreach (var task in tasks.EnumerateArray().Take(100))
+            foreach (var task in tasks.EnumerateArray().Take(_maximumTasks))
             {
                 token.ThrowIfCancellationRequested();
                 if (!IsCloudTask(task))

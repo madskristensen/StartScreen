@@ -103,6 +103,30 @@ namespace StartScreen.Test.DevHub
         [TestMethod]
         [DataRow(false)]
         [DataRow(true)]
+        public async Task PersonalActivity_DefaultRequestsAndResultsAreLimitedToTwentyPerFeedAsync(bool issues)
+        {
+            var requests = 0;
+            using var client = Client(request =>
+            {
+                requests++;
+                StringAssert.Contains(Query(request), "per_page=20");
+                Assert.AreEqual(1, PageNumber(request));
+                return Search(Enumerable.Range(1, 40).Select(id => Item(id, "me", assigned: true)));
+            });
+
+            var count = issues
+                ? (await GitHubDevHubProvider.GetUserIssuesAsync(client, Credential(), "me",
+                    new DevHubActivityOptions(), CancellationToken.None)).Count
+                : (await GitHubDevHubProvider.GetUserPullRequestsAsync(client, Credential(), "me",
+                    new DevHubActivityOptions(), CancellationToken.None, populateMetadata: false)).Count;
+
+            Assert.AreEqual(20, count);
+            Assert.AreEqual(issues ? 4 : 5, requests);
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
         public void PullRequestParsing_PreservesAssignmentFromSearchAndRepositoryPayloads(bool repositoryPayload)
         {
             var json = Item(1, assigned: true, repoPayload: repositoryPayload);
@@ -740,6 +764,42 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task CiRuns_EnrichOnlyTwoNewestFailuresWithoutDroppingOlderRunsAsync(bool scoped)
+        {
+            var jobIds = new List<int>();
+            var now = new DateTime(2026, 11, 7, 0, 0, 0, DateTimeKind.Utc);
+            using var client = Client(request =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                if (path == "/user/repos")
+                    return Json("[{\"full_name\":\"owner/repo\"}]");
+                if (path.EndsWith("/actions/runs", StringComparison.Ordinal))
+                    return Json("{\"workflow_runs\":[" + string.Join(",", Enumerable.Range(1, 7)
+                        .Select(id => Run(id, "me", null, id == 7 ? "success" : "failure", now.AddMinutes(id)))) + "]}");
+                if (path.EndsWith("/jobs", StringComparison.Ordinal))
+                {
+                    jobIds.Add(int.Parse(path.Split('/').AsEnumerable().Reverse().Skip(1).First()));
+                    return Json("{\"jobs\":[{\"name\":\"Unit tests\",\"conclusion\":\"failure\",\"html_url\":\"https://github.com/owner/repo/actions\"}]}");
+                }
+                return request.Method == HttpMethod.Post ? Json("{\"data\":{}}") : Json("[]");
+            });
+
+            var runs = scoped
+                ? (await GitHubDevHubProvider.GetRepoDetailAsync(client, Credential(), "me", _repo,
+                    new DevHubActivityOptions(), CancellationToken.None)).CiRuns
+                : await GitHubDevHubProvider.GetUserCiRunsAsync(client, Credential(), "me",
+                    new DevHubActivityOptions(), CancellationToken.None);
+
+            Assert.HasCount(7, runs);
+            CollectionAssert.AreEqual(new[] { 6, 5 }, jobIds);
+            Assert.HasCount(2, runs.Where(run => run.FailureSummary == "Unit tests").ToArray());
+            Assert.IsTrue(runs.Where(run => run.Timestamp < now.AddMinutes(5)).All(run => run.FailureSummary == null && run.FailureUrl == null));
+            Assert.IsTrue(runs.All(run => !string.IsNullOrEmpty(run.WebUrl)));
+        }
+
+        [TestMethod]
         public async Task CiRuns_PaginatesBeyondOneHundredAsync()
         {
             var pages = new List<int>();
@@ -811,11 +871,12 @@ namespace StartScreen.Test.DevHub
                 + (repoPayload ? ",\"base\":{\"ref\":\"main\"},\"head\":{\"ref\":\"feature\"}" : "") + extra + "}";
         }
 
-        private static string Run(int id, string actor, string? triggeringActor, string conclusion)
+        private static string Run(int id, string actor, string? triggeringActor, string conclusion, DateTime? updatedAt = null)
         {
             return "{\"id\":" + id + ",\"name\":\"Build " + id + "\",\"status\":\"completed\",\"conclusion\":\"" + conclusion
                 + "\",\"actor\":{\"login\":\"" + actor + "\"}" + (triggeringActor == null ? "" : ",\"triggering_actor\":{\"login\":\"" + triggeringActor + "\"}")
-                + ",\"updated_at\":\"2026-11-01T10:00:00Z\",\"html_url\":\"https://github.com/owner/repo/actions/runs/" + id + "\"}";
+                + ",\"updated_at\":\"" + (updatedAt ?? new DateTime(2026, 11, 1, 10, 0, 0, DateTimeKind.Utc)).ToString("O")
+                + "\",\"html_url\":\"https://github.com/owner/repo/actions/runs/" + id + "\"}";
         }
 
         private static string Metadata(string mergeState = "CLEAN", bool unresolved = false, bool threadNextPage = false,

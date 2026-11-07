@@ -69,7 +69,7 @@ namespace StartScreen.Test.DevHub
                 {
                     Interlocked.Increment(ref queries);
                     Assert.DoesNotContain("/repositories/", path);
-                    StringAssert.Contains(uri.Query, "$top=30");
+                    StringAssert.Contains(uri.Query, "$top=20");
                     if (!issues)
                     {
                         Assert.IsTrue(uri.Query.Contains("searchCriteria.creatorId=me") || uri.Query.Contains("searchCriteria.reviewerId=me"));
@@ -270,7 +270,7 @@ namespace StartScreen.Test.DevHub
                 StringAssert.Contains(query, "is:pr is:open author:me");
                 Assert.DoesNotContain("org:", query);
                 Assert.AreEqual(scoped, query.Contains("AND repo:owner/repo"));
-                StringAssert.Contains(query, "per_page=30");
+                StringAssert.Contains(query, "per_page=20");
                 StringAssert.Contains(query, "advanced_search=true");
                 return fails ? new HttpResponseMessage(HttpStatusCode.Forbidden)
                     : Json("{\"items\":[" + GitHubSearchItem(1, "me") + "," + GitHubSearchItem(2, "me") + "," + GitHubSearchItem(4, "other") + "]}");

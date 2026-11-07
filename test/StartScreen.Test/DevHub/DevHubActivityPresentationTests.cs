@@ -287,7 +287,8 @@ namespace StartScreen.Test.DevHub
         {
             var dashboard = JsonSerializer.Deserialize<DevHubDashboard>("{}");
             Assert.IsNotNull(dashboard);
-            Assert.AreEqual(30, dashboard.ActivityLimit);
+            Assert.AreEqual(20, dashboard.ActivityLimit);
+            Assert.AreEqual(dashboard.ActivityLimit, new DevHubActivityOptions().MaxItems);
             Assert.IsFalse(dashboard.IncludesCompleted);
         }
 

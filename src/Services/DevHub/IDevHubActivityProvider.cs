@@ -43,8 +43,9 @@ namespace StartScreen.Services.DevHub
 
     internal sealed class DevHubActivityOptions
     {
-        public const int DefaultLimit = 30;
+        public const int DefaultLimit = 20;
         public const int MaximumLimit = 300;
+        public const int FailureDetailLimit = 2;
 
         public DevHubActivityOptions(int maxItems = DefaultLimit, bool includeCompleted = false, DevHubRefreshContext refreshContext = null)
         {

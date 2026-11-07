@@ -449,7 +449,11 @@ a visual indicator shows exactly where the item will land.
 The Dev Hub panel shows your open pull requests, assigned issues, and
 recent builds from GitHub and Azure DevOps - right next to your project
 list. Data loads in the background and is cached locally so the UI stays
-responsive. On later opens, the saved dashboard populates both work blades only
+responsive. Personal activity requests default to 20 items per feed; explicit
+limits and repository-scope limits are unchanged. Failed-job details are fetched
+only for the two most recent failed builds per repository; older failures remain
+in the build list with their normal build links.
+On later opens, the saved dashboard populates both work blades only
 after the current provider identities and activity query/options have been verified.
 Account, repository-context, query, item-limit, or completed-item setting changes
 discard mismatched snapshots, including ownership flags. Older unpartitioned caches
@@ -643,7 +647,7 @@ The catalog is read through `Microsoft.Data.Sqlite.Core` using Windows' built-in
 SQLite library, so the VSIX does not ship native SQLite binaries. This still
 depends on VS Code's internal catalog format; incompatible metadata is reported
 without changing the database.
-GitHub cloud discovery requires Agent tasks read permission and queries up to 100
+GitHub cloud discovery requires Agent tasks read permission and queries up to 30
 recent tasks. Synced local tasks are not treated as cloud agents. If the preview API
 omits cloud-origin metadata, unverified tasks are omitted with a diagnostic in Output.
 Cloud metadata is held only in memory and scoped to the current account. Cloud tasks
@@ -670,7 +674,7 @@ Personal PRs and created or assigned work items are queried independently across
 projects discovered from recent workspaces, with up to three project requests
 in flight per source. Personal PR queries include repositories in those projects
 even when the individual repository is not in the recent list. They load up to
-30 authored open PRs per project initially, separately from the repository-wide feed;
+20 authored open PRs per project initially, separately from the repository-wide feed;
 repository scopes also query authored open PRs independently.
 Personal review requests are queried at project level as well, so they are not
 limited to the latest PRs in individual recent repositories. Team work items
