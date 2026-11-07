@@ -105,6 +105,15 @@ filters, unread markers, and refresh state. Dev Hub activity presentation is
 separate from panel event handling. The screen coordinates these sections while
 preserving its existing bindings and stable item collections.
 
+The **What's New** tab in News shows features shipped with the running Visual Studio
+installation. Area headings group compact rows with small optional thumbnails,
+bold titles, and regular-weight descriptions, without the full article body. The
+installed YAML index controls area and feature order; unlisted articles are not shown.
+Content uses the IDE's UI locale, falling back to English for missing translations.
+Content loads in the background only when the tab is first selected, with no disk
+cache or periodic refresh. Unavailable content is reported in the tab. The release-notes
+link remains at the top for full details, screenshots, and additional text.
+
 Hiding the Start Screen cancels refreshes and pauses its automatic refresh timer.
 Closing the tool window permanently releases its event subscriptions, timers,
 and background-work resources; reopening creates a fresh screen instance.

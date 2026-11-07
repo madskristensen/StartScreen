@@ -1444,6 +1444,10 @@ namespace StartScreen.ToolWindows
             {
                 ViewModel.EnsureFeedbackLoaded();
             }
+            else if (ReferenceEquals(selected, WhatsNewTab))
+            {
+                ViewModel.EnsureWhatsNewLoadedAsync().FileAndForget(nameof(StartScreenControl));
+            }
         }
 
         private void FeedbackTicket_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)

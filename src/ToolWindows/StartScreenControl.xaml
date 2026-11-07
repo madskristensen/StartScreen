@@ -685,18 +685,49 @@
                                     </StackPanel>
                                 </TabItem>
 
-                                <!-- Release Notes Tab -->
-                                <TabItem x:Name="ReleaseNotesTab" Style="{StaticResource NewsTabItemStyle}">
-                                    <TabItem.Header>
-                                        <TextBlock Text="Release notes"/>
-                                    </TabItem.Header>
-                                    <StackPanel Margin="8 0 0 0">
-                                        <TextBlock TextWrapping="Wrap">
+                                <TabItem x:Name="WhatsNewTab" Header="What's New" Style="{StaticResource NewsTabItemStyle}">
+                                    <StackPanel Margin="8 0 12 0">
+                                        <TextBlock TextWrapping="Wrap" Margin="0 0 0 12">
                                             <Hyperlink x:Name="ReleaseNotesLink" Click="ReleaseNotesLink_Click"
                                                        Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                                                 View release notes for <Run Text="{Binding DiscoverySectionVersion, Mode=OneWay}"/>
                                             </Hyperlink>
                                         </TextBlock>
+                                        <TextBlock Text="{Binding WhatsNewStatus}" TextWrapping="Wrap" Margin="0 0 0 12"
+                                                   Visibility="{Binding WhatsNewStatus, Converter={StaticResource NullToCollapsedConverter}}"
+                                                   AutomationProperties.LiveSetting="Polite"/>
+                                        <ItemsControl ItemsSource="{Binding WhatsNewAreas}" Focusable="False">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="0 0 0 16">
+                                                        <TextBlock Text="{Binding Area}" TextWrapping="Wrap"
+                                                                   Style="{StaticResource StartScreen.Heading}"/>
+                                                        <Border Style="{StaticResource StartScreen.Separator}" Margin="0 6 0 10"/>
+                                                        <ItemsControl ItemsSource="{Binding Items}" Focusable="False">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid Margin="0 0 0 12">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                            <ColumnDefinition Width="*"/>
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <Image Source="{Binding Thumbnail}" Width="72" Height="48" Margin="0 3 10 0"
+                                                                               VerticalAlignment="Top" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
+                                                                               Visibility="{Binding Thumbnail, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                                                        <StackPanel Grid.Column="1">
+                                                                            <TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="Bold"
+                                                                                       Style="{StaticResource StartScreen.CardTitle}"/>
+                                                                            <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Margin="0 3 0 0"
+                                                                                       Style="{StaticResource StartScreen.Body}"/>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                     </StackPanel>
                                 </TabItem>
                             </TabControl>

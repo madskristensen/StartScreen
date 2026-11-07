@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -56,6 +57,9 @@ namespace StartScreen.ToolWindows
         private bool _isDeferredContentInitialized;
         private bool _initialMruOptionsNeedSave;
         private bool _isDisposed;
+        private string _whatsNewStatus;
+        private Task _whatsNewLoadTask;
+        private bool _isWhatsNewLoaded;
 
         public ObservableCollection<MruItem> MruItems => _mruItems ??= new ObservableCollection<MruItem>(
             _isMruFiltered ? Enumerable.Empty<MruItem>() : VisibleMruItems.Where(item => !item.IsPinned && !item.IsFromExtendedList));
@@ -67,6 +71,18 @@ namespace StartScreen.ToolWindows
         internal VideoSectionViewModel VideoSection { get; }
         public ObservableCollection<NewsPost> NewsPosts => NewsSection.NewsPosts;
         public ObservableCollection<NewsPost> PinnedNewsPosts => NewsSection.PinnedNewsPosts;
+        public ObservableCollection<WhatsNewArea> WhatsNewAreas { get; } = new ObservableCollection<WhatsNewArea>();
+        public string WhatsNewStatus
+        {
+            get => _whatsNewStatus;
+            private set
+            {
+                if (_whatsNewStatus == value)
+                    return;
+                _whatsNewStatus = value;
+                OnPropertyChanged();
+            }
+        }
         public ObservableCollection<RecentTemplate> RecentTemplates { get; private set; }
         public ObservableCollection<YouTubeVideo> YouTubeVideos => VideoSection.YouTubeVideos;
         public int NewsColumnCount => NewsSection.NewsColumnCount;
@@ -911,6 +927,62 @@ namespace StartScreen.ToolWindows
         {
             NewsSection.NewsColumnCount = newsColumns;
             VideoSection.YouTubeColumnCount = youTubeColumns;
+        }
+
+        internal Task EnsureWhatsNewLoadedAsync(Func<CancellationToken, Task<WhatsNewContent>> readAsync = null,
+            JoinableTaskFactory factory = null)
+        {
+            CancellationToken token = GetBackgroundCancellationToken();
+            if (token.IsCancellationRequested)
+                return Task.CompletedTask;
+            if (_whatsNewLoadTask != null && (!_whatsNewLoadTask.IsCompleted || _isWhatsNewLoaded))
+                return _whatsNewLoadTask;
+            factory ??= StartScreenPackage.BackgroundTaskFactory;
+            var directory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                "CommonExtensions", "Platform", "WhatsNew", "Content");
+            CultureInfo culture = CultureInfo.CurrentUICulture;
+            readAsync ??= cancellation => WhatsNewService.ReadAsync(directory, culture, cancellation);
+            return _whatsNewLoadTask = factory.RunAsync(() => LoadWhatsNewAsync(readAsync, factory, token)).Task;
+        }
+
+        private async Task LoadWhatsNewAsync(Func<CancellationToken, Task<WhatsNewContent>> readAsync,
+            JoinableTaskFactory factory, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await factory.SwitchToMainThreadAsync(cancellationToken);
+                WhatsNewStatus = "Loading What's New...";
+                WhatsNewContent content = await readAsync(cancellationToken);
+                await factory.SwitchToMainThreadAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                ApplyWhatsNewContent(content);
+                _isWhatsNewLoaded = true;
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                await factory.SwitchToMainThreadAsync();
+                if (!_isDisposed)
+                    WhatsNewStatus = "What's New loading was canceled. Select this tab again to retry.";
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await factory.SwitchToMainThreadAsync();
+                if (!cancellationToken.IsCancellationRequested && !_isDisposed)
+                {
+                    WhatsNewStatus = "What's New content could not be loaded for this installation. Reopen the Start Screen to retry.";
+                    _isWhatsNewLoaded = true;
+                }
+            }
+        }
+
+        internal void ApplyWhatsNewContent(WhatsNewContent content)
+        {
+            if (_isDisposed)
+                return;
+            CollectionSynchronization.Synchronize(WhatsNewAreas, content.Areas);
+            WhatsNewStatus = content.Status;
         }
 
         private async Task RefreshVersionTitleAsync(CancellationToken cancellationToken)
