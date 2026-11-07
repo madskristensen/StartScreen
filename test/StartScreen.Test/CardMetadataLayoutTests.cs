@@ -149,7 +149,9 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        public void PlainIssueMetadata_ReservesNoEmptyActionRowAboveLabels()
+        [DataRow(false)]
+        [DataRow(true)]
+        public void RepositoryMetadata_KeepsDurationBesideStatusAndHidesEmptyAssignee(bool build)
         {
             using var stream = typeof(CardMetadataLayoutTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             var document = XDocument.Load(stream!);
@@ -159,6 +161,9 @@ namespace StartScreen.Test
             var definition = new XElement(document.Descendants(p + "DataTemplate")
                 .Single(element => element.Attribute(x + "Key")?.Value == "RepositoryItemMetadataTemplate").Elements().Single());
             var style = new XElement(document.Descendants(p + "Style").Single(element => element.Attribute(x + "Key")?.Value == "PullRequestStatusStyle"));
+            foreach (var image in definition.Descendants().Where(element => element.Name.LocalName == "CrispImage").ToArray())
+                image.ReplaceWith(new XElement(p + "Border", image.Attributes().Where(attribute =>
+                    new[] { "Width", "Height", "Margin", "Visibility", "VerticalAlignment" }.Contains(attribute.Name.LocalName))));
             foreach (var attribute in definition.DescendantsAndSelf().Attributes().Concat(style.Descendants().Attributes()).Where(attribute =>
                 attribute.Value.StartsWith("{DynamicResource", StringComparison.Ordinal)))
                 attribute.Value = "{DynamicResource MetadataBrush}";
@@ -167,23 +172,38 @@ namespace StartScreen.Test
                     new XElement(p + "BooleanToVisibilityConverter", new XAttribute(x + "Key", "BoolToVisibilityConverter")),
                     new XElement(controls + "NullToCollapsedConverter", new XAttribute(x + "Key", "NullToCollapsedConverter"))), definition).ToString());
             root.Resources["MetadataBrush"] = SystemColors.ControlTextBrush;
-            root.DataContext = DevHubWorkItem.GetIncoming([], [new DevHubIssue
+            root.DataContext = build ? DevHubWorkItem.GetMyWork([], [], [], builds: [new DevHubCiRun
+            {
+                Status = "success", Duration = TimeSpan.FromSeconds(135), IsTriggeredByCurrentUser = true,
+                WebUrl = "https://example.com/build/1",
+            }]).Single() : DevHubWorkItem.GetIncoming([], [new DevHubIssue
             {
                 Title = "Issue", State = "open", WebUrl = "https://example.com/issues/1",
                 Labels = [new DevHubLabel { Name = "bug" }],
             }], []).Single();
-            foreach (FrameworkElement element in ((Panel)root.Children[0]).Children)
-            {
-                var binding = BindingOperations.GetBinding(element, UIElement.VisibilityProperty)!;
-                element.SetBinding(UIElement.VisibilityProperty, new Binding(binding.Path.Path)
-                {
-                    Source = root.DataContext,
-                    Converter = binding.Converter,
-                }).UpdateTarget();
-            }
+#pragma warning disable VSTHRD001 // Apply inherited bindings on the isolated layout test's STA thread.
+            root.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
+#pragma warning restore VSTHRD001
             root.Measure(new Size(300, double.PositiveInfinity));
+            root.Arrange(new Rect(0, 0, 300, root.DesiredSize.Height));
+            root.UpdateLayout();
 
-            Assert.AreEqual(0d, root.DesiredSize.Height);
+            Assert.IsGreaterThan(0d, root.DesiredSize.Height);
+            var metadata = (StackPanel)root.Children[0];
+            Assert.AreEqual(Visibility.Collapsed, metadata.Children.OfType<Border>().Single().Visibility);
+            var row = metadata.Children.OfType<Grid>().Single();
+            var duration = row.Children.OfType<TextBlock>().Single();
+            Assert.AreEqual(build ? Visibility.Visible : Visibility.Collapsed, duration.Visibility);
+            if (build)
+            {
+                var status = ((StackPanel)row.Children.OfType<Border>().Single().Child).Children.OfType<TextBlock>().Single();
+                Assert.AreEqual("2m 15s", duration.Text);
+                Assert.AreEqual(status.TranslatePoint(new Point(0, status.ActualHeight / 2), row).Y,
+                    duration.TranslatePoint(new Point(0, duration.ActualHeight / 2), row).Y, 0.01);
+                Assert.IsGreaterThan(status.TranslatePoint(new Point(status.ActualWidth, 0), row).X,
+                    duration.TranslatePoint(new Point(), row).X);
+                Assert.IsLessThanOrEqualTo(row.ActualWidth, duration.TranslatePoint(new Point(duration.ActualWidth, 0), row).X);
+            }
             Assert.IsEmpty(definition.Descendants(p + "Button"));
             var details = document.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "WorkItemDetails");
             var labels = document.Descendants(p + "ItemsControl").Single(element => element.Attribute("ItemsSource")?.Value == "{Binding Labels}");
@@ -216,14 +236,12 @@ namespace StartScreen.Test
             root.UpdateLayout();
             var grid = (Grid)root.Children[0];
             var workspace = (TextBlock)grid.Children[0];
-            var date = (TextBlock)grid.Children[1];
-            var logo = (Border)grid.Children[2];
+            var logo = (Border)grid.Children[1];
 
             Assert.AreEqual(Visibility.Visible, logo.Visibility);
             Assert.AreEqual(logo.ActualWidth + logo.Margin.Right, workspace.TranslatePoint(new Point(), grid).X, 0.01);
             Assert.AreEqual(logo.TranslatePoint(new Point(0, logo.ActualHeight / 2), grid).Y,
                 workspace.TranslatePoint(new Point(0, workspace.ActualHeight / 2), grid).Y, 0.01);
-            Assert.AreEqual(width, date.TranslatePoint(new Point(date.ActualWidth, 0), grid).X, 0.01);
         }
 
         [STATestMethod]

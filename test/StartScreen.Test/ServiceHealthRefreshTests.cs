@@ -26,7 +26,7 @@ namespace StartScreen.Test
                 Assert.IsFalse(refresh.IsCompleted);
                 Assert.IsTrue(model.HasServiceHealthStatus);
                 Assert.IsTrue(model.IsServiceHealthy);
-                Assert.AreEqual("Visual Studio services operational", model.ServiceHealthText);
+                Assert.AreEqual("Service operational", model.ServiceHealthText);
                 Assert.DoesNotContain(nameof(StartScreenViewModel.ServiceHealthText), changed);
                 Assert.DoesNotContain(nameof(StartScreenViewModel.IsServiceHealthy), changed);
 
@@ -145,7 +145,7 @@ namespace StartScreen.Test
 
                 Assert.AreEqual(3, requests);
                 Assert.IsTrue(model.IsServiceHealthy);
-                Assert.AreEqual("Visual Studio services operational", model.ServiceHealthText);
+                Assert.AreEqual("Service operational", model.ServiceHealthText);
                 Assert.IsTrue(GetTimer(model).IsEnabled);
             }
             finally
@@ -171,7 +171,7 @@ namespace StartScreen.Test
                 Assert.IsFalse(model.IsServiceHealthy);
                 Assert.IsTrue(model.HasServiceHealthStatus);
                 Assert.AreEqual(initialState == ServiceHealthState.Unknown
-                    ? "Visual Studio service status unknown" : "Stale - Visual Studio services operational", model.ServiceHealthText);
+                    ? "Visual Studio service status unknown" : "Stale - Service operational", model.ServiceHealthText);
                 Assert.IsTrue(GetTimer(model).IsEnabled);
 
                 PumpNextRefresh(model);
@@ -254,7 +254,7 @@ namespace StartScreen.Test
 
                 Assert.AreEqual(2, requests);
                 Assert.IsTrue(model.IsServiceHealthy);
-                Assert.AreEqual("Visual Studio services operational", model.ServiceHealthText);
+                Assert.AreEqual("Service operational", model.ServiceHealthText);
                 Assert.IsTrue(GetTimer(model).IsEnabled);
                 Assert.AreEqual(TimeSpan.FromMinutes(5), GetTimer(model).Interval);
             }

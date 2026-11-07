@@ -48,20 +48,22 @@
                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"
                           TextWrapping="Wrap"
                           TextTrimming="WordEllipsis"
-                          local:Typography.LineCount="2"
+                          local:Typography.MaxLineCount="2"
                           ToolTip="{Binding Title}"/>
 
                 <!-- Summary -->
                 <TextBlock Text="{Binding Summary}"
+                          Style="{StaticResource StartScreen.Body}"
+                          FontWeight="Normal"
                           Opacity="0.7"
                           TextWrapping="Wrap"
                           TextTrimming="WordEllipsis"
-                          local:Typography.LineCount="4"
+                          local:Typography.LineCount="2"
                           ToolTip="{Binding Summary}"
                           Margin="0 6 0 0"/>
 
                 <!-- Source and Date -->
-                <StackPanel Orientation="Horizontal" Margin="0 2 0 0">
+                <StackPanel Orientation="Horizontal" Margin="0 6 0 0">
                     <TextBlock Text="NEW"
                                Style="{StaticResource StartScreen.StatusText}"
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"

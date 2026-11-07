@@ -14,7 +14,7 @@ namespace StartScreen.Test
         [DataRow(360d, 12d)]
         [DataRow(200d, 18d)]
         [DataRow(360d, 24d)]
-        public void Cards_ReserveEqualFontScaledHeightsAndKeepMetadataAligned(double width, double environmentSize)
+        public void Cards_UseNaturalTitleHeightWithoutLeavingAGapAboveTheSummary(double width, double environmentSize)
         {
             var shortCard = CreateCard("Short title", "Short summary");
             var longText = string.Join(" ", Enumerable.Repeat("Long text that wraps across many lines", 50));
@@ -28,21 +28,33 @@ namespace StartScreen.Test
                 card.UpdateLayout();
             }
 
-            Assert.AreEqual(shortCard.ActualHeight, longCard.ActualHeight, 0.01);
+            Assert.IsGreaterThan(shortCard.ActualHeight, longCard.ActualHeight);
             var shortTitle = (TextBlock)shortCard.Children[0];
             var longTitle = (TextBlock)longCard.Children[0];
             var summary = (TextBlock)longCard.Children[1];
+            Assert.AreEqual(environmentSize * 13 / 12, summary.FontSize, 0.01);
+            Assert.AreEqual(FontWeights.Normal, summary.FontWeight);
+            Assert.AreEqual(FontWeights.SemiBold, longTitle.FontWeight);
             Assert.AreEqual(2 * longTitle.LineHeight, longTitle.ActualHeight, 1);
-            Assert.AreEqual(4 * summary.LineHeight, summary.ActualHeight, 1);
-            Assert.AreEqual(longTitle.ActualHeight, shortTitle.ActualHeight, 0.01);
+            Assert.AreEqual(2 * summary.LineHeight, summary.ActualHeight, 1);
+            Assert.AreEqual(shortTitle.LineHeight, shortTitle.ActualHeight, 1);
+            Assert.AreEqual(2 * longTitle.LineHeight, longTitle.MaxHeight, 0.01);
+            Assert.IsTrue(double.IsNaN(shortTitle.Height));
+            foreach (var card in new[] { shortCard, longCard })
+            {
+                var title = (TextBlock)card.Children[0];
+                var description = (TextBlock)card.Children[1];
+                var titleBottom = title.TranslatePoint(new Point(0, title.ActualHeight), card).Y;
+                Assert.AreEqual(6d, description.TranslatePoint(new Point(), card).Y - titleBottom, 0.01);
+            }
             Assert.AreEqual(TextTrimming.WordEllipsis, longTitle.TextTrimming);
             Assert.AreEqual(TextTrimming.WordEllipsis, summary.TextTrimming);
             Assert.AreEqual(longText, longTitle.ToolTip);
             Assert.AreEqual(longText, summary.ToolTip);
-            Assert.AreEqual(shortCard.Children[2].TranslatePoint(new Point(), shortCard).Y,
-                longCard.Children[2].TranslatePoint(new Point(), longCard).Y, 0.01);
+            Assert.AreEqual(longTitle.ActualHeight - shortTitle.ActualHeight,
+                longCard.Children[2].TranslatePoint(new Point(), longCard).Y - shortCard.Children[2].TranslatePoint(new Point(), shortCard).Y, 0.01);
             var summaryBottom = summary.TranslatePoint(new Point(0, summary.ActualHeight), longCard).Y;
-            Assert.AreEqual(2d, longCard.Children[2].TranslatePoint(new Point(), longCard).Y - summaryBottom, 0.01);
+            Assert.AreEqual(6d, longCard.Children[2].TranslatePoint(new Point(), longCard).Y - summaryBottom, 0.01);
 
             var previousHeight = longCard.ActualHeight;
             Typography.SetEnvironmentSize(longCard, environmentSize * 2);

@@ -204,7 +204,7 @@ namespace StartScreen.Test
             Assert.AreEqual("UnifiedProgressBar", progress.Attribute(_xaml + "Name")?.Value);
             Assert.AreEqual("0", progress.Attribute("Grid.Row")?.Value);
             Assert.AreEqual("Bottom", progress.Attribute("VerticalAlignment")?.Value);
-            Assert.AreEqual("24 0 24 20", progress.Attribute("Margin")?.Value);
+            Assert.AreEqual("24 0 24 0", progress.Attribute("Margin")?.Value);
             Assert.AreEqual("False", progress.Attribute("IsHitTestVisible")?.Value);
             Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.ControlEditHintTextBrushKey}}",
                 progress.Attribute("Foreground")?.Value);
@@ -294,7 +294,7 @@ namespace StartScreen.Test
             var size = caption.DesiredSize;
             Assert.AreEqual(Visibility.Visible, caption.Visibility);
             Assert.AreEqual("Updated just now", caption.Text);
-            Assert.AreEqual(420d, size.Width);
+            Assert.AreEqual(220d + caption.Margin.Left + caption.Margin.Right, size.Width);
             Assert.AreEqual(TextTrimming.CharacterEllipsis, caption.TextTrimming);
             foreach (var step in new[] { "Checking connected provider accounts...",
                 "Loading GitHub activity for a repository with a very long name that cannot fit in the caption...", "Updated just now" })

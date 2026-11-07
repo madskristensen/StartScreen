@@ -61,55 +61,9 @@
         </Style>
 
         <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource StartScreen.IconActionButton}"/>
-
-        <Style x:Key="ScrollTrackButtonStyle" TargetType="RepeatButton">
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="RepeatButton">
-                        <Border Background="Transparent"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="DiscreetVerticalScrollBarStyle" TargetType="ScrollBar">
-            <Setter Property="Width" Value="10"/>
-            <Setter Property="MinWidth" Value="0"/>
+        <Style x:Key="CommandButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollBar">
-                        <Grid Background="{TemplateBinding Background}">
-                            <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True">
-                                <Track.DecreaseRepeatButton>
-                                    <RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource ScrollTrackButtonStyle}"/>
-                                </Track.DecreaseRepeatButton>
-                                <Track.Thumb>
-                                    <Thumb MinHeight="24">
-                                        <Thumb.Template>
-                                            <ControlTemplate TargetType="Thumb">
-                                                <Border x:Name="ThumbBorder" Margin="2 0" CornerRadius="3" Opacity="0.35"
-                                                        Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="ThumbBorder" Property="Opacity" Value="0.7"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsDragging" Value="True">
-                                                        <Setter TargetName="ThumbBorder" Property="Opacity" Value="1"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Thumb.Template>
-                                    </Thumb>
-                                </Track.Thumb>
-                                <Track.IncreaseRepeatButton>
-                                    <RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource ScrollTrackButtonStyle}"/>
-                                </Track.IncreaseRepeatButton>
-                            </Track>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+            <Setter Property="BorderThickness" Value="0"/>
         </Style>
 
         <!-- Tab item style for News sub-tabs -->
@@ -211,12 +165,12 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Margin="24 20 24 20" Padding="0 0 0 18" BorderThickness="0 0 0 1"
+        <Border Grid.Row="0" Margin="24 16 24 0" Padding="0 0 0 16" BorderThickness="0 0 0 1"
                 BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBorderBrushKey}}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel>
                 <WrapPanel x:Name="ActionBar"
@@ -224,19 +178,19 @@
                     <Button Click="NewProjectButton_Click" Style="{StaticResource ActionButtonStyle}">
                         <TextBlock Text="New Project"/>
                     </Button>
-                    <Button Click="OpenProjectButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="4 0 0 0">
+                    <Button Click="OpenProjectButton_Click" Style="{StaticResource CommandButtonStyle}" Margin="4 0 0 0">
                         <TextBlock Text="Open Project"/>
                     </Button>
-                    <Button Click="OpenFolderButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="4 0 0 0">
+                    <Button Click="OpenFolderButton_Click" Style="{StaticResource CommandButtonStyle}" Margin="4 0 0 0">
                         <TextBlock Text="Open Folder"/>
                     </Button>
-                    <Button Click="CloneRepoButton_Click" Style="{StaticResource ActionButtonStyle}" Margin="4 0 0 0">
+                    <Button Click="CloneRepoButton_Click" Style="{StaticResource CommandButtonStyle}" Margin="4 0 0 0">
                         <TextBlock Text="Clone Repo"/>
                     </Button>
                     <Button x:Name="AttachToProcessButton"
                             Click="AttachToProcessButton_Click"
                             PreviewMouseLeftButtonDown="AttachToProcessButton_PreviewMouseLeftButtonDown"
-                            Style="{StaticResource ActionButtonStyle}"
+                            Style="{StaticResource CommandButtonStyle}"
                             Padding="12 0 0 0"
                             HorizontalContentAlignment="Stretch"
                             Margin="4 0 0 0"
@@ -268,7 +222,10 @@
                     </Button>
                 </WrapPanel>
 
-                    <StackPanel Orientation="Horizontal" Margin="0 10 0 0" ToolTip="{Binding ServiceHealthDetails}"
+                </StackPanel>
+                <StackPanel Grid.Column="1" Margin="16 0 0 0" HorizontalAlignment="Right">
+                    <WrapPanel HorizontalAlignment="Right">
+                    <StackPanel Orientation="Horizontal" Margin="0 0 16 0" VerticalAlignment="Center" ToolTip="{Binding ServiceHealthDetails}"
                                 Visibility="{Binding HasServiceHealthStatus, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Collapsed, TargetNullValue=Collapsed}">
                         <imaging:CrispImage Width="12" Height="12" Margin="0 0 6 0" VerticalAlignment="Center">
                             <imaging:CrispImage.Style>
@@ -285,25 +242,38 @@
                                 </Style>
                             </imaging:CrispImage.Style>
                         </imaging:CrispImage>
-                        <TextBlock Style="{StaticResource StartScreen.Body}">
-                            <Hyperlink Click="ServiceStatusLink_Click" Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                        <TextBlock Style="{StaticResource StartScreen.Metadata}" Opacity="0.7">
+                            <Hyperlink Click="ServiceStatusLink_Click">
+                                <Hyperlink.Style>
+                                    <Style TargetType="Hyperlink">
+                                        <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+                                        <Setter Property="TextDecorations" Value="{x:Null}"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Hyperlink.Style>
                                 <Run Text="{Binding ServiceHealthText, Mode=OneWay}"/>
                             </Hyperlink>
                         </TextBlock>
                     </StackPanel>
-                </StackPanel>
-                <StackPanel Grid.Column="1" Margin="16 0 0 0" HorizontalAlignment="Right">
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <TextBlock Margin="0 0 16 0" VerticalAlignment="Center"
                                    Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Collapsed, TargetNullValue=Collapsed}">
                             <Hyperlink Click="UpdateNowButton_Click" Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                                 <Run Text="{Binding UpdateAvailableText, Mode=OneWay}"/>
                             </Hyperlink>
                         </TextBlock>
+                        <TextBlock x:Name="LastRefreshText" Text="{Binding UnifiedRefreshStatus}" Opacity="0.65"
+                                   Style="{StaticResource StartScreen.Metadata}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                   Width="220" TextAlignment="Right" ToolTip="{Binding UnifiedRefreshDetails}"
+                                   VerticalAlignment="Center" Margin="0 0 16 0"/>
                         <Button x:Name="UnifiedRefreshButton" Click="UnifiedRefreshButton_Click" ToolTip="Refresh Dev Hub, news, and videos">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
                                     <Setter Property="MinWidth" Value="0"/>
+                                    <Setter Property="Background" Value="Transparent"/>
                                     <Setter Property="BorderThickness" Value="0"/>
                                     <Setter Property="Padding" Value="8 6"/>
                                     <Setter Property="IsEnabled" Value="True"/>
@@ -326,17 +296,13 @@
                                 ToolTip="Start Screen settings" AutomationProperties.Name="Start Screen settings">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}" Width="16" Height="16"/>
                         </Button>
-                    </StackPanel>
-                    <TextBlock x:Name="LastRefreshText" Text="{Binding UnifiedRefreshStatus}" Opacity="0.65"
-                               Style="{StaticResource StartScreen.Metadata}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
-                               Width="420" TextAlignment="Right" ToolTip="{Binding UnifiedRefreshDetails}"
-                               HorizontalAlignment="Right" Margin="0 10 0 0"/>
+                    </WrapPanel>
                 </StackPanel>
             </Grid>
         </Border>
             <ProgressBar x:Name="UnifiedProgressBar" Grid.Row="0" Height="2" VerticalAlignment="Bottom"
                          Minimum="0" Maximum="100" Value="{Binding RefreshProgressValue, Mode=OneWay}" IsIndeterminate="False"
-                         Margin="24 0 24 20" Panel.ZIndex="1" BorderThickness="0" Background="Transparent"
+                         Margin="24 0 24 0" Panel.ZIndex="1" BorderThickness="0" Background="Transparent"
                          Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlEditHintTextBrushKey}}"
                          IsHitTestVisible="False" Focusable="False" AutomationProperties.Name="Start Screen background activity"
                          AutomationProperties.ItemStatus="{Binding RefreshProgressDetails}">
@@ -353,11 +319,14 @@
             </ProgressBar>
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="LeftColumn" Width="360" MinWidth="280"/>
+                    <ColumnDefinition x:Name="LeftColumn" Width="300" MinWidth="280"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition x:Name="RightColumn" Width="*"/>
                 </Grid.ColumnDefinitions>
-                <DockPanel Grid.Column="0" Margin="24 0 20 24">
+                <DockPanel Grid.Column="0" Margin="24 20 16 16">
+                <TextBlock DockPanel.Dock="Top" Text="Recent" Style="{StaticResource StartScreen.Heading}" Margin="0 0 0 16"/>
+                <CheckBox DockPanel.Dock="Bottom" Content="Solutions only" IsChecked="{Binding ShowSolutionsOnly, Mode=TwoWay}"
+                          ToolTip="Show only solutions in Recent. Pinned items are always included." Margin="0 12 0 0" HorizontalAlignment="Left"/>
                 <!-- Search Box -->
                 <Grid DockPanel.Dock="Top" Margin="0 0 0 8" HorizontalAlignment="Stretch">
                     <Grid.ColumnDefinitions>
@@ -380,13 +349,9 @@
                                Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxTextBrushKey}}"
                                Opacity="0.6"
                               Visibility="{Binding Text.IsEmpty, ElementName=SearchBox, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                    <Border Grid.Column="1"
-                            Width="1"
-                            Margin="12 0"
-                            Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"/>
                     <Button x:Name="ClearRecentButton"
                             Grid.Column="2"
-                            Width="32"
+                            Margin="8 0 0 0" Width="32"
                             Height="32"
                             MinWidth="32"
                             MinHeight="32"
@@ -404,8 +369,6 @@
                     </Button>
                 </Grid>
 
-                <TextBlock DockPanel.Dock="Top" Text="Select to preview / Double-click or Enter to open"
-                           Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" Margin="0 0 0 10" TextWrapping="Wrap"/>
                 <!-- MRU Section -->
                 <Grid>
                     <ListBox x:Name="MruPanel"
@@ -413,6 +376,7 @@
                              VerticalAlignment="Stretch"
                              VerticalContentAlignment="Top"
                              Background="Transparent"
+                             ToolTip="Select to preview. Double-click or Enter to open."
                              BorderThickness="0"
                              Focusable="False"
                              ScrollViewer.CanContentScroll="True"
@@ -429,10 +393,20 @@
                              PreviewMouseLeftButtonDown="PinnedItems_PreviewMouseLeftButtonDown"
                              PreviewMouseMove="PinnedItems_PreviewMouseMove">
                         <ListBox.Resources>
-                            <Style TargetType="ScrollBar" BasedOn="{StaticResource DiscreetVerticalScrollBarStyle}">
-                                <Setter Property="Width" Value="8"/>
-                            </Style>
+                            <Style TargetType="ScrollBar" BasedOn="{StaticResource DiscreetVerticalScrollBarStyle}"/>
                         </ListBox.Resources>
+                        <ListBox.Template>
+                            <ControlTemplate TargetType="ListBox">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                                    <ScrollViewer Style="{StaticResource StartScreen.ScrollViewer}" Focusable="False"
+                                                  CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                                                  VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                                                  HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </ControlTemplate>
+                        </ListBox.Template>
                         <ListBox.GroupStyle>
                             <GroupStyle>
                                 <GroupStyle.HeaderTemplate>
@@ -491,35 +465,38 @@
                 </DockPanel>
                 <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch"
                               Background="Transparent" BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBorderBrushKey}}"
-                              BorderThickness="1 0 0 0" Cursor="SizeWE" Focusable="False" DragCompleted="GridSplitter_DragCompleted"/>
-                <ScrollViewer x:Name="PageScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto"
+                              BorderThickness="0" Cursor="SizeWE" Focusable="False" DragCompleted="GridSplitter_DragCompleted"/>
+                <ScrollViewer x:Name="PageScroll" Grid.Column="2" Style="{StaticResource StartScreen.ScrollViewer}" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled" Focusable="False" PreviewMouseWheel="PageScroll_PreviewMouseWheel">
                     <ScrollViewer.Resources>
                         <Style TargetType="ScrollBar" BasedOn="{StaticResource DiscreetVerticalScrollBarStyle}"/>
                     </ScrollViewer.Resources>
                 <Border x:Name="RightPaneBorder" SizeChanged="RightPaneBorder_SizeChanged">
-                    <DockPanel x:Name="NewsPanel" Margin="24 0 24 24" Focusable="False">
+                    <DockPanel x:Name="NewsPanel" Margin="24 0 0 0" Focusable="False">
                         <ScrollViewer x:Name="ContentScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
                                       Focusable="False" Style="{x:Null}" PreviewMouseWheel="ContentScroll_PreviewMouseWheel" ScrollChanged="ContentScroll_ScrollChanged">
-                            <Grid x:Name="ContentLayout" HorizontalAlignment="Left" Grid.IsSharedSizeScope="True">
+                            <Grid x:Name="ContentLayout" HorizontalAlignment="Left" Height="{Binding ViewportHeight, ElementName=PageScroll}">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition x:Name="DevHubColumn" Width="920"/>
-                                    <ColumnDefinition x:Name="NewsColumn" Width="*"/>
+                                    <ColumnDefinition x:Name="DevHubColumn" Width="*"/>
+                                    <ColumnDefinition x:Name="NewsColumn" Width="*" MinWidth="440"/>
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" SharedSizeGroup="ActivitySectionHeader"/>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
-                                <controls:DevHubPanel x:Name="DevHubPanelControl" Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Margin="0 0 24 0" VerticalAlignment="Top"
+                                <controls:DevHubPanel x:Name="DevHubPanelControl" Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Margin="0 20 24 16" VerticalAlignment="Stretch"
                                                       RefreshRequested="DevHubPanel_RefreshRequested" LastRefreshChanged="DevHubPanel_LastRefreshChanged"
-                                                      ActivityOptionsChanged="DevHubPanel_ActivityOptionsChanged"
                                                       ConnectAccountRequested="DevHubPanel_ConnectAccountRequested" ScopeToRepoRequested="DevHubPanel_ScopeToRepoRequested"
                                                       OpenAccountSettingsRequested="OpenAccountSettings_Click"
                                                       FocusMruRequested="DevHubPanel_FocusMruRequested" FocusNewsRequested="DevHubPanel_FocusNewsRequested"/>
-                                <Grid x:Name="NewsColumnPanel" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" VerticalAlignment="Top">
+                                <Grid x:Name="NewsColumnPanel" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource StartScreen.Sidebar}">
+                                    <Border Style="{StaticResource StartScreen.SidebarTint}"/>
+                                    <Border BorderThickness="1 0 0 0" IsHitTestVisible="False"
+                                            BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBorderBrushKey}}"/>
+                                    <Grid Margin="16 20 12 0">
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" SharedSizeGroup="ActivitySectionHeader"/>
+                                        <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="*"/>
                                     </Grid.RowDefinitions>
                                     <DockPanel MinHeight="28" Margin="8 0 0 12">
@@ -539,9 +516,13 @@
                                                 <RowDefinition Height="Auto"/>
                                                 <RowDefinition Height="*"/>
                                             </Grid.RowDefinitions>
-                                            <TabPanel IsItemsHost="True" Margin="8 0 0 0"/>
-                                            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1"
-                                                              ContentSource="SelectedContent"/>
+                                            <TabPanel IsItemsHost="True" Margin="8 0 0 16"/>
+                                            <ScrollViewer Grid.Row="1" Style="{StaticResource StartScreen.ScrollViewer}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                                                <ScrollViewer.Resources>
+                                                    <Style TargetType="ScrollBar" BasedOn="{StaticResource DiscreetVerticalScrollBarStyle}"/>
+                                                </ScrollViewer.Resources>
+                                                <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
+                                            </ScrollViewer>
                                         </Grid>
                                     </ControlTemplate>
                                 </TabControl.Template>
@@ -556,7 +537,7 @@
                                                      Visibility="{Binding HasNewBlogs, Converter={StaticResource BoolToVisibilityConverter}}"/>
                                         </StackPanel>
                                     </TabItem.Header>
-                                    <StackPanel Margin="0 24 0 0">
+                                    <StackPanel>
                                         <TextBlock Text="News feeds are currently unavailable. Use Refresh at the top to try again."
                                                    TextWrapping="Wrap"
                                                    Opacity="0.6"
@@ -593,7 +574,7 @@
                                                      Visibility="{Binding HasNewVideos, Converter={StaticResource BoolToVisibilityConverter}}"/>
                                         </StackPanel>
                                     </TabItem.Header>
-                                    <StackPanel Margin="0 24 0 0">
+                                    <StackPanel>
                                         <TextBlock Text="YouTube feed is currently unavailable. Use Refresh at the top to try again."
                                                    TextWrapping="Wrap"
                                                    Opacity="0.6"
@@ -617,7 +598,7 @@
                                 </TabItem>
 
                                 <TabItem x:Name="FeedbackTab" Header="Feedback" Style="{StaticResource NewsTabItemStyle}">
-                                    <StackPanel Margin="0 24 0 0">
+                                    <StackPanel>
                                         <TextBlock Text="{Binding FeedbackStatus}" TextWrapping="Wrap" Margin="8 0 0 12"
                                                    Visibility="{Binding FeedbackStatus, Converter={StaticResource NullToCollapsedConverter}}"
                                                    AutomationProperties.LiveSetting="Polite"/>
@@ -694,7 +675,7 @@
                                     <TabItem.Header>
                                         <TextBlock Text="Release notes"/>
                                     </TabItem.Header>
-                                    <StackPanel Margin="8 24 0 0">
+                                    <StackPanel Margin="8 0 0 0">
                                         <TextBlock TextWrapping="Wrap">
                                             <Hyperlink x:Name="ReleaseNotesLink" Click="ReleaseNotesLink_Click"
                                                        Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
@@ -704,6 +685,7 @@
                                     </StackPanel>
                                 </TabItem>
                             </TabControl>
+                                    </Grid>
                                 </Grid>
                             </Grid>
                         </ScrollViewer>
@@ -711,9 +693,6 @@
                 </Border>
                 </ScrollViewer>
             </Grid>
-        <CheckBox Grid.Row="2" Content="Solutions only" IsChecked="{Binding ShowSolutionsOnly, Mode=TwoWay}"
-                  ToolTip="Show only solutions in Recent. Pinned items are always included."
-                  HorizontalAlignment="Left" Margin="24 8 0 16"/>
         <ScrollBar x:Name="ContentHorizontalScrollbar" Grid.Row="3" Orientation="Horizontal" Visibility="Collapsed"
                    Minimum="0" SmallChange="24" LargeChange="120" ValueChanged="ContentHorizontalScrollbar_ValueChanged"/>
         <Popup x:Name="StartScreenSettingsPopup"

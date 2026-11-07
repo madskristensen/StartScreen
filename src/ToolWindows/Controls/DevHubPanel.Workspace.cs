@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -16,30 +17,19 @@ namespace StartScreen.ToolWindows.Controls
         private DevHubActivityList _myWorkPresentation;
         private DevHubActivityList _incomingPresentation;
         private int _activityLoadCount;
-        private int? _loadMoreStartingItemCount;
         private DevHubDefaultTab _activeWorkView = DevHubDefaultTab.MyWork;
 
-        internal DevHubActivityOptions ActivityOptions { get; private set; } = new DevHubActivityOptions();
+        internal DevHubActivityOptions ActivityOptions { get; } = new DevHubActivityOptions();
 
         internal void SetActivityLoading(bool loading)
         {
             _activityLoadCount = Math.Max(0, _activityLoadCount + (loading ? 1 : -1));
             if (_activityLoadCount == 0)
                 _isConnectionLoading = false;
-            if (_activityLoadCount == 0 && _loadMoreStartingItemCount.HasValue)
-            {
-                ActivityLoadStatus.Text = (_currentDashboard?.ActivityLimit ?? 0) < ActivityOptions.MaxItems
-                    ? "Could not load more. Refresh to retry."
-                    : GetLoadedActivityCount() > _loadMoreStartingItemCount.Value ? "More activity loaded." : "No additional items found.";
-                ActivityLoadStatus.Visibility = Visibility.Visible;
-                _loadMoreStartingItemCount = null;
-            }
-            UpdateActivityLoadingState();
+            UpdateBusyState();
             if (!loading && _activityLoadCount == 0)
                 SelectInitialMyWorkTab(loadingCompleted: true);
         }
-
-        private int GetLoadedActivityCount() => _activity.LoadedActivityCount;
 
         private void InitializeActivityPresentation()
         {
@@ -68,51 +58,6 @@ namespace StartScreen.ToolWindows.Controls
         private void ActivityItemsChanged(object sender, NotifyCollectionChangedEventArgs e)
         {
             InvalidateBorderCache();
-        }
-
-        private void UpdateActivityLoadingState()
-        {
-            UpdateBusyState();
-            var loading = _activityLoadCount > 0 || _loadMoreStartingItemCount.HasValue;
-            LoadMoreLink.IsEnabled = !loading;
-            IncludeCompletedItems.IsEnabled = !loading;
-            LoadMoreLabel.Text = "Load more";
-            LoadMoreText.Visibility = loading || Math.Max(ActivityOptions.MaxItems, _currentDashboard?.ActivityLimit ?? 0) < DevHubActivityOptions.MaximumLimit
-                ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        private void LoadMoreActivity_Click(object sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            var loadedLimit = Math.Max(ActivityOptions.MaxItems, _currentDashboard?.ActivityLimit ?? 0);
-            if (_activityLoadCount > 0 || _loadMoreStartingItemCount.HasValue || loadedLimit >= DevHubActivityOptions.MaximumLimit)
-                return;
-            _loadMoreStartingItemCount = GetLoadedActivityCount();
-            ActivityLoadStatus.Visibility = Visibility.Collapsed;
-            ActivityOptions = new DevHubActivityOptions(Math.Min(DevHubActivityOptions.MaximumLimit,
-                loadedLimit + DevHubActivityOptions.DefaultLimit), ActivityOptions.IncludeCompleted);
-            UpdateActivityLoadingState();
-            ActivityOptionsChanged?.Invoke(this, EventArgs.Empty);
-        }
-
-        private void IncludeCompletedItems_Changed(object sender, RoutedEventArgs e)
-        {
-            if (CoverageText == null || MyWorkList == null || IncomingList == null)
-                return;
-            ActivityOptions = new DevHubActivityOptions(ActivityOptions.MaxItems, IncludeCompletedItems.IsChecked == true);
-            ActivityLoadStatus.Visibility = Visibility.Collapsed;
-            RefreshWorkspaceActivity();
-            ActivityOptionsChanged?.Invoke(this, EventArgs.Empty);
-        }
-
-        private void UpdateActivityCoverage(DevHubDashboard dashboard)
-        {
-            ActivityCoveragePanel.Visibility = Visibility.Visible;
-            CoverageText.Text = $"Recent activity - up to {dashboard.ActivityLimit} per query";
-            CoverageText.ToolTip = "Lists are bounded, not complete inventories. Load more expands each query up to 300 items. "
-                + "Azure DevOps covers projects discovered from recent workspaces; repository scopes require explicit work-item links. "
-                + "Permissions and provider availability can limit results. Recent completion history covers the last 14 days.";
-            UpdateActivityLoadingState();
         }
 
         private void BeginWorkspaceVisit(object sender, RoutedEventArgs e)
@@ -256,6 +201,11 @@ namespace StartScreen.ToolWindows.Controls
                 list = _lists.Count == 0 ? _original : new ItemsControl
                 {
                     ItemTemplate = _original.ItemTemplate,
+                    ItemsPanel = _original.ItemsPanel,
+                    ItemContainerStyle = _original.ItemContainerStyle,
+                    AlternationCount = _original.AlternationCount,
+                    Tag = _original.Tag,
+                    Margin = _original.Margin,
                     Focusable = _original.Focusable,
                     Visibility = Visibility.Collapsed,
                 };
@@ -278,6 +228,23 @@ namespace StartScreen.ToolWindows.Controls
                 _active = list;
             }
             return list;
+        }
+    }
+
+    public sealed class ActivitySeparatorVisibilityConverter : IMultiValueConverter
+    {
+        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (values[2] is string tag && tag == "Team")
+                return Visibility.Visible;
+            if (values[0] is int index && values[1] is int count)
+                return index < count - 1 ? Visibility.Visible : Visibility.Collapsed;
+            return DependencyProperty.UnsetValue;
+        }
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+        {
+            throw new NotSupportedException();
         }
     }
 }

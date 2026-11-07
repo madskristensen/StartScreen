@@ -191,9 +191,11 @@ layouts. News and video cards share click and keyboard activation rules and
 live-themed hover/focus behavior. Recent projects retain selection and
 double-click opening.
 
-Arrow keys move between adjacent activity blades and News & updates. In activity,
-Up/Down move between the heading, selected filter, and cards; Left/Right select
-filters and move to the neighboring blade at the ends of the filter row. In News,
+Arrow keys follow the workspace layout. My work sits above Team activity;
+Up/Down move between filters and cards, continuing into Team activity after the
+last personal item. Team activity uses two columns: Left/Right move across a row
+and Up/Down move between rows. At the outer edges, Left returns to Recent and
+Right enters News & updates. On filter rows, Left/Right select filters. In News,
 Left/Right navigate the selected tab's card columns, and Up/Down navigate rows.
 Up from the first row returns to the tab header; Left/Right on headers select
 tabs, and Down enters their content. Left at the first column or first tab
@@ -202,7 +204,7 @@ empty tabs remain reachable through their headers.
 
 **See real repository activity.** A small PR icon and count beside the branch show
 repository-wide open pull requests for supported GitHub and Azure DevOps repositories.
-Zero counts are hidden. Recent items use compact 32-pixel single-line rows;
+Zero counts are hidden. Recent items use comfortable 48-pixel rows;
 direct personal review requests add a second line only when present.
 Counts are fetched for all visible recent workspaces, independently of the limited
 dashboard lists. Repository discovery uses each workspace's local Git remote, even
@@ -225,23 +227,25 @@ no separate Needs attention checkbox. Switching filters reuses each filter's
 existing cards when its data is unchanged, instead of rebuilding them on every
 tab visit. Hidden lists synchronize before display when their data changes.
 Items stay in their ownership view rather
-than appearing in a duplicate action blade. The two work blades sit side by side, with News to their right.
+than appearing in a duplicate action blade. My work uses full-width rows above
+two-column Team activity, with News in a separate, edge-attached sidebar to the right.
 Smaller windows use horizontal scrolling rather than hiding a work blade or
-moving News below it. Both views show colored review/check
-status pills and a friendly update date, with the exact local date and
+Each section scrolls independently. Both views show colored review/check
+icons beside neutral status text and a friendly update date, with the exact local date and
 time on hover, plus background-free globe and pull request icons to open a PR in
 your browser or Visual Studio. These action icons appear only while their entire
 card is hovered or contains keyboard focus; their space stays reserved to avoid
-layout shifts. When a workspace is selected, its name and **All repositories**
-sit beside the My work heading, keeping both blades' filter rows aligned.
-PR authors appear beside the status, with dates right-aligned on the repository row; PRs have no separate
+layout shifts. Both sections have left-aligned filter tabs and subdued,
+right-aligned section labels. When a workspace is selected, its name and
+**All repositories** appear in a separate row below the My work tabs.
+My work PR authors appear beneath the status; Team activity authors stay inline.
+Dates use a separate far-right column; PRs have no separate
 action-text line or check-details link. Issues and tasks assigned to you have a
-themed **Assigned to you** pill below the repository row. Labels use solid
-rounded pills with their GitHub colors and contrasting text, with system colors
-in High Contrast mode. All labels, including priority and type labels, appear
+state with the assignee's name underneath when supplied by the provider. Labels use compact
+borderless tags with neutral text and 6-pixel provider-colored dots, with system colors
+in High Contrast mode. All labels, including provider-supplied priority and type labels, appear
 together in one row, wrapping only when needed; there is no separate priority/type row.
-Open issues omit the redundant open-status pill. Meaningful workflow states remain
-visible. Status colors distinguish failures/conflicts (red), success/approval
+Issue states remain visible, including Open and Blocked. Status icons distinguish failures/conflicts (red), success/approval
 (green), review/discussion attention (amber), in-progress states (blue), and
 drafts or cancelled activity (muted), using Visual Studio theme resources.
 Selecting a workspace scopes these lists to that repository.
@@ -255,11 +259,6 @@ An organization SAML restriction on optional metadata does not mean GitHub is
 disconnected. Authorize the existing OAuth app for that organization under
 **GitHub Settings > Applications > Authorized OAuth Apps**. Refresh alone cannot
 grant organization access; the loaded pull requests remain available meanwhile.
-
-**Load more** shows loading feedback and reports when no additional activity is
-found. With a workspace selected, it refreshes that repository directly.
-**Include completed work (14 days)** optionally shows your recently merged PRs
-and completed issues and tasks, separately from your active work.
 
 **Connect your branch to its work.**
 The MRU tooltip also connects the current branch to matching open PRs in already
@@ -309,7 +308,10 @@ and more lives right next to your project list. It refreshes in the
 background and caches locally, so it's always ready and never slows you
 down.
 
-News cards reserve two lines for titles and four for descriptions, with ellipses
+News descriptions use the shared body-text size and regular weight beneath semibold titles.
+The source/date row has a 6-pixel gap above it to separate it from the description.
+News card titles use their natural height up to two lines, without a blank line
+above the description. Descriptions reserve two lines, with ellipses
 for overflow and full text on hover. Pinned and unpinned cards use the same layout;
 their heights scale with Visual Studio's environment font settings.
 
@@ -468,8 +470,8 @@ Unknown provider metadata is not treated as an action signal. A mention is not a
 unread indicator, and an unresolved discussion is not proof of an unanswered question.
 Developer Community feedback is not included.
 
-My work and Team activity display cards directly below the selected tab without redundant
-section headings. Tabs use a footprint-neutral underline for selection, without
+My work and Team activity display cards directly below their left-aligned tabs,
+with quiet section labels on the right. Tabs use a footprint-neutral underline for selection, without
 surrounding borders or hover/selection backgrounds.
 My work orders its tabs as Attention, Copilot, PRs, Issues, and Builds. On initial
 load, empty Attention falls back to the first non-empty tab in that order. Later
@@ -485,13 +487,22 @@ Console for CLI, and GitHub for cloud agents.
 Hover over a source icon for its app name (Terminal, VS Code, Visual Studio, or GitHub).
 VS Code sessions use the native workspace folder name; chats without a workspace show
 **No workspace** instead of the internal chat-folder GUID.
-Work card titles stay on one line with ellipsis; hover to read the full title.
-Work card titles reserve extra space on the right to separate the blades visually.
-Assigned issues/tasks show an **Assigned to you** pill below the repository row.
+Repository work card titles wrap to at most two lines with ellipsis, without reserving
+an empty second line for short titles; hover to read the full title.
+Personal rows separate titles and repository details from status and date columns.
+Only items before the final visible My work item have a separator, including after
+filtering or refreshing the list. There is no activity-limit footer below Team activity.
+My work PR authors stay beneath the status in the same column at every width.
+Team activity PR authors appear beside the status, with long names truncated rather than wrapped.
+Chat sessions without a reported status show neither status text nor a status icon.
+Team cards have equal heights, with aligned separators and at least 12 pixels of
+clearance above each separator. Status sits below the details to keep the two-column layout readable.
+Issues/tasks show their state and real assignee, not a synthesized priority.
 Cards keep one primary status without a separate PR action-text line or large,
 redundant metadata tooltips. Open the item for complete provider details.
-Issue label pills stay together in one row, wrapping when needed, directly beneath
-the repository or status row without an empty action row. Click a card to open it;
+Issue labels are borderless, with neutral text and 6-pixel provider-colored dots.
+They wrap directly beneath the repository or status row without an empty action row.
+Click a card to open it;
 PR cards also retain their browser and Visual Studio action icons.
 The workflow state remains visible even when the item is assigned to you.
 Build headings show the repository without branch names; hover over the repository
@@ -505,14 +516,9 @@ A PR is only called
 passing build by itself is not enough. Missing or incomplete policy/discussion
 information never becomes a ready signal.
 
-The footer states the current per-query limit. **Load more** expands it in steps
-of 30, up to 300, for the current page visit, including repository-scoped views.
 Providers page their queries rather than requesting an unsupported page size.
 These are recent, bounded activity lists, not complete repository inventories;
 permissions, discovered projects, and provider availability still limit coverage.
-**Recently completed** optionally adds a separate My work group for your merged
-PRs and completed created/assigned issues or tasks from the last 14 days. It does
-not replace the active-work queries or add completed work to Attention.
 Copilot also discovers recent CLI and supported native VS Code sessions from their
 local metadata. GitHub cloud-agent tasks use the configured GitHub account when that
 provider is enabled. These sources refresh independently once a minute while the page is visible.
@@ -574,9 +580,9 @@ sessions cannot be focused externally and must be closed normally before resumin
 An idle session is not considered released. CLI must be installed as copilot.exe on PATH.
 Conversation titles occupy a single line with an ellipsis; hover to see the full
 title. The source icon appears beside the workspace below the title,
-with the date aligned to the right. A compact, theme-aware status badge appears
-below the workspace. Running uses the accent color, Waiting uses the warning color, and Idle
-is muted. Conversations without a known live state show no state badge rather
+with the date aligned to the right. Compact, theme-aware status text appears
+in its own column. Running uses the accent color, Waiting uses the warning color, and Idle
+is muted. Conversations without a known live state show no status rather
 than claiming to be idle. These signals do not describe work in
 another Visual Studio instance or a separate CLI process.
 Background Copilot diagnostics appear in the Start Screen Output pane, not beside the work heading.
@@ -633,7 +639,7 @@ The dashboard discovers Azure DevOps repositories from your recent workspaces,
 not every repository accessible to your account. Open a checkout in Visual Studio
 so it appears in the recent list, then refresh Start Screen. Recent builds include
 failed PR validation runs; the combined dashboard initially loads up to 10 items per repository,
-and scoping to a repository loads up to 30. Load more expands the query limits.
+and scoping to a repository loads up to 30.
 Signing in alone does not enumerate all
 organizations or projects.
 Personal PRs and created or assigned work items are queried independently across
@@ -765,16 +771,33 @@ any time to bring it back.
 The header groups Refresh with its update timestamp. This single Refresh button
 updates repository activity, blog feeds, and videos; news tabs have no separate
 refresh link or timestamp. Visual Studio service
-health is shown below the action buttons and links to the public status page.
+health sits beside Refresh in the header and links to the public status page.
+Healthy services display the compact label **Service operational**.
 It remains hidden until the first check completes, then stays visible during
 refreshes. Unchanged status values and news/video cards are retained without
 rebuilding their UI; only changed content is updated.
 Unknown, stale, and failed checks are not displayed as healthy. Public service
 health does not describe your account sign-in or repository CI status.
 
-The work pane is capped at 560 pixels including its gutter. Extra screen width
-goes to news and videos, which expand into multiple columns. At narrow widths,
-news moves below the work pane.
+The central workspace stays between 960 and 1,000 device-independent pixels so
+two-column activity cards remain readable. News & updates
+has a 440-pixel minimum and no maximum, takes the remaining width, and adds news and video
+columns on larger screens. The news tab strip keeps a 16-pixel gap above its
+independently scrolling content. It retains a distinct theme-aware background.
+A subtle foreground tint keeps it distinct even when the host theme gives command bars and tool windows
+the same background; High Contrast uses system colors instead. The sidebar reaches
+the right and bottom edges; each activity section and the selected news tab
+scroll independently. Narrow windows retain a readable layout through horizontal
+scrolling. When Dev Hub is hidden, news and videos expand into multiple columns.
+
+Section headings share Recent's font size, weight, and theme text color.
+Tab-specific My work column headers, quiet item-type icons,
+and thin inset row separators mirror the native list hierarchy. Team activity has
+a 32-pixel gutter between columns. Build durations sit beside neutral status
+text with native Visual Studio status monikers. Vertical scrollbars use narrow,
+arrowless thumbs with faint tracks, wider drag targets, and stronger hover,
+drag, and High Contrast states. Service health uses quiet metadata text, with
+accent color only on hover.
 
 A discreet update link uses Visual Studio's setup API and shows the available
 version when supplied by VS. It opens the standard Visual Studio update flow;
@@ -808,11 +831,10 @@ Open the Start Screen any time from **File > Start Screen** or press
 
 | Shortcut  | Action               |
 | --------- | -------------------- |
-| Up / Down | Move between items   |
+| Up / Down | Move between personal items or team rows; continue between sections |
 | Enter     | Review PR in VS; other items in browser |
 | Ctrl+C    | Copy URL             |
-| Left      | Jump to recent files |
-| Right     | Jump to news feed    |
+| Left / Right | Move across team columns or select filters; at outer edges jump to Recent / News |
 
 ### News feed
 

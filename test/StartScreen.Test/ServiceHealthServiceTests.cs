@@ -18,7 +18,7 @@ namespace StartScreen.Test
             var result = ServiceHealthService.ParseStatus(json, now);
 
             Assert.AreEqual(ServiceHealthState.Healthy, result.State);
-            Assert.AreEqual("Visual Studio services operational", result.StatusText);
+            Assert.AreEqual("Service operational", result.StatusText);
             Assert.AreEqual(now, result.CheckedAtUtc);
             Assert.AreEqual(now, result.LastUpdatedUtc);
             Assert.IsFalse(result.IsStale);

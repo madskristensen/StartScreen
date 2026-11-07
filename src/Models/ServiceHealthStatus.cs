@@ -21,7 +21,7 @@ namespace StartScreen.Models
             {
                 var text = State switch
                 {
-                    ServiceHealthState.Healthy => "Visual Studio services operational",
+                    ServiceHealthState.Healthy => "Service operational",
                     ServiceHealthState.Incident => "Visual Studio service incident",
                     _ => "Visual Studio service status unknown"
                 };

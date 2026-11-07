@@ -1,4 +1,3 @@
-
     <UserControl x:Class="StartScreen.ToolWindows.Controls.DevHubPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -33,76 +32,117 @@
         <controls:HexColorToBrushConverter x:Key="HexColorToBrushConverter"/>
         <controls:HexColorToForegroundConverter x:Key="HexColorToForegroundConverter"/>
         <controls:CiStatusToMonikerConverter x:Key="CiStatusToMonikerConverter"/>
+        <controls:ActivitySeparatorVisibilityConverter x:Key="ActivitySeparatorVisibilityConverter"/>
         <Style x:Key="PullRequestStatusStyle" TargetType="TextBlock" BasedOn="{StaticResource StartScreen.StatusText}">
-            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding StatusCategory}" Value="Muted">
-                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
-                    <Setter Property="Opacity" Value="0.65"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding StatusCategory}" Value="Warning">
-                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
-                    <Setter Property="Opacity" Value="1"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding StatusCategory}" Value="Error">
-                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillCriticalBrushKey}}"/>
-                    <Setter Property="Opacity" Value="1"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding StatusCategory}" Value="Success">
-                    <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:CommonDocumentColors.StatusBannerSuccessBorderTextBrushKey}}"/>
-                    <Setter Property="Opacity" Value="1"/>
-                </DataTrigger>
-            </Style.Triggers>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Opacity" Value="0.85"/>
         </Style>
         <DataTemplate x:Key="PullRequestMetadataTemplate">
-            <DockPanel>
-                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Style="{StaticResource StartScreen.StatusBadge}"
-                            BorderBrush="{Binding Foreground, ElementName=PullRequestStatus}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Border x:Name="PullRequestStatusContainer" Grid.ColumnSpan="2" Style="{StaticResource StartScreen.ActivityStatus}"
+                        Margin="0 0 8 0" VerticalAlignment="Center" HorizontalAlignment="Left"
+                        BorderBrush="{Binding Foreground, ElementName=PullRequestStatus}">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource StartScreen.StatusIcon}"/>
                         <TextBlock x:Name="PullRequestStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
-                    </Border>
-                    <TextBlock Text="{Binding AuthorText}" Opacity="0.65" Margin="0 2 0 2" Padding="0 0 8 0"
-                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding AuthorText}"
-                               MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=WrapPanel}}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding AuthorText}" Value="{x:Null}">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </WrapPanel>
-            </DockPanel>
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="PullRequestAuthor" Grid.Row="1" Grid.ColumnSpan="2" Margin="18 2 0 0"
+                           Text="{Binding AuthorText}" Opacity="0.65" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding AuthorText}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding AuthorText}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="Team">
+                    <Setter TargetName="PullRequestStatusContainer" Property="Grid.ColumnSpan" Value="1"/>
+                    <Setter TargetName="PullRequestAuthor" Property="Grid.Row" Value="0"/>
+                    <Setter TargetName="PullRequestAuthor" Property="Grid.Column" Value="1"/>
+                    <Setter TargetName="PullRequestAuthor" Property="Grid.ColumnSpan" Value="1"/>
+                    <Setter TargetName="PullRequestAuthor" Property="Margin" Value="0"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
         <DataTemplate x:Key="RepositoryItemMetadataTemplate">
-            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Border Style="{StaticResource StartScreen.StatusBadge}"
+            <StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource StartScreen.ActivityStatus}" Margin="0 0 8 0" VerticalAlignment="Center"
                         BorderBrush="{Binding Foreground, ElementName=RepositoryItemStatus}"
                         Visibility="{Binding StatusText, Converter={StaticResource NullToCollapsedConverter}}">
-                    <TextBlock x:Name="RepositoryItemStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Path>
+                            <Path.Style>
+                                <Style TargetType="Path" BasedOn="{StaticResource StartScreen.StatusIcon}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsBuild}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Path.Style>
+                        </Path>
+                        <imaging:CrispImage x:Name="BuildStatusIcon" Moniker="{Binding StatusMoniker}" Width="12" Height="12" Margin="0 0 6 0" VerticalAlignment="Center"
+                                            Visibility="{Binding IsBuild, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        <TextBlock x:Name="RepositoryItemStatus" Text="{Binding StatusText}" Style="{StaticResource PullRequestStatusStyle}"/>
+                    </StackPanel>
                 </Border>
-                <Border x:Name="AssignmentPill" Style="{StaticResource StartScreen.StatusBadge}"
-                        BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
-                        Visibility="{Binding IsAssignedToCurrentUser, Converter={StaticResource BoolToVisibilityConverter}}"
-                        ToolTip="This issue or task is currently assigned to you.">
-                    <TextBlock Text="Assigned to you" Style="{StaticResource StartScreen.StatusText}"
-                               Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                <TextBlock Grid.Column="1" Text="{Binding DurationText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" ToolTip="Build duration" Visibility="{Binding DurationText, Converter={StaticResource NullToCollapsedConverter}}"/>
+            </Grid>
+                <Border x:Name="AssignmentPill" Style="{StaticResource StartScreen.ActivityStatus}" Margin="18 2 0 0"
+                        Visibility="{Binding AssigneeText, Converter={StaticResource NullToCollapsedConverter}}">
+                    <TextBlock Text="{Binding AssigneeText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
+                               TextWrapping="Wrap" ToolTip="{Binding AssigneeText}"/>
                 </Border>
-                <TextBlock Text="{Binding DurationText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" Margin="0 2 8 2"
-                           VerticalAlignment="Center" ToolTip="Build duration"
-                           Visibility="{Binding DurationText, Converter={StaticResource NullToCollapsedConverter}}"/>
-            </WrapPanel>
+            </StackPanel>
         </DataTemplate>
         <DataTemplate x:Key="WorkItemTemplate">
-            <Border x:Name="WorkItemBorder" Style="{StaticResource StartScreen.CardSurface}" Margin="0 0 0 4" Focusable="True"
+            <Border x:Name="WorkItemBorder" Style="{StaticResource StartScreen.CardSurface}" Padding="8 4" Margin="0" Focusable="True"
                     Cursor="Hand" AutomationProperties.Name="{Binding Title}" AutomationProperties.HelpText="{Binding ActionText}"
                     MouseUp="WorkItem_MouseUp"
                     PreviewMouseRightButtonDown="CopilotItem_RightButtonDown" PreviewMouseRightButtonUp="CopilotItem_RightButtonUp"
                     PreviewKeyDown="CopilotItem_PreviewKeyDown">
-                <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="28"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Path x:Name="WorkItemTypeIcon" Style="{StaticResource StartScreen.WorkItemIcon}" ToolTip="{Binding Kind}"/>
+                <Grid Grid.Column="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition x:Name="StatusColumn" Width="220"/>
+                        <ColumnDefinition Width="Auto" MinWidth="72"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                     <TextBlock Text="{Binding DisplayTitle}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.CardTitle}">
@@ -110,41 +150,71 @@
                                 <Setter Property="TextWrapping" Value="NoWrap"/>
                                 <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                                 <Setter Property="ToolTip" Value="{Binding Title}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsRepositoryItem}" Value="True">
+                                        <Setter Property="TextWrapping" Value="Wrap"/>
+                                        <Setter Property="typography:Typography.MaxLineCount" Value="2"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
-                    <Grid x:Name="WorkItemDetails" Margin="0 0 0 3">
+                    <Grid x:Name="WorkItemDetails" Grid.Row="1" Margin="0 0 0 3">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="1" Text="{Binding Detail}" TextTrimming="CharacterEllipsis" ToolTip="{Binding DetailToolTip}"
                                    Opacity="0.65" Style="{StaticResource StartScreen.Metadata}" Margin="0 0 8 0" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="2" Text="{Binding ActivityDateText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
-                                   HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
                         <imaging:CrispImage x:Name="CopilotActivityIcon" Width="16" Height="16" Margin="0 0 6 0" VerticalAlignment="Center"
                                             Moniker="{Binding CopilotMoniker}" ToolTip="{Binding CopilotSourceName}"
                                             Visibility="{Binding IsCopilot, Converter={StaticResource BoolToVisibilityConverter}}"/>
                     </Grid>
+                    <StackPanel x:Name="StatusPanel" Grid.Column="1" Grid.RowSpan="3" Margin="12 0 8 0" VerticalAlignment="Center">
                     <StackPanel x:Name="CopilotMetadata" Orientation="Horizontal"
                                 Visibility="{Binding IsCopilot, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <Path>
+                            <Path.Style>
+                                <Style TargetType="Path" BasedOn="{StaticResource StartScreen.StatusIcon}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CopilotStatus}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding CopilotStatus}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding CopilotStatus}" Value="Running">
+                                            <Setter Property="Stroke" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                                            <Setter Property="Opacity" Value="1"/>
+                                            <Setter Property="Data" Value="M6,0.75 A5.25,5.25 0 1 1 6,11.25 A5.25,5.25 0 1 1 6,0.75 M6,3 V6 L8,7.5"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding CopilotStatus}" Value="Waiting">
+                                            <Setter Property="Stroke" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
+                                            <Setter Property="Opacity" Value="1"/>
+                                            <Setter Property="Data" Value="M6,1 L11,10 H1 Z M6,4 V7 M6,8 V9"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                                            <Setter Property="Stroke" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Path.Style>
+                        </Path>
                         <TextBlock Text="{Binding CopilotStatus}" Margin="0 0 6 0"
                                    VerticalAlignment="Center" ToolTip="{Binding CopilotStatusDetails}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.StatusText}">
                                     <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+                                    <Setter Property="FontWeight" Value="Normal"/>
                                     <Setter Property="Opacity" Value="0.6"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding CopilotStatus}" Value="">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding CopilotStatus}" Value="Running">
-                                            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
                                             <Setter Property="Opacity" Value="1"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding CopilotStatus}" Value="Waiting">
-                                            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:ProgressBarColors.IndicatorFillWarningBrushKey}}"/>
                                             <Setter Property="Opacity" Value="1"/>
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -165,12 +235,12 @@
                             </Style>
                         </ContentControl.Style>
                     </ContentControl>
-                    <TextBlock Text="{Binding BranchDisplayText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.5" Margin="0 2 0 0"
-                               TextTrimming="CharacterEllipsis" ToolTip="{Binding BranchDisplayText}"
-                               Visibility="{Binding BranchDisplayText, Converter={StaticResource NullToCollapsedConverter}}"/>
                     <TextBlock Text="{Binding NextActionText}" Style="{StaticResource StartScreen.Metadata}" Margin="0 2 0 0" TextWrapping="Wrap"
                                Visibility="{Binding NextActionText, Converter={StaticResource NullToCollapsedConverter}}"/>
-                    <ItemsControl ItemsSource="{Binding Labels}" Margin="0 2 0 0" Focusable="False">
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Grid.RowSpan="3" Text="{Binding ActivityDateText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
+                               HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding Labels}" Margin="0 2 0 0" Focusable="False">
                         <ItemsControl.Style>
                             <Style TargetType="ItemsControl">
                                 <Style.Triggers>
@@ -185,39 +255,83 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border x:Name="LabelPill" Margin="0 0 6 2"
+                                <Border x:Name="LabelPill" Margin="0 0 6 2" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        ToolTip="{Binding Name}"
                                         Tag="{DynamicResource {x:Static SystemParameters.HighContrastKey}}">
                                     <Border.Style>
-                                        <Style TargetType="Border" BasedOn="{StaticResource StartScreen.StatusBadge}">
-                                            <Setter Property="BorderThickness" Value="0"/>
-                                            <Setter Property="Background" Value="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}"/>
+                                        <Style TargetType="Border" BasedOn="{StaticResource StartScreen.IssueLabel}">
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
                                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
-                                                    <Setter Property="BorderThickness" Value="1"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Border.Style>
-                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="10"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse Width="6" Height="6" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Setter Property="Fill" Value="{Binding Color, Converter={StaticResource HexColorToBrushConverter}}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                            <Setter Property="Fill" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                        </Ellipse>
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
-                                                <Setter Property="Foreground" Value="{Binding Color, Converter={StaticResource HexColorToForegroundConverter}}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+                                                <Setter Property="Opacity" Value="0.75"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
                                                         <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                                        <Setter Property="Opacity" Value="1"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
+                                    </Grid>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                </StackPanel>
+                </Grid>
+                    <Border x:Name="ActivitySeparator" Grid.Column="1" Grid.Row="1"
+                            Margin="0 6 0 0" Style="{StaticResource StartScreen.Separator}">
+                        <Border.Visibility>
+                            <MultiBinding Converter="{StaticResource ActivitySeparatorVisibilityConverter}">
+                                <Binding Path="(ItemsControl.AlternationIndex)" RelativeSource="{RelativeSource AncestorType=ContentPresenter}"/>
+                                <Binding Path="Items.Count" RelativeSource="{RelativeSource AncestorType=ItemsControl}"/>
+                                <Binding Path="Tag" RelativeSource="{RelativeSource AncestorType=ItemsControl}"/>
+                            </MultiBinding>
+                        </Border.Visibility>
+                    </Border>
+                </Grid>
             </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="Team">
+                    <Setter TargetName="WorkItemBorder" Property="Padding" Value="8 10"/>
+                    <Setter TargetName="WorkItemBorder" Property="Margin" Value="0 0 0 4"/>
+                    <Setter TargetName="ActivitySeparator" Property="Margin" Value="0 12 0 0"/>
+                    <Setter TargetName="StatusColumn" Property="Width" Value="0"/>
+                    <Setter TargetName="StatusPanel" Property="Grid.Column" Value="0"/>
+                    <Setter TargetName="StatusPanel" Property="Grid.ColumnSpan" Value="3"/>
+                    <Setter TargetName="StatusPanel" Property="Grid.Row" Value="3"/>
+                    <Setter TargetName="StatusPanel" Property="Grid.RowSpan" Value="1"/>
+                    <Setter TargetName="StatusPanel" Property="Margin" Value="0 4 0 0"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsCopilot}" Value="True">
+                    <Setter TargetName="StatusColumn" Property="Width" Value="120"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
         <Style x:Key="ActivityFilterStyle" TargetType="RadioButton">
             <Setter Property="Margin" Value="0 0 16 6"/>
@@ -250,10 +364,14 @@
     </UserControl.Resources>
 
     <Grid>
-        <StackPanel>
+        <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
         <!-- Settings panel (toggled by gear button) -->
         <Border x:Name="SettingsPanel" Visibility="Collapsed"
-                Margin="0 0 0 8"
+                MaxHeight="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=UserControl}}"
                 Padding="16"
                 CornerRadius="4"
                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarGradientBeginBrushKey}}"
@@ -323,6 +441,7 @@
                     </Setter>
                 </Style>
             </Border.Resources>
+            <ScrollViewer Style="{StaticResource StartScreen.ScrollViewer}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
             <Grid>
                 <Button x:Name="CloseSettingsButton"
                         Click="CloseSettings_Click"
@@ -729,12 +848,13 @@
                 </Grid>
             </StackPanel>
             </Grid>
+            </ScrollViewer>
         </Border>
 
-        <Grid>
+        <Grid Grid.Row="1">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         <!-- Not Connected State -->
         <StackPanel x:Name="NotConnectedPanel" Visibility="Collapsed">
@@ -804,56 +924,29 @@
                 </TextBlock>
             </StackPanel>
 
-            <StackPanel x:Name="ActivityCoveragePanel" DockPanel.Dock="Bottom" Margin="8 10 0 0" Visibility="Collapsed">
-                <WrapPanel>
-                    <TextBlock x:Name="CoverageText" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" Margin="0 0 10 4" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="LoadMoreText" Style="{StaticResource StartScreen.Metadata}" Margin="0 0 0 4">
-                        <Hyperlink x:Name="LoadMoreLink" Click="LoadMoreActivity_Click"
-                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                            <Run x:Name="LoadMoreLabel" Text="Load more"/>
-                        </Hyperlink>
-                    </TextBlock>
-                </WrapPanel>
-                <TextBlock x:Name="ActivityLoadStatus" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65" TextWrapping="Wrap" Visibility="Collapsed"/>
-            </StackPanel>
-
             <Grid x:Name="WorkBlades">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel x:Name="MyWorkBlade" Grid.Column="0" Margin="0 0 24 0">
-                    <DockPanel MinHeight="28" Margin="8 0 0 20">
-                        <Button DockPanel.Dock="Right" Content="All repositories" Click="ClearFilter_Click"
-                                Style="{DynamicResource ActionButtonStyle}" MinWidth="0" MinHeight="24" Padding="6 2" Margin="8 0 0 0"
-                                VerticalAlignment="Center"
-                                Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                        <TextBlock x:Name="WorkHeadingLine" Style="{StaticResource StartScreen.Heading}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Grid x:Name="MyWorkBlade" Grid.Row="0" Margin="0 0 0 24">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel MinHeight="32" Margin="8 0 8 12" LastChildFill="True">
+                        <Border DockPanel.Dock="Bottom" Style="{StaticResource StartScreen.Separator}"/>
+                        <TextBlock x:Name="WorkHeadingLine" DockPanel.Dock="Right" Style="{StaticResource StartScreen.SectionLabel}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                                    Focusable="True" FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
-                                   VerticalAlignment="Center" AutomationProperties.Name="My work">
+                                   VerticalAlignment="Center" Margin="24 0 0 0" AutomationProperties.Name="My work">
                             <InlineUIContainer BaselineAlignment="Baseline">
-                                <TextBlock Text="My work" Style="{StaticResource StartScreen.Heading}"/>
+                                <TextBlock Text="My work" Style="{StaticResource StartScreen.SectionLabel}" Opacity="1"/>
                             </InlineUIContainer>
                             <Run x:Name="MyWorkCount" Style="{StaticResource StartScreen.HeaderCount}"/>
-                            <Run ToolTip="{Binding WorkSectionTitle}">
-                                <Run.Style>
-                                    <Style TargetType="Run" BasedOn="{StaticResource StartScreen.HeaderCount}">
-                                        <Setter Property="Text" Value=""/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HasSelectedMruItem}" Value="True">
-                                                <Setter Property="Text" Value="{Binding WorkSectionTitle, Mode=OneWay, StringFormat='  {0}'}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Run.Style>
-                                <Run.Foreground>
-                                    <SolidColorBrush Color="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextColorKey}}" Opacity="0.65"/>
-                                </Run.Foreground>
-                            </Run>
                         </TextBlock>
-                    </DockPanel>
-                    <StackPanel>
-                        <WrapPanel Margin="8 0 0 6" ButtonBase.Click="ActivityFilter_Click">
+                        <WrapPanel ButtonBase.Click="ActivityFilter_Click">
                             <RadioButton x:Name="MyWorkAttentionFilter" Content="Attention" GroupName="MyWorkKind" IsChecked="True"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"
                                          ToolTip="All items with a known action for you, newest updated first."/>
@@ -866,36 +959,76 @@
                             <RadioButton x:Name="MyWorkBuildFilter" Content="Builds" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                         </WrapPanel>
-                        <ItemsControl x:Name="MyWorkList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
-                        <TextBlock x:Name="MyWorkEmpty" Text="No personal work in the loaded activity."
-                                   TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
-                        <StackPanel>
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
+                    </DockPanel>
+                    <DockPanel Grid.Row="1" Margin="8 0 8 8" Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <Button DockPanel.Dock="Right" Content="All repositories" Click="ClearFilter_Click"
+                                Style="{DynamicResource ActionButtonStyle}" MinWidth="0" MinHeight="24" Padding="6 2" Margin="8 0 0 0"/>
+                        <TextBlock Text="{Binding WorkSectionTitle}" Style="{StaticResource StartScreen.Metadata}" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" ToolTip="{Binding WorkSectionTitle}"/>
+                    </DockPanel>
+                    <Grid Grid.Row="2" Margin="8 0 18 10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="220"/>
+                            <ColumnDefinition Width="Auto" MinWidth="72"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="MyWorkColumnHeading" Opacity="0.65">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
+                                    <Setter Property="Text" Value="Needs your attention"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsChecked, ElementName=MyWorkAttentionFilter}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=MyWorkCopilotFilter}" Value="True"><Setter Property="Text" Value="Recent conversations"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=MyWorkPrFilter}" Value="True"><Setter Property="Text" Value="Your pull requests"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=MyWorkIssueFilter}" Value="True"><Setter Property="Text" Value="Your issues"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=MyWorkBuildFilter}" Value="True"><Setter Property="Text" Value="Your builds"/></DataTrigger>
                                     </Style.Triggers>
                                 </Style>
-                            </StackPanel.Style>
-                            <CheckBox x:Name="IncludeCompletedItems" Content="Include completed work (14 days)" typography:Typography.Role="Metadata" Margin="8 8 0 0"
-                                      Checked="IncludeCompletedItems_Changed" Unchecked="IncludeCompletedItems_Changed"
-                                      ToolTip="Include your merged PRs and completed issues/tasks from the last 14 days."/>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Grid.Column="1" Margin="12 0 8 0" Opacity="0.65">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
+                                    <Setter Property="Text" Value="Status / next step"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=MyWorkCopilotFilter}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=MyWorkIssueFilter}" Value="True"><Setter Property="Text" Value="State / assignee"/></DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Grid.Column="2" HorizontalAlignment="Right" Opacity="0.65">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
+                                    <Setter Property="Text" Value="Updated"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=MyWorkCopilotFilter}" Value="True"><Setter Property="Text" Value="Last active"/></DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <ScrollViewer Grid.Row="3" Style="{StaticResource StartScreen.ScrollViewer}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                        <StackPanel>
+                            <ItemsControl x:Name="MyWorkList" AlternationCount="2147483647" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
+                            <TextBlock x:Name="MyWorkEmpty" Text="No personal work in the loaded activity."
+                                       TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
                         </StackPanel>
-                    </StackPanel>
-                </StackPanel>
-                <StackPanel x:Name="IncomingBlade" Grid.Column="1">
-                    <DockPanel MinHeight="28" Margin="8 0 0 20">
-                        <TextBlock x:Name="IncomingHeading" Style="{StaticResource StartScreen.Heading}" Focusable="True"
+                    </ScrollViewer>
+                </Grid>
+                <Grid x:Name="IncomingBlade" Grid.Row="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel MinHeight="32" Margin="8 0 8 12" LastChildFill="True">
+                        <Border DockPanel.Dock="Bottom" Style="{StaticResource StartScreen.Separator}"/>
+                        <TextBlock x:Name="IncomingHeading" DockPanel.Dock="Right" Style="{StaticResource StartScreen.SectionLabel}" Focusable="True"
                                    FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
-                                   VerticalAlignment="Center" AutomationProperties.Name="Team activity">
+                                   VerticalAlignment="Center" Margin="24 0 0 0" AutomationProperties.Name="Team activity">
                             <Run Text="Team activity"/>
                             <Run x:Name="IncomingCount" Style="{StaticResource StartScreen.HeaderCount}"/>
                         </TextBlock>
-                    </DockPanel>
-                    <StackPanel>
-                        <WrapPanel Margin="8 0 0 6">
+                        <WrapPanel>
                             <RadioButton x:Name="IncomingPrFilter" Content="PRs" GroupName="IncomingKind" IsChecked="True"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="IncomingIssueFilter" Content="Issues" GroupName="IncomingKind"
@@ -903,11 +1036,24 @@
                             <RadioButton x:Name="IncomingBuildFilter" Content="Builds" GroupName="IncomingKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                         </WrapPanel>
-                        <ItemsControl x:Name="IncomingList" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
-                        <TextBlock x:Name="IncomingEmpty" Text="No team activity."
-                                   TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
-                    </StackPanel>
-                </StackPanel>
+                    </DockPanel>
+                    <ScrollViewer Grid.Row="1" Style="{StaticResource StartScreen.ScrollViewer}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                        <StackPanel>
+                            <ItemsControl x:Name="IncomingList" Tag="Team" Margin="0 0 -32 0" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}">
+                                <ItemsControl.ItemContainerStyle>
+                                    <Style TargetType="ContentPresenter">
+                                        <Setter Property="Margin" Value="0 0 32 0"/>
+                                    </Style>
+                                </ItemsControl.ItemContainerStyle>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <TextBlock x:Name="IncomingEmpty" Text="No team activity."
+                                       TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
         </DockPanel>
 
@@ -929,6 +1075,6 @@
                     Content="Try again"/>
         </StackPanel>
         </Grid>
-        </StackPanel>
+        </Grid>
     </Grid>
 </UserControl>

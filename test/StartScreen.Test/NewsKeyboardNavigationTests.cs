@@ -164,6 +164,36 @@ namespace StartScreen.Test
             Assert.IsFalse(document.Descendants().Attributes().Any(attribute => attribute.Value == "YouTubeVideoControl_FocusNewsRequested"));
         }
 
+        [STATestMethod]
+        public void NewsTabs_KeepSixteenPixelsBelowHeadersEvenWhenContentScrolls()
+        {
+            var (tabs, _) = CreateTabs();
+            foreach (TabItem tab in tabs.Items)
+                tab.Content = new Border { Height = 1200 };
+            var host = Show(tabs);
+            try
+            {
+                var root = (Grid)System.Windows.Media.VisualTreeHelper.GetChild(tabs, 0);
+                var headers = root.Children.OfType<TabPanel>().Single();
+                var scroll = root.Children.OfType<ScrollViewer>().Single();
+                foreach (TabItem tab in tabs.Items)
+                {
+                    tab.IsSelected = true;
+                    host.UpdateLayout();
+                    var headerBottom = headers.TranslatePoint(new Point(0, headers.ActualHeight), tabs).Y;
+                    Assert.AreEqual(16d, scroll.TranslatePoint(new Point(), tabs).Y - headerBottom, 0.01);
+                    scroll.ScrollToEnd();
+                    host.UpdateLayout();
+                    Assert.IsGreaterThan(0d, scroll.VerticalOffset);
+                    Assert.AreEqual(16d, scroll.TranslatePoint(new Point(), tabs).Y - headerBottom, 0.01);
+                }
+            }
+            finally
+            {
+                host.Close();
+            }
+        }
+
         private static (TabControl Tabs, List<IInputElement[]> Targets) CreateTabs()
         {
             using var stream = typeof(NewsKeyboardNavigationTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
@@ -171,8 +201,9 @@ namespace StartScreen.Test
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             var template = new XElement(document.Descendants(p + "ControlTemplate")
                 .Single(element => element.Attribute("TargetType")?.Value == "TabControl"));
+            template.Descendants(p + "ScrollViewer.Resources").Remove();
             template.SetAttributeValue(XNamespace.Xmlns + "x", "http://schemas.microsoft.com/winfx/2006/xaml");
-            var tabs = new TabControl { Template = (ControlTemplate)XamlReader.Parse(template.ToString()) };
+            var tabs = new TabControl { Template = (ControlTemplate)SharedXamlReader.Parse(template.ToString()) };
             var targets = new List<IInputElement[]>();
             foreach (var name in new[] { "Blogs", "Videos", "Feedback", "Release notes" })
             {

@@ -310,19 +310,15 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public void ActivityControls_WireLoadMoreHistoryWithoutCheckDetailsLink()
+        public void ActivityControls_OmitLoadMoreCompletedWorkCheckboxAndCheckDetailsLink()
         {
             using var stream = typeof(DevHubActivityPresentationTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
             var document = XDocument.Load(stream);
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var loadMore = document.Descendants(p + "Hyperlink").Single(element => element.Attribute(x + "Name")?.Value == "LoadMoreLink");
-            Assert.AreEqual("LoadMoreActivity_Click", loadMore.Attribute("Click")?.Value);
-            var completed = document.Descendants(p + "CheckBox").Single(element => element.Attribute(x + "Name")?.Value == "IncludeCompletedItems");
-            Assert.AreEqual("IncludeCompletedItems_Changed", completed.Attribute("Checked")?.Value);
-            Assert.AreEqual("IncludeCompletedItems_Changed", completed.Attribute("Unchecked")?.Value);
-            Assert.AreEqual("Include completed work (14 days)", completed.Attribute("Content")?.Value);
+            Assert.IsEmpty(document.Descendants(p + "Hyperlink").Where(element => element.Attribute(x + "Name")?.Value == "LoadMoreLink"));
+            Assert.IsEmpty(document.Descendants(p + "CheckBox").Where(element => element.Attribute(x + "Name")?.Value == "IncludeCompletedItems"));
             Assert.IsEmpty(document.Descendants(p + "Button").Where(element => element.Attribute("Content")?.Value == "View check details"));
             Assert.IsEmpty(document.Descendants(p + "TextBlock").Where(element => element.Attribute("Text")?.Value == "{Binding MetadataText}"));
             var workBuilds = document.Descendants(p + "RadioButton").Single(element => element.Attribute(x + "Name")?.Value == "MyWorkBuildFilter");
@@ -362,7 +358,7 @@ namespace StartScreen.Test.DevHub
                 Labels = [new DevHubLabel { Name = "priority:3" }, new DevHubLabel { Name = "Type:Feature" }, new DevHubLabel { Name = "Type:CustomerSupport" }],
             };
             var card = (personal ? DevHubWorkItem.GetMyWork([], [issue], []) : DevHubWorkItem.GetIncoming([], [issue], [])).Single();
-            Assert.IsNull(card.StatusText);
+            Assert.AreEqual("Open", card.StatusText);
             Assert.AreEqual("priority:3,Type:Feature,Type:CustomerSupport", string.Join(",", card.Labels.Select(label => label.Name)));
             Assert.AreSame(issue.Labels, card.Labels);
             Assert.AreEqual(personal, card.IsAssignedToCurrentUser);
@@ -373,7 +369,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public void AssignmentPill_IsBelowTitleAndLabelsUseSolidPills()
+        public void AssignmentStatus_IsFlatAndLabelsKeepTheirSemanticColors()
         {
             using var stream = typeof(DevHubActivityPresentationTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
@@ -381,41 +377,39 @@ namespace StartScreen.Test.DevHub
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
             var pill = document.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "AssignmentPill");
-            Assert.AreEqual("{Binding IsAssignedToCurrentUser, Converter={StaticResource BoolToVisibilityConverter}}", pill.Attribute("Visibility")?.Value);
-            StringAssert.StartsWith(pill.Attribute("BorderBrush")!.Value, "{DynamicResource");
-            Assert.AreEqual("{StaticResource StartScreen.StatusBadge}", pill.Attribute("Style")?.Value);
-            StringAssert.StartsWith(SharedXamlReader.Setter("StartScreen.StatusBadge", "Background"), "{DynamicResource");
-            Assert.AreEqual("1", SharedXamlReader.Setter("StartScreen.StatusBadge", "BorderThickness"));
-            Assert.AreEqual("9", SharedXamlReader.Setter("StartScreen.StatusBadge", "CornerRadius"));
-            Assert.AreEqual("Assigned to you", pill.Element(p + "TextBlock")?.Attribute("Text")?.Value);
-            Assert.AreEqual("{StaticResource StartScreen.StatusText}", pill.Element(p + "TextBlock")?.Attribute("Style")?.Value);
+            Assert.AreEqual("{Binding AssigneeText, Converter={StaticResource NullToCollapsedConverter}}", pill.Attribute("Visibility")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.ActivityStatus}", pill.Attribute("Style")?.Value);
+            Assert.AreEqual("Transparent", SharedXamlReader.Setter("StartScreen.ActivityStatus", "Background"));
+            Assert.AreEqual("0", SharedXamlReader.Setter("StartScreen.ActivityStatus", "BorderThickness"));
+            Assert.AreEqual("{Binding AssigneeText}", pill.Descendants(p + "TextBlock").Single().Attribute("Text")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.Metadata}", pill.Descendants(p + "TextBlock").Single().Attribute("Style")?.Value);
             Assert.AreEqual("Bold", SharedXamlReader.Setter("StartScreen.StatusText", "FontWeight"));
-            Assert.AreEqual("Horizontal", pill.Parent!.Attribute("Orientation")?.Value);
+            Assert.AreEqual(p + "StackPanel", pill.Parent!.Name);
             Assert.IsFalse(pill.Parent.Elements(p + "TextBlock").Any(element => element.Attribute("Text")?.Value == "{Binding ActivityDateText}"));
             Assert.IsFalse(document.Descendants().Any(element => element.Attribute(x + "Name")?.Value == "AssignmentBanner"));
             var card = document.Descendants(p + "DataTemplate").Single(element => element.Attribute(x + "Key")?.Value == "WorkItemTemplate");
             var title = card.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding DisplayTitle}");
-            Assert.IsTrue(title.ElementsAfterSelf(p + "ContentControl").Any());
+            Assert.HasCount(1, card.Descendants(p + "ContentControl"));
             var labels = document.Descendants(p + "ItemsControl").Single(element => element.Attribute("ItemsSource")?.Value == "{Binding Labels}");
             var labelPill = labels.Descendants(p + "Border").Single();
-            Assert.AreEqual("{StaticResource StartScreen.StatusBadge}", labelPill.Element(p + "Border.Style")!.Element(p + "Style")!.Attribute("BasedOn")?.Value);
-            Assert.AreEqual("9", SharedXamlReader.Setter("StartScreen.StatusBadge", "CornerRadius"));
+            Assert.AreEqual("{StaticResource StartScreen.IssueLabel}", labelPill.Element(p + "Border.Style")!.Element(p + "Style")!.Attribute("BasedOn")?.Value);
+            Assert.AreEqual("2", SharedXamlReader.Setter("StartScreen.IssueLabel", "CornerRadius"));
             Assert.IsTrue(labelPill.Descendants(p + "Setter").Any(setter =>
-                setter.Attribute("Property")?.Value == "Background"
+                setter.Attribute("Property")?.Value == "Fill"
                 && setter.Attribute("Value")?.Value == "{Binding Color, Converter={StaticResource HexColorToBrushConverter}}"));
             Assert.HasCount(1, labels.Descendants(p + "TextBlock"));
             var metadata = document.Descendants(p + "DataTemplate").Single(element => element.Attribute(x + "Key")?.Value == "RepositoryItemMetadataTemplate");
             Assert.AreSame(metadata, pill.Ancestors(p + "DataTemplate").Single());
             Assert.AreEqual("{Binding StatusText, Converter={StaticResource NullToCollapsedConverter}}", metadata.Descendants(p + "Border")
-                .Single(element => element.Element(p + "TextBlock")?.Attribute("Text")?.Value == "{Binding StatusText}").Attribute("Visibility")?.Value);
+                .Single(element => element.Descendants(p + "TextBlock").Any(text => text.Attribute("Text")?.Value == "{Binding StatusText}")).Attribute("Visibility")?.Value);
         }
 
         [STATestMethod]
-        [DataRow(200d, "Short repository")]
-        [DataRow(400d, "Short repository")]
-        [DataRow(200d, "A very long repository or workspace name that must never push the date out of the card")]
-        [DataRow(400d, "A very long repository or workspace name that must never push the date out of the card")]
-        public void WorkCardDates_StayAtTheFarRightBelowTheTitle(double width, string detail)
+        [DataRow(600d, "Short repository")]
+        [DataRow(1000d, "Short repository")]
+        [DataRow(600d, "A very long repository or workspace name that must never push the date out of the card")]
+        [DataRow(1000d, "A very long repository or workspace name that must never push the date out of the card")]
+        public void WorkCardDates_KeepTheirOwnFarRightColumn(double width, string detail)
         {
             using var stream = typeof(DevHubActivityPresentationTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             var document = XDocument.Load(stream!);
@@ -426,13 +420,14 @@ namespace StartScreen.Test.DevHub
             Assert.IsFalse(definition.Descendants(p + "DataTrigger").Any(), "Repository/workspace details must be visible for every card kind.");
             var row = new XElement(definition);
             row.Elements().Single(element => element.Attribute(x + "Name")?.Value == "CopilotActivityIcon").Remove();
-            row.SetAttributeValue(XNamespace.Xmlns + "x", x.NamespaceName);
-            var root = (Grid)XamlReader.Parse(row.ToString());
+            var dateDefinition = definition.Parent!.Elements(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding ActivityDateText}");
+            var root = (Grid)XamlReader.Parse(new XElement(p + "Grid", new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
+                new XElement(definition.Parent.Element(p + "Grid.ColumnDefinitions")!), row, new XElement(dateDefinition)).ToString());
             root.DataContext = new { Detail = detail, DetailToolTip = detail, ActivityDateText = "today", ActivityDateToolTip = "Updated today" };
             root.Measure(new Size(width, double.PositiveInfinity));
             root.Arrange(new Rect(0, 0, width, root.DesiredSize.Height));
             root.UpdateLayout();
-            var repository = (TextBlock)root.Children[0];
+            var repository = (TextBlock)((Grid)root.Children[0]).Children[0];
             var date = (TextBlock)root.Children[1];
 
             Assert.AreEqual(detail, repository.Text);
@@ -522,12 +517,12 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        [DataRow("open", false, null)]
-        [DataRow("Open", false, null)]
+        [DataRow("open", false, "Open")]
+        [DataRow("Open", false, "Open")]
         [DataRow("In progress", false, "In progress")]
         [DataRow("open", true, "Blocked")]
         [DataRow("closed", false, "closed")]
-        public void IssuePills_OmitOpenButKeepWorkflowAndCompletedStates(string state, bool blocked, string? expected)
+        public void IssueStates_IncludeOpenWorkflowAndCompletedStates(string state, bool blocked, string? expected)
         {
             var issue = new DevHubIssue
             {
@@ -544,7 +539,7 @@ namespace StartScreen.Test.DevHub
         [DataRow(500d, false)]
         [DataRow(220d, true)]
         [DataRow(500d, true)]
-        public void IssueLabels_UseSolidProviderColorsAndWrapWithoutClipping(double width, bool highContrast)
+        public void IssueLabels_AreBorderlessWithLargerProviderColorDotsWithoutClipping(double width, bool highContrast)
         {
             using var stream = typeof(DevHubActivityPresentationTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
@@ -559,6 +554,7 @@ namespace StartScreen.Test.DevHub
                 new XElement(controls + "HexColorToBrushConverter", new XAttribute(x + "Key", "HexColorToBrushConverter")),
                 new XElement(controls + "HexColorToForegroundConverter", new XAttribute(x + "Key", "HexColorToForegroundConverter"))));
             var labels = (ItemsControl)XamlReader.Parse(definition.ToString());
+            labels.Resources["TestThemeBrush"] = SystemColors.WindowTextBrush;
             labels.Resources[SystemParameters.HighContrastKey] = highContrast;
             var issue = new DevHubIssue
             {
@@ -585,45 +581,45 @@ namespace StartScreen.Test.DevHub
                     Assert.AreEqual(first.TranslatePoint(new Point(), labels).Y, position.Y);
                 var presenter = (ContentPresenter)item;
                 var pill = (Border)presenter.ContentTemplate.FindName("LabelPill", presenter);
-                var text = (TextBlock)pill.Child;
+                var grid = (Grid)pill.Child;
+                var text = grid.Children.OfType<TextBlock>().Single();
+                var dot = grid.Children.OfType<System.Windows.Shapes.Ellipse>().Single();
                 Assert.AreEqual(issue.Labels[index].Name, text.Text);
-                Assert.AreEqual(new CornerRadius(9), pill.CornerRadius);
-                Assert.AreEqual(1d, text.Opacity);
+                Assert.AreEqual(new CornerRadius(2), pill.CornerRadius);
+                Assert.AreEqual(new Thickness(0), pill.BorderThickness);
+                Assert.AreEqual(6d, dot.ActualWidth, 0.01);
+                Assert.AreEqual(6d, dot.ActualHeight, 0.01);
+                Assert.AreEqual(highContrast ? 1d : 0.75d, text.Opacity);
                 if (highContrast)
                 {
                     Assert.AreSame(SystemColors.WindowBrush, pill.Background);
                     Assert.AreSame(SystemColors.WindowTextBrush, text.Foreground);
-                    Assert.AreSame(SystemColors.WindowTextBrush, pill.BorderBrush);
+                    Assert.AreSame(SystemColors.WindowTextBrush, dot.Fill);
                 }
                 else
                 {
                     Assert.AreEqual("#FF" + issue.Labels[index].Color.ToUpperInvariant(),
-                        ((System.Windows.Media.SolidColorBrush)pill.Background).Color.ToString());
-                    Assert.AreEqual(index == 0 ? "#FF1E1E1E" : "#FFFFFFFF",
-                        ((System.Windows.Media.SolidColorBrush)text.Foreground).Color.ToString());
-                    Assert.AreEqual(new Thickness(0), pill.BorderThickness);
+                        ((System.Windows.Media.SolidColorBrush)dot.Fill).Color.ToString());
+                    Assert.AreEqual(System.Windows.Media.Brushes.Transparent, pill.Background);
+                    Assert.AreSame(SystemColors.WindowTextBrush, text.Foreground);
                 }
             }
         }
 
         [TestMethod]
-        public void LoadMore_HasAnUpdatableLoadingLabelAndWrappingOutcome()
+        public void ActivityFooter_OmitsCoverageAndLoadMoreControlsOrWiring()
         {
             using var stream = typeof(DevHubActivityPresentationTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");
             Assert.IsNotNull(stream);
             var document = XDocument.Load(stream);
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var link = document.Descendants(p + "Hyperlink").Single(element => element.Attribute(x + "Name")?.Value == "LoadMoreLink");
-            Assert.AreEqual("LoadMoreLabel", link.Element(p + "Run")?.Attribute(x + "Name")?.Value);
-            Assert.AreEqual("Load more", link.Element(p + "Run")?.Attribute("Text")?.Value);
-            var status = document.Descendants(p + "TextBlock").Single(element => element.Attribute(x + "Name")?.Value == "ActivityLoadStatus");
-            Assert.AreEqual("Collapsed", status.Attribute("Visibility")?.Value);
-            Assert.AreEqual("Wrap", status.Attribute("TextWrapping")?.Value);
+            Assert.IsEmpty(document.Descendants().Where(element => new[] { "ActivityCoveragePanel", "CoverageText", "LoadMoreText", "LoadMoreLabel", "ActivityLoadStatus" }
+                .Contains(element.Attribute(x + "Name")?.Value)));
             using var startStream = typeof(DevHubActivityPresentationTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
             Assert.IsNotNull(startStream);
             var host = XDocument.Load(startStream).Descendants().Single(element => element.Name.LocalName == "DevHubPanel");
-            Assert.AreEqual("DevHubPanel_ActivityOptionsChanged", host.Attribute("ActivityOptionsChanged")?.Value);
+            Assert.IsNull(host.Attribute("ActivityOptionsChanged"));
         }
 
         [TestMethod]

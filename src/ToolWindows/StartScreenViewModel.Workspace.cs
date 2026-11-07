@@ -15,7 +15,7 @@ namespace StartScreen.ToolWindows
     {
         private bool _showSolutionsOnly;
         private string _updateAvailableText = "VS update available";
-        private string _serviceHealthText = "Visual Studio services operational";
+        private string _serviceHealthText = "Service operational";
         private string _serviceHealthDetails = "Assuming normal service while the initial background health check completes.";
         private bool _isServiceHealthy = true;
         private bool _hasServiceHealthStatus = true;

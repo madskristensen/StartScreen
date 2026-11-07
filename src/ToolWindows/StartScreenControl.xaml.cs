@@ -257,7 +257,7 @@ namespace StartScreen.ToolWindows
             bool showWork = DevHubPanelControl.Visibility == Visibility.Visible;
             double contentWidth = Math.Max(0, RightPaneBorder.ActualWidth - NewsPanel.Margin.Left - NewsPanel.Margin.Right);
             var layout = CalculateContentLayout(contentWidth, showWork);
-            ContentLayout.Width = Math.Max(contentWidth, showWork ? 1240 : 0);
+            ContentLayout.Width = Math.Max(contentWidth, showWork ? 1400 : 440);
             DevHubColumn.Width = new GridLength(layout.WorkWidth);
             NewsColumn.Width = new GridLength(1, GridUnitType.Star);
             Grid.SetColumn(NewsColumnPanel, showWork ? 1 : 0);
@@ -267,8 +267,8 @@ namespace StartScreen.ToolWindows
 
         internal static (double WorkWidth, bool Stacked, int NewsColumns, int VideoColumns) CalculateContentLayout(double width, bool showWork)
         {
-            double workWidth = showWork ? 920 : 0;
-            double newsWidth = Math.Max(width, showWork ? 1240 : 0) - workWidth;
+            double workWidth = showWork ? Math.Min(1000, Math.Max(1400, width) - 440) : 0;
+            double newsWidth = showWork ? Math.Max(1400, width) - workWidth : Math.Max(440, width);
             return (workWidth, false, Math.Max(1, (int)(newsWidth / 332)), Math.Max(1, (int)(newsWidth / 292)));
         }
 
@@ -468,17 +468,6 @@ namespace StartScreen.ToolWindows
                     if (!DevHubPanelControl.FocusFirstItem(DevHubDefaultTab.Incoming))
                         DevHubPanel_FocusMruRequested(this, EventArgs.Empty);
                 });
-        }
-
-        private void DevHubPanel_ActivityOptionsChanged(object sender, EventArgs e)
-        {
-            if (!Options.Instance.DevHubEnabled)
-                return;
-
-            if (ViewModel.SelectedRepository != null)
-                RefreshWorkspaceScope();
-            else
-                DevHubPanel_RefreshRequested(sender, e);
         }
 
         private void DevHubPanel_RefreshRequested(object sender, EventArgs e)
@@ -1014,12 +1003,6 @@ namespace StartScreen.ToolWindows
                 ContentScroll.ScrollToHorizontalOffset(ContentScroll.HorizontalOffset - e.Delta);
                 e.Handled = true;
                 return;
-            }
-
-            if (PageScroll != null)
-            {
-                PageScroll.ScrollToVerticalOffset(PageScroll.VerticalOffset - e.Delta);
-                e.Handled = true;
             }
         }
 

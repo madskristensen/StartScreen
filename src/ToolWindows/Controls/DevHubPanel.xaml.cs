@@ -96,11 +96,6 @@ namespace StartScreen.ToolWindows.Controls
 
         public void SetWorkspaceFilter(RemoteRepoIdentifier repo)
         {
-            if (!Equals(_scopedRepo, repo))
-            {
-                _loadMoreStartingItemCount = null;
-                ActivityLoadStatus.Visibility = Visibility.Collapsed;
-            }
             _scopedRepo = repo;
         }
 
@@ -186,7 +181,7 @@ namespace StartScreen.ToolWindows.Controls
             }
 
             ActivityWarningText.Visibility = string.IsNullOrEmpty(ActivityWarningText.Text) ? Visibility.Collapsed : Visibility.Visible;
-            UpdateActivityCoverage(dashboard);
+            UpdateBusyState();
             UpdateSettingsAccountStatus(hasGitHub, hasAdo);
             UpdateWorkspaceActivity(prs, issues, ciRuns);
             UpdateLastRefresh(dashboard.FetchedAt);
@@ -289,7 +284,6 @@ namespace StartScreen.ToolWindows.Controls
             ActivityWarningText.Text = null;
             ActivityWarningText.Visibility = Visibility.Collapsed;
             AccountRecoveryPanel.Visibility = Visibility.Collapsed;
-            ActivityCoveragePanel.Visibility = Visibility.Collapsed;
             UpdateWorkspaceActivity(Array.Empty<DevHubPullRequest>(), Array.Empty<DevHubIssue>(), Array.Empty<DevHubCiRun>());
         }
 
@@ -370,7 +364,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateBusyState()
         {
-            IsBusy = !_isDisposed && (_isConnectionLoading || _activityLoadCount > 0 || _loadMoreStartingItemCount.HasValue
+            IsBusy = !_isDisposed && (_isConnectionLoading || _activityLoadCount > 0
                 || _copilotConnecting || _copilotAdapter != null && !_copilotAdapter.IsReady);
         }
 
@@ -1230,8 +1224,6 @@ namespace StartScreen.ToolWindows.Controls
         /// </summary>
         public event EventHandler RefreshRequested;
 
-        public event EventHandler ActivityOptionsChanged;
-
         /// <summary>
         /// Raised when the "last updated" display text changes.
         /// </summary>
@@ -1324,7 +1316,12 @@ namespace StartScreen.ToolWindows.Controls
                 if (e.Key == Key.Down)
                     FocusFirstItemInActiveBlade();
                 else if (e.Key == Key.Up)
-                    FocusActiveBladeHeader();
+                {
+                    if (_activeWorkView == DevHubDefaultTab.Incoming)
+                        FocusLastPersonalItem();
+                    else
+                        FocusActiveBladeHeader();
+                }
                 else if (e.Key == Key.Left || e.Key == Key.Right)
                 {
                     var right = e.Key == Key.Right;
@@ -1337,7 +1334,7 @@ namespace StartScreen.ToolWindows.Controls
                         filters[next].Focus();
                     }
                     else
-                        MoveBetweenBlades(right);
+                        MoveToAdjacentPane(right);
                 }
                 else
                     return;
@@ -1353,34 +1350,35 @@ namespace StartScreen.ToolWindows.Controls
 
                 if (index >= 0)
                 {
-                    if (e.Key == Key.Down)
+                    var team = _activeWorkView == DevHubDefaultTab.Incoming;
+                    var target = GetActivityNavigationTarget(index, borders.Count, team, e.Key);
+                    if (Keyboard.Modifiers == ModifierKeys.None && target >= 0)
                     {
-                        if (index < borders.Count - 1)
-                        {
-                            borders[index + 1].Focus();
-                        }
+                        borders[target].Focus();
                         e.Handled = true;
                     }
-                    else if (e.Key == Key.Up)
+                    else if (e.Key == Key.Down && Keyboard.Modifiers == ModifierKeys.None)
                     {
-                        if (index > 0)
+                        if (!team)
                         {
-                            borders[index - 1].Focus();
-                        }
-                        else
-                        {
+                            SelectDefaultTab(DevHubDefaultTab.Incoming);
                             FocusActiveFilter();
                         }
                         e.Handled = true;
                     }
-                    else if (e.Key == Key.Left)
+                    else if (e.Key == Key.Up && Keyboard.Modifiers == ModifierKeys.None)
                     {
-                        MoveBetweenBlades(false);
+                        FocusActiveFilter();
                         e.Handled = true;
                     }
-                    else if (e.Key == Key.Right)
+                    else if (e.Key == Key.Left && Keyboard.Modifiers == ModifierKeys.None)
                     {
-                        MoveBetweenBlades(true);
+                        MoveToAdjacentPane(false);
+                        e.Handled = true;
+                    }
+                    else if (e.Key == Key.Right && Keyboard.Modifiers == ModifierKeys.None)
+                    {
+                        MoveToAdjacentPane(true);
                         e.Handled = true;
                     }
                     else if (e.Key == Key.Enter)
@@ -1406,40 +1404,58 @@ namespace StartScreen.ToolWindows.Controls
 
             if (ReferenceEquals(focused, WorkHeadingLine) || ReferenceEquals(focused, IncomingHeading))
             {
-                if (e.Key == Key.Down)
+                if (e.Key == Key.Up && _activeWorkView == DevHubDefaultTab.Incoming)
+                {
+                    FocusLastPersonalItem();
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Down)
                 {
                     FocusActiveFilter();
                     e.Handled = true;
                 }
                 else if (e.Key == Key.Left)
                 {
-                    MoveBetweenBlades(false);
+                    MoveToAdjacentPane(false);
                     e.Handled = true;
                 }
                 else if (e.Key == Key.Right)
                 {
-                    MoveBetweenBlades(true);
+                    MoveToAdjacentPane(true);
                     e.Handled = true;
                 }
             }
         }
 
-        private void MoveBetweenBlades(bool right)
+        private void MoveToAdjacentPane(bool right)
         {
-            if (right && _activeWorkView == DevHubDefaultTab.MyWork)
-            {
-                SelectDefaultTab(DevHubDefaultTab.Incoming);
-                FocusFirstItemInActiveBlade();
-            }
-            else if (!right && _activeWorkView == DevHubDefaultTab.Incoming)
-            {
-                SelectDefaultTab(DevHubDefaultTab.MyWork);
-                FocusFirstItemInActiveBlade();
-            }
-            else if (right)
+            if (right)
                 FocusNewsRequested?.Invoke(this, EventArgs.Empty);
             else
                 FocusMruRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        internal static int GetActivityNavigationTarget(int index, int count, bool team, Key key)
+        {
+            var target = key switch
+            {
+                Key.Down => index + (team ? 2 : 1),
+                Key.Up => index - (team ? 2 : 1),
+                Key.Left when team && index % 2 == 1 => index - 1,
+                Key.Right when team && index % 2 == 0 => index + 1,
+                _ => -1,
+            };
+            return target >= 0 && target < count ? target : -1;
+        }
+
+        private void FocusLastPersonalItem()
+        {
+            SelectDefaultTab(DevHubDefaultTab.MyWork);
+            var borders = GetCachedBorders(MyWorkList);
+            if (borders.Count > 0)
+                borders[borders.Count - 1].Focus();
+            else
+                FocusActiveFilter();
         }
 
         private RadioButton[] GetActiveFilters()

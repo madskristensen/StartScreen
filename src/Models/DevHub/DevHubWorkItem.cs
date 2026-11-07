@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Imaging.Interop;
 using StartScreen.Helpers;
 
@@ -12,12 +13,22 @@ namespace StartScreen.Models.DevHub
         public bool IsCopilot => CopilotSessionId != null;
         public string DisplayTitle => string.Join(" ", (Title ?? string.Empty).Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
         public string Detail { get; private set; }
-        public string DetailToolTip => IsBuild && !string.IsNullOrEmpty(StatusDetails) ? StatusDetails : Detail;
+        public string DetailToolTip => IsBuild && !string.IsNullOrEmpty(StatusDetails) ? StatusDetails
+            : string.IsNullOrEmpty(BranchDisplayText) ? Detail : $"{Detail}{Environment.NewLine}{BranchDisplayText}";
         public string StatusText { get; private set; }
         public string StatusCategory => DevHubPullRequest.GetStatusCategory(StatusText);
+        public ImageMoniker StatusMoniker => StatusCategory switch
+        {
+            "Error" => KnownMonikers.StatusError,
+            "Success" => KnownMonikers.StatusOK,
+            "Warning" => KnownMonikers.StatusWarning,
+            "Muted" => KnownMonikers.StatusStopped,
+            _ => KnownMonikers.StatusRunning,
+        };
         public string AttentionReason { get; private set; }
         public string NextActionText { get; private set; }
         public string AuthorText { get; private set; }
+        public string AssigneeText { get; private set; }
         public string DurationText { get; private set; }
         public string StatusDetails { get; private set; }
         public bool IsCompleted { get; private set; }
@@ -152,7 +163,8 @@ namespace StartScreen.Models.DevHub
             {
                 Title = issue.Title,
                 Detail = $"{issue.RepoDisplayName} / {issue.Number}",
-                StatusText = string.Equals(issue.StatusText, "open", StringComparison.OrdinalIgnoreCase) ? null : issue.StatusText,
+                StatusText = string.Equals(issue.StatusText, "open", StringComparison.OrdinalIgnoreCase) ? "Open" : issue.StatusText,
+                AssigneeText = string.IsNullOrWhiteSpace(issue.AssignedTo) ? null : issue.AssignedTo.Trim(),
                 AttentionReason = issue.AttentionReason,
                 NextActionText = issue.IsBlocked && issue.NeedsAttention ? "Unblock this task" : null,
                 StatusDetails = issue.StatusDetails,
