@@ -3,7 +3,6 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Xml.Linq;
 using Microsoft.VisualStudio.Threading;
@@ -182,34 +181,27 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public async Task ReadAsync_ThumbnailIsSmallFrozenAndDoesNotKeepTheFileOpen()
+        public async Task ReadAsync_DoesNotReadThumbnailFiles()
         {
             WriteIndex("first.md");
             WriteRawItem("first.md", "---\narea: Testing\ntitle: Feature\ndescription: Summary\nthumbnailImage: ../media/thumb.png\n---\n");
             var media = Path.Combine(_directory, "media");
             Directory.CreateDirectory(media);
             var path = Path.Combine(media, "thumb.png");
-            var bitmap = BitmapSource.Create(200, 100, 96, 96, PixelFormats.Bgra32, null, new byte[200 * 100 * 4], 200 * 4);
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using (var stream = File.Create(path))
-                encoder.Save(stream);
+            File.WriteAllText(path, "Not an image");
+            using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
 
             var content = await ReadAsync();
 
             Assert.IsNull(content.Status);
-            var thumbnail = content.Areas[0].Items[0].Thumbnail;
-            Assert.IsNotNull(thumbnail);
-            Assert.IsTrue(thumbnail.IsFrozen);
-            Assert.AreEqual(144, thumbnail.PixelWidth);
-            using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-            Assert.IsGreaterThan(0L, exclusive.Length);
+            Assert.AreEqual("Feature", content.Areas[0].Items[0].Title);
+            Assert.AreEqual("Summary", content.Areas[0].Items[0].Description);
         }
 
         [TestMethod]
         [DataRow("../media/missing.png")]
         [DataRow("../../outside.png")]
-        public async Task ReadAsync_UnavailableThumbnailKeepsTheFeatureAndReportsTheImageFailure(string thumbnail)
+        public async Task ReadAsync_IgnoresThumbnailMetadata(string thumbnail)
         {
             WriteIndex("first.md");
             WriteRawItem("first.md", $"---\narea: Testing\ntitle: Feature\ndescription: Summary\nthumbnailImage: {thumbnail}\n---\n");
@@ -217,8 +209,8 @@ namespace StartScreen.Test
             var content = await ReadAsync();
 
             Assert.AreEqual("Feature", content.Areas[0].Items[0].Title);
-            Assert.IsNull(content.Areas[0].Items[0].Thumbnail);
-            StringAssert.Contains(content.Status, "thumbnails could not be loaded");
+            Assert.AreEqual("Summary", content.Areas[0].Items[0].Description);
+            Assert.IsNull(content.Status);
         }
 
         [STATestMethod]
@@ -338,7 +330,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void Tab_UsesAreaSeparatorsAndCompactOptionalThumbnailsInsteadOfLargeCards()
+        public void Tab_UsesAreaSeparatorsAndTextOnlyFeatures()
         {
             using var stream = typeof(WhatsNewTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
             var document = XDocument.Load(stream!);
@@ -353,10 +345,7 @@ namespace StartScreen.Test
             CollectionAssert.AreEqual(new[] { "{Binding WhatsNewStatus}", "{Binding Area}", "{Binding Title}", "{Binding Description}" },
                 tab.Descendants(p + "TextBlock").Select(element => element.Attribute("Text")?.Value).Where(text => text != null).ToArray());
             Assert.IsTrue(tab.Descendants(p + "Border").Any(element => element.Attribute("Style")?.Value == "{StaticResource StartScreen.Separator}"));
-            var image = tab.Descendants(p + "Image").Single();
-            Assert.AreEqual("72", image.Attribute("Width")?.Value);
-            Assert.AreEqual("48", image.Attribute("Height")?.Value);
-            Assert.AreEqual("{Binding Thumbnail, Converter={StaticResource NullToCollapsedConverter}}", image.Attribute("Visibility")?.Value);
+            Assert.IsFalse(tab.Descendants(p + "Image").Any());
             var panel = tab.Descendants(p + "UniformGrid").Single();
             Assert.AreEqual("2", panel.Descendants(p + "Setter").First().Attribute("Value")?.Value);
             var trigger = panel.Descendants(p + "DataTrigger").Single();
@@ -369,47 +358,39 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        [DataRow(240d, 12d, true)]
-        [DataRow(360d, 12d, true)]
-        [DataRow(600d, 12d, true)]
-        [DataRow(240d, 20d, true)]
-        [DataRow(240d, 12d, false)]
-        public void FeatureRow_WrapsWithinSidebarAndReclaimsMissingThumbnailSpace(double width, double fontSize, bool hasThumbnail)
+        [DataRow(240d, 12d)]
+        [DataRow(360d, 12d)]
+        [DataRow(600d, 12d)]
+        [DataRow(240d, 20d)]
+        public void FeatureRow_WrapsWithinSidebarAndUsesFullWidthForText(double width, double fontSize)
         {
             using var stream = typeof(WhatsNewTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
             var document = XDocument.Load(stream!);
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var definition = new XElement(document.Descendants(p + "Image")
-                .Single(element => element.Attribute("Source")?.Value == "{Binding Thumbnail}").Parent!);
-            definition.SetAttributeValue(XNamespace.Xmlns + "controls", "clr-namespace:StartScreen.ToolWindows.Controls;assembly=StartScreen");
-            definition.AddFirst(new XElement(p + "Grid.Resources", new XElement(
-                XName.Get("NullToCollapsedConverter", "clr-namespace:StartScreen.ToolWindows.Controls;assembly=StartScreen"),
-                new XAttribute(x + "Key", "NullToCollapsedConverter"))));
-            var row = (Grid)SharedXamlReader.Parse(definition.ToString());
-            var thumbnail = hasThumbnail
-                ? BitmapSource.Create(144, 72, 96, 96, PixelFormats.Bgra32, null, new byte[144 * 72 * 4], 144 * 4)
-                : null;
+            var tab = document.Descendants(p + "TabItem").Single(element => element.Attribute(x + "Name")?.Value == "WhatsNewTab");
+            var definition = new XElement(tab.Descendants(p + "TextBlock")
+                .Single(element => element.Attribute("Text")?.Value == "{Binding Title}").Parent!);
+            var row = (StackPanel)SharedXamlReader.Parse(definition.ToString());
             row.DataContext = new WhatsNewItem
             {
                 Title = "A useful feature for the editor",
                 Description = "A short feature description that wraps naturally inside the narrow News sidebar.",
-                Thumbnail = thumbnail,
             };
             Typography.SetEnvironmentSize(row, fontSize);
             row.Measure(new Size(width, double.PositiveInfinity));
             row.Arrange(new Rect(0, 0, width, row.DesiredSize.Height));
             row.UpdateLayout();
 
-            var image = (Image)row.Children[0];
-            var text = (StackPanel)row.Children[1];
-            Assert.AreEqual(hasThumbnail ? Visibility.Visible : Visibility.Collapsed, image.Visibility);
-            Assert.AreEqual(hasThumbnail ? 82d : 0d, text.TranslatePoint(new Point(), row).X, 0.01);
-            Assert.AreEqual(row.ActualWidth - (hasThumbnail ? 82d : 0d), text.ActualWidth, 0.01);
+            var title = (TextBlock)row.Children[0];
+            var description = (TextBlock)row.Children[1];
+            Assert.AreEqual(0d, title.TranslatePoint(new Point(), row).X, 0.01);
+            Assert.AreEqual(row.ActualWidth, title.ActualWidth, 0.01);
+            Assert.AreEqual(row.ActualWidth, description.ActualWidth, 0.01);
             Assert.IsLessThanOrEqualTo(440d, row.ActualWidth);
-            Assert.AreEqual(FontWeights.Bold, ((TextBlock)text.Children[0]).FontWeight);
-            Assert.AreEqual(TextWrapping.Wrap, ((TextBlock)text.Children[1]).TextWrapping);
-            Assert.AreEqual(FontWeights.Normal, ((TextBlock)text.Children[1]).FontWeight);
+            Assert.AreEqual(FontWeights.Bold, title.FontWeight);
+            Assert.AreEqual(TextWrapping.Wrap, description.TextWrapping);
+            Assert.AreEqual(FontWeights.Normal, description.FontWeight);
             if (fontSize == 12d)
                 Assert.IsLessThanOrEqualTo(110d, row.ActualHeight);
         }
@@ -423,13 +404,9 @@ namespace StartScreen.Test
             using var stream = typeof(WhatsNewTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
             var document = XDocument.Load(stream!);
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
             var definition = new XElement(document.Descendants(p + "ItemsControl")
                 .Single(element => element.Attribute("ItemsSource")?.Value == "{Binding Items}"));
             var wrapper = new XElement(p + "TabControl",
-                new XElement(p + "TabControl.Resources", new XElement(
-                    XName.Get("NullToCollapsedConverter", "clr-namespace:StartScreen.ToolWindows.Controls;assembly=StartScreen"),
-                    new XAttribute(x + "Key", "NullToCollapsedConverter"))),
                 new XElement(p + "TabItem", new XAttribute("Header", "What's New"), definition));
             var tab = (TabControl)SharedXamlReader.Parse(wrapper.ToString());
             var items = Enumerable.Range(1, 3).Select(index => new WhatsNewItem
@@ -451,12 +428,12 @@ namespace StartScreen.Test
 
             Layout(width, newsColumns);
             var panel = Descendants(tab).OfType<System.Windows.Controls.Primitives.UniformGrid>().Single();
-            var rows = Descendants(panel).OfType<Grid>().Where(grid => grid.Children.OfType<Image>().Any()).ToArray();
+            var rows = Descendants(panel).OfType<StackPanel>().Where(row => row.Children.OfType<TextBlock>().Count() == 2).ToArray();
             Assert.AreEqual(expectedColumns, panel.Columns);
             Assert.IsLessThanOrEqualTo(880d, panel.ActualWidth);
             Assert.HasCount(3, rows);
             CollectionAssert.AreEqual(new[] { "Feature 1", "Feature 2", "Feature 3" }, rows.Select(row =>
-                ((TextBlock)((StackPanel)row.Children[1]).Children[0]).Text).ToArray());
+                ((TextBlock)row.Children[0]).Text).ToArray());
             foreach (var row in rows)
                 Assert.IsLessThanOrEqualTo(440d, row.ActualWidth);
             var first = rows[0].TranslatePoint(new Point(), panel);

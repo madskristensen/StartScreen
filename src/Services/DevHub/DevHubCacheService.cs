@@ -24,7 +24,7 @@ namespace StartScreen.Services.DevHub
         public DevHubCacheService(string cacheFolder, TimeSpan? staleThreshold = null)
         {
             _cacheFolder = cacheFolder ?? throw new ArgumentNullException(nameof(cacheFolder));
-            _staleThreshold = staleThreshold ?? TimeSpan.FromMinutes(15);
+            _staleThreshold = staleThreshold ?? TimeSpan.FromHours(4);
         }
 
         /// <summary>
@@ -42,12 +42,17 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public bool IsCacheStale()
         {
+            return IsCacheStale(DateTime.UtcNow);
+        }
+
+        internal bool IsCacheStale(DateTime utcNow)
+        {
             var filePath = Path.Combine(_cacheFolder, _dashboardFileName);
             if (!File.Exists(filePath))
                 return true;
 
             var lastModified = File.GetLastWriteTimeUtc(filePath);
-            return DateTime.UtcNow - lastModified >= _staleThreshold;
+            return utcNow - lastModified >= _staleThreshold;
         }
 
         /// <summary>

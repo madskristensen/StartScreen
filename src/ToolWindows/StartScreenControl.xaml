@@ -723,21 +723,12 @@
                                                             </ItemsControl.ItemsPanel>
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate>
-                                                                    <Grid Margin="0 0 20 12" MaxWidth="440" HorizontalAlignment="Left">
-                                                                        <Grid.ColumnDefinitions>
-                                                                            <ColumnDefinition Width="Auto"/>
-                                                                            <ColumnDefinition Width="*"/>
-                                                                        </Grid.ColumnDefinitions>
-                                                                        <Image Source="{Binding Thumbnail}" Width="72" Height="48" Margin="0 3 10 0"
-                                                                               VerticalAlignment="Top" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
-                                                                               Visibility="{Binding Thumbnail, Converter={StaticResource NullToCollapsedConverter}}"/>
-                                                                        <StackPanel Grid.Column="1">
-                                                                            <TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="Bold"
-                                                                                       Style="{StaticResource StartScreen.CardTitle}"/>
-                                                                            <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Margin="0 3 0 0"
-                                                                                       Style="{StaticResource StartScreen.Body}"/>
-                                                                        </StackPanel>
-                                                                    </Grid>
+                                                                    <StackPanel Margin="0 0 20 12" MaxWidth="440" HorizontalAlignment="Left">
+                                                                        <TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="Bold"
+                                                                                   Style="{StaticResource StartScreen.CardTitle}"/>
+                                                                        <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Margin="0 3 0 0"
+                                                                                   Style="{StaticResource StartScreen.Body}"/>
+                                                                    </StackPanel>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
                                                         </ItemsControl>

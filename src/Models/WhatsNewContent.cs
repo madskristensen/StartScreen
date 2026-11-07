@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Windows.Media.Imaging;
 
 namespace StartScreen.Models
 {
@@ -7,7 +6,6 @@ namespace StartScreen.Models
     {
         public string Title { get; set; }
         public string Description { get; set; }
-        public BitmapSource Thumbnail { get; set; }
     }
 
     public sealed class WhatsNewArea

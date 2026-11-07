@@ -1039,9 +1039,9 @@ namespace StartScreen.Test
                 .Select(button => button.Attribute("Content")?.Value).ToArray());
             foreach (var tab in tabs)
             {
-                var first = tab.Descendants(p + "RadioButton").First();
-                Assert.AreEqual("True", first.Attribute("IsChecked")?.Value);
-                Assert.AreEqual("ActivityFilter_Changed", first.Attribute("Checked")?.Value);
+                var selected = tab.Descendants(p + "RadioButton").Single(button => button.Attribute("IsChecked")?.Value == "True");
+                Assert.AreEqual(tab == tabs[0] ? "Copilot" : "PRs", selected.Attribute("Content")?.Value);
+                Assert.AreEqual("ActivityFilter_Changed", selected.Attribute("Checked")?.Value);
             }
             Assert.AreNotEqual(tabs[0].Descendants(p + "RadioButton").First().Attribute("GroupName")?.Value,
                 tabs[1].Descendants(p + "RadioButton").First().Attribute("GroupName")?.Value);
@@ -1087,19 +1087,19 @@ namespace StartScreen.Test
             var ownButtons = ((WrapPanel)own.Children[0]).Children.OfType<RadioButton>().ToArray();
             var incomingButtons = ((WrapPanel)incoming.Children[0]).Children.OfType<RadioButton>().ToArray();
 
-            Assert.IsTrue(ownButtons[0].IsChecked);
+            Assert.IsTrue(ownButtons[1].IsChecked);
             Assert.IsTrue(incomingButtons[0].IsChecked);
             ownButtons[0].Content = "Attention (123)";
             Assert.AreEqual("PRs", incomingButtons[0].Content);
-            ownButtons[1].IsChecked = true;
+            ownButtons[0].IsChecked = true;
             incomingButtons[2].IsChecked = true;
             root.Measure(new Size(width, double.PositiveInfinity));
             root.Arrange(new Rect(0, 0, width, root.DesiredSize.Height));
             root.UpdateLayout();
 
-            Assert.IsTrue(ownButtons[1].IsChecked);
+            Assert.IsTrue(ownButtons[0].IsChecked);
             Assert.IsTrue(incomingButtons[2].IsChecked);
-            Assert.IsFalse(ownButtons[0].IsChecked);
+            Assert.IsFalse(ownButtons[1].IsChecked);
             Assert.IsFalse(incomingButtons[0].IsChecked);
             foreach (var view in new[] { own, incoming })
             {

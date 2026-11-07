@@ -343,13 +343,17 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async Task Startup_CacheVerificationStartsBeforeControlConsumesItAndDoesNotFetchFreshActivityAsync()
+        [DataRow(0, false)]
+        [DataRow(3, false)]
+        [DataRow(5, true)]
+        public async Task Startup_CacheVerificationStartsBeforeControlConsumesItAndDoesNotFetchFreshActivityAsync(int ageHours, bool stale)
         {
             var provider = new Provider("GitHub")
             {
                 Pulls = _ => Task.FromResult<IReadOnlyList<DevHubPullRequest>>([PullRequest("cached pull")]),
             };
             await Service(provider).RefreshAsync(CancellationToken.None);
+            File.SetLastWriteTimeUtc(Path.Combine(_folder, "dashboard.json"), DateTime.UtcNow.AddHours(-ageHours));
             var users = await provider.GetAuthenticatedUsersAsync(CancellationToken.None);
             var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var verified = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -385,6 +389,7 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual("cached pull", result.PullRequests.Single().Title);
             Assert.AreEqual(1, authentications);
             Assert.AreEqual(activityCalls, provider.ActivityCalls);
+            Assert.AreEqual(stale, service.IsCacheStale());
             Assert.IsFalse(progress.IsBusy);
         }
 

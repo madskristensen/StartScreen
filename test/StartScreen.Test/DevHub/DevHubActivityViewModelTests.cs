@@ -13,6 +13,7 @@ namespace StartScreen.Test.DevHub
         public void Inventories_KeepOwnershipAttentionAndCountsSeparateFromFilters()
         {
             var activity = new DevHubActivityViewModel();
+            activity.SetMyWorkFilter(DevHubWorkItemKind.All, true);
             var own = PullRequest("own", true);
             own.CiStatus = "failure";
             var review = PullRequest("review", false);
@@ -52,7 +53,7 @@ namespace StartScreen.Test.DevHub
             Assert.IsTrue(activity.IsIncomingEmpty);
             Assert.AreEqual(string.Empty, activity.MyWorkCountText);
             Assert.AreEqual(string.Empty, activity.IncomingCountText);
-            Assert.AreEqual("No items need your attention in this view.", activity.MyWorkEmptyText);
+            Assert.AreEqual("No matching personal work in the loaded activity.", activity.MyWorkEmptyText);
             Assert.AreEqual("No matching team activity.", activity.IncomingEmptyText);
 
             activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
@@ -255,41 +256,96 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public void InitialFilter_WaitsForLoadingAndHonorsExplicitChoiceAcrossRefreshes()
+        public void InitialFilter_StartsOnCopilotAndKeepsItWhenNoItemsNeedAttention()
         {
             var activity = new DevHubActivityViewModel();
-            Assert.IsFalse(activity.TrySelectInitialFilter(false));
-            activity.UpdateRepositoryActivity([PullRequest("own", true)], [], [],
-                [new CopilotActivitySession { Id = "local", IsResponding = true }], DevHubSortOrder.MostRecent, false);
-            Assert.IsFalse(activity.TrySelectInitialFilter(true));
-            Assert.IsTrue(activity.TrySelectInitialFilter(false, true));
             Assert.AreEqual(DevHubWorkItemKind.Copilot, activity.MyWorkKind);
             Assert.IsFalse(activity.MyWorkAttention);
-            Assert.IsFalse(activity.TrySelectInitialFilter(false));
-
-            activity.BeginVisit();
-            activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
-            Assert.IsFalse(activity.TrySelectInitialFilter(false, true));
-            Assert.AreEqual(DevHubWorkItemKind.Issue, activity.MyWorkKind);
-            activity.BeginVisit();
-            activity.CancelInitialFilterSelection();
-            Assert.IsFalse(activity.TrySelectInitialFilter(false, true));
+            Assert.IsFalse(activity.TrySelectInitialFilter());
+            activity.UpdateRepositoryActivity([PullRequest("own", true)], [], [], [], DevHubSortOrder.MostRecent, false);
+            Assert.IsFalse(activity.TrySelectInitialFilter());
+            Assert.IsTrue(activity.IsMyWorkEmpty);
+            activity.UpdateRepositoryActivity([PullRequest("own", true)], [], [],
+                [new CopilotActivitySession { Id = "local", IsResponding = true }], DevHubSortOrder.MostRecent, false);
+            Assert.IsFalse(activity.TrySelectInitialFilter());
+            Assert.AreEqual(DevHubWorkItemKind.Copilot, activity.MyWorkKind);
+            Assert.IsFalse(activity.MyWorkAttention);
+            Assert.AreEqual("local", activity.MyWorkItems.Single().CopilotSessionId);
         }
 
         [TestMethod]
-        public void InitialFilter_KeepsAttentionForKnownActionsAndCompletesEmptyVisitsOnce()
+        [DataRow((int)DevHubWorkItemKind.Copilot)]
+        [DataRow((int)DevHubWorkItemKind.PullRequest)]
+        [DataRow((int)DevHubWorkItemKind.Issue)]
+        [DataRow((int)DevHubWorkItemKind.Build)]
+        public void InitialFilter_HonorsExplicitChoiceEvenWhenAttentionArrivesLater(int selectedKind)
         {
+            var selected = (DevHubWorkItemKind)selectedKind;
             var activity = new DevHubActivityViewModel();
+            activity.SetMyWorkFilter(selected, false);
             var pr = PullRequest("review", false);
             pr.IsReviewRequestedForCurrentUser = true;
             activity.UpdateRepositoryActivity([pr], [], [], [], DevHubSortOrder.MostRecent, false);
-            Assert.IsTrue(activity.TrySelectInitialFilter(false));
+
+            Assert.IsFalse(activity.TrySelectInitialFilter());
+            Assert.AreEqual(selected, activity.MyWorkKind);
+            Assert.IsFalse(activity.MyWorkAttention);
+            Assert.AreEqual(1, activity.AttentionCount);
+        }
+
+        [TestMethod]
+        public void InitialFilter_SwitchesOnceWhenAnActionableItemLoads()
+        {
+            var activity = new DevHubActivityViewModel();
+            activity.UpdateRepositoryActivity([PullRequest("own", true)], [], [], [], DevHubSortOrder.MostRecent, false);
+            Assert.IsFalse(activity.TrySelectInitialFilter());
+            var pr = PullRequest("review", false);
+            pr.IsReviewRequestedForCurrentUser = true;
+            activity.UpdateRepositoryActivity([pr], [], [], [], DevHubSortOrder.MostRecent, false);
+            Assert.IsTrue(activity.TrySelectInitialFilter());
             Assert.IsTrue(activity.MyWorkAttention);
             Assert.AreEqual(DevHubWorkItemKind.All, activity.MyWorkKind);
+            Assert.AreEqual("review", activity.MyWorkItems.Single().Title);
+            Assert.IsFalse(activity.TrySelectInitialFilter());
 
-            activity = new DevHubActivityViewModel();
-            Assert.IsTrue(activity.TrySelectInitialFilter(false, true));
-            Assert.IsFalse(activity.TrySelectInitialFilter(false, true));
+            activity.UpdateRepositoryActivity([], [], [], [], DevHubSortOrder.MostRecent, false);
+            Assert.IsFalse(activity.TrySelectInitialFilter());
+            Assert.IsTrue(activity.MyWorkAttention);
+        }
+
+        [TestMethod]
+        public void InitialFilter_EmptyVisitStillSwitchesForALaterCopilotQuestion()
+        {
+            var activity = new DevHubActivityViewModel();
+            Assert.IsFalse(activity.TrySelectInitialFilter());
+            activity.UpdateRepositoryActivity([], [], [], [], DevHubSortOrder.MostRecent, false);
+            Assert.IsFalse(activity.TrySelectInitialFilter());
+            var session = new CopilotActivitySession { Id = "local" };
+            activity.Refresh([session], DevHubSortOrder.MostRecent, false);
+            Assert.IsFalse(activity.TrySelectInitialFilter());
+
+            session.PendingQuestions = 1;
+            activity.Refresh([session], DevHubSortOrder.MostRecent, false);
+
+            Assert.IsTrue(activity.TrySelectInitialFilter());
+            Assert.IsTrue(activity.MyWorkAttention);
+            Assert.AreEqual("local", activity.MyWorkItems.Single().CopilotSessionId);
+        }
+
+        [TestMethod]
+        public void InitialFilter_NewVisitResetsToCopilotAndRearmsAutomaticAttention()
+        {
+            var activity = new DevHubActivityViewModel();
+            activity.SetMyWorkFilter(DevHubWorkItemKind.Issue, false);
+            activity.BeginVisit();
+            Assert.AreEqual(DevHubWorkItemKind.Copilot, activity.MyWorkKind);
+            Assert.IsFalse(activity.MyWorkAttention);
+            activity.Refresh([new CopilotActivitySession { Id = "local", PendingPermissions = 1 }], DevHubSortOrder.MostRecent, false);
+            Assert.IsTrue(activity.TrySelectInitialFilter());
+
+            activity.BeginVisit();
+            Assert.AreEqual(DevHubWorkItemKind.Copilot, activity.MyWorkKind);
+            Assert.IsTrue(activity.TrySelectInitialFilter());
             Assert.IsTrue(activity.MyWorkAttention);
         }
 

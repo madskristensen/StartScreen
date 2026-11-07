@@ -688,6 +688,7 @@ namespace StartScreen.Test
             var attention = DevHubWorkItem.Filter(inventory, DevHubWorkItemKind.All, true);
             var activity = new DevHubActivityViewModel();
             activity.UpdateRepositoryActivity(prs, issues.ToArray(), builds, sessions, DevHubSortOrder.AzureDevOpsFirst, true);
+            Assert.IsTrue(activity.TrySelectInitialFilter());
             var view = CollectionViewSource.GetDefaultView(activity.MyWorkItems);
 
             Assert.AreEqual(2, inventory.Count(item => item.IsCompleted));
@@ -720,14 +721,14 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        [DataRow(0, (int)DevHubWorkItemKind.All)]
+        [DataRow(0, (int)DevHubWorkItemKind.Copilot)]
         [DataRow(15, (int)DevHubWorkItemKind.Copilot)]
-        [DataRow(14, (int)DevHubWorkItemKind.PullRequest)]
-        [DataRow(12, (int)DevHubWorkItemKind.Issue)]
-        [DataRow(8, (int)DevHubWorkItemKind.Build)]
+        [DataRow(14, (int)DevHubWorkItemKind.Copilot)]
+        [DataRow(12, (int)DevHubWorkItemKind.Copilot)]
+        [DataRow(8, (int)DevHubWorkItemKind.Copilot)]
         [DataRow(5, (int)DevHubWorkItemKind.Copilot)]
-        [DataRow(10, (int)DevHubWorkItemKind.PullRequest)]
-        public void InitialMyWorkTab_SkipsEmptyTabsInDisplayOrder(int available, int expected)
+        [DataRow(10, (int)DevHubWorkItemKind.Copilot)]
+        public void InitialMyWorkTab_DefaultsToCopilotRegardlessOfOtherAvailableTabs(int available, int expected)
         {
             var inventory = DevHubWorkItem.GetMyWork(
                 [new DevHubPullRequest { Status = "open", IsAuthoredByCurrentUser = true, WebUrl = "https://example.com/pr/1" }],

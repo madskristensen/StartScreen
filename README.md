@@ -106,8 +106,8 @@ separate from panel event handling. The screen coordinates these sections while
 preserving its existing bindings and stable item collections.
 
 The **What's New** tab in News shows features shipped with the running Visual Studio
-installation. Area headings group compact rows with small optional thumbnails,
-bold titles, and regular-weight descriptions, without the full article body. Features
+installation. Area headings group compact text-only rows with bold titles and
+regular-weight descriptions, without thumbnails or the full article body. Features
 use one column in the sidebar and up to two columns on wider screens, with a maximum
 feature width of 440 pixels. The installed YAML index controls area and feature order;
 unlisted articles are not shown.
@@ -498,9 +498,12 @@ On later opens, the saved dashboard populates both work blades only
 after the current provider identities and activity query/options have been verified.
 Account, repository-context, query, item-limit, or completed-item setting changes
 discard mismatched snapshots, including ownership flags. Older unpartitioned caches
-are ignored and rebuilt. A cache older than 15 minutes, or one containing failed
+are ignored and rebuilt. A cache at least four hours old, or one containing failed
 sources, refreshes in the background. First use without a matching cache still needs
-to fetch data. Additional repository-scoped details are retained in memory only and
+to fetch data. A matching, successful dashboard younger than four hours is reused
+without fetching its activity again; startup still verifies the provider accounts.
+Manual Refresh fetches current activity regardless of cache age.
+Additional repository-scoped details are retained in memory only and
 never replace the aggregate dashboard or its disk cache.
 
 Each source reports success, partial, unavailable, or unauthorized separately. A
@@ -543,8 +546,10 @@ My work and Team activity display cards directly below their left-aligned tabs,
 with quiet section labels on the right. Tabs use a footprint-neutral underline for selection, without
 surrounding borders or hover/selection backgrounds.
 My work orders its tabs as Attention, Copilot, PRs, Issues, and Builds. On initial
-load, empty Attention falls back to the first non-empty tab in that order. Later
-refreshes preserve your selection. If every tab is empty, Attention stays selected.
+load, Copilot is selected immediately, even when empty. Attention is selected once
+if actionable items arrive, without waiting for all providers to finish loading.
+Choosing a tab yourself prevents this automatic switch for the rest of that visit.
+If no items need attention, Copilot stays selected.
 
 Work cards show the title first, with the repository or Copilot workspace directly
 below it. Work and Feedback dates align at the far right. Blog and video dates

@@ -17,6 +17,7 @@ namespace StartScreen.ToolWindows.Controls
         private DevHubActivityList _myWorkPresentation;
         private DevHubActivityList _incomingPresentation;
         private int _activityLoadCount;
+        private bool _isApplyingMyWorkFilter;
         private DevHubDefaultTab _activeWorkView = DevHubDefaultTab.MyWork;
 
         internal DevHubActivityOptions ActivityOptions { get; } = new DevHubActivityOptions();
@@ -28,7 +29,7 @@ namespace StartScreen.ToolWindows.Controls
                 _isConnectionLoading = false;
             UpdateBusyState();
             if (!loading && _activityLoadCount == 0)
-                SelectInitialMyWorkTab(loadingCompleted: true);
+                SelectInitialMyWorkTab();
         }
 
         private void InitializeActivityPresentation()
@@ -63,6 +64,7 @@ namespace StartScreen.ToolWindows.Controls
         private void BeginWorkspaceVisit(object sender, RoutedEventArgs e)
         {
             _activity.BeginVisit();
+            ApplyMyWorkTabSelection();
             _copilotLoaded = true;
             if (Options.Instance.ApplyWorkViewsDefault())
                 SaveOptionsAsync().FileAndForget(nameof(DevHubPanel));
@@ -93,11 +95,14 @@ namespace StartScreen.ToolWindows.Controls
             UpdateActivityPresentation();
         }
 
-        private void SelectInitialMyWorkTab(bool loadingCompleted = false)
+        private void SelectInitialMyWorkTab()
         {
-            if (!_activity.TrySelectInitialFilter(_activityLoadCount > 0, loadingCompleted))
-                return;
+            if (_activity.TrySelectInitialFilter())
+                ApplyMyWorkTabSelection();
+        }
 
+        private void ApplyMyWorkTabSelection()
+        {
             RadioButton selected = _activity.MyWorkKind switch
             {
                 DevHubWorkItemKind.Copilot => MyWorkCopilotFilter,
@@ -106,7 +111,16 @@ namespace StartScreen.ToolWindows.Controls
                 DevHubWorkItemKind.Build => MyWorkBuildFilter,
                 _ => MyWorkAttentionFilter,
             };
-            selected.IsChecked = true;
+            _isApplyingMyWorkFilter = true;
+            try
+            {
+                selected.IsChecked = true;
+            }
+            finally
+            {
+                _isApplyingMyWorkFilter = false;
+            }
+            UpdateActivityPresentation();
         }
 
         private void ActivityFilter_Click(object sender, RoutedEventArgs e)
@@ -122,6 +136,8 @@ namespace StartScreen.ToolWindows.Controls
                 var group = (sender as RadioButton)?.GroupName;
                 if (group == "MyWorkKind")
                 {
+                    if (_isApplyingMyWorkFilter)
+                        return;
                     var kind = MyWorkPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
                         : MyWorkIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
                         : MyWorkCopilotFilter.IsChecked == true ? DevHubWorkItemKind.Copilot

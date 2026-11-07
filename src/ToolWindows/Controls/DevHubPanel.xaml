@@ -944,10 +944,10 @@
                             <Run x:Name="MyWorkCount" Style="{StaticResource StartScreen.HeaderCount}"/>
                         </TextBlock>
                         <WrapPanel ButtonBase.Click="ActivityFilter_Click">
-                            <RadioButton x:Name="MyWorkAttentionFilter" Content="Attention" GroupName="MyWorkKind" IsChecked="True"
+                            <RadioButton x:Name="MyWorkAttentionFilter" Content="Attention" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"
                                          ToolTip="All items with a known action for you, newest updated first."/>
-                            <RadioButton x:Name="MyWorkCopilotFilter" Content="Copilot" GroupName="MyWorkKind"
+                            <RadioButton x:Name="MyWorkCopilotFilter" Content="Copilot" GroupName="MyWorkKind" IsChecked="True"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="MyWorkPrFilter" Content="PRs" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>

@@ -349,6 +349,9 @@ namespace StartScreen.Test.DevHub
             Assert.IsEmpty(document.Descendants(p + "CheckBox").Where(element => element.Attribute(x + "Name")?.Value == "IncludeCompletedItems"));
             Assert.IsEmpty(document.Descendants(p + "Button").Where(element => element.Attribute("Content")?.Value == "View check details"));
             Assert.IsEmpty(document.Descendants(p + "TextBlock").Where(element => element.Attribute("Text")?.Value == "{Binding MetadataText}"));
+            var selectedWorkTab = document.Descendants(p + "RadioButton")
+                .Single(element => element.Attribute("GroupName")?.Value == "MyWorkKind" && element.Attribute("IsChecked")?.Value == "True");
+            Assert.AreEqual("MyWorkCopilotFilter", selectedWorkTab.Attribute(x + "Name")?.Value);
             var workBuilds = document.Descendants(p + "RadioButton").Single(element => element.Attribute(x + "Name")?.Value == "MyWorkBuildFilter");
             Assert.AreEqual("MyWorkKind", workBuilds.Attribute("GroupName")?.Value);
             var incoming = document.Descendants(p + "ItemsControl").Single(element => element.Attribute(x + "Name")?.Value == "IncomingList");

@@ -102,6 +102,24 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public void IsCacheStale_DefaultPolicyUsesExactFourHourBoundary()
+        {
+            var cache = new DevHubCacheService(_testCacheFolder);
+            var now = new DateTime(2026, 11, 7, 22, 0, 0, DateTimeKind.Utc);
+            cache.WriteDashboard(new DevHubDashboard { FetchedAt = now });
+            var path = Path.Combine(_testCacheFolder, "dashboard.json");
+
+            File.SetLastWriteTimeUtc(path, now.AddHours(-3));
+            Assert.IsFalse(cache.IsCacheStale(now));
+            File.SetLastWriteTimeUtc(path, now.AddHours(-4).AddTicks(1));
+            Assert.IsFalse(cache.IsCacheStale(now));
+            File.SetLastWriteTimeUtc(path, now.AddHours(-4));
+            Assert.IsTrue(cache.IsCacheStale(now));
+            File.SetLastWriteTimeUtc(path, now.AddHours(-4).AddTicks(-1));
+            Assert.IsTrue(cache.IsCacheStale(now));
+        }
+
+        [TestMethod]
         public void GetCacheTimestamp_NoCacheFile_ReturnsNull()
         {
             Assert.IsNull(_cache.GetCacheTimestamp());

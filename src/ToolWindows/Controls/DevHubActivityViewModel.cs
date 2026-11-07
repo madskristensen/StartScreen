@@ -29,9 +29,9 @@ namespace StartScreen.ToolWindows.Controls
 
         public ReadOnlyObservableCollection<DevHubWorkItem> MyWorkItems { get; }
         public ReadOnlyObservableCollection<DevHubWorkItem> IncomingItems { get; }
-        public DevHubWorkItemKind MyWorkKind { get; private set; } = DevHubWorkItemKind.All;
+        public DevHubWorkItemKind MyWorkKind { get; private set; } = DevHubWorkItemKind.Copilot;
         public DevHubWorkItemKind IncomingKind { get; private set; } = DevHubWorkItemKind.PullRequest;
-        public bool MyWorkAttention { get; private set; } = true;
+        public bool MyWorkAttention { get; private set; }
         public int MyWorkCount => _myWork.Count;
         public int IncomingCount => _incoming.Count;
         public int AttentionCount => _myWork.Count(item => item.NeedsAttention);
@@ -89,6 +89,11 @@ namespace StartScreen.ToolWindows.Controls
         public void SetMyWorkFilter(DevHubWorkItemKind kind, bool attention)
         {
             CancelInitialFilterSelection();
+            ApplyMyWorkFilter(kind, attention);
+        }
+
+        private void ApplyMyWorkFilter(DevHubWorkItemKind kind, bool attention)
+        {
             if (MyWorkKind == kind && MyWorkAttention == attention)
                 return;
             MyWorkKind = kind;
@@ -111,6 +116,7 @@ namespace StartScreen.ToolWindows.Controls
         public void BeginVisit()
         {
             _initialFilterPending = true;
+            ApplyMyWorkFilter(DevHubWorkItemKind.Copilot, false);
         }
 
         public void CancelInitialFilterSelection()
@@ -118,24 +124,17 @@ namespace StartScreen.ToolWindows.Controls
             _initialFilterPending = false;
         }
 
-        public bool TrySelectInitialFilter(bool loading, bool loadingCompleted = false)
+        public bool TrySelectInitialFilter()
         {
-            if (!_initialFilterPending || loading || (MyWorkCount == 0 && !loadingCompleted))
+            if (!_initialFilterPending || GetInitialMyWorkKind(_myWork) != DevHubWorkItemKind.All)
                 return false;
-            _initialFilterPending = false;
-            if (!MyWorkAttention)
-                return false;
-            var kind = GetInitialMyWorkKind(_myWork);
-            SetMyWorkFilter(kind, kind == DevHubWorkItemKind.All);
+            SetMyWorkFilter(DevHubWorkItemKind.All, true);
             return true;
         }
 
         internal static DevHubWorkItemKind GetInitialMyWorkKind(IReadOnlyList<DevHubWorkItem> items)
         {
-            if (items.Any(item => item.NeedsAttention))
-                return DevHubWorkItemKind.All;
-            return new[] { DevHubWorkItemKind.Copilot, DevHubWorkItemKind.PullRequest, DevHubWorkItemKind.Issue, DevHubWorkItemKind.Build }
-                .FirstOrDefault(kind => items.Any(item => item.Kind == kind));
+            return items.Any(item => item.NeedsAttention) ? DevHubWorkItemKind.All : DevHubWorkItemKind.Copilot;
         }
 
         private void UpdateProjections()

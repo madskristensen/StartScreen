@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Media.Imaging;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 using YamlDotNet.Core;
@@ -33,7 +32,6 @@ namespace StartScreen.Services
             var areas = new List<WhatsNewArea>();
             var itemsByArea = new Dictionary<string, List<WhatsNewItem>>(StringComparer.Ordinal);
             var failures = 0;
-            var thumbnailFailures = 0;
             foreach (var file in index.Files)
             {
                 token.ThrowIfCancellationRequested();
@@ -55,21 +53,7 @@ namespace StartScreen.Services
                         itemsByArea.Add(area, items);
                         areas.Add(new WhatsNewArea { Area = area, Items = items });
                     }
-                    var item = new WhatsNewItem { Title = metadata.Title.Trim(), Description = metadata.Description.Trim() };
-                    items.Add(item);
-                    if (!string.IsNullOrWhiteSpace(metadata.ThumbnailImage))
-                    {
-                        try
-                        {
-                            item.Thumbnail = ReadThumbnail(path, metadata.ThumbnailImage, contentDirectory);
-                        }
-                        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException
-                            || ex is InvalidDataException || ex is NotSupportedException || ex is FormatException || ex is ArgumentException)
-                        {
-                            await ex.LogAsync();
-                            thumbnailFailures++;
-                        }
-                    }
+                    items.Add(new WhatsNewItem { Title = metadata.Title.Trim(), Description = metadata.Description.Trim() });
                 }
                 catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException
                     || ex is InvalidDataException || ex is YamlException)
@@ -83,28 +67,8 @@ namespace StartScreen.Services
             {
                 Areas = areas,
                 Status = failures > 0 ? "Some What's New items could not be loaded. Reopen the Start Screen to retry."
-                    : areas.Count == 0 ? "No What's New items are available for this installation."
-                    : thumbnailFailures > 0 ? "Some What's New thumbnails could not be loaded." : null,
+                    : areas.Count == 0 ? "No What's New items are available for this installation." : null,
             };
-        }
-
-        private static BitmapSource ReadThumbnail(string itemPath, string relativePath, string contentDirectory)
-        {
-            var root = Path.GetFullPath(contentDirectory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(itemPath), relativePath.Replace('/', Path.DirectorySeparatorChar)));
-            if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("The What's New thumbnail is outside the content directory.");
-            using var stream = File.OpenRead(path);
-            if (stream.Length > 2 * 1024 * 1024)
-                throw new InvalidDataException("The What's New thumbnail is too large.");
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.DecodePixelWidth = 144;
-            bitmap.StreamSource = stream;
-            bitmap.EndInit();
-            bitmap.Freeze();
-            return bitmap;
         }
 
         private static string ReadFrontMatter(string path, CancellationToken token)
@@ -140,8 +104,6 @@ namespace StartScreen.Services
             public string Title { get; set; }
             [YamlMember(Alias = "description")]
             public string Description { get; set; }
-            [YamlMember(Alias = "thumbnailImage")]
-            public string ThumbnailImage { get; set; }
         }
     }
 }
