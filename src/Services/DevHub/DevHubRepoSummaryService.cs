@@ -99,6 +99,7 @@ namespace StartScreen.Services.DevHub
         /// </summary>
         public void Invalidate(RemoteRepoIdentifier repo)
         {
+            Providers.DevHubRepoSummaryFetcher.InvalidateSummaries();
             if (repo == null)
                 throw new ArgumentNullException(nameof(repo));
             var prefix = GetKey(repo, null);
@@ -140,6 +141,7 @@ namespace StartScreen.Services.DevHub
 
         public void InvalidateAll()
         {
+            Providers.DevHubRepoSummaryFetcher.InvalidateSummaries();
             lock (_gate)
             {
                 _requests.Clear();

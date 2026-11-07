@@ -11,10 +11,12 @@ namespace StartScreen.Services
         private readonly object _gate = new object();
         private readonly Dictionary<string, Entry> _entries = new Dictionary<string, Entry>();
         private readonly Func<DateTime> _utcNow;
+        private readonly TimeSpan _successLifetime;
 
-        internal SharedRefresh(Func<DateTime> utcNow = null)
+        internal SharedRefresh(Func<DateTime> utcNow = null, TimeSpan successLifetime = default)
         {
             _utcNow = utcNow ?? (() => DateTime.UtcNow);
+            _successLifetime = successLifetime;
         }
 
         internal async Task<T> RunAsync(string key, bool force, Func<CancellationToken, Task<T>> refresh,
@@ -37,7 +39,7 @@ namespace StartScreen.Services
                         {
                             T result = await refresh(deadline.Token);
                             lock (_gate)
-                                current.RetryUtc = successful(result) ? DateTime.MinValue : _utcNow().AddMinutes(1);
+                                current.RetryUtc = successful(result) ? _utcNow().Add(_successLifetime) : _utcNow().AddMinutes(1);
                             return result;
                         }
                         catch (Exception ex)
@@ -61,7 +63,9 @@ namespace StartScreen.Services
                 }
                 task = entry.Task;
             }
-            return await task.WithCancellation(cancellationToken);
+            T result = await task.WithCancellation(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            return result;
         }
 
         private sealed class Entry

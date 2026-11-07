@@ -15,11 +15,18 @@ namespace StartScreen.Services.DevHub.Providers
     /// </summary>
     internal static class DevHubRepoSummaryFetcher
     {
+        private static SharedRefresh<DevHubRepoSummary> _summaries = new SharedRefresh<DevHubRepoSummary>(successLifetime: TimeSpan.FromMinutes(10));
+
+        internal static void InvalidateSummaries()
+        {
+            Interlocked.Exchange(ref _summaries, new SharedRefresh<DevHubRepoSummary>(successLifetime: TimeSpan.FromMinutes(10)));
+        }
+
         internal static async Task<DevHubRepoSummary> FetchAsync(RemoteRepoIdentifier repo,
             Func<CancellationToken, Task<DevHubCredential>> acquireCredential,
             Func<DevHubCredential, string, CancellationToken, Task<HttpResponseMessage>> send,
             bool gitHub, CancellationToken cancellationToken, string signInMessage = null,
-            DevHubIdentityCache identityCache = null)
+            DevHubIdentityCache identityCache = null, string cacheScope = null)
         {
             if (repo == null)
                 throw new ArgumentNullException(nameof(repo));
@@ -42,6 +49,30 @@ namespace StartScreen.Services.DevHub.Providers
                 var identity = identityCache != null
                     ? await identityCache.GetAsync(credential, identityUrl, send, gitHub, cancellationToken)
                     : await GetIdentityAsync(credential, identityUrl, send, gitHub, cancellationToken);
+                if (identityCache != null && identity != null && cacheScope != null && credential.ExpiresOn > DateTimeOffset.UtcNow)
+                {
+                    var key = DevHubMetadataCache.GetKey(credential, cacheScope + "|" + identityUrl + "|" + identity + "|" + baseUrl
+                        + "|" + repo.Owner + "|" + repo.Project + "|" + repo.Repo);
+                    return await _summaries.RunAsync(key, false,
+                        token => ReadTotalsAsync(repo, credential, send, gitHub, identity, baseUrl, apiVersion, token, signInMessage),
+                        result => result.Status == DevHubRepoSummaryStatus.Ready, cancellationToken);
+                }
+                return await ReadTotalsAsync(repo, credential, send, gitHub, identity, baseUrl, apiVersion, cancellationToken, signInMessage);
+            }
+            catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                return new DevHubRepoSummary(repo, DevHubRepoSummaryStatus.Unavailable,
+                    statusMessage: "Repository totals could not be retrieved.");
+            }
+        }
+
+        private static async Task<DevHubRepoSummary> ReadTotalsAsync(RemoteRepoIdentifier repo, DevHubCredential credential,
+            Func<DevHubCredential, string, CancellationToken, Task<HttpResponseMessage>> send, bool gitHub,
+            string identity, string baseUrl, string apiVersion, CancellationToken cancellationToken, string signInMessage)
+        {
+            try
+            {
                 int? requested = identity == null ? (int?)null : 0;
                 var seen = new HashSet<int>();
                 var offset = 0;

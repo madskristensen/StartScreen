@@ -353,6 +353,10 @@ Repository counts load for realized MRU cards, selected items, and pinned items;
 scrolling loads deferred counts. Actionable PRs receive fresh readiness metadata
 first, without reusing stale merge flags. GitHub failed-job details are fetched
 only after selecting the displayed runs, with a global two-run detail budget.
+Complete repository totals are shared for ten minutes after account verification;
+manual Refresh invalidates those totals. Completed build details are reused for
+24 hours by credential, run URL, and update timestamp. A rerun or account change
+does not reuse prior details. Merge readiness and current checks remain fresh.
 Feed caches are identified by source URL rather than display name. Renaming a
 feed preserves its cache, changing its URL does not reuse the previous source,
 and combining cached articles does not extend individual source freshness.

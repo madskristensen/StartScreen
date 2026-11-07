@@ -2,12 +2,43 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using StartScreen.Services;
+using StartScreen.Services.DevHub;
 
 namespace StartScreen.Test
 {
     [TestClass]
     public class SharedRefreshTests
     {
+        [TestMethod]
+        public async Task CompletedRunCacheSeparatesAccountsAndRerunsAsync()
+        {
+            var resource = Guid.NewGuid().ToString();
+            var credential = new DevHubCredential("account", Guid.NewGuid().ToString());
+            var calls = 0;
+            Task<string> Fetch(CancellationToken _) => Task.FromResult((++calls).ToString());
+            Assert.AreEqual("1", await DevHubMetadataCache.GetCompletedRunAsync(credential, resource + "|1", Fetch, default));
+            Assert.AreEqual("1", await DevHubMetadataCache.GetCompletedRunAsync(credential, resource + "|1", Fetch, default));
+            Assert.AreEqual("2", await DevHubMetadataCache.GetCompletedRunAsync(credential, resource + "|2", Fetch, default));
+            Assert.AreEqual("3", await DevHubMetadataCache.GetCompletedRunAsync(new DevHubCredential("other", Guid.NewGuid().ToString()),
+                resource + "|1", Fetch, default));
+            Assert.AreEqual(3, calls);
+        }
+
+        [TestMethod]
+        public async Task SuccessfulCacheUsesExactTenMinuteBoundaryAndManualInvalidationAsync()
+        {
+            var now = DateTime.UtcNow;
+            var refresh = new SharedRefresh<int>(() => now, TimeSpan.FromMinutes(10));
+            var requests = 0;
+            Task<int> Fetch(CancellationToken _) => Task.FromResult(++requests);
+            Assert.AreEqual(1, await refresh.RunAsync("account", false, Fetch, value => value > 0, default));
+            now = now.AddMinutes(10).AddTicks(-1);
+            Assert.AreEqual(1, await refresh.RunAsync("account", false, Fetch, value => value > 0, default));
+            now = now.AddTicks(1);
+            Assert.AreEqual(2, await refresh.RunAsync("account", false, Fetch, value => value > 0, default));
+            Assert.AreEqual(3, await refresh.RunAsync("account", true, Fetch, value => value > 0, default));
+        }
+
         [TestMethod]
         public async Task SharedWaiterCancellationDoesNotCancelFetchAndManualRetryBypassesBackoffAsync()
         {

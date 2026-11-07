@@ -83,7 +83,7 @@ namespace StartScreen.Services.DevHub.Providers
                 token => _acquireCredential(host, GetBaseUrl(repo), token),
                 (credential, url, token) => SendAuthenticatedGetAsync(host, credential, url, token), false, cancellationToken,
                 host == AzureDevOpsServerHelper.CloudHost ? "Connect Azure DevOps in Dev Hub settings using your Visual Studio account or an optional PAT." : null,
-                _identityCache);
+                _identityCache, DevHubMetadataCache.GetClientScope(_httpClient));
         }
 
         internal Task<DevHubRepoSummary> GetRepoSummaryAsync(HttpClient client, DevHubCredential credential,
@@ -1100,10 +1100,19 @@ namespace StartScreen.Services.DevHub.Providers
                     if (build.ValueKind != JsonValueKind.Object || !build.TryGetProperty("id", out var id))
                         return run;
                     var version = repo.IsAzureDevOpsServer ? "5.0" : "7.1";
-                    using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential,
-                        $"{GetProjectUrl(repo)}/_apis/build/builds/{id.GetInt32()}/timeline?api-version={version}", cancellationToken);
-                    response.EnsureSuccessStatusCode();
-                    using var timeline = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
+                    var timelineUrl = $"{GetProjectUrl(repo)}/_apis/build/builds/{id.GetInt32()}/timeline?api-version={version}";
+                    var timelineJson = await DevHubMetadataCache.GetCompletedRunAsync(credential,
+                        DevHubMetadataCache.GetClientScope(_httpClient) + "|" + timelineUrl + "|" + run.Timestamp.Ticks, async token =>
+                        {
+                            using var response = await SendAuthenticatedGetAsync(GetCredentialHost(repo), credential, timelineUrl, token);
+                            response.EnsureSuccessStatusCode();
+                            var json = await HttpResponseReader.ReadStringAsync(response, token);
+                            using var document = JsonDocument.Parse(json);
+                            if (document.RootElement.GetProperty("records").ValueKind != JsonValueKind.Array)
+                                throw new InvalidOperationException("Build timeline records are invalid.");
+                            return json;
+                        }, cancellationToken);
+                    using var timeline = JsonDocument.Parse(timelineJson);
                     var failed = timeline.RootElement.GetProperty("records").EnumerateArray()
                         .FirstOrDefault(record => ReadString(record, "result") == "failed");
                     if (failed.ValueKind != JsonValueKind.Object)

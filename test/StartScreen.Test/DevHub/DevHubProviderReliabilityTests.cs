@@ -113,6 +113,12 @@ namespace StartScreen.Test.DevHub
 
             await HttpResponseReaderTests.MustCompleteAsync(assertion);
             await assertion;
+            if (!identityBody)
+            {
+                Assert.IsFalse(stream.IsDisposed, "Canceling a waiter must not dispose shared inventory work.");
+                stream.PendingRead.TrySetResult(0);
+                await HttpResponseReaderTests.MustCompleteAsync(stream.Disposed.Task);
+            }
             Assert.IsTrue(stream.IsDisposed);
         }
 

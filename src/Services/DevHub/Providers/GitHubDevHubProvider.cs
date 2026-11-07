@@ -64,14 +64,16 @@ namespace StartScreen.Services.DevHub.Providers
         {
             return DevHubRepoSummaryFetcher.FetchAsync(repo,
                 token => DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), token),
-                (credential, url, token) => SendGetAsync(credential, url, token), true, cancellationToken, identityCache: _identityCache);
+                (credential, url, token) => SendGetAsync(credential, url, token), true, cancellationToken, identityCache: _identityCache,
+                cacheScope: DevHubMetadataCache.GetClientScope(_httpClient));
         }
 
         internal Task<DevHubRepoSummary> GetRepoSummaryAsync(HttpClient client, DevHubCredential credential,
             RemoteRepoIdentifier repo, CancellationToken cancellationToken)
         {
             return DevHubRepoSummaryFetcher.FetchAsync(repo, _ => Task.FromResult(credential),
-                (auth, url, token) => SendGetAsync(auth, url, token, client), true, cancellationToken, identityCache: _identityCache);
+                (auth, url, token) => SendGetAsync(auth, url, token, client), true, cancellationToken, identityCache: _identityCache,
+                cacheScope: DevHubMetadataCache.GetClientScope(client));
         }
 
         public bool CanHandle(string remoteUrl)
@@ -541,7 +543,8 @@ namespace StartScreen.Services.DevHub.Providers
             $"https://api.github.com/search/issues?q={Uri.EscapeDataString(query)}&advanced_search=true&sort=updated&order=desc";
 
         private static async Task<List<T>> ReadPagesAsync<T>(HttpClient client, DevHubCredential credential,
-            string url, string collection, int maxItems, Func<JsonElement, IEnumerable<T>> parse, CancellationToken cancellationToken)
+            string url, string collection, int maxItems, Func<JsonElement, IEnumerable<T>> parse, CancellationToken cancellationToken,
+            bool requireComplete = false)
         {
             var results = new List<T>();
             var pageSize = Math.Min(100, maxItems);
@@ -568,6 +571,8 @@ namespace StartScreen.Services.DevHub.Providers
                     }
                     var hasNextLink = response.Headers.TryGetValues("Link", out var links)
                         && links.Any(link => link.IndexOf("rel=\"next\"", StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (requireComplete && hasNextLink && page * pageSize >= maxItems)
+                        throw new InvalidOperationException("Completed run details exceeded the request budget.");
                     if (!added || items.GetArrayLength() < pageSize && !hasNextLink)
                         break;
                 }
@@ -576,6 +581,8 @@ namespace StartScreen.Services.DevHub.Providers
                     await ex.LogAsync();
                     DevHubActivityRequest.Failed();
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (requireComplete)
+                        throw;
                     break;
                 }
             }
@@ -626,18 +633,30 @@ namespace StartScreen.Services.DevHub.Providers
             foreach (var run in runs.Where(run => run.Status == "failure" && run.RepoIdentifier != null)
                 .OrderByDescending(run => run.Timestamp).Take(DevHubActivityOptions.FailureDetailLimit))
             {
-                if (!Uri.TryCreate(run.WebUrl, UriKind.Absolute, out var uri)
-                    || !long.TryParse(uri.Segments.Last().Trim('/'), out var id))
-                    continue;
-                var repo = run.RepoIdentifier;
-                var root = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs";
-                var jobs = await ReadPagesAsync(client, credential, $"{root}/{id}/jobs?filter=latest", "jobs", 100,
-                    item => new[] { item.Clone() }, cancellationToken);
-                var failed = jobs.Where(job => GetString(job, "conclusion") == "failure" || GetString(job, "conclusion") == "timed_out").ToList();
-                if (failed.Count > 0)
+                try
                 {
-                    run.FailureSummary = string.Join(", ", failed.Select(job => GetString(job, "name")));
-                    run.FailureUrl = failed.Select(job => GetString(job, "html_url")).FirstOrDefault(url => !string.IsNullOrEmpty(url));
+                    if (!Uri.TryCreate(run.WebUrl, UriKind.Absolute, out var uri)
+                        || !long.TryParse(uri.Segments.Last().Trim('/'), out var id))
+                        continue;
+                    var repo = run.RepoIdentifier;
+                    var root = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}/actions/runs";
+                    var jobsJson = await DevHubMetadataCache.GetCompletedRunAsync(credential,
+                        DevHubMetadataCache.GetClientScope(client) + "|" + run.WebUrl + "|" + run.Timestamp.Ticks,
+                        async token => JsonSerializer.Serialize(await ReadPagesAsync(client, credential,
+                            $"{root}/{id}/jobs?filter=latest", "jobs", 100,
+                            item => new[] { item.Clone() }, token, requireComplete: true)), cancellationToken);
+                    var jobs = JsonSerializer.Deserialize<List<JsonElement>>(jobsJson);
+                    var failed = jobs.Where(job => GetString(job, "conclusion") == "failure" || GetString(job, "conclusion") == "timed_out").ToList();
+                    if (failed.Count > 0)
+                    {
+                        run.FailureSummary = string.Join(", ", failed.Select(job => GetString(job, "name")));
+                        run.FailureUrl = failed.Select(job => GetString(job, "html_url")).FirstOrDefault(url => !string.IsNullOrEmpty(url));
+                    }
+                }
+                catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
+                {
+                    await ex.LogAsync();
+                    DevHubActivityRequest.Warning("Builds loaded, but failed-job details are unavailable. Refresh to retry.");
                 }
             }
         }

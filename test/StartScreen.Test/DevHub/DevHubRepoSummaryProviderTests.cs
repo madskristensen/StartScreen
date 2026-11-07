@@ -10,6 +10,32 @@ namespace StartScreen.Test.DevHub
     public class DevHubRepoSummaryProviderTests
     {
         [TestMethod]
+        public async Task VerifiedCountsAreSharedAcrossIdentityCacheInstancesButNotCredentialsAsync()
+        {
+            DevHubRepoSummaryFetcher.InvalidateSummaries();
+            var requests = 0;
+            Task<HttpResponseMessage> Send(DevHubCredential credential, string url, CancellationToken token)
+            {
+                requests++;
+                return Task.FromResult(Json(url.EndsWith("/user") ? Identity(true) : Page(true, 0, 0)));
+            }
+            var credential = new DevHubCredential("account", Guid.NewGuid().ToString());
+            var scope = Guid.NewGuid().ToString();
+            Task<DevHubRepoSummary> Fetch(DevHubCredential account) => DevHubRepoSummaryFetcher.FetchAsync(Repo(true),
+                _ => Task.FromResult(account), Send, true, default, identityCache: new DevHubIdentityCache(), cacheScope: scope);
+            var first = await Fetch(credential);
+            var second = await Fetch(credential);
+            Assert.AreSame(first, second);
+            Assert.AreEqual(3, requests, "Each instance verifies identity; complete totals are reused.");
+            var changed = await Fetch(new DevHubCredential("other", Guid.NewGuid().ToString()));
+            Assert.AreNotSame(first, changed);
+            Assert.AreEqual(5, requests);
+            DevHubRepoSummaryFetcher.InvalidateSummaries();
+            Assert.AreNotSame(first, await Fetch(credential));
+            Assert.AreEqual(7, requests);
+        }
+
+        [TestMethod]
         [DataRow(true)]
         [DataRow(false)]
         public async Task Summary_CountsAllPagesAndDirectPendingReviewsAsync(bool gitHub)
