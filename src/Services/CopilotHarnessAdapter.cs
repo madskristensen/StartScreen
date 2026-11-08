@@ -78,7 +78,7 @@ namespace StartScreen.Services
                 IsReady = (bool)value;
                 NotifyChanged();
             }));
-            _subscriptions.Add(Observe(Connect(_cache), _ => SynchronizeSessions()));
+            _subscriptions.Add(Observe(Connect(_cache), _ => SynchronizeSessions(), coalesce: true));
             SynchronizeSessions();
         }
 
@@ -129,18 +129,26 @@ namespace StartScreen.Services
 
         private void NotifyChanged() => Changed?.Invoke(this, EventArgs.Empty);
 
-        private IDisposable Observe(object source, Action<object> onNext, Action onCompleted = null)
+        private IDisposable Observe(object source, Action<object> onNext, Action onCompleted = null, bool coalesce = false)
         {
             bool active = true;
+            var pending = 0;
             var observable = source?.GetType().GetInterfaces()
                 .FirstOrDefault(type => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IObservable<>))
                 ?? throw new NotSupportedException("The installed Copilot contract does not expose the expected observable.");
             var observer = Activator.CreateInstance(typeof(Observer<>).MakeGenericType(observable.GetGenericArguments()),
-                new Action<object>(value => Dispatch(() =>
+                new Action<object>(value =>
                 {
-                    if (active)
-                        onNext(value);
-                })), new Action<Exception>(error => Dispatch(() =>
+                    // Collection callbacks read the latest snapshot; only one UI rescan needs to be queued.
+                    if (coalesce && Interlocked.Exchange(ref pending, 1) != 0)
+                        return;
+                    Dispatch(() =>
+                    {
+                        Interlocked.Exchange(ref pending, 0);
+                        if (active)
+                            onNext(value);
+                    });
+                }), new Action<Exception>(error => Dispatch(() =>
                 {
                     if (active)
                         _onError(error);
@@ -292,7 +300,7 @@ namespace StartScreen.Services
                                 watches.Add(entry, WatchEntry(entry, depth));
                         }
                         _owner.NotifyChanged();
-                    }));
+                    }, coalesce: true));
                     connected = true;
                     return bag;
                 }

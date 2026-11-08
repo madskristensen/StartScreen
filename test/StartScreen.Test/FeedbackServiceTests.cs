@@ -4,9 +4,12 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Windows.Threading;
 using Azure.Core;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 using StartScreen.Services;
+using StartScreen.ToolWindows;
 
 namespace StartScreen.Test
 {
@@ -20,6 +23,137 @@ namespace StartScreen.Test
         {
             if (Directory.Exists(_cacheFolder))
                 Directory.Delete(_cacheFolder, true);
+        }
+
+        [TestMethod]
+        [DataRow(0, true)]
+        [DataRow(86399, true)]
+        [DataRow(86400, false)]
+        [DataRow(-1, false)]
+        public void CacheFreshness_UsesOneTwentyFourHourBoundary(int ageSeconds, bool fresh)
+        {
+            var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var cached = new FeedbackSnapshot(7, [], now.AddSeconds(-ageSeconds));
+
+            Assert.AreEqual(fresh, FeedbackService.IsCacheFresh(cached, now));
+        }
+
+        [STATestMethod]
+        public void Startup_FreshDiskCacheAcquiresAndVerifiesTheCredentialOnlyOnce()
+        {
+            var now = DateTime.UtcNow;
+            var cache = new FeedbackCache(_cacheFolder);
+            using var context = new JoinableTaskContext(Thread.CurrentThread, new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+            context.Factory.Run(() => cache.WriteAsync(new FeedbackSnapshot(7,
+                [new FeedbackTicket { Id = 10, Title = "Cached ticket", Type = FeedbackTicketType.Problem }], now.AddHours(-1)), CancellationToken.None));
+            using var handler = new Handler((path, _) =>
+            {
+                Assert.AreEqual("metadata", path, "Fresh startup must only verify the account, not download tickets.");
+                return Json(new { Id = 7 });
+            });
+            using var client = new HttpClient(handler);
+            var acquisitions = 0;
+            var service = Service(client, () => now, () =>
+            {
+                acquisitions++;
+                return handler.ExpectedToken;
+            }, cache);
+            using var model = new StartScreenViewModel(CancellationToken.None,
+                getFeedbackAsync: service.GetTicketsAsync, getCachedFeedbackAsync: service.GetCachedTicketsAsync,
+                getFeedbackTaskFactory: () => context.Factory);
+
+            context.Factory.Run(() => model.RefreshFeedbackInBackgroundAsync());
+
+            Assert.AreEqual(1, acquisitions);
+            Assert.AreEqual(1, handler.RequestCount);
+            Assert.AreEqual(10L, model.FeedbackTickets.Single().Id);
+            Assert.IsTrue(model.FeedbackRefreshState.IsCached);
+            Assert.IsFalse(model.IsRefreshingFeedback);
+            Assert.IsFalse(model.BackgroundProgress.IsBusy);
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task CacheProbe_MissingOrExpiredCacheReusesItsVerifiedIdentityForTheFetchAsync(bool expired)
+        {
+            var now = DateTime.UtcNow;
+            var cache = new FeedbackCache(_cacheFolder);
+            if (expired)
+                await cache.WriteAsync(new FeedbackSnapshot(7,
+                    [new FeedbackTicket { Id = 1, Title = "Expired ticket", Type = FeedbackTicketType.Problem }], now.AddHours(-24)), CancellationToken.None);
+            using var handler = TicketHandler(Ticket(10, 7, false));
+            using var client = new HttpClient(handler);
+            var acquisitions = 0;
+            var service = Service(client, () => now, () =>
+            {
+                acquisitions++;
+                return handler.ExpectedToken;
+            }, cache);
+
+            Assert.IsNull(await service.GetCachedTicketsAsync(CancellationToken.None));
+            Assert.AreEqual(1, handler.RequestCount);
+            var fresh = await service.GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.AreEqual(10L, fresh.Tickets.Single().Id);
+            Assert.AreEqual(now, fresh.UpdatedUtc);
+            Assert.AreEqual(3, handler.RequestCount, "The cache probe and fetch must share one identity request.");
+            Assert.AreEqual(2, acquisitions, "A fetch must still acquire the current credential before reusing a cache probe.");
+        }
+
+        [TestMethod]
+        public async Task CacheProbe_ChangedCredentialVerifiesTheNewAccountBeforeFetchingAsync()
+        {
+            var principal = 7L;
+            using var handler = new Handler((path, _) => path == "metadata" ? Json(new { Id = principal })
+                : path == "getActivity" ? Json(new { totalCount = 1, activities = new[] { Action("posted", principal) } })
+                : Json(new { results = new[] { Ticket(principal, principal, false) } }));
+            using var client = new HttpClient(handler);
+            var service = Service(client, getToken: () => handler.ExpectedToken);
+            Assert.IsNull(await service.GetCachedTicketsAsync(CancellationToken.None));
+            principal = 8;
+            handler.ExpectedToken = "other-account-token";
+
+            var current = await service.GetTicketsAsync(false, CancellationToken.None);
+
+            Assert.AreEqual(8L, current.PrincipalId);
+            Assert.AreEqual(8L, current.Tickets.Single().Id);
+            Assert.AreEqual(4, handler.RequestCount, "Changed credentials must not reuse the previous account verification.");
+        }
+
+        [TestMethod]
+        public async Task CacheProbe_ForcedRefreshVerifiesIdentityAgainAsync()
+        {
+            using var handler = TicketHandler(Ticket(10, 7, false));
+            using var client = new HttpClient(handler);
+            var service = Service(client);
+            Assert.IsNull(await service.GetCachedTicketsAsync(CancellationToken.None));
+
+            var refreshed = await service.GetTicketsAsync(true, CancellationToken.None);
+
+            Assert.AreEqual(10L, refreshed.Tickets.Single().Id);
+            Assert.AreEqual(4, handler.RequestCount, "Manual refresh must verify the account independently of a preceding cache probe.");
+        }
+
+        [TestMethod]
+        public async Task CacheProbe_ExpiredCredentialCannotReuseVerifiedIdentityAsync()
+        {
+            var now = DateTime.UtcNow;
+            var valid = true;
+            using var handler = new Handler((path, _) =>
+            {
+                Assert.AreEqual("metadata", path);
+                return Json(new { Id = 7 });
+            });
+            using var client = new HttpClient(handler);
+            var service = new FeedbackService(client, _ => Task.FromResult(new AccessToken("test-token",
+                new DateTimeOffset(now).AddHours(valid ? 1 : -1))), () => now);
+            Assert.IsNull(await service.GetCachedTicketsAsync(CancellationToken.None));
+            valid = false;
+
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetTicketsAsync(false, CancellationToken.None));
+
+            Assert.AreEqual(1, handler.RequestCount, "Expired credentials must fail before any cache-probe identity is reused.");
         }
 
         [TestMethod]
@@ -323,7 +457,7 @@ namespace StartScreen.Test
 
             Assert.AreEqual(FeedbackTicketType.Suggestion, refreshed.Tickets.Single().Type);
             Assert.AreEqual("Under Review", refreshed.Tickets.Single().StateText);
-            Assert.AreEqual(4, handler.RequestCount);
+            Assert.AreEqual(3, handler.RequestCount, "The fetch must reuse the account verification from the rejected cache probe.");
         }
 
         [TestMethod]
@@ -353,7 +487,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public async Task DiskCache_ExpiresAfterSevenDaysAcrossServiceInstancesAsync()
+        public async Task DiskCache_ExpiresAfterTwentyFourHoursAcrossServiceInstancesAsync()
         {
             var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
             using var handler = TicketHandler(Ticket(10, 7, false));
@@ -433,7 +567,7 @@ namespace StartScreen.Test
         [DataRow(86399, true)]
         [DataRow(86400, false)]
         [DataRow(-1, false)]
-        public async Task CacheOnly_EnforcesSevenDayBoundaryWithoutDownloadingActivityAsync(int ageSeconds, bool usable)
+        public async Task CacheOnly_EnforcesTwentyFourHourBoundaryWithoutDownloadingActivityAsync(int ageSeconds, bool usable)
         {
             var now = DateTime.UtcNow;
             var cache = new FeedbackCache(_cacheFolder);

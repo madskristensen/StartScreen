@@ -470,10 +470,13 @@ you use on Developer Community under
 is needed. Use the main **Refresh** button to reload after changing accounts or
 to retry an unavailable service. Switching away from Feedback and back keeps
 the displayed tickets without reloading. When reopening the Start Screen,
-feedback first displays a verified account's cached tickets, retained for up to
-seven days across screen instances and Visual Studio sessions. The normal startup
-refresh then always requests the latest tickets and replaces the disk snapshot
-after a successful download. New sessions and renewed credentials verify identity
+feedback displays a verified account's cached tickets when they are less than
+24 hours old, without starting a second refresh or credential check. Missing or
+stale caches trigger a download and replace the disk snapshot after success.
+That fetch reuses the cache probe's account verification and disk-cache check
+only when the current credential still matches; the verified probe is consumed once.
+The loading caption distinguishes reading feedback from refreshing tickets.
+New sessions and renewed credentials verify identity
 before reading the account's disk snapshot. The main **Refresh** button bypasses
 cache-first display and reloads feedback alongside the other data sources.
 Hiding the screen cancels pending requests.
@@ -610,6 +613,17 @@ permissions, discovered projects, and provider availability still limit coverage
 Copilot also discovers recent CLI and supported native VS Code sessions from their
 local metadata. GitHub cloud-agent tasks use the configured GitHub account when that
 provider is enabled. These sources refresh independently once a minute while the page is visible.
+CLI/VS Code discovery reuses its YAML deserializer and only opens native VS Code databases
+when a displayed session needs a mapping, stopping once all required mappings are found.
+Cloud-task repository names are resolved once per distinct repository with at most
+four concurrent requests instead of serial round trips. Local and cloud discovery
+have separate progress steps and log their elapsed times in the Start Screen Output
+pane. Visual Studio backend attachment and session-index readiness are timed separately;
+waiting for that index does not mean the other session sources are still loading.
+The compact "Loading VS Copilot..." step remains active until Visual Studio reports
+its index ready. Bursts of session and chat collection changes share a queued UI
+rescan of the latest snapshot instead of rescanning once per notification; readiness,
+running-state, permission, and question notifications remain individually observed.
 
 PRs open in Visual Studio's native review experience when the installed Git
 tooling supports it. **Review on the web** remains available from the PR context

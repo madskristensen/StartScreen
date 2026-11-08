@@ -368,6 +368,146 @@ namespace StartScreen.Test
             => new(callback => callback(), (errors ?? new List<Exception>()).Add);
 
         [TestMethod]
+        public void CatalogBursts_QueueOneRescanAndPreserveRealReadiness()
+        {
+            var backend = new FakeBackend();
+            backend.SessionsReady.Publish(false);
+            var sessions = Enumerable.Range(0, 200).Select(_ => new FakeSession()).ToArray();
+            var queue = new Queue<Action>();
+            var errors = new List<Exception>();
+            var queued = false;
+            using var adapter = new CopilotHarnessAdapter(action =>
+            {
+                if (queued)
+                    queue.Enqueue(action);
+                else
+                    action();
+            }, errors.Add);
+            adapter.Start(new FakeBackends(backend));
+            var reads = backend.Sessions.ItemsReadCount;
+            queued = true;
+
+            for (var count = 1; count <= sessions.Length; count++)
+                backend.Sessions.Replace(sessions.Take(count).ToArray());
+
+            Assert.HasCount(1, queue, "A catalog burst must queue one snapshot rescan, not one per notification.");
+            Assert.IsFalse(adapter.IsReady);
+            backend.SessionsReady.Publish(true);
+            Assert.HasCount(2, queue, "Readiness must remain an independently delivered event.");
+            Assert.IsFalse(adapter.IsReady);
+            queued = false;
+            while (queue.Count > 0)
+                queue.Dequeue()();
+
+            Assert.IsTrue(adapter.IsReady);
+            Assert.AreEqual(reads + 1, backend.Sessions.ItemsReadCount, "The burst must enumerate the catalog only once.");
+            Assert.HasCount(sessions.Length, adapter.Sessions);
+            CollectionAssert.AreEquivalent(sessions.Select(session => session.SessionId.Guid.ToString("D")).ToArray(),
+                adapter.Sessions.Select(session => session.Id).ToArray());
+            Assert.IsEmpty(errors);
+        }
+
+        [TestMethod]
+        public void ChatBursts_QueueOneRescanWithoutDroppingRequestOrRunningState()
+        {
+            var backend = new FakeBackend();
+            var session = new FakeSession();
+            var permission = new FakePermission();
+            var question = new FakeQuestion();
+            session.ChatEvents.Replace(permission);
+            backend.Sessions.Replace(session);
+            var queue = new Queue<Action>();
+            var errors = new List<Exception>();
+            var queued = false;
+            using var adapter = new CopilotHarnessAdapter(action =>
+            {
+                if (queued)
+                    queue.Enqueue(action);
+                else
+                    action();
+            }, errors.Add);
+            adapter.Start(new FakeBackends(backend));
+            var reads = session.ChatEvents.ItemsReadCount;
+            queued = true;
+
+            for (var count = 0; count < 200; count++)
+                session.ChatEvents.Replace(permission, question);
+            permission.State.Publish("Accepted");
+            session.IsResponding.Publish(true);
+
+            Assert.HasCount(3, queue, "Only collection rescans may be coalesced, not permission or running state.");
+            queued = false;
+            while (queue.Count > 0)
+                queue.Dequeue()();
+
+            var current = adapter.Sessions.Single();
+            Assert.AreEqual(reads + 1, session.ChatEvents.ItemsReadCount, "The burst must enumerate chat entries only once.");
+            Assert.AreEqual(0, current.PendingPermissions);
+            Assert.AreEqual(1, current.PendingQuestions);
+            Assert.IsTrue(current.IsRunning);
+            Assert.IsTrue(current.NeedsAttention);
+            Assert.AreEqual(1, permission.State.SubscriberCount);
+            Assert.AreEqual(1, question.State.SubscriberCount);
+            Assert.IsEmpty(errors);
+        }
+
+        [TestMethod]
+        public void CollectionBursts_DoNotCoalesceStreamErrors()
+        {
+            var backend = new FakeBackend();
+            var queue = new Queue<Action>();
+            var errors = new List<Exception>();
+            using var adapter = new CopilotHarnessAdapter(queue.Enqueue, errors.Add);
+            adapter.Start(new FakeBackends(backend));
+            while (queue.Count > 0)
+                queue.Dequeue()();
+            var first = new InvalidOperationException("First stream failure");
+            var second = new InvalidOperationException("Second stream failure");
+
+            for (var count = 0; count < 200; count++)
+                backend.Sessions.Replace();
+            backend.Sessions.Changes.Fail(first);
+            backend.Sessions.Changes.Fail(second);
+
+            Assert.HasCount(3, queue);
+            while (queue.Count > 0)
+                queue.Dequeue()();
+            CollectionAssert.AreEqual(new[] { first, second }, errors.ToArray());
+        }
+
+        [TestMethod]
+        public void CollectionChangeDuringRescan_QueuesAnotherSnapshotInsteadOfLosingIt()
+        {
+            var backend = new FakeBackend();
+            var queue = new Queue<Action>();
+            var errors = new List<Exception>();
+            var replacement = new FakeSession();
+            using var adapter = new CopilotHarnessAdapter(queue.Enqueue, errors.Add);
+            adapter.Start(new FakeBackends(backend));
+            while (queue.Count > 0)
+                queue.Dequeue()();
+            var replaced = false;
+            adapter.Changed += (_, _) =>
+            {
+                if (!replaced)
+                {
+                    replaced = true;
+                    backend.Sessions.Replace(replacement);
+                }
+            };
+
+            backend.Sessions.Replace(new FakeSession());
+            while (queue.Count > 0)
+                queue.Dequeue()();
+
+            Assert.IsTrue(replaced);
+            Assert.AreEqual(replacement.SessionId.Guid.ToString("D"), adapter.Sessions.Single().Id);
+            Assert.AreSame(replacement, adapter.FindSession(adapter.Sessions.Single().Id));
+            Assert.AreEqual(1, replacement.ChatEvents.Changes.SubscriberCount);
+            Assert.IsEmpty(errors);
+        }
+
+        [TestMethod]
         public void Start_DisplaysExistingSessionsBeforeCatalogCompletionWithoutWaitingForAChange()
         {
             var backend = new FakeBackend();
@@ -606,7 +746,17 @@ namespace StartScreen.Test
 
     public sealed class FakeCollection : IFakeObservableCollection
     {
-        public IEnumerable<object> Items { get; private set; } = [];
+        private IEnumerable<object> _items = [];
+        public int ItemsReadCount { get; private set; }
+        public IEnumerable<object> Items
+        {
+            get
+            {
+                ItemsReadCount++;
+                return _items;
+            }
+            private set => _items = value;
+        }
         public FakeValue<int> Changes { get; } = new(0);
         public IObservable<int> Connect(Func<object, bool>? predicate = null, bool suppressEmptyChangeSets = true) => Changes;
         public void Replace(params object[] items)

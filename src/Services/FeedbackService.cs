@@ -40,6 +40,7 @@ namespace StartScreen.Services
         private readonly SharedRefresh<FeedbackSnapshot> _refresh = new SharedRefresh<FeedbackSnapshot>();
         private FeedbackSnapshot _cached;
         private string _cachedCredentialHash;
+        private (string CredentialHash, long PrincipalId)? _verifiedCacheProbe;
 
         internal FeedbackService(HttpClient client = null,
             Func<CancellationToken, Task<AccessToken>> getTokenAsync = null, Func<DateTime> utcNow = null,
@@ -56,11 +57,9 @@ namespace StartScreen.Services
             await TaskScheduler.Default;
             cancellationToken.ThrowIfCancellationRequested();
             AccessToken token = await _getTokenAsync(cancellationToken);
-            string key;
-            using (var hash = SHA256.Create())
-                key = Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(token.Token ?? string.Empty)));
+            var key = GetCredentialHash(token);
             return await _refresh.RunAsync(key, forceRefresh,
-                sharedToken => GetTicketsCoreAsync(forceRefresh, false, sharedToken, token),
+                sharedToken => GetTicketsCoreAsync(forceRefresh, false, sharedToken, token, key),
                 snapshot => snapshot != null, cancellationToken);
         }
 
@@ -68,13 +67,15 @@ namespace StartScreen.Services
             GetTicketsCoreAsync(false, true, cancellationToken);
 
         private async Task<FeedbackSnapshot> GetTicketsCoreAsync(bool forceRefresh, bool cacheOnly, CancellationToken cancellationToken,
-            AccessToken? credential = null)
+            AccessToken? credential = null, string credentialHash = null)
         {
             await TaskScheduler.Default;
             cancellationToken.ThrowIfCancellationRequested();
             await _gate.WaitAsync(cancellationToken);
             try
             {
+                var probe = _verifiedCacheProbe;
+                _verifiedCacheProbe = null;
                 if (forceRefresh)
                     _cached = null;
                 AccessToken token = credential ?? await _getTokenAsync(cancellationToken);
@@ -82,9 +83,7 @@ namespace StartScreen.Services
                 if (string.IsNullOrEmpty(token.Token) || token.ExpiresOn <= new DateTimeOffset(_utcNow()))
                     throw new UnauthorizedAccessException("Visual Studio did not return a valid Developer Community credential.");
 
-                string credentialHash;
-                using (var hash = SHA256.Create())
-                    credentialHash = Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(token.Token)));
+                credentialHash ??= GetCredentialHash(token);
                 // The current credential must match before a cache hit can skip identity HTTP requests.
                 if (HasFreshCache() && _cachedCredentialHash == credentialHash)
                 {
@@ -94,12 +93,19 @@ namespace StartScreen.Services
 
                 if (!forceRefresh && !cacheOnly && HttpRetryBackoff.IsDeferred(_baseUrl))
                     throw new HttpRequestException("Developer Community requested a retry delay. Use Refresh to retry manually.");
-                using JsonDocument metadata = await SendAsync("userProperties/metadata", token.Token, null, cancellationToken);
-                long principalId = ReadId(metadata.RootElement.GetProperty("Id"));
+                var reuseProbe = !forceRefresh && !cacheOnly && probe.HasValue && probe.Value.CredentialHash == credentialHash;
+                long principalId;
+                if (reuseProbe)
+                    principalId = probe.Value.PrincipalId;
+                else
+                {
+                    using JsonDocument metadata = await SendAsync("userProperties/metadata", token.Token, null, cancellationToken);
+                    principalId = ReadId(metadata.RootElement.GetProperty("Id"));
+                }
                 // Confirm identity before reusing data, including after a VS account switch.
                 if (_cached?.PrincipalId != principalId)
                     _cached = null;
-                if (!forceRefresh && _diskCache != null && _cached == null)
+                if (!forceRefresh && !reuseProbe && _diskCache != null && _cached == null)
                     _cached = await _diskCache.ReadAsync(principalId, cancellationToken);
                 if (HasFreshCache())
                 {
@@ -110,6 +116,8 @@ namespace StartScreen.Services
 
                 if (cacheOnly)
                 {
+                    // A cache miss can hand its verified identity to the next fetch using the same valid credential.
+                    _verifiedCacheProbe = (credentialHash, principalId);
                     OutputLog.Info("Feedback", "No usable cache for the current account. The startup refresh will request the latest tickets.");
                     return null;
                 }
@@ -169,8 +177,16 @@ namespace StartScreen.Services
             }
         }
 
-        private bool HasFreshCache() => _cached != null && _utcNow() >= _cached.UpdatedUtc
-            && _utcNow() - _cached.UpdatedUtc < TimeSpan.FromHours(24);
+        private bool HasFreshCache() => IsCacheFresh(_cached, _utcNow());
+
+        internal static bool IsCacheFresh(FeedbackSnapshot snapshot, DateTime utcNow) => snapshot != null
+            && utcNow >= snapshot.UpdatedUtc && utcNow - snapshot.UpdatedUtc < TimeSpan.FromHours(24);
+
+        private static string GetCredentialHash(AccessToken credential)
+        {
+            using var hash = SHA256.Create();
+            return Convert.ToBase64String(hash.ComputeHash(Encoding.UTF8.GetBytes(credential.Token ?? string.Empty)));
+        }
 
         private async Task<FeedbackTicket> GetTicketAsync(long id, long principalId, string token, CancellationToken cancellationToken)
         {

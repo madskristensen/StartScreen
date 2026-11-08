@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.ComponentModel.Design;
 using System.Net;
 using System.Net.Http;
@@ -6,6 +7,7 @@ using System.Xml.Linq;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Commands;
 using StartScreen.Helpers;
 using StartScreen.Models;
@@ -81,6 +83,58 @@ namespace StartScreen.Test
             var result = await CopilotLocalSessions.ReadAsync(directory.Path, directory.GetPath("missing"), CancellationToken.None);
             Assert.HasCount(0, result.Sessions);
             StringAssert.Contains(result.Status, "no compatible native-session mapping");
+        }
+
+        [TestMethod]
+        public async Task Discovery_CliOnlyDoesNotReadUnrelatedCodeDatabasesAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var catalog = directory.GetPath("catalog");
+            SaveMetadata(directory.Path, RuntimeId, "github/cli");
+            Directory.CreateDirectory(Path.Combine(catalog, NativeId));
+            File.WriteAllText(Path.Combine(catalog, NativeId, "session.db"), "not a SQLite database");
+
+            var result = await CopilotLocalSessions.ReadAsync(directory.Path, catalog, CancellationToken.None);
+
+            Assert.HasCount(1, result.Sessions);
+            Assert.AreEqual(CopilotSessionOrigin.Cli, result.Sessions[0].Origin);
+            Assert.AreEqual(string.Empty, result.Status);
+        }
+
+        [TestMethod]
+        public void CodeCatalog_StopsAfterFindingRequiredMappingsWithoutReadingOlderDatabases()
+        {
+            using var directory = new TemporaryDirectory();
+            var newest = Path.Combine(directory.Path, NativeId);
+            CreateCodeDatabase(newest, RuntimeId);
+            var older = Path.Combine(directory.Path, Guid.NewGuid().ToString("D"));
+            Directory.CreateDirectory(older);
+            File.WriteAllText(Path.Combine(older, "session.db"), "not a SQLite database");
+            Directory.SetLastWriteTimeUtc(older, DateTime.UtcNow.AddDays(-1));
+            Directory.SetLastWriteTimeUtc(newest, DateTime.UtcNow);
+            var errors = new List<Exception>();
+            var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { RuntimeId };
+
+            var mappings = CopilotLocalSessions.ReadCodeMappings(directory.Path, CancellationToken.None, errors.Add, required);
+
+            Assert.HasCount(1, mappings);
+            Assert.AreEqual(NativeId, mappings[RuntimeId].NativeSessionId);
+            Assert.IsEmpty(errors);
+            CollectionAssert.AreEqual(new[] { RuntimeId }, required.ToArray());
+        }
+
+        [TestMethod]
+        public void CodeCatalog_EmptyRequestedSetDoesNotOpenAnyDatabases()
+        {
+            using var directory = new TemporaryDirectory();
+            Directory.CreateDirectory(Path.Combine(directory.Path, NativeId));
+            File.WriteAllText(Path.Combine(directory.Path, NativeId, "session.db"), "not a SQLite database");
+            var errors = new List<Exception>();
+
+            var mappings = CopilotLocalSessions.ReadCodeMappings(directory.Path, CancellationToken.None, errors.Add, []);
+
+            Assert.IsEmpty(mappings);
+            Assert.IsEmpty(errors);
         }
 
         [TestMethod]
@@ -494,6 +548,117 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task CloudDiscovery_ResolvesRepositoriesConcurrentlyOnceEachAndPreservesTaskOrderAsync()
+        {
+            var tasks = Enumerable.Range(0, 12).Select(index => new
+            {
+                id = Guid.NewGuid().ToString("D"),
+                name = "Task " + index,
+                repository = new { id = index % 6 + 1 },
+                agent_collaborators = new[] { new { slug = "copilot-swe-agent" } },
+                state = "completed",
+                updated_at = "2026-11-07T19:00:00Z",
+            }).ToArray();
+            var active = 0;
+            var observedConcurrency = new ConcurrentBag<int>();
+            var requests = new ConcurrentDictionary<int, int>();
+            var firstBatch = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var client = new HttpClient(new AsyncHandler(async (request, token) =>
+            {
+                if (request.RequestUri!.AbsolutePath == "/agents/tasks")
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { tasks })) };
+                var number = int.Parse(request.RequestUri.Segments.Last());
+                requests.AddOrUpdate(number, 1, (_, count) => count + 1);
+                var concurrent = Interlocked.Increment(ref active);
+                observedConcurrency.Add(concurrent);
+                if (concurrent == CopilotCloudSessions.MaximumRepositoryConcurrency)
+                    firstBatch.TrySetResult(true);
+                try
+                {
+                    await release.Task.WithCancellation(token);
+                    await Task.Delay((6 - number) * 5, token);
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(JsonSerializer.Serialize(new { full_name = "owner/repo" + number })),
+                    };
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref active);
+                }
+            }));
+            var discovery = CopilotCloudSessions.ReadAsync(client, new DevHubCredential("user", "test-token"), timeout.Token);
+            try
+            {
+                await firstBatch.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(discovery.IsCompleted, "Repository lookups must overlap before any response is released.");
+                Assert.AreEqual(CopilotCloudSessions.MaximumRepositoryConcurrency, active);
+            }
+            finally
+            {
+                release.TrySetResult(true);
+            }
+            var result = await discovery;
+
+            Assert.AreEqual(CopilotCloudSessions.MaximumRepositoryConcurrency, observedConcurrency.Max());
+            Assert.HasCount(6, requests);
+            Assert.IsTrue(requests.Values.All(count => count == 1));
+            CollectionAssert.AreEqual(tasks.Select(task => task.id).ToArray(), result.Sessions.Select(session => session.Id).ToArray());
+            CollectionAssert.AreEqual(tasks.Select(task => "owner/repo" + task.repository.id).ToArray(),
+                result.Sessions.Select(session => session.Repository).ToArray());
+            Assert.AreEqual(0, active);
+        }
+
+        [TestMethod]
+        public async Task CloudDiscovery_CancellationStopsActiveAndQueuedRepositoryLookupsAsync()
+        {
+            var tasks = Enumerable.Range(1, 8).Select(index => new
+            {
+                id = Guid.NewGuid().ToString("D"),
+                repository = new { id = index },
+                agent_collaborators = new[] { new { slug = "copilot-swe-agent" } },
+            }).ToArray();
+            var requests = 0;
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var client = new HttpClient(new AsyncHandler(async (request, token) =>
+            {
+                if (request.RequestUri!.AbsolutePath == "/agents/tasks")
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { tasks })) };
+                if (Interlocked.Increment(ref requests) == CopilotCloudSessions.MaximumRepositoryConcurrency)
+                    started.TrySetResult(true);
+                await Task.Delay(Timeout.Infinite, token);
+                throw new AssertFailedException("Canceled repository requests must not return a response.");
+            }));
+            await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            {
+                var discovery = CopilotCloudSessions.ReadAsync(client, new DevHubCredential("user", "test-token"), cancellation.Token);
+                await started.Task.WithCancellation(cancellation.Token);
+                cancellation.Cancel();
+                await discovery;
+            });
+            Assert.AreEqual(CopilotCloudSessions.MaximumRepositoryConcurrency, requests);
+        }
+
+        [TestMethod]
+        public async Task CloudDiscovery_RepositoryAuthorizationFailureDoesNotInventSessionMetadataAsync()
+        {
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+                request.RequestUri!.AbsolutePath == "/agents/tasks"
+                    ? new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("{\"tasks\":[{\"id\":\"" + RuntimeId
+                            + "\",\"repository\":{\"id\":1},\"agent_collaborators\":[{\"slug\":\"copilot-swe-agent\"}]}]}"),
+                    }
+                    : new HttpResponseMessage(HttpStatusCode.Forbidden)));
+
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                CopilotCloudSessions.ReadAsync(client, new DevHubCredential("user", "test-token"), CancellationToken.None));
+        }
+
+        [TestMethod]
         [DataRow("https://github.com/owner/repo/agents/tasks/96c12378-f593-4c38-982f-d16b25f68bc3", true)]
         [DataRow("http://github.com/owner/repo/agents/tasks/96c12378-f593-4c38-982f-d16b25f68bc3", false)]
         [DataRow("https://evil.example/owner/repo/agents/tasks/96c12378-f593-4c38-982f-d16b25f68bc3", false)]
@@ -591,6 +756,12 @@ namespace StartScreen.Test
             }
             command.ExecuteNonQuery();
             return path;
+        }
+
+        private sealed class AsyncHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+                => send(request, cancellationToken);
         }
 
         private sealed class FakeApi(string json, HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler

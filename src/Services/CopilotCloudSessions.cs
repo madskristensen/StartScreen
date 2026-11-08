@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Helpers;
 using StartScreen.Models;
 using StartScreen.Services.DevHub;
@@ -15,6 +16,7 @@ namespace StartScreen.Services
     internal static class CopilotCloudSessions
     {
         private const int _maximumTasks = 30;
+        internal const int MaximumRepositoryConcurrency = 4;
         private static readonly HttpClient _client = new(new HttpClientHandler { AllowAutoRedirect = false })
         {
             Timeout = TimeSpan.FromSeconds(15),
@@ -30,13 +32,14 @@ namespace StartScreen.Services
 
         internal static async Task<CopilotSessionDiscovery> ReadAsync(HttpClient client, DevHubCredential credential, CancellationToken token)
         {
+            await TaskScheduler.Default.SwitchTo(alwaysYield: true);
             using var json = await GetAsync(client, credential,
                 $"https://api.github.com/agents/tasks?per_page={_maximumTasks}&sort=updated_at&direction=desc", token);
             if (!json.RootElement.TryGetProperty("tasks", out var tasks) || tasks.ValueKind != JsonValueKind.Array)
                 throw new JsonException("GitHub returned no agent task list.");
             var sessions = new List<CopilotActivitySession>();
             var unidentified = false;
-            var repositories = new Dictionary<long, string>();
+            var pending = new List<(JsonElement Task, Guid Id, string Url, string Repository, long? RepositoryId)>();
             foreach (var task in tasks.EnumerateArray().Take(_maximumTasks))
             {
                 token.ThrowIfCancellationRequested();
@@ -53,20 +56,42 @@ namespace StartScreen.Services
                     throw new JsonException("GitHub returned an invalid agent task ID.");
                 var url = Text(task, "html_url");
                 var repository = RepositoryFromUrl(url);
+                long? repositoryId = null;
                 if (repository == null && task.TryGetProperty("repository", out var repo)
                     && repo.TryGetProperty("id", out var repoId) && repoId.TryGetInt64(out var number) && number > 0)
                 {
-                    if (!repositories.TryGetValue(number, out repository))
+                    repositoryId = number;
+                }
+                if (repository == null && repositoryId == null)
+                    throw new JsonException("GitHub returned a cloud task without a repository or a compatible web URL.");
+                pending.Add((task, taskId, url, repository, repositoryId));
+            }
+            using var concurrency = new SemaphoreSlim(MaximumRepositoryConcurrency);
+            var resolved = await Task.WhenAll(pending.Where(item => item.RepositoryId.HasValue)
+                .Select(item => item.RepositoryId.Value).Distinct().Select(async number =>
+                {
+                    await concurrency.WaitAsync(token);
+                    try
                     {
                         using var detail = await GetAsync(client, credential, "https://api.github.com/repositories/" + number, token);
-                        repository = detail.RootElement.GetProperty("full_name").GetString();
+                        var repository = detail.RootElement.GetProperty("full_name").GetString();
                         if (!IsRepository(repository))
                             throw new JsonException("GitHub returned an invalid repository name.");
-                        repositories.Add(number, repository);
+                        return (Id: number, Repository: repository);
                     }
-                }
-                if (repository == null)
-                    throw new JsonException("GitHub returned a cloud task without a repository or a compatible web URL.");
+                    finally
+                    {
+                        concurrency.Release();
+                    }
+                }));
+            var repositories = resolved.ToDictionary(item => item.Id, item => item.Repository);
+            foreach (var item in pending)
+            {
+                token.ThrowIfCancellationRequested();
+                var task = item.Task;
+                var taskId = item.Id;
+                var url = item.Url;
+                var repository = item.Repository ?? repositories[item.RepositoryId.Value];
                 url ??= "https://github.com/" + repository + "/agents/tasks/" + taskId.ToString("D");
                 if (!IsTaskUrl(url, taskId))
                     throw new JsonException("GitHub returned an invalid cloud-agent web URL.");

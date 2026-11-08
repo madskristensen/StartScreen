@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Windows.Threading;
@@ -45,11 +46,9 @@ namespace StartScreen.ToolWindows.Controls
         private async Task RefreshCopilotSourcesAsync(CancellationToken token)
         {
             _copilotSourcesLoading = true;
-            using var progress = Progress?.Start(2, "Discovering CLI, VS Code, and GitHub Copilot sessions...");
             try
             {
                 await System.Threading.Tasks.Task.WhenAll(RefreshLocalCopilotAsync(token), RefreshCloudCopilotAsync(token));
-                progress?.Complete();
             }
             finally
             {
@@ -61,6 +60,9 @@ namespace StartScreen.ToolWindows.Controls
 
         private async Task RefreshLocalCopilotAsync(CancellationToken token)
         {
+            using var progress = Progress?.Start(step: "Reading CLI and VS Code Copilot sessions...");
+            progress?.Report((0, 1));
+            var elapsed = Stopwatch.StartNew();
             try
             {
                 var result = await CopilotLocalSessions.ReadAsync(CopilotLocalSessions.DefaultHome, CopilotLocalSessions.CodeCatalog, token);
@@ -69,6 +71,8 @@ namespace StartScreen.ToolWindows.Controls
                     return;
                 _localCopilotSessions = result.Sessions;
                 _localCopilotStatus = result.Status;
+                OutputLog.Info("Copilot", $"CLI/VS Code discovery finished in {elapsed.ElapsedMilliseconds} ms ({result.Sessions.Count} sessions).");
+                progress?.Complete();
                 RenderCopilotActivity();
             }
             catch (OperationCanceledException ex) when (token.IsCancellationRequested)
@@ -92,6 +96,9 @@ namespace StartScreen.ToolWindows.Controls
             var enabled = Options.Instance.DevHubGitHubEnabled;
             var account = Options.Instance.DevHubGitHubAccount;
             var generation = DevHubCredentialHelper.AccountGeneration;
+            using var progress = enabled ? Progress?.Start(step: "Loading GitHub cloud Copilot sessions...") : null;
+            progress?.Report((0, 1));
+            var elapsed = Stopwatch.StartNew();
             try
             {
                 var result = enabled ? await CopilotCloudSessions.ReadAsync(account, token) : new CopilotSessionDiscovery();
@@ -102,6 +109,9 @@ namespace StartScreen.ToolWindows.Controls
                 _cloudCopilotStatus = result.Status;
                 _cloudCopilotAccount = account;
                 _cloudCopilotAccountGeneration = generation;
+                if (enabled)
+                    OutputLog.Info("Copilot", $"GitHub cloud discovery finished in {elapsed.ElapsedMilliseconds} ms ({result.Sessions.Count} sessions).");
+                progress?.Complete();
                 RenderCopilotActivity();
             }
             catch (OperationCanceledException ex) when (token.IsCancellationRequested)

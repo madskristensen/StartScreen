@@ -12,6 +12,35 @@ namespace StartScreen.Test
     [TestClass]
     public class StartScreenInlineBindingTests
     {
+        [STATestMethod]
+        [DataRow(12d)]
+        [DataRow(20d)]
+        public void CopilotLoadingCaption_FitsTheHeaderWithoutTrimming(double fontSize)
+        {
+            var document = ReadLayoutXaml("StartScreenControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var definition = new XElement(document.Descendants(p + "TextBlock")
+                .Single(element => element.Attribute(x + "Name")?.Value == "LastRefreshText"));
+            definition.Attribute("Style")!.Remove();
+            var status = (TextBlock)XamlReader.Parse(definition.ToString());
+            var binding = BindingOperations.GetBinding(status, TextBlock.TextProperty)!;
+            BindingOperations.SetBinding(status, TextBlock.TextProperty, new Binding(binding.Path.Path)
+            {
+                Source = new { UnifiedRefreshStatus = StartScreen.ToolWindows.Controls.DevHubPanel.CopilotLoadingStep },
+                Mode = binding.Mode,
+            }).UpdateTarget();
+            status.FontSize = fontSize;
+            status.Measure(new Size(500, 100));
+            status.Arrange(new Rect(0, 0, status.DesiredSize.Width, status.DesiredSize.Height));
+            var untrimmed = new TextBlock { Text = status.Text, FontFamily = status.FontFamily, FontSize = fontSize };
+            untrimmed.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
+            Assert.AreEqual("Loading VS Copilot...", status.Text);
+            Assert.IsLessThanOrEqualTo(status.ActualWidth, untrimmed.DesiredSize.Width,
+                $"The {untrimmed.DesiredSize.Width:F1}px caption must fit the {status.ActualWidth:F1}px header at font size {fontSize}.");
+        }
+
         [TestMethod]
         public void NewsFeedSettings_AreAvailableOnlyInTheSettingsPopup()
         {

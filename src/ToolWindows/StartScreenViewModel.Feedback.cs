@@ -122,6 +122,8 @@ namespace StartScreen.ToolWindows
             CancellationTokenSource refresh = ReplaceRefreshCancellation(ref _feedbackRefreshCancellation, cancellationToken);
             CancellationToken token = refresh.Token;
             IsRefreshingFeedback = true;
+            _sectionProgress.TryGetValue("Feedback", out var progress);
+            progress?.Report(force ? "Refreshing feedback..." : "Loading feedback...");
             FeedbackTickets.Clear();
             LastFeedbackRefreshText = null;
             FeedbackStatus = "Feedback loading...";
@@ -135,9 +137,16 @@ namespace StartScreen.ToolWindows
                     await factory.SwitchToMainThreadAsync(token);
                     token.ThrowIfCancellationRequested();
                     if (cached != null)
-                        ApplyFeedbackSnapshot(cached, cached: true);
+                    {
+                        var fresh = FeedbackService.IsCacheFresh(cached, DateTime.UtcNow);
+                        ApplyFeedbackSnapshot(cached, cached: true, refreshing: !fresh);
+                        if (fresh)
+                            return;
+                    }
                 }
 
+                token.ThrowIfCancellationRequested();
+                progress?.Report("Refreshing feedback...");
                 FeedbackSnapshot snapshot = await _getFeedbackAsync(force, token);
                 await factory.SwitchToMainThreadAsync(token);
                 token.ThrowIfCancellationRequested();
@@ -174,7 +183,7 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private void ApplyFeedbackSnapshot(FeedbackSnapshot snapshot, bool cached)
+        private void ApplyFeedbackSnapshot(FeedbackSnapshot snapshot, bool cached, bool refreshing = false)
         {
             FeedbackTickets.Clear();
             foreach (FeedbackTicket ticket in snapshot.Tickets.OrderByDescending(ticket => ticket.UpdatedUtc)
@@ -182,8 +191,9 @@ namespace StartScreen.ToolWindows
                 FeedbackTickets.Add(ticket);
             LastFeedbackRefreshText = DateTime.UtcNow - snapshot.UpdatedUtc < TimeSpan.FromMinutes(1)
                 ? "Updated just now" : $"Updated at {snapshot.UpdatedUtc.ToLocalTime():t}";
-            FeedbackStatus = cached ? "Showing cached feedback. Refreshing from Developer Community..."
-                : snapshot.Tickets.Count == 0 ? "No created or currently upvoted tickets found for this Visual Studio account." : null;
+            FeedbackStatus = cached && refreshing ? "Showing cached feedback. Refreshing from Developer Community..."
+                : snapshot.Tickets.Count == 0 ? "No created or currently upvoted tickets found for this Visual Studio account."
+                : cached ? "Showing cached feedback." : null;
             SetRefreshState(FeedbackRefreshState, FeedbackStatus ?? LastFeedbackRefreshText,
                 cached: cached, successfulUtc: new DateTimeOffset(snapshot.UpdatedUtc));
         }

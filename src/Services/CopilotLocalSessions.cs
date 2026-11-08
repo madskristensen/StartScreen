@@ -33,11 +33,7 @@ namespace StartScreen.Services
             var sessions = new List<CopilotActivitySession>();
             var failures = 0;
             var unsupported = 0;
-            var mappings = ReadCodeMappings(codeCatalog, token, ex =>
-            {
-                ex.LogAsync().FileAndForget(nameof(CopilotLocalSessions));
-                failures++;
-            });
+            var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().WithDuplicateKeyChecking().Build();
             var root = Path.Combine(home, "session-state");
             if (Directory.Exists(root))
             {
@@ -51,20 +47,9 @@ namespace StartScreen.Services
                         continue;
                     try
                     {
-                        var session = ParseMetadata(ReadBoundedText(path), directory.Name, home);
+                        var session = ParseMetadata(ReadBoundedText(path), directory.Name, home, deserializer);
                         if (session == null)
                             continue;
-                        if (session.Origin == CopilotSessionOrigin.VisualStudioCode)
-                        {
-                            if (!mappings.TryGetValue(session.Id, out var native))
-                            {
-                                unsupported++;
-                                continue;
-                            }
-                            session.NativeSessionId = native.NativeSessionId;
-                            session.IsWorkspaceless = native.IsWorkspaceless;
-                            session.WorkingDirectory = native.IsWorkspaceless ? null : native.WorkingDirectory ?? session.WorkingDirectory;
-                        }
                         sessions.Add(session);
                     }
                     catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is YamlException
@@ -76,6 +61,28 @@ namespace StartScreen.Services
                 }
             }
             token.ThrowIfCancellationRequested();
+            var codeSessions = sessions.Where(session => session.Origin == CopilotSessionOrigin.VisualStudioCode).ToArray();
+            if (codeSessions.Length > 0)
+            {
+                var mappings = ReadCodeMappings(codeCatalog, token, ex =>
+                {
+                    ex.LogAsync().FileAndForget(nameof(CopilotLocalSessions));
+                    failures++;
+                }, new HashSet<string>(codeSessions.Select(session => session.Id), StringComparer.OrdinalIgnoreCase));
+                foreach (var session in codeSessions)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (!mappings.TryGetValue(session.Id, out var native))
+                    {
+                        unsupported++;
+                        sessions.Remove(session);
+                        continue;
+                    }
+                    session.NativeSessionId = native.NativeSessionId;
+                    session.IsWorkspaceless = native.IsWorkspaceless;
+                    session.WorkingDirectory = native.IsWorkspaceless ? null : native.WorkingDirectory ?? session.WorkingDirectory;
+                }
+            }
             return new CopilotSessionDiscovery
             {
                 Sessions = sessions.OrderByDescending(session => session.LastActivity).ToArray(),
@@ -88,6 +95,12 @@ namespace StartScreen.Services
         }
 
         internal static CopilotActivitySession ParseMetadata(string yaml, string directoryId, string home)
+        {
+            return ParseMetadata(yaml, directoryId, home,
+                new DeserializerBuilder().IgnoreUnmatchedProperties().WithDuplicateKeyChecking().Build());
+        }
+
+        private static CopilotActivitySession ParseMetadata(string yaml, string directoryId, string home, IDeserializer deserializer)
         {
             if (yaml == null || yaml.Length > 65536)
                 throw new InvalidDataException("Copilot session metadata is missing or too large.");
@@ -102,8 +115,7 @@ namespace StartScreen.Services
                 if (depth > 16 || parser.Current is YamlDotNet.Core.Events.AnchorAlias)
                     throw new InvalidDataException("Copilot session metadata contains unsupported nesting or aliases.");
             }
-            var metadata = new DeserializerBuilder().IgnoreUnmatchedProperties().WithDuplicateKeyChecking()
-                .Build().Deserialize<SessionMetadata>(yaml)
+            var metadata = deserializer.Deserialize<SessionMetadata>(yaml)
                 ?? throw new InvalidDataException("The Copilot session metadata is empty.");
             if (!Guid.TryParseExact(metadata.Id, "D", out var id) || !string.Equals(metadata.Id, directoryId, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The Copilot session ID does not match its saved directory.");
@@ -130,9 +142,14 @@ namespace StartScreen.Services
             };
         }
 
-        internal static Dictionary<string, CodeSessionMetadata> ReadCodeMappings(string catalog, CancellationToken token, Action<Exception> onError)
+        internal static Dictionary<string, CodeSessionMetadata> ReadCodeMappings(string catalog, CancellationToken token,
+            Action<Exception> onError, HashSet<string> requiredSessionIds = null)
         {
             var mappings = new Dictionary<string, CodeSessionMetadata>(StringComparer.OrdinalIgnoreCase);
+            var remaining = requiredSessionIds == null ? null : new HashSet<string>(requiredSessionIds, StringComparer.OrdinalIgnoreCase);
+            token.ThrowIfCancellationRequested();
+            if (remaining?.Count == 0)
+                return mappings;
             if (!Directory.Exists(catalog))
                 return mappings;
             foreach (var directory in new DirectoryInfo(catalog).EnumerateDirectories()
@@ -146,10 +163,14 @@ namespace StartScreen.Services
                 try
                 {
                     var metadata = ReadCodeMetadata(path);
-                    if (metadata != null && !mappings.ContainsKey(metadata.RuntimeId))
+                    if (metadata != null && (remaining == null || remaining.Contains(metadata.RuntimeId))
+                        && !mappings.ContainsKey(metadata.RuntimeId))
                     {
                         metadata.NativeSessionId = directory.Name;
                         mappings.Add(metadata.RuntimeId, metadata);
+                        remaining?.Remove(metadata.RuntimeId);
+                        if (remaining?.Count == 0)
+                            break;
                     }
                 }
                 catch (Exception ex) when (ex is SqliteException || ex is IOException || ex is UnauthorizedAccessException
