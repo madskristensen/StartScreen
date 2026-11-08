@@ -172,7 +172,9 @@ shift when services are healthy. Its tooltip identifies this initial assumption.
 Checking again preserves the current indicator until a result arrives. Failed or stale
 results are shown explicitly rather than continuing to report healthy services.
 Visual Studio shutdown also cancels background work and pending dispatcher waits,
-without waiting for the Start Screen to unload or hiding it synchronously.
+including refresh completion callbacks, without waiting for the Start Screen to
+unload or hiding it synchronously. Feed watcher creation runs outside the disposal
+lock, and shutdown discards watchers whose initialization finishes late.
 Background Git fetches suppress credential prompts, honor cancellation, and time
 out after five seconds. Reopening the screen does not retry the same repository
 more than once every fifteen minutes, including failed fetch attempts.

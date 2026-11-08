@@ -643,7 +643,7 @@ namespace StartScreen.ToolWindows
 
             if (isCurrent && !_isDisposed)
             {
-                onCompleted();
+                onCompleted?.Invoke();
             }
         }
 
@@ -685,8 +685,7 @@ namespace StartScreen.ToolWindows
             }
             finally
             {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                CompleteRefresh(ref _mruMetadataCancellation, refreshCancellation, () => { });
+                CompleteRefresh(ref _mruMetadataCancellation, refreshCancellation, null);
             }
         }
 
@@ -714,11 +713,8 @@ namespace StartScreen.ToolWindows
 
                 await TaskScheduler.Default;
 
-                lock (_cancellationSync)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    FeedStore.StartWatching();
-                }
+                cancellationToken.ThrowIfCancellationRequested();
+                FeedStore.StartWatching();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -864,7 +860,7 @@ namespace StartScreen.ToolWindows
                 var allItems = updatedMru.Concat(extendedItems).ToList();
 
                 // Update on UI thread
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
 
                 _mruMetadataCache.Apply(allItems, _workspaceActivityContext);
@@ -1036,7 +1032,7 @@ namespace StartScreen.ToolWindows
                 }, cancellationToken);
 
                 // Update on UI thread
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 DiscoverySectionTitle = title;
                 DiscoverySectionVersion = version;

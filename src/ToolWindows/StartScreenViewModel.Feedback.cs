@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Azure.Identity;
 using Microsoft.VisualStudio.Threading;
+using StartScreen.Helpers;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -15,7 +16,7 @@ namespace StartScreen.ToolWindows
         private readonly Func<CancellationToken, Task<FeedbackSnapshot>> _getCachedFeedbackAsync;
         private readonly Func<JoinableTaskFactory> _getFeedbackTaskFactory;
         private CancellationTokenSource _feedbackRefreshCancellation;
-        private Task _feedbackRefreshTask = Task.CompletedTask;
+        private JoinableTask _feedbackRefreshTask;
         private bool _feedbackRequested;
         private bool _isRefreshingFeedback;
         private string _lastFeedbackRefreshText;
@@ -112,9 +113,9 @@ namespace StartScreen.ToolWindows
         {
             if (GetBackgroundCancellationToken().IsCancellationRequested)
                 return Task.CompletedTask;
-            if (IsRefreshingFeedback)
-                return _feedbackRefreshTask;
-            return _feedbackRefreshTask = _getFeedbackTaskFactory().RunAsync(() => RefreshFeedbackAsync(force, cancellationToken)).Task;
+            if (!IsRefreshingFeedback)
+                _feedbackRefreshTask = _getFeedbackTaskFactory().RunAsync(() => RefreshFeedbackAsync(force, cancellationToken));
+            return _feedbackRefreshTask.JoinAsync(cancellationToken);
         }
 
         internal async Task RefreshFeedbackAsync(bool force, CancellationToken cancellationToken = default)
@@ -138,6 +139,8 @@ namespace StartScreen.ToolWindows
             {
                 if (!force)
                 {
+                    await TaskScheduler.Default;
+                    token.ThrowIfCancellationRequested();
                     cached = await _getCachedFeedbackAsync(token);
                     await factory.SwitchToMainThreadAsync(token);
                     token.ThrowIfCancellationRequested();
@@ -152,6 +155,8 @@ namespace StartScreen.ToolWindows
 
                 token.ThrowIfCancellationRequested();
                 progress?.Report("Refreshing feedback...");
+                await TaskScheduler.Default;
+                token.ThrowIfCancellationRequested();
                 FeedbackSnapshot snapshot = await _getFeedbackAsync(force, token);
                 await factory.SwitchToMainThreadAsync(token);
                 token.ThrowIfCancellationRequested();
@@ -164,27 +169,32 @@ namespace StartScreen.ToolWindows
             catch (Exception ex)
             {
                 await ex.LogAsync();
-                await factory.SwitchToMainThreadAsync();
-                if (!token.IsCancellationRequested)
+                if (!_isDisposed)
                 {
-                    var authentication = ex is UnauthorizedAccessException || ex is CredentialUnavailableException || ex is AuthenticationFailedException;
-                    FeedbackRequiresSignIn = authentication;
-                    var retainCache = cached != null && !authentication;
-                    if (!retainCache)
-                        FeedbackTickets.Clear();
-                    LastFeedbackRefreshText = retainCache ? "Showing cached feedback" : "Feedback unavailable";
-                    FeedbackStatus = authentication
-                        ? "Sign in or reauthenticate in Visual Studio, select your account under Tools > Options > Azure Service Authentication, then use Refresh."
-                        : retainCache ? "Showing cached feedback - Developer Community is unavailable. Use Refresh to retry."
-                        : "Developer Community is unavailable. Use Refresh to retry.";
-                    SetRefreshState(FeedbackRefreshState, FeedbackStatus, cached: retainCache,
-                        stale: retainCache, unavailable: !retainCache);
+                    await factory.RunOnMainThreadForCleanupAsync(_shutdownToken, () =>
+                    {
+                        if (_isDisposed || token.IsCancellationRequested)
+                            return;
+                        var authentication = ex is UnauthorizedAccessException || ex is CredentialUnavailableException || ex is AuthenticationFailedException;
+                        FeedbackRequiresSignIn = authentication;
+                        var retainCache = cached != null && !authentication;
+                        if (!retainCache)
+                            FeedbackTickets.Clear();
+                        LastFeedbackRefreshText = retainCache ? "Showing cached feedback" : "Feedback unavailable";
+                        FeedbackStatus = authentication
+                            ? "Sign in or reauthenticate in Visual Studio, select your account under Tools > Options > Azure Service Authentication, then use Refresh."
+                            : retainCache ? "Showing cached feedback - Developer Community is unavailable. Use Refresh to retry."
+                            : "Developer Community is unavailable. Use Refresh to retry.";
+                        SetRefreshState(FeedbackRefreshState, FeedbackStatus, cached: retainCache,
+                            stale: retainCache, unavailable: !retainCache);
+                    });
                 }
             }
             finally
             {
-                await factory.SwitchToMainThreadAsync();
-                CompleteRefresh(ref _feedbackRefreshCancellation, refresh, () => IsRefreshingFeedback = false);
+                if (_isDisposed || !await factory.RunOnMainThreadForCleanupAsync(_shutdownToken,
+                    () => CompleteRefresh(ref _feedbackRefreshCancellation, refresh, () => IsRefreshingFeedback = false)))
+                    CompleteRefresh(ref _feedbackRefreshCancellation, refresh, null);
             }
         }
 

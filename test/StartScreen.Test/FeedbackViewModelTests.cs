@@ -33,6 +33,8 @@ namespace StartScreen.Test
             Assert.AreEqual("Select Feedback to load your tickets.", model.FeedbackStatus);
             model.EnsureFeedbackLoaded();
             context.Factory.Run(() => model.RefreshFeedbackIfRequestedAsync());
+            Assert.AreEqual(1, requests, "The first background caller joins the tab-triggered refresh.");
+            context.Factory.Run(() => model.RefreshFeedbackIfRequestedAsync());
             Assert.AreEqual(2, requests, "After tab demand, a later background refresh may refresh feedback again.");
             Assert.HasCount(1, model.FeedbackTickets);
             model.CancelBackgroundWork();
@@ -202,6 +204,7 @@ namespace StartScreen.Test
         {
             using var context = CreateContext();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
             var cached = new FeedbackSnapshot(7, Snapshot(7).Tickets, DateTime.UtcNow.AddDays(-3));
             var requests = 0;
@@ -209,6 +212,7 @@ namespace StartScreen.Test
             {
                 Assert.IsFalse(force);
                 requests++;
+                started.SetResult(true);
                 return pending.Task;
             }, _ => Task.FromResult(cached));
             try
@@ -216,6 +220,7 @@ namespace StartScreen.Test
                 context.Factory.Run(async () =>
                 {
                     Task refresh = model.RefreshFeedbackInBackgroundAsync();
+                    await started.Task.WithCancellation(timeout.Token);
                     Assert.AreEqual(7L, model.FeedbackTickets.Single().Id);
                     Assert.IsTrue(model.FeedbackRefreshState.IsCached);
                     Assert.IsTrue(model.IsRefreshingFeedback);
@@ -247,6 +252,7 @@ namespace StartScreen.Test
         {
             using var context = CreateContext();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
             var now = DateTime.UtcNow;
             var tickets = Enumerable.Range(1, count).Select(id => new FeedbackTicket
@@ -260,12 +266,17 @@ namespace StartScreen.Test
             var fresh = new FeedbackSnapshot(7, tickets.AsEnumerable().Reverse().ToArray(), now);
             var expected = count == 0 ? Array.Empty<long>()
                 : new long[] { 1 }.Concat(Enumerable.Range(2, count - 1).Reverse().Select(id => (long)id)).Take(20).ToArray();
-            using var model = Model(context, (_, _) => pending.Task, _ => Task.FromResult(cached));
+            using var model = Model(context, (_, _) =>
+            {
+                started.SetResult(true);
+                return pending.Task;
+            }, _ => Task.FromResult(cached));
             try
             {
                 context.Factory.Run(async () =>
                 {
                     Task refresh = model.RefreshFeedbackInBackgroundAsync();
+                    await started.Task.WithCancellation(timeout.Token);
                     CollectionAssert.AreEqual(expected, model.FeedbackTickets.Select(ticket => ticket.Id).ToArray());
                     Assert.IsTrue(model.FeedbackRefreshState.IsCached);
 
@@ -346,6 +357,7 @@ namespace StartScreen.Test
         {
             using var context = CreateContext();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
             var cacheReads = 0;
             var onlineRequests = 0;
@@ -353,10 +365,17 @@ namespace StartScreen.Test
             {
                 onlineRequests++;
                 return Task.FromResult(Snapshot(8));
-            }, _ => ++cacheReads == 1 ? pending.Task : Task.FromResult(Snapshot(8)));
+            }, _ =>
+            {
+                if (++cacheReads != 1)
+                    return Task.FromResult(Snapshot(8));
+                started.SetResult(true);
+                return pending.Task;
+            });
             try
             {
                 var previous = context.Factory.RunAsync(() => model.RefreshFeedbackInBackgroundAsync());
+                context.Factory.Run(() => started.Task.WithCancellation(timeout.Token));
                 model.CancelBackgroundWork();
                 model.ActivateBackgroundWork();
                 context.Factory.Run(() => model.RefreshFeedbackInBackgroundAsync());
@@ -379,12 +398,14 @@ namespace StartScreen.Test
         {
             using var context = CreateContext();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
             var requests = 0;
             var model = Model(context, (force, _) =>
             {
                 Assert.IsFalse(force);
                 requests++;
+                started.SetResult(true);
                 return pending.Task;
             });
             try
@@ -393,14 +414,17 @@ namespace StartScreen.Test
                 {
                     Task refresh = model.RefreshFeedbackInBackgroundAsync();
                     model.EnsureFeedbackLoaded();
-                    Assert.AreSame(refresh, model.RefreshFeedbackInBackgroundAsync());
+                    Task sharedRefresh = model.RefreshFeedbackInBackgroundAsync();
+                    await started.Task.WithCancellation(timeout.Token);
 
                     Assert.AreEqual(1, requests);
                     Assert.IsTrue(model.IsRefreshingFeedback);
                     Assert.IsFalse(refresh.IsCompleted);
                     pending.SetResult(Snapshot(7));
                     await refresh.WithCancellation(timeout.Token);
+                    await sharedRefresh.WithCancellation(timeout.Token);
 
+                    Assert.AreEqual(1, requests, "Both callers must join the same backend refresh.");
                     Assert.AreEqual(7L, model.FeedbackTickets.Single().Id);
                     Assert.IsFalse(model.IsRefreshingFeedback);
                 });
@@ -429,6 +453,7 @@ namespace StartScreen.Test
                 Assert.IsEmpty(model.FeedbackTickets);
                 model.ActivateBackgroundWork();
                 model.EnsureFeedbackLoaded();
+                context.Factory.Run(() => model.RefreshFeedbackInBackgroundAsync());
 
                 Assert.AreEqual(2, requests);
                 Assert.AreEqual(2L, model.FeedbackTickets.Single().Id);
@@ -453,11 +478,13 @@ namespace StartScreen.Test
             try
             {
                 model.EnsureFeedbackLoaded();
+                context.Factory.Run(() => model.RefreshFeedbackInBackgroundAsync());
                 Assert.AreEqual(1L, model.FeedbackTickets.Single().Id);
 
                 model.EnsureFeedbackLoaded();
                 model.ForceRefreshFeedback();
                 model.EnsureFeedbackLoaded();
+                context.Factory.Run(() => model.RefreshFeedbackInBackgroundAsync());
 
                 CollectionAssert.AreEqual(new[] { false, true }, requests);
                 Assert.AreEqual(2L, model.FeedbackTickets.Single().Id);
@@ -473,13 +500,18 @@ namespace StartScreen.Test
         public void Refresh_ClearsPreviousAccountWhileLoadingAndTracksUnifiedProgress()
         {
             using var context = CreateContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
             var requests = 0;
             var forced = false;
             var model = Model(context, (force, _) =>
             {
                 forced = force;
-                return ++requests == 1 ? Task.FromResult(Snapshot(7)) : pending.Task;
+                if (++requests == 1)
+                    return Task.FromResult(Snapshot(7));
+                started.SetResult(true);
+                return pending.Task;
             });
             try
             {
@@ -487,6 +519,7 @@ namespace StartScreen.Test
                 Assert.AreEqual(7L, model.FeedbackTickets.Single().Id);
 
                 var refresh = context.Factory.RunAsync(() => model.RefreshFeedbackAsync(true));
+                context.Factory.Run(() => started.Task.WithCancellation(timeout.Token));
 
                 Assert.IsTrue(forced);
                 Assert.IsEmpty(model.FeedbackTickets);
@@ -497,7 +530,6 @@ namespace StartScreen.Test
                 StringAssert.Contains(model.UnifiedRefreshDetails, "feedback");
 
                 pending.SetResult(Snapshot(8));
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 refresh.Join(timeout.Token);
 
                 Assert.AreEqual(8L, model.FeedbackTickets.Single().Id);
@@ -561,6 +593,8 @@ namespace StartScreen.Test
         public void CanceledRefresh_CannotOverwriteANewerAccount(bool hideAndReopen)
         {
             using var context = CreateContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
             var requests = 0;
             CancellationToken oldToken = default;
@@ -569,13 +603,15 @@ namespace StartScreen.Test
                 if (++requests == 1)
                 {
                     oldToken = token;
+                    started.SetResult(true);
                     return pending.Task;
                 }
                 return Task.FromResult(Snapshot(8));
             });
             try
             {
-                var old = context.Factory.RunAsync(() => model.RefreshFeedbackAsync(false));
+                var old = context.Factory.RunAsync(() => model.RefreshFeedbackAsync(true));
+                context.Factory.Run(() => started.Task.WithCancellation(timeout.Token));
                 if (hideAndReopen)
                 {
                     model.CancelBackgroundWork();
@@ -586,7 +622,6 @@ namespace StartScreen.Test
                 context.Factory.Run(() => model.RefreshFeedbackAsync(true));
                 Assert.IsTrue(oldToken.IsCancellationRequested);
                 pending.SetResult(Snapshot(7));
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 old.Join(timeout.Token);
 
                 Assert.AreEqual(8L, model.FeedbackTickets.Single().Id);

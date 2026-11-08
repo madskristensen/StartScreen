@@ -11,6 +11,50 @@ namespace StartScreen.Test
     [TestClass]
     public class RefreshStateAndLifecycleTests
     {
+        [STATestMethod]
+        [DataRow(false, false)]
+        [DataRow(false, true)]
+        [DataRow(true, false)]
+        [DataRow(true, true)]
+        public async Task PendingRefresh_ShutdownReleasesSourcesWithoutUiDispatchAsync(bool feedback, bool dispose)
+        {
+            var dispatcher = new DispatcherHelperTests.QueuedSynchronizationContext();
+            using var context = new JoinableTaskContext(Thread.CurrentThread, dispatcher);
+            using var shutdown = new CancellationTokenSource();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var feedbackResult = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var healthResult = new TaskCompletionSource<ServiceHealthStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken requestToken = default;
+            using var model = new StartScreenViewModel(shutdown.Token,
+                token => { requestToken = token; started.TrySetResult(true); return healthResult.Task; }, () => context.Factory,
+                (_, token) => { requestToken = token; started.TrySetResult(true); return feedbackResult.Task; }, () => context.Factory);
+            var refresh = context.Factory.RunAsync(() => feedback
+                ? model.RefreshFeedbackAsync(true) : model.RefreshServiceHealthAsync(CancellationToken.None));
+            var sourceField = typeof(StartScreenViewModel).GetField(feedback
+                ? "_feedbackRefreshCancellation" : "_serviceHealthRefreshCancellation", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var source = (CancellationTokenSource)sourceField.GetValue(model)!;
+            Assert.IsNotNull(source);
+            Assert.IsFalse(refresh.IsCompleted);
+
+            await TaskScheduler.Default;
+            await started.Task.WithCancellation(timeout.Token);
+            if (dispose)
+                model.Dispose();
+            else
+                shutdown.Cancel();
+            Assert.IsTrue(requestToken.IsCancellationRequested);
+            var notifications = new List<string?>();
+            model.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+            feedbackResult.TrySetResult(new FeedbackSnapshot(1, [], DateTime.UtcNow));
+            healthResult.TrySetResult(new ServiceHealthStatus(ServiceHealthState.Healthy, "Operational", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+            await refresh.Task.WithCancellation(timeout.Token);
+
+            Assert.IsNull(sourceField.GetValue(model), "Cancellation-source cleanup must complete even when the UI cannot run.");
+            Assert.IsEmpty(notifications);
+            Assert.AreEqual(0, dispatcher.PostCount);
+        }
+
         [TestMethod]
         public void RepeatedInstances_DisposeRemovesFeedSubscriptionAndCannotReactivate()
         {
@@ -76,23 +120,26 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        public void DisposeDuringRefresh_CancelsButKeepsSourceAliveUntilOperationCompletes()
+        public async Task DisposeDuringRefresh_CancelsButKeepsSourceAliveUntilOperationCompletesAsync()
         {
             using var context = new JoinableTaskContext(Thread.CurrentThread,
                 new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
             var pending = new TaskCompletionSource<FeedbackSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             CancellationToken requestToken = default;
             using var model = new StartScreenViewModel(CancellationToken.None,
-                getFeedbackAsync: (_, token) => { requestToken = token; return pending.Task; },
+                getFeedbackAsync: (_, token) => { requestToken = token; started.TrySetResult(true); return pending.Task; },
                 getFeedbackTaskFactory: () => context.Factory);
-            var refresh = context.Factory.RunAsync(() => model.RefreshFeedbackAsync(false));
+            var refresh = context.Factory.RunAsync(() => model.RefreshFeedbackAsync(true));
             Assert.IsTrue(model.IsRefreshingFeedback);
 
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await TaskScheduler.Default;
+            await started.Task.WithCancellation(timeout.Token);
             model.Dispose();
             Assert.IsTrue(requestToken.IsCancellationRequested);
             pending.SetResult(new FeedbackSnapshot(1, [], DateTime.UtcNow));
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            refresh.Join(timeout.Token);
+            await refresh.Task.WithCancellation(timeout.Token);
 
             Assert.IsEmpty(model.FeedbackTickets);
             Assert.IsFalse(model.IsRefreshingFeedback);

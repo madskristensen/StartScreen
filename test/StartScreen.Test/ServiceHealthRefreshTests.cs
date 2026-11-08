@@ -221,6 +221,8 @@ namespace StartScreen.Test
         public void Refresh_CanceledResultsCannotOverwriteNewerStatus(bool hideAndReopen)
         {
             using var context = CreateContext();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var pending = new TaskCompletionSource<ServiceHealthStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
             var requests = 0;
             CancellationToken oldToken = default;
@@ -229,6 +231,7 @@ namespace StartScreen.Test
                 if (++requests == 1)
                 {
                     oldToken = token;
+                    started.SetResult(true);
                     return pending.Task;
                 }
                 return Task.FromResult(Status(ServiceHealthState.Healthy));
@@ -237,6 +240,7 @@ namespace StartScreen.Test
             {
                 JoinableTask oldRefresh = context.Factory.RunAsync(() => model.RefreshServiceHealthAsync(CancellationToken.None));
                 Assert.IsFalse(oldRefresh.IsCompleted);
+                context.Factory.Run(() => started.Task.WithCancellation(timeout.Token));
                 if (hideAndReopen)
                 {
                     model.CancelBackgroundWork();
@@ -249,7 +253,6 @@ namespace StartScreen.Test
                 Assert.IsTrue(model.IsServiceHealthy);
 
                 pending.SetResult(Status(ServiceHealthState.Incident));
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 oldRefresh.Join(timeout.Token);
 
                 Assert.AreEqual(2, requests);
@@ -333,20 +336,33 @@ namespace StartScreen.Test
             Assert.IsTrue(timer.IsEnabled);
             var frame = new DispatcherFrame();
             var fired = false;
-            EventHandler onTick = (_, _) => { fired = true; frame.Continue = false; };
+            EventHandler onTick = (_, _) =>
+            {
+                fired = true;
+                if (!model.WorkspaceRefreshState.IsLoading)
+                    frame.Continue = false;
+            };
+            System.ComponentModel.PropertyChangedEventHandler onChanged = (_, _) =>
+            {
+                if (fired && !model.WorkspaceRefreshState.IsLoading)
+                    frame.Continue = false;
+            };
             var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
             timeout.Tick += (_, _) => frame.Continue = false;
             timer.Tick += onTick;
+            model.PropertyChanged += onChanged;
             timer.Interval = TimeSpan.FromMilliseconds(1);
             timeout.Start();
             try
             {
                 Dispatcher.PushFrame(frame);
                 Assert.IsTrue(fired, "The scheduled service-health refresh must fire.");
+                Assert.IsFalse(model.WorkspaceRefreshState.IsLoading, "The scheduled refresh must finish before its result is checked.");
             }
             finally
             {
                 timer.Tick -= onTick;
+                model.PropertyChanged -= onChanged;
                 timeout.Stop();
             }
         }

@@ -8,6 +8,26 @@ namespace StartScreen.Helpers
 {
     internal static class DispatcherHelper
     {
+        internal static async System.Threading.Tasks.Task<bool> RunOnMainThreadForCleanupAsync(
+            this JoinableTaskFactory factory, CancellationToken shutdownToken, Action cleanup)
+        {
+            if (shutdownToken.IsCancellationRequested)
+                return false;
+            try
+            {
+                await factory.SwitchToMainThreadAsync(shutdownToken);
+                if (shutdownToken.IsCancellationRequested)
+                    return false;
+                cleanup();
+                return true;
+            }
+            catch (OperationCanceledException ex) when (shutdownToken.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+                return false;
+            }
+        }
+
         internal static async Task YieldAsync(
             this JoinableTaskFactory factory, DispatcherPriority priority, CancellationToken cancellationToken)
         {

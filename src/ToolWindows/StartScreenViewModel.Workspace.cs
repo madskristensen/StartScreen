@@ -264,13 +264,17 @@ namespace StartScreen.ToolWindows
             }
             finally
             {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (generation == _workspaceSignalsGeneration)
+                if (!_isDisposed)
                 {
-                    _isRefreshingWorkspaceSignals = false;
-                    WorkspaceRefreshState.IsLoading = false;
-                    OnPropertyChanged(nameof(IsRefreshingAny));
-                    NotifyRefreshStatusChanged();
+                    await ThreadHelper.JoinableTaskFactory.RunOnMainThreadForCleanupAsync(_shutdownToken, () =>
+                    {
+                        if (_isDisposed || generation != _workspaceSignalsGeneration)
+                            return;
+                        _isRefreshingWorkspaceSignals = false;
+                        WorkspaceRefreshState.IsLoading = false;
+                        OnPropertyChanged(nameof(IsRefreshingAny));
+                        NotifyRefreshStatusChanged();
+                    });
                 }
             }
         }
@@ -291,6 +295,8 @@ namespace StartScreen.ToolWindows
             try
             {
                 SetServiceHealth("Checking service status...", "Checking the public Visual Studio service status.", false, isChecking: true);
+                await TaskScheduler.Default;
+                refreshCancellation.Token.ThrowIfCancellationRequested();
                 var status = await _getServiceHealthStatusAsync(refreshCancellation.Token);
                 await taskFactory.SwitchToMainThreadAsync(refreshCancellation.Token);
                 refreshCancellation.Token.ThrowIfCancellationRequested();
@@ -307,32 +313,37 @@ namespace StartScreen.ToolWindows
             catch (Exception ex)
             {
                 await ex.LogAsync();
-                await taskFactory.SwitchToMainThreadAsync();
-                if (!refreshCancellation.IsCancellationRequested)
+                if (!_isDisposed)
                 {
-                    SetServiceHealth("Service status unavailable", "Unable to refresh Visual Studio service status. Retrying automatically in five minutes. Open the status page for current information.", false);
-                    SetRefreshState(WorkspaceRefreshState, ServiceHealthText, unavailable: true);
+                    await taskFactory.RunOnMainThreadForCleanupAsync(_shutdownToken, () =>
+                    {
+                        if (_isDisposed || refreshCancellation.IsCancellationRequested)
+                            return;
+                        SetServiceHealth("Service status unavailable", "Unable to refresh Visual Studio service status. Retrying automatically in five minutes. Open the status page for current information.", false);
+                        SetRefreshState(WorkspaceRefreshState, ServiceHealthText, unavailable: true);
+                    });
                 }
             }
             finally
             {
-                await taskFactory.SwitchToMainThreadAsync();
-                CompleteRefresh(ref _serviceHealthRefreshCancellation, refreshCancellation, () =>
-                {
-                    WorkspaceRefreshState.IsLoading = false;
-                    OnPropertyChanged(nameof(IsRefreshingAny));
-                    NotifyRefreshStatusChanged();
-                    if (cancellationToken.IsCancellationRequested || GetBackgroundCancellationToken().IsCancellationRequested)
-                        return;
-
-                    if (_serviceHealthRefreshTimer == null)
+                if (_isDisposed || !await taskFactory.RunOnMainThreadForCleanupAsync(_shutdownToken,
+                    () => CompleteRefresh(ref _serviceHealthRefreshCancellation, refreshCancellation, () =>
                     {
-                        _serviceHealthRefreshTimer = new System.Windows.Threading.DispatcherTimer();
-                        _serviceHealthRefreshTimer.Tick += ServiceHealthRefreshTimer_Tick;
-                    }
-                    _serviceHealthRefreshTimer.Interval = TimeSpan.FromMinutes(5);
-                    _serviceHealthRefreshTimer.Start();
-                });
+                        WorkspaceRefreshState.IsLoading = false;
+                        OnPropertyChanged(nameof(IsRefreshingAny));
+                        NotifyRefreshStatusChanged();
+                        if (cancellationToken.IsCancellationRequested || GetBackgroundCancellationToken().IsCancellationRequested)
+                            return;
+
+                        if (_serviceHealthRefreshTimer == null)
+                        {
+                            _serviceHealthRefreshTimer = new System.Windows.Threading.DispatcherTimer();
+                            _serviceHealthRefreshTimer.Tick += ServiceHealthRefreshTimer_Tick;
+                        }
+                        _serviceHealthRefreshTimer.Interval = TimeSpan.FromMinutes(5);
+                        _serviceHealthRefreshTimer.Start();
+                    })))
+                    CompleteRefresh(ref _serviceHealthRefreshCancellation, refreshCancellation, null);
             }
         }
 

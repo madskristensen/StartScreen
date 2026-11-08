@@ -24,7 +24,9 @@ namespace StartScreen.Services
 
         private static readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
         private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+        private static readonly object _watcherLock = new object();
         private static FileSystemWatcher _watcher;
+        private static int _watcherGeneration;
 
         /// <summary>
         /// Event raised when the newsfeeds.json file changes.
@@ -36,28 +38,58 @@ namespace StartScreen.Services
         /// </summary>
         public static void StartWatching()
         {
-            if (_watcher != null)
+            StartWatching(() =>
             {
-                return;
-            }
-
-            try
-            {
-                // Ensure the folder exists
                 Directory.CreateDirectory(_userProfileFolder);
-                _watcher = new FileSystemWatcher(_userProfileFolder, "newsfeeds.json")
+                return new FileSystemWatcher(_userProfileFolder, "newsfeeds.json")
                 {
                     NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.FileName,
-                    EnableRaisingEvents = true
                 };
+            }, StartScreenPackage.ShutdownToken);
+        }
 
-                _watcher.Changed += OnFileChanged;
-                _watcher.Created += OnFileChanged;
-                _watcher.Renamed += OnFileChanged;
+        internal static void StartWatching(Func<FileSystemWatcher> createWatcher, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int generation;
+            lock (_watcherLock)
+            {
+                if (_watcher != null)
+                    return;
+                generation = _watcherGeneration;
+            }
+
+            FileSystemWatcher watcher = null;
+            try
+            {
+                watcher = createWatcher();
+                watcher.Changed += OnFileChanged;
+                watcher.Created += OnFileChanged;
+                watcher.Renamed += OnFileChanged;
+                watcher.EnableRaisingEvents = true;
+
+                lock (_watcherLock)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (generation == _watcherGeneration && _watcher == null)
+                    {
+                        _watcher = watcher;
+                        watcher = null;
+                    }
+                }
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                ex.LogAsync().FireAndForget();
+                throw;
             }
             catch (Exception ex)
             {
                 ex.LogAsync().FireAndForget();
+            }
+            finally
+            {
+                watcher?.Dispose();
             }
         }
 
@@ -66,14 +98,20 @@ namespace StartScreen.Services
         /// </summary>
         public static void StopWatching()
         {
-            if (_watcher != null)
+            FileSystemWatcher watcher;
+            lock (_watcherLock)
             {
-                _watcher.EnableRaisingEvents = false;
-                _watcher.Changed -= OnFileChanged;
-                _watcher.Created -= OnFileChanged;
-                _watcher.Renamed -= OnFileChanged;
-                _watcher.Dispose();
+                _watcherGeneration++;
+                watcher = _watcher;
                 _watcher = null;
+            }
+            if (watcher != null)
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Changed -= OnFileChanged;
+                watcher.Created -= OnFileChanged;
+                watcher.Renamed -= OnFileChanged;
+                watcher.Dispose();
             }
             lock (_debounceLock)
             {
@@ -90,8 +128,14 @@ namespace StartScreen.Services
             // Timer-based debounce - file save can trigger multiple events
             lock (_debounceLock)
             {
+                if (!ReferenceEquals(sender, Volatile.Read(ref _watcher)))
+                    return;
                 _debounceTimer?.Dispose();
-                _debounceTimer = new Timer(_ => FeedsChanged?.Invoke(null, EventArgs.Empty), null, 200, Timeout.Infinite);
+                _debounceTimer = new Timer(_ =>
+                {
+                    if (ReferenceEquals(sender, Volatile.Read(ref _watcher)) && !StartScreenPackage.ShutdownToken.IsCancellationRequested)
+                        FeedsChanged?.Invoke(null, EventArgs.Empty);
+                }, null, 200, Timeout.Infinite);
             }
         }
 

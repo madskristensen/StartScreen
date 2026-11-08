@@ -708,7 +708,7 @@ namespace StartScreen.ToolWindows
                 {
                     await TaskScheduler.Default;
                     var dashboard = await _devHubService.ScopeToRepoAsync(repo, cancellationToken, activityOptions, forceRefresh, scopeProgress);
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                     if (Equals(repo, ViewModel.SelectedRepository))
                     {
@@ -731,22 +731,32 @@ namespace StartScreen.ToolWindows
                 catch (Exception ex)
                 {
                     await ex.LogAsync();
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    if (!cancellationToken.IsCancellationRequested)
+                    if (!_isDisposed)
                     {
-                        _workspaceError = "Could not load repository activity. Refresh to try again.";
-                        UpdateDevHubPanel();
+                        await ThreadHelper.JoinableTaskFactory.RunOnMainThreadForCleanupAsync(_shutdownToken, () =>
+                        {
+                            if (_isDisposed || cancellationToken.IsCancellationRequested)
+                                return;
+                            _workspaceError = "Could not load repository activity. Refresh to try again.";
+                            UpdateDevHubPanel();
+                        });
                     }
                 }
                 finally
                 {
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                     if (!_isDisposed)
-                        DevHubPanelControl.SetActivityLoading(false);
-                    if (!cancellationToken.IsCancellationRequested)
                     {
-                        _isWorkspaceDevHubRefreshing = false;
-                        UpdateDevHubLoadingState();
+                        await ThreadHelper.JoinableTaskFactory.RunOnMainThreadForCleanupAsync(_shutdownToken, () =>
+                        {
+                            if (_isDisposed)
+                                return;
+                            DevHubPanelControl.SetActivityLoading(false);
+                            if (!cancellationToken.IsCancellationRequested)
+                            {
+                                _isWorkspaceDevHubRefreshing = false;
+                                UpdateDevHubLoadingState();
+                            }
+                        });
                     }
                 }
             }).FileAndForget(nameof(StartScreenControl));
@@ -908,15 +918,21 @@ namespace StartScreen.ToolWindows
             catch (Exception ex)
             {
                 await ex.LogAsync();
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (!cancellationToken.IsCancellationRequested)
-                    UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
+                if (!_isDisposed)
+                    await ThreadHelper.JoinableTaskFactory.RunOnMainThreadForCleanupAsync(_shutdownToken, () =>
+                    {
+                        if (!_isDisposed && !cancellationToken.IsCancellationRequested)
+                            UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
+                    });
             }
             finally
             {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (loadingStarted && !_isDisposed)
-                    DevHubPanelControl.SetActivityLoading(false);
+                    await ThreadHelper.JoinableTaskFactory.RunOnMainThreadForCleanupAsync(_shutdownToken, () =>
+                    {
+                        if (!_isDisposed)
+                            DevHubPanelControl.SetActivityLoading(false);
+                    });
             }
         }
 
@@ -951,7 +967,7 @@ namespace StartScreen.ToolWindows
 
                 await _devHubService.RefreshAsync(cancellationToken, progress, forceRefresh, activityOptions, work, work);
 
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 UpdateDevHubPanel();
                 if (ViewModel.SelectedRepository != null)
@@ -966,29 +982,39 @@ namespace StartScreen.ToolWindows
             {
                 await ex.LogAsync();
                 // Only show error if we have no cached data to fall back to
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (cancellationToken.IsCancellationRequested)
+                if (_isDisposed)
                     return;
-                if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
+                await ThreadHelper.JoinableTaskFactory.RunOnMainThreadForCleanupAsync(_shutdownToken, () =>
                 {
-                    UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
-                }
-                else
-                {
-                    DevHubPanelControl.ShowActivityError("Activity could not be refreshed. Showing loaded items. Refresh to retry.");
-                    ViewModel.SetDevHubRefreshState(_devHubService.CurrentDashboard,
-                        cached: true, error: "Activity could not be refreshed. Showing loaded items. Refresh to retry.");
-                }
+                    if (_isDisposed || cancellationToken.IsCancellationRequested)
+                        return;
+                    if (_devHubService.CurrentDashboard == null || !_devHubService.CurrentDashboard.HasAuthentication)
+                    {
+                        UpdateDevHubPanel(_devHubService.CurrentDashboard, "Could not load Dev Hub data.");
+                    }
+                    else
+                    {
+                        DevHubPanelControl.ShowActivityError("Activity could not be refreshed. Showing loaded items. Refresh to retry.");
+                        ViewModel.SetDevHubRefreshState(_devHubService.CurrentDashboard,
+                            cached: true, error: "Activity could not be refreshed. Showing loaded items. Refresh to retry.");
+                    }
+                });
             }
             finally
             {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (!_isDisposed)
-                    DevHubPanelControl.SetActivityLoading(false);
-                if (!cancellationToken.IsCancellationRequested && generation == _devHubRefreshGeneration)
                 {
-                    _isGlobalDevHubRefreshing = false;
-                    UpdateDevHubLoadingState();
+                    await ThreadHelper.JoinableTaskFactory.RunOnMainThreadForCleanupAsync(_shutdownToken, () =>
+                    {
+                        if (_isDisposed)
+                            return;
+                        DevHubPanelControl.SetActivityLoading(false);
+                        if (!cancellationToken.IsCancellationRequested && generation == _devHubRefreshGeneration)
+                        {
+                            _isGlobalDevHubRefreshing = false;
+                            UpdateDevHubLoadingState();
+                        }
+                    });
                 }
             }
         }

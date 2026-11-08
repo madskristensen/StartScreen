@@ -1,3 +1,5 @@
+using Community.VisualStudio.Toolkit;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 using StartScreen.Services;
 
@@ -6,6 +8,84 @@ namespace StartScreen.Test
     [TestClass]
     public class FeedStoreTests
     {
+        [TestMethod]
+        [DoNotParallelize]
+        public void Watcher_PreCanceledStartupDoesNotCreateResources()
+        {
+            var creations = 0;
+            var token = new CancellationToken(true);
+            var exception = Assert.ThrowsExactly<OperationCanceledException>(() => FeedStore.StartWatching(() =>
+            {
+                creations++;
+                throw new AssertFailedException("Canceled watcher startup must not touch the filesystem.");
+            }, token));
+
+            Assert.AreEqual(token, exception.CancellationToken);
+            Assert.AreEqual(0, creations);
+        }
+
+        [TestMethod]
+        [DoNotParallelize]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task Watcher_StopDoesNotWaitForCreationOrPublishALateWatcherAsync(bool cancel)
+        {
+            using var directory = new TemporaryDirectory();
+            using var shutdown = new CancellationTokenSource();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var release = new ManualResetEventSlim();
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            FileSystemWatcher? lateWatcher = null;
+            FeedStore.StopWatching();
+            var startup = Task.Run(() => FeedStore.StartWatching(() =>
+            {
+                started.TrySetResult(true);
+                release.Wait(timeout.Token);
+                lateWatcher = new FileSystemWatcher(directory.Path, "newsfeeds.json");
+                return lateWatcher;
+            }, shutdown.Token));
+            try
+            {
+                await started.Task.WithCancellation(timeout.Token);
+                if (cancel)
+                    shutdown.Cancel();
+                await Task.Run(FeedStore.StopWatching).WithCancellation(timeout.Token);
+                Assert.IsFalse(startup.IsCompleted, "Stopping must not wait for filesystem watcher creation.");
+            }
+            finally
+            {
+                release.Set();
+            }
+
+            try
+            {
+                var canceled = false;
+                try
+                {
+                    await startup.WithCancellation(timeout.Token);
+                }
+                catch (OperationCanceledException ex) when (cancel && ex.CancellationToken == shutdown.Token)
+                {
+                    await ex.LogAsync();
+                    canceled = true;
+                }
+                Assert.AreEqual(cancel, canceled, "Only canceled startup should throw cancellation.");
+                Assert.IsNotNull(lateWatcher);
+                Assert.ThrowsExactly<ObjectDisposedException>(() => lateWatcher.EnableRaisingEvents = true);
+
+                using var replacement = new FileSystemWatcher(directory.Path, "newsfeeds.json");
+                FeedStore.StartWatching(() => replacement, CancellationToken.None);
+                Assert.IsTrue(replacement.EnableRaisingEvents, "A stopped or canceled creation must not prevent later startup.");
+                FeedStore.StopWatching();
+                Assert.ThrowsExactly<ObjectDisposedException>(() => replacement.EnableRaisingEvents = true);
+            }
+            finally
+            {
+                FeedStore.StopWatching();
+                lateWatcher?.Dispose();
+            }
+        }
+
         [TestMethod]
         public async Task SaveAndReadFeeds_PreservesConfigurationAsync()
         {
