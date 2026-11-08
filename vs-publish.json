@@ -20,8 +20,16 @@
       "targetPath": "art/tip.png"
     },
     {
-      "pathOnDisk": "dev-hub.png",
-      "targetPath": "dev-hub.png"
+      "pathOnDisk": "art/devhub.png",
+      "targetPath": "art/devhub.png"
+    },
+    {
+      "pathOnDisk": "art/copilot.png",
+      "targetPath": "art/copilot.png"
+    },
+    {
+      "pathOnDisk": "art/news.png",
+      "targetPath": "art/news.png"
     },
     {
       "pathOnDisk": "art/suggested-extensions.png",
