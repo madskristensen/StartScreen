@@ -56,6 +56,7 @@ namespace StartScreen.ToolWindows
         private readonly CancellationToken _shutdownToken;
         private CancellationTokenSource _lifetimeCancellation;
         private CancellationTokenSource _mruMetadataCancellation;
+        private JoinableTask _mruMetadataLoadTask;
         private bool _isDeferredContentInitializing;
         private bool _isDeferredContentInitialized;
         private bool _initialMruOptionsNeedSave;
@@ -63,6 +64,7 @@ namespace StartScreen.ToolWindows
         private string _whatsNewStatus;
         private Task _whatsNewLoadTask;
         private bool _isWhatsNewLoaded;
+        private JoinableTask _updateCheckTask;
 
         public ObservableCollection<MruItem> MruItems => _mruItems ??= new ObservableCollection<MruItem>(
             _isMruFiltered ? Enumerable.Empty<MruItem>() : VisibleMruItems.Where(item => !item.IsPinned && !item.IsFromExtendedList));
@@ -502,7 +504,7 @@ namespace StartScreen.ToolWindows
             _feedbackRequested = false;
             FeedbackTickets.Clear();
             LastFeedbackRefreshText = null;
-            FeedbackStatus = "Feedback loads in the background.";
+            FeedbackStatus = "Select Feedback to load your tickets.";
             FeedbackRequiresSignIn = false;
             _sectionProgress.Clear();
             BackgroundProgress.Reset();
@@ -696,13 +698,15 @@ namespace StartScreen.ToolWindows
                     System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
 
-                await RefreshMruAsync(cancellationToken);
+                await RefreshVisibleMruMetadataAsync(cancellationToken);
                 if (!_workspaceVisitsLoaded)
                     await LoadWorkspaceVisitsAsync(cancellationToken);
 
+                Options options = await Options.GetLiveInstanceAsync();
+                await MruService.GetExtendedOnlyItemsAsync(_allMruItems.Where(item => !item.IsFromExtendedList).ToArray(),
+                    options, cancellationToken);
                 if (_initialMruOptionsNeedSave)
                 {
-                    Options options = await Options.GetLiveInstanceAsync();
                     cancellationToken.ThrowIfCancellationRequested();
                     await options.SaveAsync();
                     _initialMruOptionsNeedSave = false;
@@ -827,9 +831,9 @@ namespace StartScreen.ToolWindows
 
             try
             {
-                Task feedbackTask = RefreshFeedbackInBackgroundAsync(cancellationToken);
+                Task feedbackTask = RefreshFeedbackIfRequestedAsync(cancellationToken);
                 Task newsTask = NewsSection.LoadAsync(cancellationToken);
-                Task youtubeTask = VideoSection.LoadAsync(cancellationToken);
+                Task youtubeTask = VideoSection.LoadAsync(cancellationToken, loadThumbnails: false);
                 Task versionTask = RefreshVersionTitleAsync(cancellationToken);
                 Task mruTask = refreshMru ? RefreshMruAsync(cancellationToken) : Task.CompletedTask;
                 Task updateTask = CheckForUpdateAsync(cancellationToken);
@@ -864,16 +868,7 @@ namespace StartScreen.ToolWindows
                 _mruMetadataCache.Apply(allItems, _workspaceActivityContext);
                 SetMruItems(allItems);
 
-                var staleItems = allItems.Where(item => force || _mruMetadataCache.IsStale(item)).ToArray();
-                if (staleItems.Length > 0)
-                {
-                    await StartScreenPackage.BackgroundTaskFactory.YieldAsync(
-                        System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    await RefreshMruMetadataAsync(staleItems, cancellationToken, force);
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-                    RefreshMruCollections();
-                }
+                await RefreshVisibleMruMetadataAsync(cancellationToken, force);
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
@@ -1059,6 +1054,14 @@ namespace StartScreen.ToolWindows
         /// </summary>
         private async Task CheckForUpdateAsync(CancellationToken cancellationToken)
         {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            if (_updateCheckTask == null || _updateCheckTask.IsCompleted)
+                _updateCheckTask = StartScreenPackage.BackgroundTaskFactory.RunAsync(() => CheckForUpdateCoreAsync(cancellationToken));
+            await _updateCheckTask.JoinAsync(cancellationToken);
+        }
+
+        private async Task CheckForUpdateCoreAsync(CancellationToken cancellationToken)
+        {
             try
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -1076,7 +1079,7 @@ namespace StartScreen.ToolWindows
             }
             catch (Exception ex)
             {
-                ex.Log();
+                await ex.LogAsync();
             }
         }
 

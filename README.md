@@ -37,6 +37,9 @@ Your Work and activity loading run alongside recent projects, so PRs can appear
 without waiting for MRU completion. Repository summaries and news start after the
 UI has yielded to rendering and user input. Cache reads, feed parsing, and thumbnail
 decoding run on background threads with bounded disk and network concurrency.
+Video metadata and unread markers load in the background, but thumbnails are fetched
+only after selecting Videos and only for displayed cards. Thumbnail loading does not
+delay the feed freshness check. Feedback loads when its tab is requested.
 The async tool window factory starts the activity cache read, repository discovery,
 and account verification alongside recent-project loading, before constructing the
 content. The control reuses that work and displays each provider's verified cached
@@ -59,8 +62,12 @@ and activity tooltips are restored after the matching activity identity is verif
 Cached details remain visible while stale entries refresh in the background.
 Local metadata and repository counts are reused for three hours; manual Refresh
 always reloads them. Merely reopening the screen does not fetch fresh metadata.
-Local workspace metadata is published progressively by two background workers in
-batches of up to eight, with selected and pinned workspaces scheduled first.
+Automatic local metadata work is limited to realized, pinned, and selected recent
+projects. Offscreen history remains searchable and is enriched when its cards appear;
+manual Refresh still reloads the full history. Initial enrichment reuses the published
+MRU inventory rather than retrieving it again. Local workspace metadata is published
+progressively by two background workers in batches of up to eight, with selected and
+pinned workspaces scheduled first.
 Repository summaries start as local metadata arrives, independently of remote Git
 fetches. Copilot session and solution timestamp scans are shared within each pass
 for workspaces using the same directories. Search keeps the existing bound list
@@ -94,6 +101,9 @@ verified cache. Account changes and activity-setting or repository-context chang
 still prevent mismatched cached activity from being displayed.
 News, video, dashboard, and Copilot history caches use bounded JSON reads and
 atomic file replacement so interrupted writes preserve the previous snapshot.
+Cache access is coordinated per file, so an unrelated cache write cannot hold up
+recent-project cache reads. Repository summaries are persisted once per completed
+batch rather than rewriting the full metadata cache for every repository.
 Feed configuration edits are also published atomically, and concurrent add/remove
 operations preserve each other's changes. Failed saves are reported to the caller.
 
@@ -473,14 +483,14 @@ upvoted appear only once. All activity pages are checked; canceled votes and
 comment reactions are excluded unless you also created or currently upvoted the
 ticket. Deleted or inaccessible tickets are omitted.
 
-Feedback participates in the normal background startup refresh, without waiting
-for tab activation, using your signed-in Visual Studio account. Choose the same account
+Feedback starts loading when its tab is first selected, rather than traversing account
+history during startup. It uses your signed-in Visual Studio account. Choose the same account
 you use on Developer Community under
 **Tools > Options > Azure Service Authentication**. No PAT or separate sign-in
 is needed. Use the main **Refresh** button to reload after changing accounts or
 to retry an unavailable service. Switching away from Feedback and back keeps
-the displayed tickets without reloading. When reopening the Start Screen,
-feedback displays a verified account's cached tickets when they are less than
+the displayed tickets without reloading. When reopening the Start Screen, selecting
+Feedback displays a verified account's cached tickets when they are less than
 24 hours old, without starting a second refresh or credential check. Missing or
 stale caches trigger a download and replace the disk snapshot after success.
 That fetch reuses the cache probe's account verification and disk-cache check
@@ -488,7 +498,8 @@ only when the current credential still matches; the verified probe is consumed o
 The loading caption distinguishes reading feedback from refreshing tickets.
 New sessions and renewed credentials verify identity
 before reading the account's disk snapshot. The main **Refresh** button bypasses
-cache-first display and reloads feedback alongside the other data sources.
+cache-first display and reloads feedback alongside the other data sources after
+the tab has been requested during the current visit.
 Hiding the screen cancels pending requests.
 
 Feedback tokens are never written to disk. Ticket snapshots are isolated by the
@@ -706,8 +717,12 @@ directories, timestamps, and saved-conversation markers, not messages or live st
 On a new VS launch, cached metadata is loaded off the UI thread and bound before
 Copilot service initialization, with a dispatcher yield to allow rendering first.
 Component-model acquisition, Copilot MEF activation, and backend selection run on
-background threads. Session subscriptions and UI updates remain on the UI thread;
-a connection that finishes after the page is hidden or closed is not attached.
+background threads. Session subscriptions, nested request observers, and UI updates
+remain on the UI thread, but are queued in batches of at most eight callbacks with
+an eight-millisecond cooperative budget between callbacks. User input can run between
+batches. Readiness includes completion of queued attachment work, and all sessions
+remain observed for attention signals. Hiding the page cancels connection waits and
+queued callbacks; a connection that finishes afterward is not attached.
 The first launch without a cache still depends on VS discovery. Cached entries show
 no state badge and never retain old running or permission state. Completed discovery
 replaces stale entries, including deleting history when the catalog is empty.

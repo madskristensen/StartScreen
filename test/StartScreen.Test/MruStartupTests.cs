@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
@@ -9,6 +10,29 @@ namespace StartScreen.Test
     [TestClass]
     public sealed class MruStartupTests
     {
+        [TestMethod]
+        [SuppressMessage("Usage", "VSTHRD003", Justification = "The assertion observes this test's own startup wait without a UI synchronization context.")]
+        public async Task InitialLoad_CancellationStopsWaitingForAnUnfinishedMruAsync()
+        {
+            using var context = new JoinableTaskContext();
+            using var cancellation = new CancellationTokenSource();
+            var pending = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var load = context.Factory.RunAsync(() => pending.Task);
+            var startup = StartScreenControl.LoadInitialMruAsync(load,
+                () => throw new AssertFailedException("Canceled startup must not reload."), cancellation.Token);
+            cancellation.Cancel();
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await Assert.ThrowsAsync<OperationCanceledException>(() => startup.WithCancellation(timeout.Token));
+                Assert.IsFalse(load.IsCompleted, "Canceling this wait must not cancel shared MRU work.");
+            }
+            finally
+            {
+                pending.TrySetResult(true);
+                await load;
+            }
+        }
         [TestMethod]
         [DataRow(false)]
         [DataRow(true)]

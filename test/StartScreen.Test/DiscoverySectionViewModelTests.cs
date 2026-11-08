@@ -1,3 +1,4 @@
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
@@ -8,6 +9,88 @@ namespace StartScreen.Test
     [TestClass]
     public class DiscoverySectionViewModelTests
     {
+        [STATestMethod]
+        public void HiddenVideos_PublishCachedMetadataAndCheckFreshnessWithoutThumbnails()
+        {
+            using var context = CreateContext();
+            var thumbnails = 0;
+            var freshnessChecks = 0;
+            using var section = new VideoSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedVideosAsync: _ => Task.FromResult(new List<YouTubeVideo> { Video("cached") }),
+                loadThumbnailsAsync: (_, _) => { thumbnails++; return Task.CompletedTask; },
+                isCacheStale: () => { freshnessChecks++; return false; },
+                getOptionsAsync: () => Task.FromResult(new Options()));
+
+            context.Factory.Run(() => section.LoadAsync(default, loadThumbnails: false));
+            Assert.AreEqual(0, thumbnails);
+            Assert.AreEqual(1, freshnessChecks);
+            Assert.AreEqual("cached", section.YouTubeVideos.Single().Title);
+            Assert.IsTrue(section.RefreshState.IsCached);
+            section.EnsureThumbnailsLoaded();
+            Assert.AreEqual(1, thumbnails);
+        }
+
+        [STATestMethod]
+        public void ThumbnailLoading_IsLimitedToVisibleCardsAndDoesNotGateFreshness()
+        {
+            using var context = CreateContext();
+            var pending = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var freshnessChecks = 0;
+            using var section = new VideoSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedVideosAsync: _ => Task.FromResult(Enumerable.Range(0, 10).Select(index => Video(index.ToString())).ToList()),
+                loadThumbnailsAsync: (videos, _) =>
+                {
+                    Assert.HasCount(5, videos);
+                    Assert.AreEqual(1, freshnessChecks);
+                    started.TrySetResult(true);
+                    return pending.Task;
+                }, isCacheStale: () => { freshnessChecks++; return false; },
+                getOptionsAsync: () => Task.FromResult(new Options()));
+            context.Factory.Run(async () =>
+            {
+                Task load = section.LoadAsync(default);
+                await started.Task;
+                Assert.HasCount(5, section.YouTubeVideos);
+                pending.TrySetResult(true);
+                await load;
+            });
+        }
+        [STATestMethod]
+        public void ExpandingVideosDuringThumbnailLoading_LoadsNewlyVisibleCards()
+        {
+            using var context = CreateContext();
+            var pending = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var expanded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var batches = new List<int>();
+            var image = new BitmapImage();
+            image.Freeze();
+            using var section = new VideoSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedVideosAsync: _ => Task.FromResult(Enumerable.Range(0, 10).Select(index => Video(index.ToString())).ToList()),
+                loadThumbnailsAsync: (videos, _) =>
+                {
+                    batches.Add(videos.Count);
+                    foreach (var video in videos)
+                        video.Thumbnail = image;
+                    if (batches.Count == 1)
+                        return pending.Task;
+                    expanded.TrySetResult(true);
+                    return Task.CompletedTask;
+                }, isCacheStale: () => false, getOptionsAsync: () => Task.FromResult(new Options()));
+
+            context.Factory.Run(async () =>
+            {
+                await section.LoadAsync(default, loadThumbnails: false);
+                section.EnsureThumbnailsLoaded();
+                Assert.HasCount(1, batches);
+                section.YouTubeColumnCount = 2;
+                pending.TrySetResult(true);
+                await expanded.Task;
+                CollectionAssert.AreEqual(new[] { 5, 5 }, batches);
+                Assert.IsTrue(section.YouTubeVideos.All(video => ReferenceEquals(video.Thumbnail, image)));
+            });
+        }
+
         [TestMethod]
         public async Task NewsSection_OwnsStableInventoryPinsLimitsAndSeenStateAsync()
         {

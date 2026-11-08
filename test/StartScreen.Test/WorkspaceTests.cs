@@ -13,6 +13,29 @@ namespace StartScreen.Test
     public class WorkspaceTests
     {
         [TestMethod]
+        public void LocalMetadataCandidates_KeepHistorySearchableWithoutProbingOffscreenItems()
+        {
+            var items = Enumerable.Range(0, 100).Select(index => new MruItem
+            {
+                Name = "repo" + index,
+                Path = @"C:\repos\repo" + index + @"\App.sln",
+                LastAccessed = DateTime.Today.AddMinutes(-index),
+            }).ToArray();
+            using var model = new StartScreenViewModel(items);
+            CollectionAssert.AreEqual(items.Take(25).ToArray(), model.GetMruMetadataCandidates());
+            model.EnableMruViewportTracking();
+            model.SetMruItemRealized(items[0], true);
+            items[80].IsPinned = true;
+            model.SelectedMruItem = items[90];
+            CollectionAssert.AreEqual(new[] { items[90], items[80], items[0] }, model.GetMruMetadataCandidates());
+            CollectionAssert.AreEquivalent(items, model.GetMruMetadataCandidates(force: true));
+            model.SearchFilter = "repo99";
+            Assert.AreSame(items[99], model.VisibleMruItems.Single());
+            model.SetMruItemRealized(items[0], false);
+            model.SetMruItemRealized(items[99], true);
+            CollectionAssert.AreEqual(new[] { items[90], items[80], items[99] }, model.GetMruMetadataCandidates());
+        }
+        [TestMethod]
         public void RepositorySummaryGroups_DeferOffscreenItemsButKeepPinnedAndSelected()
         {
             var items = Enumerable.Range(0, 4).Select(index => new MruItem

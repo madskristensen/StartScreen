@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Threading;
+using StartScreen.Helpers;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
 using StartScreen.Services;
@@ -36,6 +37,46 @@ namespace StartScreen.ToolWindows
                 _realizedMruItems.Add(item);
             else
                 _realizedMruItems.Remove(item);
+        }
+
+        internal MruItem[] GetMruMetadataCandidates(bool force = false)
+        {
+            return _allMruItems.Where(item => force || (item.IsPinned || ReferenceEquals(item, SelectedMruItem)
+                    || (_realizedMruItems == null ? VisibleMruItems.Contains(item) : _realizedMruItems.Contains(item)))
+                    && _mruMetadataCache.IsStale(item))
+                .OrderByDescending(item => ReferenceEquals(item, SelectedMruItem))
+                .ThenByDescending(item => item.IsPinned).ToArray();
+        }
+
+        internal async Task RefreshVisibleMruMetadataAsync(CancellationToken cancellationToken, bool force = false)
+        {
+            var factory = StartScreenPackage.BackgroundTaskFactory;
+            await factory.SwitchToMainThreadAsync(cancellationToken);
+            while (_mruMetadataLoadTask?.IsCompleted == false)
+            {
+                try
+                {
+                    await _mruMetadataLoadTask.JoinAsync(cancellationToken);
+                }
+                catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    await ex.LogAsync();
+                }
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_isDisposed || !_mruMetadataCacheLoaded)
+                return;
+            var items = GetMruMetadataCandidates(force);
+            if (items.Length == 0)
+                return;
+            _mruMetadataLoadTask = factory.RunAsync(async () =>
+            {
+                await factory.YieldAsync(System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
+                await RefreshMruMetadataAsync(items, cancellationToken, force);
+                await factory.SwitchToMainThreadAsync(cancellationToken);
+                RefreshMruCollections();
+            });
+            await _mruMetadataLoadTask;
         }
         private bool _isRefreshingWorkspaceSignals;
         private int _workspaceSignalsGeneration;
@@ -320,6 +361,7 @@ namespace StartScreen.ToolWindows
                 foreach (var item in group)
                     item.ApplyRepositorySummary("Unsupported repository", "Activity is unavailable for this remote repository.");
             }
+            var updated = false;
             await Task.WhenAll(groups.Where(group => group.Key != null).Select(async group =>
             {
                 await TaskScheduler.Default;
@@ -339,9 +381,12 @@ namespace StartScreen.ToolWindows
                 if (summary.Status == DevHubRepoSummaryStatus.Ready)
                 {
                     _mruMetadataCache.Update(group, local: false, activityContext);
-                    await _mruMetadataCache.SaveAsync(_allMruItems.ToArray(), cancellationToken);
+                    updated = true;
                 }
             }));
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            if (updated && generation == _repositorySummaryGeneration && activityContext == _workspaceActivityContext)
+                await _mruMetadataCache.SaveAsync(_allMruItems.ToArray(), cancellationToken);
         }
 
         internal IGrouping<RemoteRepoIdentifier, MruItem>[] GetRepositorySummaryGroups(IEnumerable<MruItem> items)
@@ -362,6 +407,7 @@ namespace StartScreen.ToolWindows
                 return;
             try
             {
+                await RefreshVisibleMruMetadataAsync(cancellationToken);
                 await RefreshRepositorySummariesAsync([item], cancellationToken);
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)

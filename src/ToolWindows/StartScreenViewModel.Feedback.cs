@@ -19,7 +19,7 @@ namespace StartScreen.ToolWindows
         private bool _feedbackRequested;
         private bool _isRefreshingFeedback;
         private string _lastFeedbackRefreshText;
-        private string _feedbackStatus = "Feedback loads in the background.";
+        private string _feedbackStatus = "Select Feedback to load your tickets.";
         private bool _feedbackRequiresSignIn;
 
         public ObservableCollection<FeedbackTicket> FeedbackTickets { get; } = new ObservableCollection<FeedbackTicket>();
@@ -82,6 +82,11 @@ namespace StartScreen.ToolWindows
         {
             _feedbackRequested = true;
             return StartFeedbackRefreshAsync(false, cancellationToken);
+        }
+
+        internal Task RefreshFeedbackIfRequestedAsync(CancellationToken cancellationToken = default)
+        {
+            return _feedbackRequested ? RefreshFeedbackInBackgroundAsync(cancellationToken) : Task.CompletedTask;
         }
 
         public void EnsureFeedbackLoaded()

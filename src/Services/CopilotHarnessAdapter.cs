@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 
 namespace StartScreen.Services
@@ -19,6 +20,11 @@ namespace StartScreen.Services
         private readonly Action<Exception> _onError;
         private readonly SubscriptionBag _subscriptions = new();
         private readonly Dictionary<object, SessionWatch> _sessions = new(ReferenceComparer.Instance);
+        private readonly HashSet<object> _queuedSessions = new(ReferenceComparer.Instance);
+        private HashSet<object> _sessionSources = new(ReferenceComparer.Instance);
+        private int _pendingAttachments;
+        private int _pendingCallbacks;
+        private bool _backendReady;
         private object _cache;
         private bool _disposed;
         private bool _started;
@@ -30,7 +36,7 @@ namespace StartScreen.Services
         }
 
         internal event EventHandler Changed;
-        internal bool IsReady { get; private set; }
+        internal bool IsReady => _backendReady && _pendingAttachments == 0 && Volatile.Read(ref _pendingCallbacks) == 0;
         internal IReadOnlyList<CopilotActivitySession> Sessions => _sessions.Values.Select(session => session.Snapshot()).ToArray();
 
         internal void Start(object backends)
@@ -49,7 +55,7 @@ namespace StartScreen.Services
                 var backend = ResolveBackend(getBackends());
                 cancellationToken.ThrowIfCancellationRequested();
                 return backend;
-            }, cancellationToken);
+            }, cancellationToken).WithCancellation(cancellationToken);
         }
 
         private static object ResolveBackend(object backends)
@@ -75,7 +81,7 @@ namespace StartScreen.Services
             _cache = Read(backend, "Sessions");
             _subscriptions.Add(Observe(Read(backend, "SessionsReady"), value =>
             {
-                IsReady = (bool)value;
+                _backendReady = (bool)value;
                 NotifyChanged();
             }));
             _subscriptions.Add(Observe(Connect(_cache), _ => SynchronizeSessions(), coalesce: true));
@@ -88,6 +94,7 @@ namespace StartScreen.Services
                 return;
             var current = Items(_cache);
             var currentSet = new HashSet<object>(current, ReferenceComparer.Instance);
+            _sessionSources = currentSet;
             foreach (var removed in _sessions.Keys.Where(key => !currentSet.Contains(key)).ToArray())
             {
                 _sessions[removed].Dispose();
@@ -95,13 +102,49 @@ namespace StartScreen.Services
             }
             foreach (var session in current)
             {
-                if (_sessions.ContainsKey(session))
+                if (_sessions.ContainsKey(session) || !_queuedSessions.Add(session))
                     continue;
-                var watch = new SessionWatch(this, session);
-                _sessions.Add(session, watch);
-                watch.Start();
+                QueueAttachment(() =>
+                {
+                    _queuedSessions.Remove(session);
+                    if (!_sessionSources.Contains(session) || _sessions.ContainsKey(session))
+                        return;
+                    var watch = new SessionWatch(this, session);
+                    _sessions.Add(session, watch);
+                    var started = false;
+                    try
+                    {
+                        watch.Start();
+                        started = true;
+                    }
+                    finally
+                    {
+                        if (!started)
+                        {
+                            _sessions.Remove(session);
+                            watch.Dispose();
+                        }
+                    }
+                });
             }
             NotifyChanged();
+        }
+
+        private void QueueAttachment(Action attach)
+        {
+            _pendingAttachments++;
+            Dispatch(() =>
+            {
+                try
+                {
+                    attach();
+                }
+                finally
+                {
+                    _pendingAttachments--;
+                    NotifyChanged();
+                }
+            });
         }
 
         internal bool HasSession(string id) => !_disposed && _sessions.Values.Any(session => session.Id == id);
@@ -167,17 +210,22 @@ namespace StartScreen.Services
 
         private void Dispatch(Action callback)
         {
+            Interlocked.Increment(ref _pendingCallbacks);
             _dispatch(() =>
             {
-                if (_disposed)
-                    return;
                 try
                 {
-                    callback();
+                    if (!_disposed)
+                        callback();
                 }
                 catch (Exception ex)
                 {
                     _onError(ex);
+                }
+                finally
+                {
+                    if (Interlocked.Decrement(ref _pendingCallbacks) == 0 && !_disposed)
+                        NotifyChanged();
                 }
             });
         }
@@ -211,11 +259,13 @@ namespace StartScreen.Services
             if (_disposed)
                 return;
             _disposed = true;
-            IsReady = false;
+            _backendReady = false;
             _subscriptions.Dispose();
             foreach (var session in _sessions.Values)
                 session.Dispose();
             _sessions.Clear();
+            _sessionSources.Clear();
+            _queuedSessions.Clear();
         }
 
         private sealed class SessionWatch : IDisposable
@@ -276,9 +326,13 @@ namespace StartScreen.Services
                     throw new NotSupportedException("The Copilot subagent hierarchy is too deep to observe safely.");
                 var bag = new SubscriptionBag();
                 bool connected = false;
+                bool active = true;
                 var watches = new Dictionary<object, IDisposable>(ReferenceComparer.Instance);
+                var queued = new HashSet<object>(ReferenceComparer.Instance);
+                var sources = new HashSet<object>(ReferenceComparer.Instance);
                 bag.Add(new CallbackDisposable(() =>
                 {
+                    active = false;
                     foreach (var watch in watches.Values)
                         watch.Dispose();
                     watches.Clear();
@@ -289,6 +343,7 @@ namespace StartScreen.Services
                     {
                         var current = Items(entries);
                         var currentSet = new HashSet<object>(current, ReferenceComparer.Instance);
+                        sources = currentSet;
                         foreach (var removed in watches.Keys.Where(key => !currentSet.Contains(key)).ToArray())
                         {
                             watches[removed].Dispose();
@@ -296,8 +351,13 @@ namespace StartScreen.Services
                         }
                         foreach (var entry in current)
                         {
-                            if (!watches.ContainsKey(entry))
-                                watches.Add(entry, WatchEntry(entry, depth));
+                            if (!watches.ContainsKey(entry) && queued.Add(entry))
+                                _owner.QueueAttachment(() =>
+                                {
+                                    queued.Remove(entry);
+                                    if (active && sources.Contains(entry) && !watches.ContainsKey(entry))
+                                        watches.Add(entry, WatchEntry(entry, depth));
+                                });
                         }
                         _owner.NotifyChanged();
                     }, coalesce: true));

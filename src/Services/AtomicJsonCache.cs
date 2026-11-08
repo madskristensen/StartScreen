@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
@@ -10,12 +11,48 @@ namespace StartScreen.Services
     internal static class AtomicJsonCache
     {
         internal const int MaxBytes = 4 * 1024 * 1024;
-        private static readonly SemaphoreSlim _accessGate = new(1, 1);
+        private static readonly Dictionary<string, AccessGate> _accessGates = new(StringComparer.OrdinalIgnoreCase);
+
+        private static AccessLease GetAccess(string path)
+        {
+            path = Path.GetFullPath(path);
+            lock (_accessGates)
+            {
+                if (!_accessGates.TryGetValue(path, out var access))
+                    _accessGates.Add(path, access = new AccessGate());
+                access.Users++;
+                return new AccessLease(path, access);
+            }
+        }
+
+        private sealed class AccessGate
+        {
+            internal readonly SemaphoreSlim Gate = new(1, 1);
+            internal int Users;
+        }
+
+        private sealed class AccessLease(string path, AccessGate access) : IDisposable
+        {
+            internal SemaphoreSlim Gate => access.Gate;
+
+            public void Dispose()
+            {
+                lock (_accessGates)
+                {
+                    if (--access.Users == 0)
+                    {
+                        _accessGates.Remove(path);
+                        access.Gate.Dispose();
+                    }
+                }
+            }
+        }
 
         internal static async Task<T> ReadAsync<T>(string path, CancellationToken cancellationToken = default, JsonSerializerOptions options = null)
         {
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
-            await _accessGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            using var access = GetAccess(path);
+            await access.Gate.WaitAsync(cancellationToken);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -39,13 +76,14 @@ namespace StartScreen.Services
             }
             finally
             {
-                _accessGate.Release();
+                access.Gate.Release();
             }
         }
 
         internal static T Read<T>(string path, JsonSerializerOptions options = null)
         {
-            _accessGate.Wait();
+            using var access = GetAccess(path);
+            access.Gate.Wait();
             try
             {
                 if (!File.Exists(path))
@@ -59,7 +97,7 @@ namespace StartScreen.Services
             }
             finally
             {
-                _accessGate.Release();
+                access.Gate.Release();
             }
         }
 
@@ -75,7 +113,8 @@ namespace StartScreen.Services
         internal static async Task WriteAsync<T>(string path, T value, CancellationToken cancellationToken = default, JsonSerializerOptions options = null)
         {
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
-            await _accessGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            using var access = GetAccess(path);
+            await access.Gate.WaitAsync(cancellationToken);
             string temporaryFile = null;
             try
             {
@@ -98,7 +137,7 @@ namespace StartScreen.Services
                 }
                 finally
                 {
-                    _accessGate.Release();
+                    access.Gate.Release();
                 }
             }
         }
@@ -106,7 +145,8 @@ namespace StartScreen.Services
         // Retained for existing synchronous consumers. Refresh paths use WriteAsync.
         internal static void Write<T>(string path, T value, JsonSerializerOptions options = null)
         {
-            _accessGate.Wait();
+            using var access = GetAccess(path);
+            access.Gate.Wait();
             string temporaryFile = null;
             try
             {
@@ -129,7 +169,7 @@ namespace StartScreen.Services
                 }
                 finally
                 {
-                    _accessGate.Release();
+                    access.Gate.Release();
                 }
             }
         }

@@ -242,6 +242,7 @@ namespace StartScreen.Test
                 ShowActivated = false, ShowInTaskbar = false };
             host.Show();
             host.UpdateLayout();
+            ((TabItem)tabs.SelectedItem).Focus();
             return host;
         }
 

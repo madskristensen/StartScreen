@@ -34,6 +34,7 @@ namespace StartScreen.ToolWindows.Controls
         private int _copilotGeneration;
         private BackgroundProgress.Operation _copilotProgress;
         private Stopwatch _copilotConnectionElapsed;
+        private CancellationTokenSource _copilotConnectionCancellation;
 
         internal BackgroundProgress Progress { get; set; }
 
@@ -78,6 +79,9 @@ namespace StartScreen.ToolWindows.Controls
         private async Task ConnectCopilotActivityAsync()
         {
             int generation = ++_copilotGeneration;
+            var connection = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
+            _copilotConnectionCancellation = connection;
+            CancellationToken token = connection.Token;
             var totalSteps = _copilotDiskCacheLoaded ? 2 : 3;
             _copilotProgress = Progress?.Start(totalSteps,
                 _copilotDiskCacheLoaded ? "Connecting to local Copilot..." : "Reading cached Copilot activity...");
@@ -92,8 +96,8 @@ namespace StartScreen.ToolWindows.Controls
                 {
                     try
                     {
-                        var cached = await CopilotActivityCache.ReadAsync(CopilotActivityCache.DefaultFile, StartScreenPackage.ShutdownToken);
-                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
+                        var cached = await CopilotActivityCache.ReadAsync(CopilotActivityCache.DefaultFile, token);
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
                         if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                             return;
                         _copilotCache.Update(cached, false);
@@ -102,14 +106,14 @@ namespace StartScreen.ToolWindows.Controls
                         if (cached.Count > 0)
                             StartupDiagnostics.Mark("Copilot cached cards bound");
                     }
-                    catch (OperationCanceledException) when (StartScreenPackage.ShutdownToken.IsCancellationRequested)
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
                     {
                         throw;
                     }
                     catch (Exception ex)
                     {
                         await ex.LogAsync();
-                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
                         if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                             return;
                         _copilotCacheError = "Copilot history cache could not be loaded.";
@@ -118,7 +122,7 @@ namespace StartScreen.ToolWindows.Controls
                 }
                 _copilotProgress?.Report((totalSteps - 2, totalSteps));
                 _copilotProgress?.Report("Connecting to local Copilot...");
-                await StartScreenPackage.BackgroundTaskFactory.YieldAsync(DispatcherPriority.Background, StartScreenPackage.ShutdownToken);
+                await StartScreenPackage.BackgroundTaskFactory.YieldAsync(DispatcherPriority.Background, token);
                 if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                     return;
                 StartupDiagnostics.Mark("Copilot service connection started");
@@ -126,22 +130,13 @@ namespace StartScreen.ToolWindows.Controls
                 var componentModel = await VS.GetServiceAsync<SComponentModel, IComponentModel>()
                     ?? throw new NotSupportedException("Visual Studio's component model is unavailable.");
                 var backend = await CopilotHarnessAdapter.ResolveBackendAsync(
-                    () => GetCopilotExport(componentModel, CopilotHarnessAdapter.BackendsContract), StartScreenPackage.ShutdownToken);
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
+                    () => GetCopilotExport(componentModel, CopilotHarnessAdapter.BackendsContract), token);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
                 if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                     return;
                 _copilotComponentModel = componentModel;
-                _copilotAdapter = new CopilotHarnessAdapter(callback =>
-                {
-                    if (Dispatcher.CheckAccess())
-                        callback();
-                    else if (!Dispatcher.HasShutdownStarted)
-                        StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
-                        {
-                            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
-                            callback();
-                        }).FileAndForget(nameof(DevHubPanel));
-                }, ReportCopilotFailure);
+                var callbacks = new BackgroundUiDispatcher(StartScreenPackage.BackgroundTaskFactory, Dispatcher, token);
+                _copilotAdapter = new CopilotHarnessAdapter(callbacks.Enqueue, ReportCopilotFailure);
                 _copilotAdapter.Changed += CopilotActivityChanged;
                 _copilotAdapter.StartBackend(backend);
                 _copilotProgress?.Report((totalSteps - 1, totalSteps));
@@ -150,7 +145,7 @@ namespace StartScreen.ToolWindows.Controls
                 StartupDiagnostics.Mark("Copilot harness attached");
                 RenderCopilotActivity();
             }
-            catch (OperationCanceledException ex) when (StartScreenPackage.ShutdownToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (token.IsCancellationRequested)
             {
                 await ex.LogAsync();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -168,6 +163,12 @@ namespace StartScreen.ToolWindows.Controls
             finally
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (generation != _copilotGeneration || _copilotAdapter == null)
+                {
+                    if (ReferenceEquals(_copilotConnectionCancellation, connection))
+                        _copilotConnectionCancellation = null;
+                    connection.Dispose();
+                }
                 if (generation == _copilotGeneration)
                 {
                     _copilotConnecting = false;
@@ -285,6 +286,9 @@ namespace StartScreen.ToolWindows.Controls
             if (stopSources)
                 StopCopilotSources();
             _copilotGeneration++;
+            _copilotConnectionCancellation?.Cancel();
+            _copilotConnectionCancellation?.Dispose();
+            _copilotConnectionCancellation = null;
             _copilotConnecting = false;
             _copilotConnectionElapsed?.Stop();
             _copilotProgress?.Dispose();

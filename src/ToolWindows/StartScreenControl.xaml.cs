@@ -130,7 +130,16 @@ namespace StartScreen.ToolWindows
             _controlLoadTask = StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 if (previousLoad != null)
-                    await previousLoad;
+                {
+                    try
+                    {
+                        await previousLoad.JoinAsync(cancellationToken);
+                    }
+                    catch (OperationCanceledException ex)
+                    {
+                        await ex.LogAsync();
+                    }
+                }
 
                 if (!cancellationToken.IsCancellationRequested)
                     await LoadControlAsync(cancellationToken);
@@ -210,9 +219,9 @@ namespace StartScreen.ToolWindows
                 Task newsTask = _viewModel.RefreshInBackgroundAsync(refreshMru: false);
                 RefreshWorkspaceSignalsAsync(false).FileAndForget(nameof(StartScreenControl));
 
+                _isInitialized = true;
                 await Task.WhenAll(newsTask, devHubTask.Task);
                 cancellationToken.ThrowIfCancellationRequested();
-                _isInitialized = true;
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
@@ -237,7 +246,7 @@ namespace StartScreen.ToolWindows
                 if (loadTask.Task.IsCanceled || loadTask.Task.IsFaulted)
                     await reload();
                 else
-                    await loadTask;
+                    await loadTask.JoinAsync(cancellationToken);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
@@ -1454,6 +1463,7 @@ namespace StartScreen.ToolWindows
             }
             else if (ReferenceEquals(selected, VideosTab))
             {
+                ViewModel.VideoSection.EnsureThumbnailsLoaded();
                 StartScreenPackage.BackgroundTaskFactory.RunAsync(
                     () => ViewModel.MarkVideosAsSeenAsync())
                     .FileAndForget(nameof(StartScreenControl));

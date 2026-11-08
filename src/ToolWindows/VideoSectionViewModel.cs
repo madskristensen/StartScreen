@@ -33,6 +33,10 @@ namespace StartScreen.ToolWindows
         private bool _hasNewVideos;
         private string _lastYouTubeRefreshText;
         private int _youTubeColumnCount = 1;
+        private bool _thumbnailsRequested;
+        private bool _thumbnailsEnabled = true;
+        private JoinableTask _thumbnailLoadTask;
+        private int _thumbnailRequestGeneration;
 
         internal VideoSectionViewModel(Func<CancellationToken> getLifetimeToken = null,
             Func<JoinableTaskFactory> getTaskFactory = null,
@@ -114,6 +118,8 @@ namespace StartScreen.ToolWindows
                 _youTubeColumnCount = value;
                 OnPropertyChanged();
                 UpdateYouTubeCollections();
+                if (_thumbnailsRequested)
+                    EnsureThumbnailsLoaded();
             }
         }
 
@@ -152,8 +158,9 @@ namespace StartScreen.ToolWindows
             await _saveOptionsAsync(options);
         }
 
-        internal async Task LoadAsync(CancellationToken cancellationToken)
+        internal async Task LoadAsync(CancellationToken cancellationToken, bool loadThumbnails = true)
         {
+            _thumbnailsEnabled = loadThumbnails || _thumbnailsRequested;
             using CancellationTokenSource work = CreateWorkCancellation(cancellationToken);
             CancellationToken token = work.Token;
             try
@@ -167,8 +174,6 @@ namespace StartScreen.ToolWindows
                     LastYouTubeRefreshText = "Showing cached content";
                     SetRefreshState(cached: true);
                     StartupDiagnostics.Mark("video cache displayed");
-                    await _loadThumbnailsAsync(videos, token);
-                    await UpdateOnUIThreadAsync(videos, token);
                 }
                 await TaskScheduler.Default;
                 var needsRefresh = !hasCachedItems || _isCacheStale();
@@ -177,6 +182,8 @@ namespace StartScreen.ToolWindows
                 RefreshState.IsStale = hasCachedItems && needsRefresh;
                 if (needsRefresh)
                     StartRefresh(false);
+                if (hasCachedItems && _thumbnailsEnabled)
+                    await LoadVisibleThumbnailsAsync(token);
             }
             catch (OperationCanceledException ex) when (token.IsCancellationRequested)
             {
@@ -192,6 +199,45 @@ namespace StartScreen.ToolWindows
         {
             if (!IsWorkCanceled() && !IsRefreshingYouTube && _isCacheStale())
                 StartRefresh(false);
+        }
+
+        internal void EnsureThumbnailsLoaded()
+        {
+            _thumbnailsRequested = true;
+            _thumbnailsEnabled = true;
+            _thumbnailRequestGeneration++;
+            if (IsWorkCanceled() || _thumbnailLoadTask?.IsCompleted == false)
+                return;
+            _thumbnailLoadTask = _getTaskFactory().RunAsync(async () =>
+            {
+                using var work = CreateWorkCancellation(default);
+                try
+                {
+                    int generation;
+                    do
+                    {
+                        generation = _thumbnailRequestGeneration;
+                        await LoadVisibleThumbnailsAsync(work.Token);
+                        await _getTaskFactory().SwitchToMainThreadAsync(work.Token);
+                    }
+                    while (generation != _thumbnailRequestGeneration);
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
+                    if (!work.IsCancellationRequested)
+                        OutputLog.Info("Videos", "Some video thumbnails could not be loaded. Select Videos again to retry.");
+                }
+            });
+            _thumbnailLoadTask.Task.Forget();
+        }
+
+        private async Task LoadVisibleThumbnailsAsync(CancellationToken token)
+        {
+            await _getTaskFactory().SwitchToMainThreadAsync(token);
+            var videos = YouTubeVideos.Where(video => video.Thumbnail == null).ToList();
+            if (videos.Count > 0)
+                await _loadThumbnailsAsync(videos, token);
         }
 
         internal void StartRefresh(bool force = true)
@@ -233,8 +279,8 @@ namespace StartScreen.ToolWindows
                     LastYouTubeRefreshText = "Updated just now";
                     SetRefreshState(successfulUtc: DateTimeOffset.UtcNow);
                     StartupDiagnostics.Mark("video remote refresh completed");
-                    await _loadThumbnailsAsync(videos, token);
-                    await UpdateOnUIThreadAsync(videos, token);
+                    if (_thumbnailsEnabled)
+                        await LoadVisibleThumbnailsAsync(token);
                 }
                 else
                 {

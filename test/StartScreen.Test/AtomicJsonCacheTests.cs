@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
@@ -20,11 +21,55 @@ namespace StartScreen.Test
             {
                 await Assert.ThrowsAsync<IOException>(() => AtomicJsonCache.WriteAsync(path, new[] { "replacement" }));
             }
-
             CollectionAssert.AreEqual(new[] { "original" }, await AtomicJsonCache.ReadAsync<string[]>(path));
             Assert.HasCount(1, Directory.GetFiles(directory.Path));
             await AtomicJsonCache.WriteAsync(path, new[] { "recovered" });
             CollectionAssert.AreEqual(new[] { "recovered" }, await AtomicJsonCache.ReadAsync<string[]>(path));
+        }
+
+        [TestMethod]
+        [SuppressMessage("Usage", "VSTHRD003", Justification = "The assertion observes this test's own cache request without a UI synchronization context.")]
+        public async Task UnrelatedSnapshots_DoNotWaitForBlockedSerializationAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var blockedPath = directory.GetPath("blocked.json");
+            var independentPath = directory.GetPath("independent.json");
+            await AtomicJsonCache.WriteAsync(blockedPath, "original");
+            await AtomicJsonCache.WriteAsync(independentPath, "independent");
+            using var entered = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            Task write = AtomicJsonCache.WriteAsync(blockedPath, new BlockingPayload(entered, release));
+            try
+            {
+                Assert.IsTrue(entered.Wait(TimeSpan.FromSeconds(5)));
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                Assert.AreEqual("independent", await AtomicJsonCache.ReadAsync<string>(independentPath, timeout.Token));
+                var alias = Path.Combine(directory.Path, ".", "blocked.json");
+                Task<string> sameFile = AtomicJsonCache.ReadAsync<string>(alias, timeout.Token);
+                Assert.IsFalse(sameFile.IsCompleted);
+                timeout.Cancel();
+                await Assert.ThrowsAsync<OperationCanceledException>(() => sameFile);
+            }
+            finally
+            {
+                release.Set();
+                await write;
+            }
+            Assert.AreEqual("replacement", (await AtomicJsonCache.ReadAsync<Dictionary<string, string>>(blockedPath))["Value"]);
+        }
+
+        private sealed class BlockingPayload(ManualResetEventSlim entered, ManualResetEventSlim release)
+        {
+            public string Value
+            {
+                get
+                {
+                    entered.Set();
+                    if (!release.Wait(TimeSpan.FromSeconds(10)))
+                        throw new TimeoutException("The test did not release cache serialization.");
+                    return "replacement";
+                }
+            }
         }
 
         [TestMethod]

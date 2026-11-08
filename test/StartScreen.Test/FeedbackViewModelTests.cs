@@ -17,6 +17,30 @@ namespace StartScreen.Test
     public class FeedbackViewModelTests
     {
         [STATestMethod]
+        public void BackgroundRefresh_DefersFeedbackUntilRequestedAndResumesAfterTabSelection()
+        {
+            using var context = CreateContext();
+            var requests = 0;
+            using var model = Model(context, (_, _) =>
+            {
+                requests++;
+                return Task.FromResult(Snapshot(7));
+            });
+
+            context.Factory.Run(() => model.RefreshFeedbackIfRequestedAsync());
+            Assert.AreEqual(0, requests);
+            Assert.IsEmpty(model.FeedbackTickets);
+            Assert.AreEqual("Select Feedback to load your tickets.", model.FeedbackStatus);
+            model.EnsureFeedbackLoaded();
+            context.Factory.Run(() => model.RefreshFeedbackIfRequestedAsync());
+            Assert.AreEqual(2, requests, "After tab demand, a later background refresh may refresh feedback again.");
+            Assert.HasCount(1, model.FeedbackTickets);
+            model.CancelBackgroundWork();
+            model.ActivateBackgroundWork();
+            context.Factory.Run(() => model.RefreshFeedbackIfRequestedAsync());
+            Assert.AreEqual(2, requests, "Reopening must not start feedback work before its tab is requested again.");
+        }
+        [STATestMethod]
         public void Feedback_StartupRefreshPopulatesTicketsBeforeTabActivation()
         {
             using var context = CreateContext();

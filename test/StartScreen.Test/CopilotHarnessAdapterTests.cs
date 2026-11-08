@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using StartScreen.Models;
 using StartScreen.Models.DevHub;
 using StartScreen.Services;
@@ -9,6 +10,104 @@ namespace StartScreen.Test
     [TestClass]
     public class CopilotHarnessAdapterTests
     {
+        [TestMethod]
+        public void QueuedAttachment_ProcessesOneSessionAtATimeAndKeepsAttentionState()
+        {
+            var backend = new FakeBackend();
+            var sessions = Enumerable.Range(0, 100).Select(_ => new FakeSession()).ToArray();
+            var permission = new FakePermission();
+            sessions[99].ChatEvents.Replace(permission);
+            backend.Sessions.Replace(sessions);
+            var queue = new Queue<Action>();
+            var errors = new List<Exception>();
+            using var adapter = new CopilotHarnessAdapter(queue.Enqueue, errors.Add);
+
+            adapter.StartBackend(backend);
+            Assert.IsEmpty(adapter.Sessions);
+            Assert.IsFalse(adapter.IsReady);
+            Assert.IsTrue(sessions.All(session => session.Title.SubscriberCount == 0));
+            while (adapter.Sessions.Count == 0)
+                queue.Dequeue()();
+            Assert.HasCount(1, adapter.Sessions);
+            Assert.AreEqual(1, sessions.Count(session => session.Title.SubscriberCount > 0));
+            Assert.IsFalse(adapter.IsReady);
+            while (queue.Count > 0)
+                queue.Dequeue()();
+
+            Assert.HasCount(100, adapter.Sessions);
+            Assert.IsTrue(adapter.IsReady);
+            Assert.AreEqual(1, adapter.Sessions.Single(session => session.Id == sessions[99].SessionId.Guid.ToString("D")).PendingPermissions);
+            Assert.AreEqual(1, permission.State.SubscriberCount);
+            Assert.IsEmpty(errors);
+        }
+
+        [TestMethod]
+        public void QueuedAttachment_RemovedSessionsAndEntriesNeverSubscribe()
+        {
+            var backend = new FakeBackend();
+            var session = new FakeSession();
+            backend.Sessions.Replace(session);
+            var queue = new Queue<Action>();
+            var errors = new List<Exception>();
+            using var adapter = new CopilotHarnessAdapter(queue.Enqueue, errors.Add);
+            adapter.StartBackend(backend);
+            backend.Sessions.Replace();
+            while (queue.Count > 0)
+                queue.Dequeue()();
+            Assert.IsEmpty(adapter.Sessions);
+            Assert.AreEqual(0, session.Title.SubscriberCount);
+            Assert.IsTrue(adapter.IsReady);
+
+            var permission = new FakePermission();
+            session.ChatEvents.Replace(permission);
+            backend.Sessions.Replace(session);
+            while (session.ChatEvents.Changes.SubscriberCount == 0)
+                queue.Dequeue()();
+            session.ChatEvents.Replace();
+            while (queue.Count > 0)
+                queue.Dequeue()();
+            Assert.AreEqual(0, permission.State.SubscriberCount);
+            Assert.IsFalse(adapter.Sessions.Single().NeedsAttention);
+            Assert.IsTrue(adapter.IsReady);
+            Assert.IsEmpty(errors);
+        }
+
+        [TestMethod]
+        [SuppressMessage("Usage", "VSTHRD003", Justification = "The assertion observes this test's own backend resolution without a UI synchronization context.")]
+        public async Task ResolveBackendAsync_CancellationInterruptsWaitDuringSlowActivationAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            using var entered = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            var exited = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var resolution = CopilotHarnessAdapter.ResolveBackendAsync(() =>
+            {
+                try
+                {
+                    entered.Set();
+                    if (!release.Wait(TimeSpan.FromSeconds(10)))
+                        throw new TimeoutException("The test did not release backend activation.");
+                    return new FakeBackends(new FakeBackend());
+                }
+                finally
+                {
+                    exited.TrySetResult(true);
+                }
+            }, cancellation.Token);
+            try
+            {
+                Assert.IsTrue(entered.Wait(TimeSpan.FromSeconds(5)));
+                cancellation.Cancel();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await Assert.ThrowsAsync<OperationCanceledException>(() => resolution.WithCancellation(timeout.Token));
+                Assert.IsFalse(exited.Task.IsCompleted);
+            }
+            finally
+            {
+                release.Set();
+                await exited.Task;
+            }
+        }
         [STATestMethod]
         public void ResolveBackendAsync_SlowActivationLeavesCallerFreeAndDefersSubscriptions()
         {
