@@ -64,6 +64,7 @@ namespace StartScreen.ToolWindows
             if (options.DevHubEnabled && _devHubService.CurrentDashboard != null)
                 ApplyStartupDevHubDashboard(_devHubService.CurrentDashboard);
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+            _viewModel.ActivityRefreshRequested += ActivityRefreshRequested;
             _viewModel.EnableMruViewportTracking();
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenSolution += WorkspaceSolutionOpened;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder += WorkspaceFolderOpened;
@@ -167,6 +168,7 @@ namespace StartScreen.ToolWindows
             Loaded -= UserControl_Loaded;
             Unloaded -= UserControl_Unloaded;
             _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            _viewModel.ActivityRefreshRequested -= ActivityRefreshRequested;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenSolution -= WorkspaceSolutionOpened;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenFolder -= WorkspaceFolderOpened;
             Microsoft.VisualStudio.Shell.Events.SolutionEvents.OnAfterOpenProject -= WorkspaceProjectOpened;
@@ -542,8 +544,8 @@ namespace StartScreen.ToolWindows
                         DevHubPanelControl.ShowLoading();
                     }
 
-                    await RefreshDevHubInBackgroundAsync(cancellationToken, forceRefresh: true);
-                    RefreshWorkspaceSignalsAsync(true).FileAndForget(nameof(StartScreenControl));
+                    await Task.WhenAll(RefreshDevHubInBackgroundAsync(cancellationToken, forceRefresh: true),
+                        RefreshWorkspaceSignalsAsync(true));
                 }
                 catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
                 {
@@ -805,6 +807,19 @@ namespace StartScreen.ToolWindows
             }
         }
 
+        private void ActivityRefreshRequested(object sender, EventArgs e)
+        {
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
+            {
+                if (_isDisposed || _lifetimeCancellation.IsCancellationRequested || !Options.Instance.DevHubEnabled)
+                    return;
+                var cancellationToken = _lifetimeCancellation.Token;
+                await TaskScheduler.Default;
+                if (_devHubService.IsCacheStale())
+                    await RefreshDevHubInBackgroundAsync(cancellationToken);
+            }).FileAndForget(nameof(StartScreenControl));
+        }
+
         private async Task LoadDevHubAsync()
         {
             if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
@@ -851,6 +866,8 @@ namespace StartScreen.ToolWindows
                     cancellationToken.ThrowIfCancellationRequested();
                     if (isStale)
                     {
+                        await StartScreenPackage.BackgroundTaskFactory.YieldAsync(
+                            System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
                         StartScreenPackage.BackgroundTaskFactory.RunAsync(
                             () => RefreshDevHubInBackgroundAsync(cancellationToken))
                             .FileAndForget(nameof(StartScreenControl));
@@ -1373,7 +1390,8 @@ namespace StartScreen.ToolWindows
             }
 
             DevHubPanel_RefreshRequested(this, System.EventArgs.Empty);
-            RefreshWorkspaceSignalsAsync(true).FileAndForget(nameof(StartScreenControl));
+            if (!Options.Instance.DevHubEnabled)
+                RefreshWorkspaceSignalsAsync(true).FileAndForget(nameof(StartScreenControl));
         }
 
         private async Task RefreshWorkspaceSignalsAsync(bool force)

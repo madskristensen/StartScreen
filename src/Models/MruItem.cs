@@ -583,8 +583,74 @@ namespace StartScreen.Models
                 : $"{_copilotChatSessionCount} Copilot chat sessions";
 
         /// <summary>
-        /// Updates all Git-related properties from a status snapshot.
+        /// Captures the displayed metadata without persisting selection, pins, or derived text.
         /// </summary>
+        internal Metadata CaptureMetadata()
+        {
+            return new Metadata
+            {
+                LastAccessed = LastAccessed,
+                Exists = Exists,
+                Git = new GitStatus
+                {
+                    BranchName = GitBranch,
+                    HeadCommitId = HeadCommitId,
+                    IsDetachedHead = IsDetachedHead,
+                    CommitsAhead = CommitsAhead,
+                    CommitsBehind = CommitsBehind,
+                    HasUncommittedChanges = HasUncommittedChanges,
+                    LastCommitTime = LastCommitTime,
+                    StashCount = StashCount,
+                    CurrentOperation = CurrentOperation,
+                    RemoteUrl = RemoteUrl,
+                },
+                SessionCount = CopilotChatSessionCount,
+                SummaryText = _repositorySummaryText,
+                SummaryTooltip = _repositorySummaryTooltip,
+                OpenPullRequests = _repositoryOpenPullRequests,
+                RequestedReviews = _repositoryRequestedReviews,
+                BranchActivity = BranchActivityTooltip,
+                VisitChanges = VisitChangesTooltip,
+            };
+        }
+
+        internal void ApplyMetadata(Metadata metadata, bool includeActivity, bool includeLocal = true)
+        {
+            if (includeLocal)
+            {
+                if (metadata.LastAccessed > LastAccessed)
+                    LastAccessed = metadata.LastAccessed;
+                ApplyExists(metadata.Exists);
+                ApplyGitStatus(metadata.Git);
+                CopilotChatSessionCount = metadata.SessionCount;
+            }
+            if (includeActivity && RemoteUrl == metadata.Git?.RemoteUrl)
+            {
+                ApplyRepositorySummary(metadata.SummaryText, metadata.SummaryTooltip,
+                    metadata.OpenPullRequests, metadata.RequestedReviews);
+                if (GitBranch == metadata.Git?.BranchName)
+                {
+                    ApplyBranchActivity(metadata.BranchActivity);
+                    ApplyVisitChanges(metadata.VisitChanges);
+                }
+            }
+        }
+
+        internal sealed class Metadata
+        {
+            public DateTime LastAccessed { get; set; }
+            public bool Exists { get; set; }
+            public GitStatus Git { get; set; }
+            public int SessionCount { get; set; }
+            public string SummaryText { get; set; }
+            public string SummaryTooltip { get; set; }
+            public int? OpenPullRequests { get; set; }
+            public int? RequestedReviews { get; set; }
+            public string BranchActivity { get; set; }
+            public string VisitChanges { get; set; }
+        }
+
+        /// <summary>Updates all Git-related properties from a status snapshot.</summary>
         internal void ApplyGitStatus(GitStatus status)
         {
             if (status == null)

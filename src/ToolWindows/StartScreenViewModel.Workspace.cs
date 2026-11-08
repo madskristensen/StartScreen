@@ -48,6 +48,7 @@ namespace StartScreen.ToolWindows
         private bool _workspaceActivityIncomplete;
         private IReadOnlyList<DevHubIssue> _workspaceIssues = Array.Empty<DevHubIssue>();
         private IReadOnlyList<WorkspaceVisitHistory.Snapshot> _workspaceVisits = Array.Empty<WorkspaceVisitHistory.Snapshot>();
+        private bool _workspaceVisitsLoaded;
         private string _workspaceActivityContext;
         private DateTime _workspaceActivityFetchedAtUtc;
         private string _workspaceVisitError;
@@ -66,7 +67,13 @@ namespace StartScreen.ToolWindows
             _workspaceActivityFetchedAtUtc = snapshots.Length == 0 ? default : snapshots.Min(snapshot => snapshot.FetchedAt);
             _workspaceActivityIncomplete = cached || snapshots.Any(snapshot => snapshot.IsRefreshing
                 || snapshot.Status != DevHubActivityStatus.Success || snapshot.ActivityWarnings.Count > 0);
+            if (_mruMetadataCacheLoaded)
+                _mruMetadataCache.Apply(_allMruItems, _workspaceActivityContext, includeLocal: false);
             RefreshWorkspaceActivity(_allMruItems?.AsEnumerable() ?? Enumerable.Empty<MruItem>());
+            if (_mruMetadataCacheLoaded && dashboard?.HasAuthentication == true && !dashboard.IsRefreshing)
+                StartScreenPackage.BackgroundTaskFactory.RunAsync(() =>
+                    RefreshRepositorySummariesAsync(VisibleMruItems.ToArray(), GetBackgroundCancellationToken()))
+                    .FileAndForget(nameof(StartScreenViewModel));
         }
 
         private void RefreshWorkspaceActivity(IEnumerable<MruItem> items)
@@ -75,9 +82,10 @@ namespace StartScreen.ToolWindows
             {
                 item.ApplyBranchActivity(WorkspaceActivity.Format(item, _workspacePullRequests, _workspaceActivityIncomplete));
                 var previous = _workspaceVisits.FirstOrDefault(visit => string.Equals(visit.Path, item.Path?.TrimEnd(System.IO.Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase));
-                item.ApplyVisitChanges(_workspaceVisitError ?? (previous == null ? null : WorkspaceVisitHistory.Compare(previous,
-                    WorkspaceVisitHistory.Capture(item, _workspacePullRequests, _workspaceIssues, _workspaceActivityContext, DateTime.UtcNow),
-                    _workspaceActivityIncomplete)));
+                if (_workspaceVisitsLoaded || _workspaceVisitError != null)
+                    item.ApplyVisitChanges(_workspaceVisitError ?? (previous == null ? null : WorkspaceVisitHistory.Compare(previous,
+                        WorkspaceVisitHistory.Capture(item, _workspacePullRequests, _workspaceIssues, _workspaceActivityContext, DateTime.UtcNow),
+                        _workspaceActivityIncomplete)));
             }
         }
 
@@ -88,6 +96,7 @@ namespace StartScreen.ToolWindows
                 var visits = await WorkspaceVisitHistory.ReadAsync(WorkspaceVisitHistory.DefaultFile, cancellationToken);
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
                 _workspaceVisits = visits;
+                _workspaceVisitsLoaded = true;
                 _workspaceVisitError = null;
                 RefreshWorkspaceActivity(_allMruItems?.AsEnumerable() ?? Enumerable.Empty<MruItem>());
             }
@@ -205,6 +214,8 @@ namespace StartScreen.ToolWindows
                 {
                     _repositorySummaryGeneration++;
                     _repositorySummaries.InvalidateAll();
+                    _mruMetadataCache.InvalidateSummaries();
+                    await RefreshMruAsync(cancellationToken, force: true);
                 }
                 await Task.WhenAll(RefreshServiceHealthAsync(cancellationToken),
                     RefreshRepositorySummariesAsync(VisibleMruItems.ToArray(), cancellationToken),
@@ -299,10 +310,11 @@ namespace StartScreen.ToolWindows
         private async Task RefreshRepositorySummariesAsync(IEnumerable<MruItem> items, CancellationToken cancellationToken)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-            if (!Options.Instance.DevHubEnabled)
+            if (!Options.Instance.DevHubEnabled || !_mruMetadataCacheLoaded || _workspaceActivityContext == null)
                 return;
             int generation = _repositorySummaryGeneration;
-            var groups = GetRepositorySummaryGroups(items);
+            string activityContext = _workspaceActivityContext;
+            var groups = GetRepositorySummaryGroups(items.Where(item => _mruMetadataCache.IsSummaryStale(item, activityContext)));
             foreach (var group in groups.Where(group => group.Key == null))
             {
                 foreach (var item in group)
@@ -313,7 +325,7 @@ namespace StartScreen.ToolWindows
                 await TaskScheduler.Default;
                 var summary = await _repositorySummaries.GetSummaryAsync(group.Key, cancellationToken);
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-                if (generation != _repositorySummaryGeneration)
+                if (generation != _repositorySummaryGeneration || activityContext != _workspaceActivityContext)
                     return;
                 string text = FormatRepositorySummary(summary);
                 string details = summary.Status == DevHubRepoSummaryStatus.Ready
@@ -323,6 +335,11 @@ namespace StartScreen.ToolWindows
                 {
                     if (Equals(RemoteRepoIdentifier.TryParse(item.RemoteUrl), group.Key))
                         item.ApplyRepositorySummary(text, details, summary.OpenPullRequests, summary.RequestedReviews);
+                }
+                if (summary.Status == DevHubRepoSummaryStatus.Ready)
+                {
+                    _mruMetadataCache.Update(group, local: false, activityContext);
+                    await _mruMetadataCache.SaveAsync(_allMruItems.ToArray(), cancellationToken);
                 }
             }));
         }

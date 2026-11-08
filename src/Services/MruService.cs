@@ -170,9 +170,21 @@ namespace StartScreen.Services
             return settingsManager == null ? null : new RecentProjectsRegistry(settingsManager).List;
         }
 
-        internal static async Task<IReadOnlyList<string>> GetRepositoryRemoteUrlsAsync(CancellationToken cancellationToken)
+        internal static Task<IReadOnlyList<string>> GetRepositoryRemoteUrlsAsync(CancellationToken cancellationToken)
+        {
+            return GetRepositoryRemoteUrlsAsync(cancellationToken, useCachedMetadata: false);
+        }
+
+        internal static async Task<IReadOnlyList<string>> GetRepositoryRemoteUrlsAsync(CancellationToken cancellationToken,
+            bool useCachedMetadata)
         {
             var items = await GetMruItemsAsync(cancellationToken: cancellationToken, includeMetadata: false);
+            if (useCachedMetadata)
+            {
+                var cache = new MruMetadataCache();
+                await cache.LoadAsync(cancellationToken);
+                cache.Apply(items.Where(item => !cache.IsStale(item)));
+            }
             return await GetRepositoryRemoteUrlsAsync(items, cancellationToken);
         }
 
@@ -377,7 +389,8 @@ namespace StartScreen.Services
         public static async Task PopulateGitStatusAsync(
             IEnumerable<MruItem> items,
             System.Threading.CancellationToken cancellationToken = default,
-            Action<IReadOnlyList<MruItem>> localUpdatesApplied = null)
+            Action<IReadOnlyList<MruItem>> localUpdatesApplied = null,
+            bool forceRefresh = false)
         {
             // Switch to background thread for parallel Git operations
             await TaskScheduler.Default;
@@ -404,7 +417,7 @@ namespace StartScreen.Services
                 if (string.IsNullOrWhiteSpace(item.Path)
                     || (!Directory.Exists(item.Path) && !File.Exists(item.Path)))
                 {
-                    return (Item: (MruItem)null, Status: (GitStatus)null, SessionCount: 0);
+                    return (Item: item, Status: new GitStatus(), SessionCount: 0, LastAccessed: item.LastAccessed);
                 }
 
                 var startDir = item.Type == MruItemType.Folder ? item.Path : Path.GetDirectoryName(item.Path);
@@ -428,10 +441,12 @@ namespace StartScreen.Services
                             (_, info) => { lock (info.Items) { info.Items.Add(item); } return info; });
                     }
                 }
-                return (Item: item, Status: status, SessionCount: sessionCount);
+                return (Item: item, Status: status, SessionCount: sessionCount,
+                    LastAccessed: GetLastAccessTime(item.Path, item.Type, metadataCache));
             }, async (updates, token) =>
             {
                 await ApplyGitStatusUpdatesAsync(updates, token);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
                 localUpdatesApplied?.Invoke(updates.Where(update => update.Item != null).Select(update => update.Item).ToArray());
             }, cancellationToken);
 
@@ -461,8 +476,8 @@ namespace StartScreen.Services
                         // Throttle: if FETCH_HEAD was written within the throttle window,
                         // the ahead/behind we already read in phase 1 is fresh enough.
                         // Skip both the fetch and the post-fetch re-read entirely.
-                        if (GitHelper.WasRecentlyFetched(repoPath, _fetchThrottleWindow)
-                            || !TryReserveBackgroundFetch(repoPath, DateTime.UtcNow))
+                        if (!forceRefresh && (GitHelper.WasRecentlyFetched(repoPath, _fetchThrottleWindow)
+                            || !TryReserveBackgroundFetch(repoPath, DateTime.UtcNow)))
                             return;
 
                         GitCommandResult result = await GitHelper.FetchUpstreamAsync(
@@ -500,7 +515,7 @@ namespace StartScreen.Services
         }
 
         private static async Task ApplyGitStatusUpdatesAsync(
-            IEnumerable<(MruItem Item, GitStatus Status, int SessionCount)> updates,
+            IEnumerable<(MruItem Item, GitStatus Status, int SessionCount, DateTime LastAccessed)> updates,
             System.Threading.CancellationToken cancellationToken)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
@@ -513,6 +528,7 @@ namespace StartScreen.Services
                     continue;
                 update.Item.ApplyGitStatus(update.Status);
                 update.Item.CopilotChatSessionCount = update.SessionCount;
+                update.Item.LastAccessed = update.LastAccessed;
 
                 if (++index % 8 == 0)
                 {

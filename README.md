@@ -46,6 +46,15 @@ Account checks that do not need repository discovery overlap the local repositor
 scan. That scan reads recent-project paths without loading solution timestamps or
 other unrelated MRU metadata. Repository-dependent providers reuse the scan result,
 and cached PRs still wait for both repository-context and account validation.
+Fresh cached Git remotes avoid repeating repository scans during this validation.
+Verified cached activity yields to rendering before a stale activity refresh starts.
+Recent-project details are also persisted locally: Git branch and status, commit
+time, ahead/behind counts, stashes, operations, existence, last access, and Copilot
+session counts are restored before the first list publication. Repository counts
+and activity tooltips are restored after the matching activity identity is verified.
+Cached details remain visible while stale entries refresh in the background.
+Local metadata and repository counts are reused for three hours; manual Refresh
+always reloads them. Merely reopening the screen does not fetch fresh metadata.
 Local workspace metadata is published progressively by two background workers in
 batches of up to eight, with selected and pinned workspaces scheduled first.
 Repository summaries start as local metadata arrives, independently of remote Git
@@ -503,9 +512,9 @@ On later opens, the saved dashboard populates both work blades only
 after the current provider identities and activity query/options have been verified.
 Account, repository-context, query, item-limit, or completed-item setting changes
 discard mismatched snapshots, including ownership flags. Older unpartitioned caches
-are ignored and rebuilt. A cache at least four hours old, or one containing failed
+are ignored and rebuilt. A cache at least three hours old, or one containing failed
 sources, refreshes in the background. First use without a matching cache still needs
-to fetch data. A matching, successful dashboard younger than four hours is reused
+to fetch data. A matching, successful dashboard younger than three hours is reused
 without fetching its activity again; startup still verifies the provider accounts.
 Manual Refresh fetches current activity regardless of cache age.
 Additional repository-scoped details are retained in memory only and
@@ -890,8 +899,8 @@ have been removed to give workspace activity and news more room.
 
 Every part of Start Screen is navigable without a mouse.
 
-Open the Start Screen any time from **File > Start Screen** or press
-**Ctrl+Shift+Alt+Backspace**.
+Open the Start Screen any time from **File > Start Screen**, the **Home** button
+on the **Standard** toolbar, or press **Ctrl+Shift+Alt+Backspace**.
 
 ### Recent solutions / folders
 

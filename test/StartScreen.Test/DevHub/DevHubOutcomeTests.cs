@@ -344,7 +344,8 @@ namespace StartScreen.Test.DevHub
 
         [TestMethod]
         [DataRow(0, false)]
-        [DataRow(3, false)]
+        [DataRow(2, false)]
+        [DataRow(3, true)]
         [DataRow(5, true)]
         public async Task Startup_CacheVerificationStartsBeforeControlConsumesItAndDoesNotFetchFreshActivityAsync(int ageHours, bool stale)
         {

@@ -27,7 +27,10 @@ namespace StartScreen.ToolWindows
     /// </summary>
     public partial class StartScreenViewModel : INotifyPropertyChanged, IDisposable
     {
-        private static readonly TimeSpan _autoRefreshInterval = TimeSpan.FromHours(4);
+        private static readonly TimeSpan _autoRefreshInterval = MruMetadataCache.Lifetime;
+        private readonly MruMetadataCache _mruMetadataCache = new();
+        private bool _mruMetadataCacheLoaded;
+        internal event EventHandler ActivityRefreshRequested;
         private bool _isRefreshingDevHub;
         private bool _isUpdateAvailable;
         private string _searchFilter;
@@ -642,45 +645,47 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private void StartMruMetadataRefresh(IReadOnlyCollection<MruItem> items)
+        private async Task RefreshMruMetadataAsync(IReadOnlyCollection<MruItem> items, CancellationToken cancellationToken, bool force)
         {
             CancellationTokenSource refreshCancellation =
-                ReplaceRefreshCancellation(ref _mruMetadataCancellation);
-
-            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
+                ReplaceRefreshCancellation(ref _mruMetadataCancellation, cancellationToken);
+            var summaryTasks = new System.Collections.Concurrent.ConcurrentBag<Task>();
+            var updatedItems = new HashSet<MruItem>();
+            try
             {
-                var summaryTasks = new System.Collections.Concurrent.ConcurrentBag<Task>();
+                var prioritized = items.OrderByDescending(item => ReferenceEquals(item, SelectedMruItem))
+                    .ThenByDescending(item => item.IsPinned)
+                    .ThenByDescending(item => _realizedMruItems?.Contains(item) == true).ToArray();
+                await LoadWorkspaceVisitsAsync(refreshCancellation.Token);
                 try
                 {
-                    var prioritized = items.OrderByDescending(item => ReferenceEquals(item, SelectedMruItem))
-                        .ThenByDescending(item => item.IsPinned)
-                        .ThenByDescending(item => _realizedMruItems?.Contains(item) == true).ToArray();
-                    await LoadWorkspaceVisitsAsync(refreshCancellation.Token);
-                    try
-                    {
-                        await Task.WhenAll(
-                            MruService.PopulateGitStatusAsync(prioritized, refreshCancellation.Token,
-                                batch =>
-                                {
-                                    RefreshWorkspaceActivity(batch);
-                                    summaryTasks.Add(RefreshRepositorySummariesAsync(batch, refreshCancellation.Token));
-                                }),
-                            MruService.PopulateExistenceAsync(prioritized, refreshCancellation.Token));
-                    }
-                    finally
-                    {
-                        await Task.WhenAll(summaryTasks);
-                    }
-                }
-                catch (OperationCanceledException ex) when (refreshCancellation.IsCancellationRequested)
-                {
-                    await ex.LogAsync();
+                    await Task.WhenAll(
+                        MruService.PopulateGitStatusAsync(prioritized, refreshCancellation.Token,
+                            batch =>
+                            {
+                                updatedItems.UnionWith(batch);
+                                RefreshWorkspaceActivity(batch);
+                                summaryTasks.Add(RefreshRepositorySummariesAsync(batch, refreshCancellation.Token));
+                            }, forceRefresh: force),
+                        MruService.PopulateExistenceAsync(prioritized, refreshCancellation.Token));
                 }
                 finally
                 {
-                    CompleteRefresh(ref _mruMetadataCancellation, refreshCancellation, () => { });
+                    await Task.WhenAll(summaryTasks);
                 }
-            }).FileAndForget(nameof(StartScreenViewModel));
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(refreshCancellation.Token);
+                _mruMetadataCache.Update(updatedItems, local: true);
+                await _mruMetadataCache.SaveAsync(_allMruItems.ToArray(), refreshCancellation.Token);
+            }
+            catch (OperationCanceledException ex) when (refreshCancellation.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+            }
+            finally
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                CompleteRefresh(ref _mruMetadataCancellation, refreshCancellation, () => { });
+            }
         }
 
         private async Task InitializeDeferredContentAsync(CancellationToken cancellationToken)
@@ -692,6 +697,8 @@ namespace StartScreen.ToolWindows
                 cancellationToken.ThrowIfCancellationRequested();
 
                 await RefreshMruAsync(cancellationToken);
+                if (!_workspaceVisitsLoaded)
+                    await LoadWorkspaceVisitsAsync(cancellationToken);
 
                 if (_initialMruOptionsNeedSave)
                 {
@@ -751,6 +758,14 @@ namespace StartScreen.ToolWindows
             // Timer fires on a ThreadPool thread. Check guards before dispatching work.
             NewsSection.RefreshIfStale();
             VideoSection.RefreshIfStale();
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (GetBackgroundCancellationToken().IsCancellationRequested)
+                    return;
+                ActivityRefreshRequested?.Invoke(this, EventArgs.Empty);
+                await RefreshMruAsync(GetBackgroundCancellationToken());
+            }).FileAndForget(nameof(StartScreenViewModel));
         }
 
         /// <summary>
@@ -785,9 +800,13 @@ namespace StartScreen.ToolWindows
             }
             List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(mruItems, options, cancellationToken, persistChanges: false);
             var allItems = mruItems.Concat(extendedItems).ToList();
+            if (!_mruMetadataCacheLoaded)
+                await _mruMetadataCache.LoadAsync(cancellationToken);
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            _mruMetadataCacheLoaded = true;
+            _mruMetadataCache.Apply(allItems, _workspaceActivityContext);
             _showSolutionsOnly = options.ShowSolutionsOnly;
             OnPropertyChanged(nameof(ShowSolutionsOnly));
             SetMruItems(allItems);
@@ -827,14 +846,14 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async Task RefreshMruAsync(CancellationToken cancellationToken)
+        private async Task RefreshMruAsync(CancellationToken cancellationToken, bool force = false)
         {
             try
             {
                 await TaskScheduler.Default;
                 cancellationToken.ThrowIfCancellationRequested();
                 Options options = await Options.GetLiveInstanceAsync();
-                List<MruItem> updatedMru = await MruService.GetMruItemsAsync(options, cancellationToken);
+                List<MruItem> updatedMru = await MruService.GetMruItemsAsync(options, cancellationToken, includeMetadata: false);
                 List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(updatedMru, options, cancellationToken);
                 var allItems = updatedMru.Concat(extendedItems).ToList();
 
@@ -842,15 +861,19 @@ namespace StartScreen.ToolWindows
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 cancellationToken.ThrowIfCancellationRequested();
 
+                _mruMetadataCache.Apply(allItems, _workspaceActivityContext);
                 SetMruItems(allItems);
 
-                StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
+                var staleItems = allItems.Where(item => force || _mruMetadataCache.IsStale(item)).ToArray();
+                if (staleItems.Length > 0)
                 {
                     await StartScreenPackage.BackgroundTaskFactory.YieldAsync(
                         System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
-                    StartMruMetadataRefresh(allItems);
-                }).FileAndForget(nameof(StartScreenViewModel));
+                    await RefreshMruMetadataAsync(staleItems, cancellationToken, force);
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                    RefreshMruCollections();
+                }
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {

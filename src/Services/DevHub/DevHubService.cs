@@ -20,6 +20,7 @@ namespace StartScreen.Services.DevHub
         private readonly DevHubCacheService _cache;
         private readonly Func<IReadOnlyList<IDevHubProvider>> _getProviders;
         private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _getCandidateRemoteUrls;
+        private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _getCachedCandidateRemoteUrls;
         private readonly Func<DevHubSortOrder> _getSortOrder;
         private readonly Func<string> _getQueryContext;
         private readonly Func<int> _getCredentialGeneration;
@@ -51,7 +52,8 @@ namespace StartScreen.Services.DevHub
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _getProviders = getProviders ?? (providers == null ? DevHubProviderRegistry.GetEnabledProviders : () => providers);
-            _getCandidateRemoteUrls = getCandidateRemoteUrls ?? GetCandidateRemoteUrlsAsync;
+            _getCandidateRemoteUrls = getCandidateRemoteUrls ?? (token => GetCandidateRemoteUrlsAsync(token));
+            _getCachedCandidateRemoteUrls = getCandidateRemoteUrls ?? (token => GetCandidateRemoteUrlsAsync(token, useCachedMetadata: true));
             _getSortOrder = getSortOrder ?? (() => Options.Instance.DevHubSortOrder);
             _getQueryContext = getQueryContext ?? (() => Options.Instance.DevHubSearchQuery ?? string.Empty);
             _getCredentialGeneration = getCredentialGeneration ?? (() => DevHubCredentialHelper.AccountGeneration);
@@ -106,7 +108,7 @@ namespace StartScreen.Services.DevHub
                     authentications[provider] = AuthenticateAsync(provider, requestToken);
 
                 stepProgress?.Report("Finding workspace repositories...");
-                var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(requestToken), urls => urls.Count > 0, requestToken);
+                var candidates = await DevHubActivityRequest.RunAsync(() => _getCachedCandidateRemoteUrls(requestToken), urls => urls.Count > 0, requestToken);
                 workProgress?.Report((++completedWork, totalWork));
                 options = options ?? new DevHubActivityOptions();
                 if (candidates.Status != DevHubActivityStatus.Success || generation != _getCredentialGeneration() || queryContext != _getQueryContext()
@@ -803,11 +805,12 @@ namespace StartScreen.Services.DevHub
         /// Reads distinct git remote URLs from the MRU list to use as the candidate set of
         /// repositories for per-repo activity fetching.
         /// </summary>
-        private static async Task<IReadOnlyList<string>> GetCandidateRemoteUrlsAsync(CancellationToken cancellationToken)
+        private static async Task<IReadOnlyList<string>> GetCandidateRemoteUrlsAsync(CancellationToken cancellationToken,
+            bool useCachedMetadata = false)
         {
             try
             {
-                return await MruService.GetRepositoryRemoteUrlsAsync(cancellationToken);
+                return await MruService.GetRepositoryRemoteUrlsAsync(cancellationToken, useCachedMetadata);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

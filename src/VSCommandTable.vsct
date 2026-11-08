@@ -161,6 +161,12 @@
     </Buttons>
   </Commands>
 
+  <CommandPlacements>
+    <CommandPlacement guid="StartScreen" id="ShowStartScreenCommand" priority="0x0001">
+      <Parent guid="guidSHLMainMenu" id="IDG_VS_TOOLSB_SAVEOPEN" />
+    </CommandPlacement>
+  </CommandPlacements>
+
   <KeyBindings>
     <KeyBinding guid="StartScreen" id="ShowStartScreenCommand" editor="guidVSStd97" mod1="Control Shift Alt" key1="VK_BACK" />
   </KeyBindings>

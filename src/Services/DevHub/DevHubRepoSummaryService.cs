@@ -30,7 +30,7 @@ namespace StartScreen.Services.DevHub
         }
 
         public DevHubRepoSummaryService(CancellationToken shutdownToken)
-            : this(FetchFromProviderAsync, () => $"{Options.Instance.DevHubGitHubAccount}/{Options.Instance.DevHubAdoAuthentication}", TimeSpan.FromMinutes(2), 4, shutdownToken)
+            : this(FetchFromProviderAsync, () => $"{Options.Instance.DevHubGitHubAccount}/{Options.Instance.DevHubAdoAuthentication}", MruMetadataCache.Lifetime, 4, shutdownToken)
         {
         }
 

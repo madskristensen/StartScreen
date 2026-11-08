@@ -24,7 +24,7 @@ namespace StartScreen.Services.DevHub
         public DevHubCacheService(string cacheFolder, TimeSpan? staleThreshold = null)
         {
             _cacheFolder = cacheFolder ?? throw new ArgumentNullException(nameof(cacheFolder));
-            _staleThreshold = staleThreshold ?? TimeSpan.FromHours(4);
+            _staleThreshold = staleThreshold ?? MruMetadataCache.Lifetime;
         }
 
         /// <summary>

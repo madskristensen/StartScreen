@@ -27,11 +27,11 @@ namespace StartScreen
     {
         public const int StartScreenGroup = 0x0001;
         public const int ClearRecentGroup = 0x0002;
+        public const int ClearRecentMenu = 0x1000;
         public const int ShowStartScreenCommand = 0x0100;
         public const int ClearAllRecentCommand = 0x0101;
         public const int ClearAllButPinnedCommand = 0x0102;
         public const int ClearMissingRecentCommand = 0x0103;
-        public const int ClearRecentMenu = 0x1000;
         public const int CopilotSessionMenu = 0x1001;
         public const int CopilotSessionGroup = 0x0003;
         public const int OpenCopilotInVisualStudio = 0x0110;
