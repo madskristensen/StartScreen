@@ -125,6 +125,8 @@ namespace StartScreen.ToolWindows
             }
 
             _viewModel.ActivateBackgroundWork();
+            if (ReferenceEquals(NewsTabs.SelectedItem, VideosTab))
+                ActivateVideosTab();
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
             JoinableTask previousLoad = _controlLoadTask;
             _controlLoadTask = StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
@@ -1473,10 +1475,7 @@ namespace StartScreen.ToolWindows
             }
             else if (ReferenceEquals(selected, VideosTab))
             {
-                ViewModel.VideoSection.EnsureThumbnailsLoaded();
-                StartScreenPackage.BackgroundTaskFactory.RunAsync(
-                    () => ViewModel.MarkVideosAsSeenAsync())
-                    .FileAndForget(nameof(StartScreenControl));
+                ActivateVideosTab();
             }
             else if (ReferenceEquals(selected, FeedbackTab))
             {
@@ -1487,6 +1486,13 @@ namespace StartScreen.ToolWindows
                 ViewModel.EnsureWhatsNewLoadedAsync(factory: StartScreenPackage.BackgroundTaskFactory)
                     .FileAndForget(nameof(StartScreenControl));
             }
+        }
+
+        private void ActivateVideosTab()
+        {
+            var videos = ViewModel.VideoSection;
+            StartScreenPackage.BackgroundTaskFactory.RunAsync(videos.ActivateTabAsync)
+                .FileAndForget(nameof(StartScreenControl));
         }
 
         private void FeedbackTicket_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)

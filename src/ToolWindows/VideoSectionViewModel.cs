@@ -195,10 +195,15 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        internal void RefreshIfStale()
+        internal async Task ActivateTabAsync()
         {
-            if (!IsWorkCanceled() && !IsRefreshingYouTube && _isCacheStale())
-                StartRefresh(false);
+            if (IsWorkCanceled())
+                return;
+            using var activation = CreateWorkCancellation(default);
+            EnsureThumbnailsLoaded();
+            await LoadAsync(activation.Token);
+            if (!activation.IsCancellationRequested)
+                await MarkVideosAsSeenAsync();
         }
 
         internal void EnsureThumbnailsLoaded()

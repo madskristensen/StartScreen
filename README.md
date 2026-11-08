@@ -474,9 +474,12 @@ in the last three days get a "NEW" badge so you never miss fresh
 content. A green dot appears on the Videos tab whenever new videos
 arrive in a refresh, and clears once you view the tab.
 
-The feed is cached locally and refreshes automatically every four hours.
-Click the Refresh button at the top of the screen to force an update at
-any time.
+Videos are loaded only when the Videos tab is activated or when you click
+the Refresh button at the top of the screen. Startup and the automatic refresh
+timer do not read the video cache, download the feed, or load its thumbnails.
+Opening the tab displays the local cache and checks the network only when that
+cache is missing, invalid, or at least six hours old. Manual Refresh forces a
+network check regardless of cache age.
 
 ## Your Developer Community feedback
 

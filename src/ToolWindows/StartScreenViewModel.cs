@@ -761,7 +761,6 @@ namespace StartScreen.ToolWindows
 
             // Timer fires on a ThreadPool thread. Check guards before dispatching work.
             NewsSection.RefreshIfStale();
-            VideoSection.RefreshIfStale();
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -837,12 +836,11 @@ namespace StartScreen.ToolWindows
             {
                 Task feedbackTask = RefreshFeedbackIfRequestedAsync(cancellationToken);
                 Task newsTask = NewsSection.LoadAsync(cancellationToken);
-                Task youtubeTask = VideoSection.LoadAsync(cancellationToken, loadThumbnails: false);
                 Task versionTask = RefreshVersionTitleAsync(cancellationToken);
                 Task mruTask = refreshMru ? RefreshMruAsync(cancellationToken) : Task.CompletedTask;
                 Task updateTask = CheckForUpdateAsync(cancellationToken);
 
-                await Task.WhenAll(newsTask, youtubeTask, versionTask, mruTask, updateTask, feedbackTask);
+                await Task.WhenAll(newsTask, versionTask, mruTask, updateTask, feedbackTask);
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {

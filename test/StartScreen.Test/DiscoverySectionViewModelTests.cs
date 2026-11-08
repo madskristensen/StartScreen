@@ -10,6 +10,130 @@ namespace StartScreen.Test
     public class DiscoverySectionViewModelTests
     {
         [STATestMethod]
+        public void Videos_ConstructingResumingAndResizingTheScreenDoesNotLoadContent()
+        {
+            using var context = CreateContext();
+            var cacheReads = 0;
+            var downloads = 0;
+            var thumbnails = 0;
+            var freshnessChecks = 0;
+            using var videos = new VideoSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedVideosAsync: _ => { cacheReads++; return Task.FromResult(new List<YouTubeVideo>()); },
+                downloadAsync: _ => { downloads++; return Task.FromResult(new List<YouTubeVideo>()); },
+                loadThumbnailsAsync: (_, _) => { thumbnails++; return Task.CompletedTask; },
+                isCacheStale: () => { freshnessChecks++; return true; });
+            using var screen = new StartScreenViewModel(CancellationToken.None, videoSection: videos);
+
+            screen.ActivateBackgroundWork();
+            videos.YouTubeColumnCount = 2;
+            screen.CancelBackgroundWork();
+            screen.ActivateBackgroundWork();
+
+            Assert.AreEqual(0, cacheReads);
+            Assert.AreEqual(0, downloads);
+            Assert.AreEqual(0, thumbnails);
+            Assert.AreEqual(0, freshnessChecks);
+            Assert.IsEmpty(screen.YouTubeVideos);
+            Assert.IsFalse(videos.RefreshState.HasRefreshed);
+        }
+
+        [STATestMethod]
+        [DataRow(true, false)]
+        [DataRow(true, true)]
+        [DataRow(false, false)]
+        public void VideoTabActivation_ReadsCacheAndDownloadsOnlyWhenMissingOrStale(bool cached, bool stale)
+        {
+            using var context = CreateContext();
+            var options = new Options();
+            var cacheReads = 0;
+            var downloads = 0;
+            var saves = 0;
+            var refreshed = Completion<bool>();
+            var needsDownload = !cached || stale;
+            using var videos = new VideoSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedVideosAsync: _ =>
+                {
+                    Interlocked.Increment(ref cacheReads);
+                    return Task.FromResult<List<YouTubeVideo>>(cached ? [Video("cached")] : null!);
+                }, downloadAsync: _ =>
+                {
+                    Interlocked.Increment(ref downloads);
+                    return Task.FromResult(new List<YouTubeVideo> { Video("fresh") });
+                }, loadThumbnailsAsync: (_, _) => Task.CompletedTask, isCacheStale: () => stale,
+                getOptionsAsync: () => Task.FromResult(options),
+                saveOptionsAsync: _ => { saves++; return Task.CompletedTask; });
+            videos.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(videos.IsRefreshingYouTube) && !videos.IsRefreshingYouTube)
+                    refreshed.TrySetResult(true);
+            };
+
+            context.Factory.Run(async () =>
+            {
+                await videos.ActivateTabAsync();
+                if (needsDownload)
+                    await refreshed.Task;
+            });
+
+            Assert.AreEqual(1, cacheReads);
+            Assert.AreEqual(needsDownload ? 1 : 0, downloads);
+            Assert.AreEqual(needsDownload ? "fresh" : "cached", videos.YouTubeVideos.Single().Title);
+            Assert.AreEqual(!needsDownload, videos.RefreshState.IsCached);
+            Assert.AreEqual(1, saves);
+            Assert.AreNotEqual(DateTime.MinValue, options.LastNewsVideosSeen);
+            Assert.IsFalse(videos.IsRefreshingYouTube);
+        }
+
+        [STATestMethod]
+        public void ManualVideoRefresh_LoadsWithoutActivatingTheTabAndBypassesFreshCache()
+        {
+            using var context = CreateContext();
+            var cacheReads = 0;
+            var downloads = 0;
+            using var videos = new VideoSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedVideosAsync: _ => { cacheReads++; return Task.FromResult(new List<YouTubeVideo>()); },
+                downloadAsync: _ => { downloads++; return Task.FromResult(new List<YouTubeVideo> { Video("manual") }); },
+                loadThumbnailsAsync: (_, _) => Task.CompletedTask, isCacheStale: () => false,
+                getOptionsAsync: () => Task.FromResult(new Options()));
+            using var screen = new StartScreenViewModel(CancellationToken.None, videoSection: videos);
+            context.Factory.Run(() => videos.RefreshAsync(force: true));
+
+            Assert.AreEqual(0, cacheReads);
+            Assert.AreEqual(1, downloads);
+            Assert.AreEqual("manual", screen.YouTubeVideos.Single().Title);
+            Assert.IsFalse(videos.RefreshState.IsCached);
+        }
+
+        [STATestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void CanceledVideoTabActivation_DoesNotPublishOrMarkUnseenContentAsSeen(bool reactivate)
+        {
+            using var context = CreateContext();
+            var cached = Completion<List<YouTubeVideo>>();
+            var saves = 0;
+            using var videos = new VideoSectionViewModel(getTaskFactory: () => context.Factory,
+                getCachedVideosAsync: _ => cached.Task,
+                loadThumbnailsAsync: (_, _) => Task.CompletedTask, isCacheStale: () => false,
+                getOptionsAsync: () => Task.FromResult(new Options()),
+                saveOptionsAsync: _ => { saves++; return Task.CompletedTask; });
+
+            context.Factory.Run(async () =>
+            {
+                Task activation = videos.ActivateTabAsync();
+                videos.Cancel();
+                if (reactivate)
+                    videos.Activate();
+                cached.SetResult([Video("late")]);
+                await activation;
+            });
+
+            Assert.AreEqual(0, saves);
+            Assert.IsEmpty(videos.YouTubeVideos);
+            Assert.IsFalse(videos.RefreshState.HasRefreshed);
+        }
+
+        [STATestMethod]
         public void HiddenVideos_PublishCachedMetadataAndCheckFreshnessWithoutThumbnails()
         {
             using var context = CreateContext();
