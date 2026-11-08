@@ -329,7 +329,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void RepositorySummaryGroups_IncludeEveryVisibleRepositoryBeyondTwenty()
+        public void RepositorySummaryGroups_OnlyLoadThe25VisibleRepositoriesAndSearchCanRevealMore()
         {
             var items = Enumerable.Range(0, 30).Select(index => new MruItem
             {
@@ -341,9 +341,14 @@ namespace StartScreen.Test
 
             var groups = model.GetRepositorySummaryGroups(items);
 
-            Assert.HasCount(30, groups);
-            CollectionAssert.AreEquivalent(items, groups.SelectMany(group => group).ToArray());
-            Assert.AreEqual("repo29", groups.Last().Key.Repo);
+            Assert.HasCount(25, groups);
+            CollectionAssert.AreEquivalent(items.Take(25).ToArray(), groups.SelectMany(group => group).ToArray());
+            Assert.AreEqual("repo24", groups.Last().Key.Repo);
+
+            model.SearchFilter = "Repo29";
+            groups = model.GetRepositorySummaryGroups(items);
+            Assert.HasCount(1, groups);
+            Assert.AreEqual("repo29", groups[0].Key.Repo);
         }
 
         [TestMethod]

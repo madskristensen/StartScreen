@@ -376,6 +376,8 @@
                         <TextBlock Text="..."
                                   Margin="0 -5 0 0"
                                   Style="{StaticResource StartScreen.Body}"
+                                  Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                                  local:Typography.Role="SectionHeading"
                                   FontWeight="SemiBold"
                                   HorizontalAlignment="Center"
                                   VerticalAlignment="Center"/>

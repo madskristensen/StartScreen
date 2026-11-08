@@ -1236,6 +1236,13 @@ namespace StartScreen.ToolWindows
             UpdateMruCollections(query);
         }
 
+        private static IEnumerable<MruItem> GetOrderedMruItems(IEnumerable<MruItem> items)
+        {
+            var snapshot = items.ToArray();
+            return snapshot.Where(item => item.IsPinned)
+                .Concat(snapshot.Where(item => !item.IsPinned).OrderByDescending(item => item.LastAccessed));
+        }
+
         /// <summary>
         /// Updates the pinned and regular MRU collections with time grouping.
         /// VS MRU items appear in their normal time groups; extended-only items appear
@@ -1243,13 +1250,16 @@ namespace StartScreen.ToolWindows
         /// </summary>
         private void UpdateMruCollections(string query = null)
         {
+            var filtered = !string.IsNullOrWhiteSpace(query);
+            IEnumerable<MruItem> candidates = GetOrderedMruItems(_allMruItems)
+                .Where(item => MatchesMruFilter(item, query, ShowSolutionsOnly))
+                .Take(25);
+
             var ordered = new List<MruItem>();
             var unpinned = new List<MruItem>();
             var extended = new List<MruItem>();
-            foreach (var item in _allMruItems)
+            foreach (var item in candidates)
             {
-                if (!MatchesMruFilter(item, query, ShowSolutionsOnly))
-                    continue;
                 if (item.IsPinned)
                     ordered.Add(item);
                 else if (item.IsFromExtendedList)
@@ -1260,7 +1270,6 @@ namespace StartScreen.ToolWindows
 
             ordered.AddRange(unpinned.OrderByDescending(item => item.LastAccessed));
             ordered.AddRange(extended.OrderByDescending(item => item.LastAccessed));
-            var filtered = !string.IsNullOrWhiteSpace(query);
             var groups = ordered.Select(item => item.DisplayGroup).ToArray();
             var changed = !_visibleMruItems.SequenceEqual(ordered) || !_visibleMruGroups.SequenceEqual(groups);
             if (!changed && _isMruFiltered == filtered)

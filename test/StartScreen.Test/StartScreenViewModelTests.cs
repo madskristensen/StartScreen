@@ -233,7 +233,12 @@ namespace StartScreen.Test
         public void SearchFilter_LargeMruReturnsOnlyMatchingItem()
         {
             var items = Enumerable.Range(0, 2000)
-                .Select(index => CreateItem($"Project {index}", $@"C:\Code\Project{index}.sln"))
+                .Select(index =>
+                {
+                    var item = CreateItem($"Project {index}", $@"C:\Code\Project{index}.sln");
+                    item.LastAccessed = DateTime.Today.AddMinutes(index);
+                    return item;
+                })
                 .ToList();
             var viewModel = new StartScreenViewModel(items);
 
@@ -241,6 +246,70 @@ namespace StartScreen.Test
 
             Assert.HasCount(1, viewModel.VisibleMruItems);
             Assert.AreSame(items[1999], viewModel.VisibleMruItems[0]);
+        }
+
+        [TestMethod]
+        [DataRow(0)]
+        [DataRow(24)]
+        [DataRow(25)]
+        [DataRow(26)]
+        [DataRow(50)]
+        [DataRow(51)]
+        [DataRow(2000)]
+        public void Recent_Shows25AndSearchIncludesAllKnownHistory(int count)
+        {
+            var items = Enumerable.Range(0, count).Select(index =>
+            {
+                var item = CreateItem($"Project {index}", $@"C:\Code\Project{index}.sln");
+                item.LastAccessed = DateTime.Today.AddMinutes(-index);
+                item.IsFromExtendedList = index >= 25;
+                return item;
+            }).ToArray();
+            using var viewModel = new StartScreenViewModel(items.AsEnumerable().Reverse());
+            var boundCollection = viewModel.VisibleMruItems;
+
+            CollectionAssert.AreEqual(items.Take(25).ToArray(), boundCollection.ToArray());
+            viewModel.SearchFilter = "Project";
+            CollectionAssert.AreEqual(items.Take(25).ToArray(), boundCollection.ToArray());
+            Assert.AreSame(boundCollection, viewModel.VisibleMruItems);
+            if (count > 50)
+            {
+                viewModel.SearchFilter = $"Project {count - 1}";
+                CollectionAssert.AreEqual(new[] { items[count - 1] }, boundCollection.ToArray());
+                Assert.IsFalse(viewModel.HasNoSearchResults);
+            }
+            if (count >= 50)
+            {
+                viewModel.SearchFilter = items[49].Path;
+                CollectionAssert.AreEqual(new[] { items[49] }, boundCollection.ToArray());
+            }
+            viewModel.SearchFilter = " ";
+            CollectionAssert.AreEqual(items.Take(25).ToArray(), boundCollection.ToArray());
+            Assert.IsFalse(viewModel.HasNoSearchResults);
+        }
+
+        [TestMethod]
+        [DataRow(1)]
+        [DataRow(26)]
+        [DataRow(60)]
+        public void Recent_LimitsIncludePinsAndPreserveTheirSavedOrder(int pinnedCount)
+        {
+            var items = Enumerable.Range(0, 100).Select(index =>
+            {
+                var item = CreateItem($"Project {index}", $@"C:\Code\Project{index}.sln");
+                item.LastAccessed = DateTime.Today.AddMinutes(index);
+                item.IsPinned = index < pinnedCount;
+                return item;
+            }).ToArray();
+            var expected = items.Where(item => item.IsPinned)
+                .Concat(items.Where(item => !item.IsPinned).Reverse()).Take(25).ToArray();
+            using var viewModel = new StartScreenViewModel(items);
+
+            CollectionAssert.AreEqual(expected.Take(25).ToArray(), viewModel.VisibleMruItems.ToArray());
+            viewModel.SearchFilter = "Project";
+            CollectionAssert.AreEqual(expected, viewModel.VisibleMruItems.ToArray());
+            viewModel.SearchFilter = string.Empty;
+            CollectionAssert.AreEqual(expected.Take(25).ToArray(), viewModel.VisibleMruItems.ToArray());
         }
 
         [TestMethod]

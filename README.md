@@ -202,6 +202,11 @@ keeps the selected workspace's details in view.
 **Find anything instantly.** Type a few characters and the search filter
 narrows your list in real time. Pin the projects you care about most so
 they always float to the top.
+Recent shows at most 25 items, with pinned items retaining their saved priority.
+Typing searches all known history, including entries beyond the first 50, and
+shows the first 25 matches. Clearing search restores the compact recent list;
+older saved history is not deleted. The options button beside search uses
+larger, theme-aware dots.
 
 **Preview before opening.** Select a recent workspace to show its repository
 activity in the center pane. Double-click or press Enter to open it. Choose

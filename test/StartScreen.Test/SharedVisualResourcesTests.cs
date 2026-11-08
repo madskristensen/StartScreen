@@ -309,6 +309,27 @@ namespace StartScreen.Test
             }
         }
 
+        [STATestMethod]
+        public void RecentOptions_DotsAreLargerAndFollowThemeChanges()
+        {
+            var button = Read("StartScreenControl.xaml").Descendants(_presentation + "Button")
+                .Single(element => element.Attribute(_xaml + "Name")?.Value == "ClearRecentButton");
+            var element = button.Element(_presentation + "TextBlock")!;
+            Assert.AreEqual("SectionHeading", element.Attributes()
+                .Single(attribute => attribute.Name.LocalName == "Typography.Role").Value);
+            Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}",
+                element.Attribute("Foreground")?.Value);
+            var dots = (TextBlock)SharedXamlReader.Parse(element.ToString());
+            Assert.AreEqual("...", dots.Text);
+            Assert.IsGreaterThan(13d, dots.FontSize);
+            foreach (var brush in new[] { Brushes.White, Brushes.Black, Brushes.Yellow })
+            {
+                dots.Resources["TestThemeBrush"] = brush;
+                UpdateBindings(dots);
+                Assert.AreSame(brush, dots.Foreground);
+            }
+        }
+
         private static void UpdateBindings(FrameworkElement element)
         {
 #pragma warning disable VSTHRD001 // Drain bindings on the current STA thread, not a thread switch.
