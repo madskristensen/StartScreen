@@ -12,6 +12,33 @@ namespace StartScreen.Test.DevHub
     public class DevHubPanelStateTests
     {
         [TestMethod]
+        [DataRow("github.com", "GitHub/authentication")]
+        [DataRow("dev.azure.com", "Azure DevOps/authentication")]
+        [DataRow("dev.azure.com", "scoped repository")]
+        public void AccountVerification_NetworkFailuresWithoutIdentityDoNotSuggestReauthentication(string host, string source)
+        {
+            var dashboard = new DevHubDashboard();
+            dashboard.Sources[source] = new DevHubActivitySnapshot
+            {
+                RepoIdentifier = new RemoteRepoIdentifier(host, "owner", "repo"),
+                Status = DevHubActivityStatus.Unavailable,
+            };
+            Assert.IsTrue(DevHubPanel.HasUnavailableAccountVerification(dashboard, host));
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, host, true));
+            Assert.IsFalse(DevHubPanel.HasUnavailableAccountVerification(null, host));
+            dashboard.IsRefreshing = true;
+            Assert.IsFalse(DevHubPanel.HasUnavailableAccountVerification(dashboard, host));
+            dashboard.IsRefreshing = false;
+            dashboard.Sources[source].Status = DevHubActivityStatus.Unauthorized;
+            Assert.IsFalse(DevHubPanel.HasUnavailableAccountVerification(dashboard, host));
+            Assert.IsTrue(DevHubPanel.NeedsAccountRecovery(dashboard, host, true));
+            dashboard.Sources[source].Status = DevHubActivityStatus.Unavailable;
+            dashboard.Users.Add(new DevHubUser { Host = host });
+            Assert.IsFalse(DevHubPanel.HasUnavailableAccountVerification(dashboard, host));
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, host, true));
+        }
+
+        [TestMethod]
         [DataRow("github.com", "GitHub/pulls")]
         [DataRow("dev.azure.com", "Azure DevOps/pulls")]
         public void AccountRecovery_IsHiddenDuringRefreshAndAfterSuccessfulAuthentication(string host, string source)

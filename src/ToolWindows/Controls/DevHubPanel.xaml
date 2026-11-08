@@ -903,6 +903,7 @@
         <DockPanel x:Name="DashboardPanel" Grid.Row="1">
 
             <StackPanel x:Name="AccountRecoveryPanel" DockPanel.Dock="Top" Visibility="Collapsed" Margin="8 0 0 12">
+                <TextBlock x:Name="AccountVerificationUnavailableText" TextWrapping="Wrap" Visibility="Collapsed"/>
                 <TextBlock x:Name="VisualStudioAccountRecoveryText" TextWrapping="Wrap" Visibility="Collapsed">
                     <Run Text="Azure DevOps isn't connected or needs reauthentication. "/>
                     <Hyperlink Click="OpenAccountSettings_Click"

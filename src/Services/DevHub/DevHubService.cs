@@ -306,10 +306,10 @@ namespace StartScreen.Services.DevHub
 
                 void AddProviderSources(IDevHubProvider provider)
                 {
-                    AddActivitySource(provider, DevHubActivityKind.Issues, options, null,
-                        provider.DisplayName + "/issues", $"Loading {provider.DisplayName} issues...");
                     AddActivitySource(provider, DevHubActivityKind.PullRequests, options, null,
                         provider.DisplayName + "/pulls", $"Loading {provider.DisplayName} pull requests...");
+                    AddActivitySource(provider, DevHubActivityKind.Issues, options, null,
+                        provider.DisplayName + "/issues", $"Loading {provider.DisplayName} issues...");
                     AddActivitySource(provider, DevHubActivityKind.CiRuns, options, null,
                         provider.DisplayName + "/builds", $"Loading {provider.DisplayName} builds...");
                     AddSource(provider.DisplayName + "/discovery", $"Finding {provider.DisplayName} repositories...", async () =>

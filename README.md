@@ -304,6 +304,9 @@ count to open My work's Attention feed.
 issues and tasks, personally triggered builds, and local Copilot sessions. **Team activity** shows other people's
 PRs and issues plus repository build activity, excluding requests for your review.
 Team activity defaults to **PRs** and has no Attention tab.
+Repository PRs render as soon as their inventory arrives, without waiting for
+issues, builds, or optional PR details. Review and check details update afterward.
+
 My work defaults to **Attention**, a mixed-type feed of all loaded
 items with a known action for you, ordered newest updated first without type
 grouping or a separate top-items limit. The count shows how many items need you.
@@ -800,6 +803,9 @@ failed PR validation runs; the combined dashboard initially loads up to 10 items
 and scoping to a repository loads up to 30.
 Signing in alone does not enumerate all
 organizations or projects.
+If account verification is unavailable, check your network or VPN connection
+and refresh. Network/service failures are not treated as rejected credentials;
+the account recovery prompt remains available for authentication failures.
 Personal PRs and created or assigned work items are queried independently across
 projects discovered from recent workspaces, with up to three project requests
 in flight per source. Personal PR queries include repositories in those projects

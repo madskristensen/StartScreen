@@ -14,7 +14,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// Bitbucket Cloud provider for the Dev Hub.
     /// Fetches PRs, issues, and pipeline status from the Bitbucket REST API v2.
     /// </summary>
-    internal sealed class BitbucketDevHubProvider : IDevHubProvider, IDevHubActivitySource, IDevHubRefreshProvider
+    internal sealed class BitbucketDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource, IDevHubRefreshProvider
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -242,12 +242,22 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
+        public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            return GetUserPullRequestsAsync(cancellationToken);
+        }
+
         public async Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken cancellationToken)
         {
             // Bitbucket issues are per-repository and there is no cross-repo issue search API.
             // We return empty here; repo-specific issues are fetched via GetRepoDetailAsync.
             await Task.CompletedTask;
             return Array.Empty<DevHubIssue>();
+        }
+
+        public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            return GetUserIssuesAsync(cancellationToken);
         }
 
         public async Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken cancellationToken)
@@ -258,6 +268,11 @@ namespace StartScreen.Services.DevHub.Providers
             return Array.Empty<DevHubCiRun>();
         }
 
+        public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            return GetUserCiRunsAsync(cancellationToken);
+        }
+
         public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> candidateRemoteUrls, CancellationToken cancellationToken)
         {
             // Bitbucket pull requests are aggregated for the user via the cross-repo PR endpoint
@@ -265,12 +280,18 @@ namespace StartScreen.Services.DevHub.Providers
             return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(Array.Empty<RemoteRepoIdentifier>());
         }
 
-        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
+        public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
         {
+            return GetRepoDetailAsync(repo, new DevHubActivityOptions(NormalizeMaxItems(maxItems)), cancellationToken);
+        }
+
+        public async Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
             if (repo == null)
                 return null;
-
-            var pageLen = NormalizeMaxItems(maxItems);
+            var pageLen = NormalizeMaxItems(options.MaxItems);
 
             var credential = await _acquireCredential(cancellationToken);
             if (credential == null)
@@ -299,7 +320,9 @@ namespace StartScreen.Services.DevHub.Providers
                     var prJson = await ReadPageAsync(prResponse, cancellationToken);
                     var username = await _identityCache.GetAsync(credential, "https://api.bitbucket.org/2.0/user",
                         (auth, url, token) => SendGetAsync(auth, url, token), true, cancellationToken, identityProperty: "uuid");
-                    return ParseRepoPullRequests(prJson, repo, username);
+                    var prs = ParseRepoPullRequests(prJson, repo, username);
+                    DevHubActivityRequest.ReportPullRequests(options, prs, repo);
+                    return prs;
                 }, cancellationToken);
 
                 // Fetch open issues (only if the repo has the issue tracker enabled)

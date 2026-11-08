@@ -11,6 +11,40 @@ namespace StartScreen.Test.DevHub
     public class DevHubProviderReliabilityTests
     {
         [TestMethod]
+        public async Task BitbucketRepository_PublishesPullRequestsBeforeIssuesAndPipelinesAsync()
+        {
+            DevHubActivitySnapshot? preview = null;
+            var remainingFeeds = new List<string>();
+            using var client = new HttpClient(new Handler(request =>
+            {
+                var path = request.RequestUri!.AbsolutePath;
+                if (path.EndsWith("/user"))
+                    return Json("{\"uuid\":\"me\"}");
+                if (path.EndsWith("/pullrequests"))
+                    return Json("{\"values\":[{\"id\":1,\"title\":\"Team change\",\"state\":\"OPEN\",\"updated_on\":\"2026-11-04T20:00:00Z\",\"created_on\":\"2026-11-04T20:00:00Z\",\"author\":{\"uuid\":\"other\"}}]}");
+                Assert.IsNotNull(preview, "Repository PRs must publish before either secondary feed is requested.");
+                Assert.AreEqual("Team change", preview.PullRequests.Single().Title);
+                Assert.IsEmpty(preview.Issues);
+                Assert.IsEmpty(preview.CiRuns);
+                Assert.IsNull(preview.PullRequests.Single().CanMerge);
+                remainingFeeds.Add(path);
+                return Json("{\"values\":[]}");
+            }));
+            var repo = new RemoteRepoIdentifier("bitbucket.org", "owner", "repo");
+            var provider = new BitbucketDevHubProvider(client, _ => Task.FromResult(Credential()));
+            var options = new DevHubActivityOptions(reportProgress: snapshot => preview = snapshot);
+
+            var result = await provider.FetchActivityAsync(DevHubActivityKind.Repository, options, repo, CancellationToken.None);
+
+            Assert.HasCount(2, remainingFeeds);
+            Assert.AreEqual(DevHubActivityStatus.Success, result.Status);
+            Assert.AreEqual("Team change", result.PullRequests.Single().Title);
+            Assert.IsNotNull(preview);
+            Assert.AreEqual(repo, preview.RepoIdentifier);
+            Assert.AreNotSame(preview.PullRequests.Single(), result.PullRequests.Single());
+        }
+
+        [TestMethod]
         [DataRow("GitHub")]
         [DataRow("Bitbucket")]
         [DataRow("Azure DevOps")]

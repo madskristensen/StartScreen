@@ -605,10 +605,12 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     prJson = await GetPagedValuesAsync(repo, credential, prUrl, top, false, cancellationToken);
                     var prs = ParseAdoPullRequests(prJson, repo, identity);
+                    DevHubActivityRequest.ReportPullRequests(options, prs, repo);
                     if (!string.IsNullOrEmpty(identity))
                     {
                         var ownPullRequests = await GetPersonalPullRequestsAsync(repo, credential, identity, options, cancellationToken, repositoryScoped: true);
                         prs = DevHubService.MergePullRequests(ownPullRequests, prs).ToList();
+                        DevHubActivityRequest.ReportPullRequests(options, prs, repo);
                     }
                     await EnrichPullRequestsAsync(prs, credential, cancellationToken);
                     return prs;

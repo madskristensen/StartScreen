@@ -1309,15 +1309,15 @@ namespace StartScreen.Test.DevHub
             var pulls = new TaskCompletionSource<IReadOnlyList<DevHubPullRequest>>(TaskCreationOptions.RunContinuationsAsynchronously);
             var issuesShown = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var pullsShown = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var pullsStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var issuesStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var provider = new Provider("GitHub")
             {
-                Issues = token => issues.Task.WithCancellation(token),
-                Pulls = token =>
+                Issues = token =>
                 {
-                    pullsStarted.TrySetResult(true);
-                    return pulls.Task.WithCancellation(token);
+                    issuesStarted.TrySetResult(true);
+                    return issues.Task.WithCancellation(token);
                 },
+                Pulls = token => pulls.Task.WithCancellation(token),
             };
             using var model = new StartScreenViewModel();
             using var work = model.BackgroundProgress.Start();
@@ -1332,15 +1332,15 @@ namespace StartScreen.Test.DevHub
             }));
             try
             {
-                await issuesShown.Task.WithCancellation(timeout.Token);
-                Assert.IsTrue(pullsStarted.Task.IsCompleted);
-                Assert.IsFalse(refresh.IsCompleted);
-                Assert.AreEqual("Loading GitHub issues...", model.UnifiedRefreshStatus);
-                issues.SetResult([]);
                 await pullsShown.Task.WithCancellation(timeout.Token);
+                Assert.IsTrue(issuesStarted.Task.IsCompleted);
                 Assert.IsFalse(refresh.IsCompleted);
-                Assert.IsFalse(pulls.Task.IsCompleted);
                 Assert.AreEqual("Loading GitHub pull requests...", model.UnifiedRefreshStatus);
+                pulls.SetResult([]);
+                await issuesShown.Task.WithCancellation(timeout.Token);
+                Assert.IsFalse(refresh.IsCompleted);
+                Assert.IsFalse(issues.Task.IsCompleted);
+                Assert.AreEqual("Loading GitHub issues...", model.UnifiedRefreshStatus);
             }
             finally
             {

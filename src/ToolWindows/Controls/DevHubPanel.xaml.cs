@@ -191,6 +191,14 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateAccountRecovery(DevHubDashboard dashboard)
         {
+            var unavailableProviders = new List<string>();
+            if (Options.Instance.DevHubAzureDevOpsEnabled && HasUnavailableAccountVerification(dashboard, AzureDevOpsServerHelper.CloudHost))
+                unavailableProviders.Add("Azure DevOps");
+            if (Options.Instance.DevHubGitHubEnabled && HasUnavailableAccountVerification(dashboard, "github.com"))
+                unavailableProviders.Add("GitHub");
+            AccountVerificationUnavailableText.Text = unavailableProviders.Count == 0 ? string.Empty
+                : $"{string.Join(" and ", unavailableProviders)} account verification is unavailable. Check your network or VPN connection, then refresh. This does not necessarily mean your account needs reauthentication.";
+            AccountVerificationUnavailableText.Visibility = unavailableProviders.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             VisualStudioAccountRecoveryText.Visibility = NeedsAccountRecovery(dashboard, AzureDevOpsServerHelper.CloudHost,
                 Options.Instance.DevHubAzureDevOpsEnabled
                     && Options.Instance.DevHubAdoAuthentication != AzureDevOpsAuthenticationMode.Disconnected
@@ -200,7 +208,17 @@ namespace StartScreen.ToolWindows.Controls
                 ? Visibility.Visible : Visibility.Collapsed;
             AccountRecoveryPanel.Visibility = VisualStudioAccountRecoveryText.Visibility == Visibility.Visible
                 || GitHubAccountRecoveryText.Visibility == Visibility.Visible
+                || AccountVerificationUnavailableText.Visibility == Visibility.Visible
                 ? Visibility.Visible : Visibility.Collapsed;
+            if (dashboard != null && !dashboard.HasAuthentication)
+            {
+                if (HasUnavailableAccountVerification(dashboard, AzureDevOpsServerHelper.CloudHost))
+                    ConnectAdoTextBlock.Visibility = Visibility.Collapsed;
+                if (HasUnavailableAccountVerification(dashboard, "github.com"))
+                    ConnectGitHubTextBlock.Visibility = Visibility.Collapsed;
+                if (ConnectAdoTextBlock.Visibility == Visibility.Collapsed && ConnectGitHubTextBlock.Visibility == Visibility.Collapsed)
+                    NotConnectedPanel.Visibility = Visibility.Collapsed;
+            }
         }
 
         internal static bool NeedsAccountRecovery(DevHubDashboard dashboard, string host, bool enabled)
@@ -208,9 +226,20 @@ namespace StartScreen.ToolWindows.Controls
             if (!enabled || dashboard == null || dashboard.IsRefreshing)
                 return false;
             var provider = host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ? "GitHub/" : "Azure DevOps/";
-            return !dashboard.HasProvider(host) || dashboard.Sources.Any(pair => (pair.Key.StartsWith(provider, StringComparison.OrdinalIgnoreCase)
+            return (!dashboard.HasProvider(host) && !HasUnavailableAccountVerification(dashboard, host))
+                || dashboard.Sources.Any(pair => (pair.Key.StartsWith(provider, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(pair.Value.RepoIdentifier?.Host, host, StringComparison.OrdinalIgnoreCase))
                 && pair.Value.Status == DevHubActivityStatus.Unauthorized);
+        }
+
+        internal static bool HasUnavailableAccountVerification(DevHubDashboard dashboard, string host)
+        {
+            if (dashboard == null || dashboard.IsRefreshing || dashboard.HasProvider(host))
+                return false;
+            var provider = host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ? "GitHub/" : "Azure DevOps/";
+            return dashboard.Sources.Any(pair => (pair.Key.StartsWith(provider, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(pair.Value.RepoIdentifier?.Host, host, StringComparison.OrdinalIgnoreCase))
+                && pair.Value.Status == DevHubActivityStatus.Unavailable);
         }
 
         internal static string GetActivityRefreshStatus(DevHubDashboard dashboard)

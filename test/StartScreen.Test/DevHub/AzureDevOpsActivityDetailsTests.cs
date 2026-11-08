@@ -2,9 +2,11 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
 using StartScreen.Services.DevHub.Providers;
+using StartScreen.ToolWindows.Controls;
 
 namespace StartScreen.Test.DevHub
 {
@@ -15,6 +17,77 @@ namespace StartScreen.Test.DevHub
         private const string ProjectId = "f2b6134c-c2d8-4358-98e3-c6edb39cbb60";
         private const string Identity = "{\"authenticatedUser\":{\"id\":\"me\"}}";
         private static readonly RemoteRepoIdentifier _repo = new("dev.azure.com", "org", "repo", "project");
+
+        [TestMethod]
+        [DataRow(false, "threads")]
+        [DataRow(false, "builds")]
+        [DataRow(false, "wiql")]
+        [DataRow(false, "creatorId=")]
+        [DataRow(true, "threads")]
+        [DataRow(true, "builds")]
+        [DataRow(true, "wiql")]
+        [DataRow(true, "creatorId=")]
+        public async Task RepositoryPullRequests_RenderBeforeOtherRequestsCompleteAsync(bool scoped, string pendingEndpoint)
+        {
+            using var directory = new TemporaryDirectory();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var rendered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var requests = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            using var client = Client(async request =>
+            {
+                var uri = request.RequestUri!;
+                requests.Enqueue(uri.AbsoluteUri);
+                if (uri.AbsoluteUri.Contains(pendingEndpoint))
+                {
+                    started.TrySetResult(true);
+                    await release.Task.WithCancellation(timeout.Token);
+                }
+                if (uri.AbsolutePath.EndsWith("/pullrequests"))
+                    return uri.Query.Contains("creatorId=") || uri.Query.Contains("reviewerId=")
+                        ? Values() : Values(PullRequest(1, author: "other", draft: true));
+                if (uri.AbsolutePath.EndsWith("/builds"))
+                    return Values(Build(1));
+                return DefaultResponse(uri);
+            });
+            var provider = new AzureDevOpsDevHubProvider(client,
+                (_, _, _) => Task.FromResult(new DevHubCredential("user", "test-token")), (_, _) => { },
+                _ => Task.FromResult<IReadOnlyList<string>>(["https://dev.azure.com/org/project/_git/repo"]), () => []);
+            var service = new DevHubService(new DevHubCacheService(directory.Path), [provider],
+                _ => Task.FromResult<IReadOnlyList<string>>(["https://dev.azure.com/org/project/_git/repo"]),
+                () => DevHubSortOrder.MostRecent, () => string.Empty, () => 0);
+            var activity = new DevHubActivityViewModel();
+            var progress = new InlineProgress(dashboard =>
+            {
+                activity.UpdateRepositoryActivity(dashboard.PullRequests, dashboard.Issues, dashboard.CiRuns,
+                    [], DevHubSortOrder.MostRecent, false);
+                if (activity.IncomingItems.Any(item => item.Title == "Change 1"))
+                    rendered.TrySetResult(true);
+            });
+            var refresh = scoped
+                ? service.ScopeToRepoAsync(_repo, timeout.Token, progress: progress)
+                : service.RefreshAsync(timeout.Token, progress);
+            try
+            {
+                var ready = Task.WhenAll(started.Task, rendered.Task);
+                var completed = await Task.WhenAny(ready, refresh, Task.Delay(TimeSpan.FromSeconds(8)));
+                Assert.AreSame(ready, completed, "PR publication or pending request missing. Requests: " + string.Join("; ", requests));
+                Assert.IsFalse(refresh.IsCompleted, "Team PR rendering must not wait for other activity or optional details.");
+                Assert.AreEqual(DevHubWorkItemKind.PullRequest, activity.IncomingKind);
+                Assert.AreEqual("Change 1", activity.IncomingItems.Single().Title);
+                Assert.IsFalse(activity.IsIncomingEmpty);
+            }
+            finally
+            {
+                release.TrySetResult(true);
+            }
+            var result = await refresh;
+            Assert.AreEqual(DevHubActivityStatus.Success, result.Status);
+            Assert.AreEqual("Change 1", result.PullRequests.Single().Title);
+            Assert.HasCount(1, result.CiRuns);
+            Assert.AreEqual(0, result.PullRequests.Single().UnresolvedThreadCount);
+        }
 
         [TestMethod]
         public async Task PersonalActivity_QueriesAliasedCloudProjectOnlyOnceAsync()
@@ -689,6 +762,11 @@ namespace StartScreen.Test.DevHub
         };
 
         private static HttpResponseMessage Values(params string[] values) => Json("{\"value\":[" + string.Join(",", values) + "]}");
+
+        private sealed class InlineProgress(Action<DevHubDashboard> report) : IProgress<DevHubDashboard>
+        {
+            public void Report(DevHubDashboard value) => report(value);
+        }
 
         private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
         {
