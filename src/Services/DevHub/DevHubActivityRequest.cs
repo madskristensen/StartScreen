@@ -30,6 +30,31 @@ namespace StartScreen.Services.DevHub
 
         internal static bool HasFailure => _current.Value?._failed > 0;
 
+        internal static void ReportPullRequests(DevHubActivityOptions options, IEnumerable<DevHubPullRequest> pullRequests,
+            RemoteRepoIdentifier repo = null)
+        {
+            if (options.ReportProgress == null)
+                return;
+            var current = _current.Value;
+            options.ReportProgress(new DevHubActivitySnapshot
+            {
+                PullRequests = pullRequests.Select(pr =>
+                {
+                    var copy = pr.Clone();
+                    if (copy.IsOpen)
+                    {
+                        copy.CanMerge = null;
+                        copy.MergeBlockReason = "Checking review and check details...";
+                    }
+                    return copy;
+                }).ToList(),
+                RepoIdentifier = repo,
+                Status = HasFailure ? DevHubActivityStatus.Partial : DevHubActivityStatus.Success,
+                Message = current?._messages.Count > 0
+                    ? string.Join(" ", current._messages.Keys.OrderBy(message => message, StringComparer.Ordinal)) : null,
+            });
+        }
+
         internal static void Warning(string message)
         {
             if (!string.IsNullOrWhiteSpace(message))

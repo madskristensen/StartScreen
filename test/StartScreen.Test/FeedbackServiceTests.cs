@@ -803,6 +803,88 @@ namespace StartScreen.Test
             Assert.AreEqual(0, active);
         }
 
+        [TestMethod]
+        public async Task Hydration_ReusesAvailableSlotsWithoutWaitingForSlowTicketsAsync()
+        {
+            var firstFour = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var fifth = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releases = Enumerable.Range(0, 5).Select(_ =>
+                new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously)).ToArray();
+            var requests = 0;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var handler = new Handler((path, _) => path == "metadata" ? Json(new { Id = 7 })
+                : path == "getActivity" ? Json(new { totalCount = 5, activities = Enumerable.Range(1, 5).Select(id => Action("posted", id)) })
+                : throw new AssertFailedException("The async hydration handler must be used."));
+            handler.HydrateAsync = async (body, token) =>
+            {
+                var id = RequestedId(body);
+                if (Interlocked.Increment(ref requests) == 4)
+                    firstFour.TrySetResult(true);
+                if (id == 5)
+                    fifth.TrySetResult(true);
+                await releases[id - 1].Task.WithCancellation(token);
+                return Json(new { results = new[] { Ticket(id, 7, false) } });
+            };
+            using var client = new HttpClient(handler);
+            var operation = Service(client).GetTicketsAsync(false, timeout.Token);
+            try
+            {
+                await firstFour.Task.WithCancellation(timeout.Token);
+                Assert.AreEqual(4, requests);
+                releases[0].TrySetResult(true);
+                Assert.AreSame(fifth.Task, await Task.WhenAny(fifth.Task, Task.Delay(TimeSpan.FromSeconds(2))),
+                    "The fifth ticket must start while three earlier tickets are still blocked.");
+                Assert.IsFalse(operation.IsCompleted);
+            }
+            finally
+            {
+                foreach (var release in releases)
+                    release.TrySetResult(true);
+                await operation;
+            }
+            var result = await operation;
+            Assert.AreEqual(5, requests);
+            CollectionAssert.AreEqual(new long[] { 5, 4, 3, 2, 1 }, result.Tickets.Select(ticket => ticket.Id).ToArray());
+        }
+
+        [TestMethod]
+        public async Task Hydration_FailureCancelsActiveRequestsAndDoesNotStartQueuedTicketsAsync()
+        {
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var requests = 0;
+            var canceled = 0;
+            using var handler = new Handler((path, _) => path == "metadata" ? Json(new { Id = 7 })
+                : path == "getActivity" ? Json(new { totalCount = 12, activities = Enumerable.Range(1, 12).Select(id => Action("posted", id)) })
+                : throw new AssertFailedException("The async hydration handler must be used."));
+            handler.HydrateAsync = async (body, token) =>
+            {
+                var id = RequestedId(body);
+                if (Interlocked.Increment(ref requests) == 4)
+                    started.TrySetResult(true);
+                try
+                {
+                    await started.Task.WithCancellation(token);
+                    if (id == 1)
+                        return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+                    await Task.Delay(Timeout.Infinite, token);
+                    throw new AssertFailedException("A failed hydration must cancel the other workers.");
+                }
+                finally
+                {
+                    if (id != 1 && token.IsCancellationRequested)
+                        Interlocked.Increment(ref canceled);
+                }
+            };
+            using var client = new HttpClient(handler);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            await Assert.ThrowsAsync<HttpRequestException>(() =>
+                Service(client).GetTicketsAsync(false, CancellationToken.None).WithCancellation(timeout.Token));
+
+            Assert.AreEqual(4, requests);
+            Assert.AreEqual(3, canceled);
+        }
+
         private static FeedbackService Service(HttpClient client, Func<DateTime>? utcNow = null, Func<string>? getToken = null,
             FeedbackCache? diskCache = null) => new FeedbackService(client,
             _ => Task.FromResult(new AccessToken(getToken?.Invoke() ?? "test-token", new DateTimeOffset(utcNow?.Invoke() ?? DateTime.UtcNow).AddHours(1))), utcNow, diskCache);

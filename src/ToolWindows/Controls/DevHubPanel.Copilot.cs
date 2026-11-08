@@ -19,7 +19,7 @@ namespace StartScreen.ToolWindows.Controls
 {
     public partial class DevHubPanel
     {
-        internal const string CopilotLoadingStep = "Loading VS Copilot...";
+        internal const string CopilotLoadingStep = "Reading VS Copilot...";
         private CopilotHarnessAdapter _copilotAdapter;
         private readonly CopilotActivityCache _copilotCache = new();
         private IComponentModel _copilotComponentModel;
@@ -32,7 +32,6 @@ namespace StartScreen.ToolWindows.Controls
         private bool _copilotCacheSavedForConnection;
         private string _copilotCacheError;
         private int _copilotGeneration;
-        private BackgroundProgress.Operation _copilotProgress;
         private Stopwatch _copilotConnectionElapsed;
         private CancellationTokenSource _copilotConnectionCancellation;
 
@@ -47,7 +46,7 @@ namespace StartScreen.ToolWindows.Controls
 
         internal void RefreshCopilotActivity()
         {
-            StopCopilotActivity();
+            StopCopilotSources();
             StartCopilotActivity(forceRefresh: true);
         }
 
@@ -82,10 +81,6 @@ namespace StartScreen.ToolWindows.Controls
             var connection = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
             _copilotConnectionCancellation = connection;
             CancellationToken token = connection.Token;
-            var totalSteps = _copilotDiskCacheLoaded ? 2 : 3;
-            _copilotProgress = Progress?.Start(totalSteps,
-                _copilotDiskCacheLoaded ? "Connecting to local Copilot..." : "Reading cached Copilot activity...");
-            _copilotProgress?.Report((0, totalSteps));
             _copilotConnecting = true;
             _copilotConnectionElapsed = Stopwatch.StartNew();
             _copilotConnectionError = null;
@@ -100,7 +95,8 @@ namespace StartScreen.ToolWindows.Controls
                         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
                         if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                             return;
-                        _copilotCache.Update(cached, false);
+                        if (!_visualStudioCopilotMetadataLoaded)
+                            _copilotCache.Update(cached, false);
                         _copilotDiskCacheLoaded = true;
                         RenderCopilotActivity();
                         if (cached.Count > 0)
@@ -120,8 +116,10 @@ namespace StartScreen.ToolWindows.Controls
                         UpdateCopilotStatus();
                     }
                 }
-                _copilotProgress?.Report((totalSteps - 2, totalSteps));
-                _copilotProgress?.Report("Connecting to local Copilot...");
+                var metadataRefresh = _visualStudioCopilotRefresh;
+                if (metadataRefresh != null)
+                    await metadataRefresh;
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
                 await StartScreenPackage.BackgroundTaskFactory.YieldAsync(DispatcherPriority.Background, token);
                 if (generation != _copilotGeneration || !_copilotLoaded || !IsVisible)
                     return;
@@ -139,8 +137,6 @@ namespace StartScreen.ToolWindows.Controls
                 _copilotAdapter = new CopilotHarnessAdapter(callbacks.Enqueue, ReportCopilotFailure);
                 _copilotAdapter.Changed += CopilotActivityChanged;
                 _copilotAdapter.StartBackend(backend);
-                _copilotProgress?.Report((totalSteps - 1, totalSteps));
-                _copilotProgress?.Report(CopilotLoadingStep);
                 OutputLog.Info("Copilot", $"Visual Studio backend attached in {_copilotConnectionElapsed.ElapsedMilliseconds} ms; waiting for its session index.");
                 StartupDiagnostics.Mark("Copilot harness attached");
                 RenderCopilotActivity();
@@ -229,17 +225,12 @@ namespace StartScreen.ToolWindows.Controls
             if (_isDisposed)
                 return;
             UpdateBusyState();
-            if (_copilotAdapter?.IsReady == true && _copilotProgress != null)
-            {
-                OutputLog.Info("Copilot", $"Visual Studio session index ready after {_copilotConnectionElapsed?.ElapsedMilliseconds} ms ({_copilotAdapter.Sessions.Count} sessions).");
-                _copilotConnectionElapsed?.Stop();
-                _copilotProgress?.Complete();
-                _copilotProgress = null;
-            }
             UpdateCopilotStatus();
             RefreshWorkspaceActivity();
             if (_copilotAdapter?.IsReady == true && !_copilotCacheSavedForConnection)
             {
+                OutputLog.Info("Copilot", $"Visual Studio live session index ready after {_copilotConnectionElapsed?.ElapsedMilliseconds} ms ({_copilotAdapter.Sessions.Count} sessions).");
+                _copilotConnectionElapsed?.Stop();
                 _copilotCacheSavedForConnection = true;
                 PersistCopilotCache();
             }
@@ -291,8 +282,6 @@ namespace StartScreen.ToolWindows.Controls
             _copilotConnectionCancellation = null;
             _copilotConnecting = false;
             _copilotConnectionElapsed?.Stop();
-            _copilotProgress?.Dispose();
-            _copilotProgress = null;
             if (_copilotRenderTimer != null)
             {
                 _copilotRenderTimer.Stop();

@@ -885,6 +885,14 @@ namespace StartScreen.Services
             WriteIndented = false
         };
 
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Options, ExtendedHistory> _extendedHistory = new();
+
+        private sealed class ExtendedHistory
+        {
+            internal string Json;
+            internal List<ExtendedMruEntry> Entries;
+        }
+
         /// <summary>
         /// Deserializes the extended MRU list from the Options JSON string.
         /// Returns an empty list on parse failure.
@@ -897,7 +905,17 @@ namespace StartScreen.Services
 
             try
             {
-                return JsonSerializer.Deserialize<List<ExtendedMruEntry>>(json, _jsonOptions) ?? [];
+                var history = _extendedHistory.GetValue(options, _ => new ExtendedHistory());
+                lock (history)
+                {
+                    // Reuse only an exact settings snapshot; merges replace entries rather than mutating them.
+                    if (history.Json == json)
+                        return history.Entries;
+                    var entries = JsonSerializer.Deserialize<List<ExtendedMruEntry>>(json, _jsonOptions) ?? [];
+                    history.Entries = entries;
+                    history.Json = json;
+                    return entries;
+                }
             }
             catch (Exception ex)
             {

@@ -195,6 +195,31 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        public async Task CancelingOneQueuedWaiterPreservesTransportForTheOtherAsync()
+        {
+            var sharing = new DevHubReadRequestSharing();
+            using var gate = new SemaphoreSlim(0, 1);
+            using var canceled = new CancellationTokenSource();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var handler = new Handler((_, _) => Task.FromResult(Json("{}")));
+            using var client = new HttpClient(handler);
+            using var firstRequest = Request();
+            using var secondRequest = Request();
+            var credential = Credential();
+            var first = sharing.SendAsync(client, firstRequest, credential, canceled.Token, readGate: gate);
+            var second = sharing.SendAsync(client, secondRequest, credential, timeout.Token, readGate: gate);
+            canceled.Cancel();
+            gate.Release();
+#pragma warning disable VSTHRD003 // Independent waiter tasks verify cancellation and queued read ownership.
+            await Assert.ThrowsAsync<OperationCanceledException>(async () => await first);
+            using var response = await second;
+#pragma warning restore VSTHRD003
+            Assert.AreEqual("{}", await HttpResponseReader.ReadStringAsync(response, timeout.Token));
+            Assert.AreEqual(1, handler.Count);
+            Assert.AreEqual(1, gate.CurrentCount);
+        }
+
+        [TestMethod]
         public async Task CancelingOneWaiterDoesNotCancelAnotherAndShutdownStopsSharedTransportAsync()
         {
             using var shutdown = new CancellationTokenSource();

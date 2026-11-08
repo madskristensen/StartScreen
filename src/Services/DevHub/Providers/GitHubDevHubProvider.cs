@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -23,6 +24,8 @@ namespace StartScreen.Services.DevHub.Providers
         // The Authorization header is per-request because the credential token can change at runtime
         // and DefaultRequestHeaders is not safe to mutate while parallel requests are in flight.
         private static readonly HttpClient _httpClient = CreateSharedHttpClient();
+        internal const int MaximumSearchConcurrency = 3;
+        private static readonly ConditionalWeakTable<HttpClient, SemaphoreSlim> _searchConcurrency = new();
 
         private static HttpClient CreateSharedHttpClient()
         {
@@ -40,7 +43,10 @@ namespace StartScreen.Services.DevHub.Providers
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {credential.Token}");
-            var response = await DevHubReadRequestSharing.Instance.SendAsync(httpClient ?? _httpClient, request, credential, cancellationToken);
+            var client = httpClient ?? _httpClient;
+            var gate = url.StartsWith("https://api.github.com/search/issues?", StringComparison.Ordinal)
+                ? _searchConcurrency.GetValue(client, _ => new SemaphoreSlim(MaximumSearchConcurrency, MaximumSearchConcurrency)) : null;
+            var response = await DevHubReadRequestSharing.Instance.SendAsync(client, request, credential, cancellationToken, readGate: gate);
             return observe ? DevHubActivityRequest.Observe(response) : response;
         }
 
@@ -391,6 +397,8 @@ namespace StartScreen.Services.DevHub.Providers
                         BuildActivitySearchQuery("is:pr", login, customQuery, repo), login, options.MaxItems, cancellationToken);
                     MergePullRequests(prs, incoming.Where(pr => pr.IsOpen));
                 }
+                cancellationToken.ThrowIfCancellationRequested();
+                DevHubActivityRequest.ReportPullRequests(options, prs, repo);
                 await PopulateActivityMetadataAsync(client, credential, prs, cancellationToken);
                 return prs;
             }, cancellationToken);
@@ -430,9 +438,18 @@ namespace StartScreen.Services.DevHub.Providers
                 BuildActivitySearchQuery("is:pr", login, customQuery, repo, "review-requested"),
                 BuildActivitySearchQuery("is:pr", login, customQuery, repo, "mentions"),
                 BuildPersonalSearchQuery("is:pr", login, "assignee", repo) };
+            var cutoff = DateTime.UtcNow.AddDays(-14);
+            var searches = queries.Select(query => SearchPullRequestsAsync(client, credential, query, login, options.MaxItems, cancellationToken)).ToList();
+            if (options.IncludeCompleted)
+            {
+                searches.AddRange(new[] { "author", "assignee" }.Select(qualifier => SearchPullRequestsAsync(client, credential,
+                    $"is:pr is:merged {qualifier}:{login} merged:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}",
+                    login, options.MaxItems, cancellationToken, cutoff)));
+            }
+            var pages = await Task.WhenAll(searches);
             for (var index = 0; index < queries.Length; index++)
             {
-                var page = await SearchPullRequestsAsync(client, credential, queries[index], login, options.MaxItems, cancellationToken);
+                var page = pages[index];
                 foreach (var pr in page)
                 {
                     pr.IsReviewRequestedForCurrentUser = index == 2 && pr.IsOpen;
@@ -443,17 +460,18 @@ namespace StartScreen.Services.DevHub.Providers
             }
             if (options.IncludeCompleted)
             {
-                var cutoff = DateTime.UtcNow.AddDays(-14);
-                foreach (var qualifier in new[] { "author", "assignee" })
+                foreach (var completed in pages.Skip(queries.Length))
                 {
-                    var query = $"is:pr is:merged {qualifier}:{login} merged:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}";
-                    var completed = await SearchPullRequestsAsync(client, credential, query, login, options.MaxItems, cancellationToken, cutoff);
                     MergePullRequests(results, completed.Where(pr => pr.IsMerged && pr.UpdatedAt >= cutoff
                         && (pr.IsAuthoredByCurrentUser || pr.IsAssignedToCurrentUser)));
                 }
             }
             if (populateMetadata)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                DevHubActivityRequest.ReportPullRequests(options, results, repo);
                 await PopulateActivityMetadataAsync(client, credential, results, cancellationToken);
+            }
             return results;
         }
 
@@ -466,20 +484,26 @@ namespace StartScreen.Services.DevHub.Providers
             var queries = new[] { BuildActivitySearchQuery("is:issue", login, customQuery, repo), BuildPersonalSearchQuery("is:issue", login, "author", repo),
                 BuildPersonalSearchQuery("is:issue", login, "assignee", repo),
                 BuildActivitySearchQuery("is:issue", login, customQuery, repo, "mentions") };
+            var cutoff = DateTime.UtcNow.AddDays(-14);
+            var searches = queries.Select(query => SearchIssuesAsync(client, credential, query, login, options.MaxItems, cancellationToken)).ToList();
+            if (options.IncludeCompleted)
+            {
+                searches.AddRange(new[] { "author", "assignee" }.Select(qualifier => SearchIssuesAsync(client, credential,
+                    $"is:issue is:closed {qualifier}:{login} closed:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}",
+                    login, options.MaxItems, cancellationToken, cutoff)));
+            }
+            var pages = await Task.WhenAll(searches);
             for (var index = 0; index < queries.Length; index++)
             {
-                var page = await SearchIssuesAsync(client, credential, queries[index], login, options.MaxItems, cancellationToken);
+                var page = pages[index];
                 foreach (var issue in page)
                     issue.IsMentioned = index == 3;
                 MergeIssues(results, page.Where(issue => !issue.IsClosed));
             }
             if (options.IncludeCompleted)
             {
-                var cutoff = DateTime.UtcNow.AddDays(-14);
-                foreach (var qualifier in new[] { "author", "assignee" })
+                foreach (var completed in pages.Skip(queries.Length))
                 {
-                    var query = $"is:issue is:closed {qualifier}:{login} closed:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}";
-                    var completed = await SearchIssuesAsync(client, credential, query, login, options.MaxItems, cancellationToken, cutoff);
                     MergeIssues(results, completed.Where(issue => issue.IsClosed && issue.UpdatedAt >= cutoff
                         && (issue.IsAuthoredByCurrentUser || issue.IsAssignedToCurrentUser)));
                 }

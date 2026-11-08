@@ -933,10 +933,13 @@ namespace StartScreen.Test.DevHub
 
         private sealed class Handler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
         {
+            private readonly object _sync = new();
+
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return Task.FromResult(respond(request));
+                lock (_sync)
+                    return Task.FromResult(respond(request));
             }
         }
     }

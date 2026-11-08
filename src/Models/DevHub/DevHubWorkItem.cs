@@ -69,7 +69,6 @@ namespace StartScreen.Models.DevHub
             {
                 Title = session.Title,
                 Detail = session.Origin == CopilotSessionOrigin.GitHub ? session.Repository
-                    : session.IsWorkspaceless ? "No workspace"
                     : string.IsNullOrEmpty(session.WorkingDirectory) ? "Workspace not yet known"
                     : Path.GetFileName(session.WorkingDirectory.TrimEnd(Path.DirectorySeparatorChar)),
                 CopilotStatus = session.StatusBadge,

@@ -55,7 +55,8 @@ namespace StartScreen.Services.DevHub
         public const int MaximumLimit = 300;
         public const int FailureDetailLimit = 2;
 
-        public DevHubActivityOptions(int maxItems = DefaultLimit, bool includeCompleted = false, DevHubRefreshContext refreshContext = null)
+        public DevHubActivityOptions(int maxItems = DefaultLimit, bool includeCompleted = false, DevHubRefreshContext refreshContext = null,
+            Action<DevHubActivitySnapshot> reportProgress = null)
         {
             if (maxItems < 1 || maxItems > MaximumLimit)
                 throw new ArgumentOutOfRangeException(nameof(maxItems));
@@ -63,11 +64,13 @@ namespace StartScreen.Services.DevHub
             MaxItems = maxItems;
             IncludeCompleted = includeCompleted;
             RefreshContext = refreshContext;
+            ReportProgress = reportProgress;
         }
 
         public int MaxItems { get; }
         public bool IncludeCompleted { get; }
         public DevHubRefreshContext RefreshContext { get; }
+        internal Action<DevHubActivitySnapshot> ReportProgress { get; }
     }
 
     internal interface IDevHubActivityProvider

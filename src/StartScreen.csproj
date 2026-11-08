@@ -141,8 +141,6 @@
       <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="LibGit2Sharp" Version="0.32.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.7" />
-    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" Version="2.1.11" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
     <!--<PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.0.32112.339" ExcludeAssets="runtime">
       <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -155,7 +153,7 @@
 
   <Target Name="IncludeCopilotSessionRuntimeDependencies" BeforeTargets="GetVsixSourceItems">
     <ItemGroup>
-      <SuppressFromVsix Remove="Microsoft.Data.Sqlite.dll;SQLitePCLRaw.core.dll;SQLitePCLRaw.batteries_v2.dll;SQLitePCLRaw.provider.winsqlite3.dll;YamlDotNet.dll" />
+      <SuppressFromVsix Remove="YamlDotNet.dll" />
     </ItemGroup>
   </Target>
 

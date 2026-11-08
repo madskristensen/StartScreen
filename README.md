@@ -40,6 +40,12 @@ decoding run on background threads with bounded disk and network concurrency.
 Video metadata and unread markers load in the background, but thumbnails are fetched
 only after selecting Videos and only for displayed cards. Thumbnail loading does not
 delay the feed freshness check. Feedback loads when its tab is requested.
+Feedback service initialization is deferred until that demand too, including its
+HTTP client and title parser. Ticket loading keeps up to four requests in flight,
+starting the next ticket as soon as a slot is available rather than waiting for an
+entire batch. A failed ticket request cancels the other workers and never publishes
+an incomplete success. Parsed recent-project history is reused while its exact
+settings JSON is unchanged; edited or cleared history takes effect on the next read.
 The async tool window factory starts the activity cache read, repository discovery,
 and account verification alongside recent-project loading, before constructing the
 content. The control reuses that work and displays each provider's verified cached
@@ -92,6 +98,13 @@ requests use a shared concurrency limit, including cancellation while queued.
 Each provider starts fetching and publishing fresh activity as soon as its own
 authentication finishes. GitHub does not wait for Azure DevOps or other providers
 to sign in, and repository-scoped refreshes authenticate only the owning provider.
+Independent GitHub issue and pull-request search lanes overlap, with at most three
+search requests in flight across dashboard and repository views sharing a client.
+Each lane keeps its own result and paging limits, and the number of queries is unchanged.
+Pull-request inventories are displayed before optional review and check details finish,
+including in repository views. Merge readiness stays unverified while those details
+load; enrichment publishes a separate snapshot rather than mutating displayed cards.
+Optional metadata failures retain the inventory and report the missing details.
 The final dashboard cache is saved after all providers finish; interim results
 remain available while other providers are still connecting.
 Cached personal and team activity is restored independently for each provider as
@@ -122,6 +135,10 @@ failed views are retried and manual Refresh bypasses the cache.
 GitHub cloud Copilot repository-ID/name mappings are cached for one hour per
 credential and client. Task lists still update each minute; manual Refresh reloads
 the mappings too. Expired credentials and account changes prevent cached reuse.
+CLI session discovery also reuses unchanged parsed metadata.
+Each poll still checks the directory inventory for additions and
+deletions; file size, modification and creation times invalidate metadata reuse.
+The in-memory cache remains bounded, contains metadata only, and is bypassed by manual Refresh.
 Large activity reorders rebuild the visible collection instead of repeatedly
 searching and moving items. Unchanged refreshes retain existing item instances.
 Activity card messages, including build failures, are limited to two lines with
@@ -203,7 +220,8 @@ include an optional organization-authorization link, since permissions vary by
 organization and do not prevent using the rest of Start Screen.
 
 For startup profiling, Debug builds emit `[StartScreen startup]` trace milestones
-for control creation, loading, MRU display, and secondary content. These are
+for control creation, loading, MRU settings, the VS recent-project inventory,
+extended-history merging, metadata-cache loading, MRU display, and secondary content. These are
 diagnostics, not a startup-time guarantee; compare cold and warm VS launches,
 including offline and large-repository scenarios, in the Performance Profiler.
 
@@ -594,11 +612,9 @@ below it. Work and Feedback dates align at the far right. Blog and video dates
 stay on the left with their source metadata, and their titles use the normal theme text color.
 Blog cards use the same padding as work cards and do not stretch to fill taller rows.
 Copilot source icons sit beside the workspace name rather than occupying their own row:
-Agent for Visual Studio (GitHubCopilot on older VS hosts), VisualStudioCode for VS Code (VisualStudioOnline on older VS hosts),
+Agent for Visual Studio (GitHubCopilot on older VS hosts),
 Console for CLI, and GitHub for cloud agents.
-Hover over a source icon for its app name (Terminal, VS Code, Visual Studio, or GitHub).
-VS Code sessions use the native workspace folder name; chats without a workspace show
-**No workspace** instead of the internal chat-folder GUID.
+Hover over a source icon for its app name (Terminal, Visual Studio, or GitHub).
 Repository work card titles wrap to at most two lines with ellipsis, without reserving
 an empty second line for short titles; hover to read the full title.
 Personal rows separate titles and repository details from status and date columns.
@@ -631,18 +647,20 @@ information never becomes a ready signal.
 Providers page their queries rather than requesting an unsupported page size.
 These are recent, bounded activity lists, not complete repository inventories;
 permissions, discovered projects, and provider availability still limit coverage.
-Copilot also discovers recent CLI and supported native VS Code sessions from their
-local metadata. GitHub cloud-agent tasks use the configured GitHub account when that
+Copilot also discovers recent VS and CLI sessions from their
+saved local metadata. GitHub cloud-agent tasks use the configured GitHub account when that
 provider is enabled. These sources refresh independently once a minute while the page is visible.
-CLI/VS Code discovery reuses its YAML deserializer and only opens native VS Code databases
-when a displayed session needs a mapping, stopping once all required mappings are found.
+VS and CLI discovery use separate bounded caches of unchanged parsed YAML metadata and create their deserializers only
+when a metadata file needs parsing. VS Code session discovery is currently unsupported;
+Start Screen does not scan its catalog or read SQLite databases.
 Cloud-task repository names are resolved once per distinct repository with at most
 four concurrent requests instead of serial round trips. Local and cloud discovery
 have separate progress steps and log their elapsed times in the Start Screen Output
 pane. Visual Studio backend attachment and session-index readiness are timed separately;
 waiting for that index does not mean the other session sources are still loading.
-The compact "Loading VS Copilot..." step remains active until Visual Studio reports
-its index ready. Bursts of session and chat collection changes share a queued UI
+The compact "Reading VS Copilot..." step finishes when the saved metadata scan completes.
+Live backend activation and subscription readiness do not hold the refresh busy indicator open.
+Bursts of session and chat collection changes share a queued UI
 rescan of the latest snapshot instead of rescanning once per notification; readiness,
 running-state, permission, and question notifications remain individually observed.
 
@@ -686,18 +704,16 @@ through its in-process MEF contracts. My work includes running and recent
 conversations; its Attention feed includes sessions with unresolved
 permission requests or questions, including requests from subagents. Clicking a conversation, or pressing
 Enter on it, opens it in the app where it was created. Visual Studio conversations
-open in its Copilot Chat, supported VS Code conversations open in its native Agents
-window, CLI conversations resume in an interactive CLI console, and cloud tasks open
+open in its Copilot Chat, CLI conversations resume in an interactive CLI console, and cloud tasks open
 on GitHub. No prompts are sent and requests are never answered automatically.
 Right-click, the Menu key, or Shift+F10 opens native Visual Studio session actions.
-Only Visual Studio-to-CLI and VS Code-to-CLI alternatives are offered. There are no
+Only Visual Studio-to-CLI alternatives are offered. There are no
 destination buttons on cards and no unverified cross-IDE or CLI-to-IDE actions.
 CLI opening requires an explicit final shutdown, no in-use markers or held fork lock,
 and no known live activity. A retained, unheld fork-lock file does not block resuming
 and is never modified or deleted. Native VS sessions do not have to be transcripts: saved, unhydrated
 sessions can qualify, while a live VS activity stream blocks opening even when idle.
-VS Code-to-CLI also requires VS Code to be closed. The checks run again
-immediately before launch. Unknown ownership disables the action; locks are never
+The checks run again immediately before launch. Unknown ownership disables the action; locks are never
 deleted, sessions are never forcibly taken over or silently forked. Active CLI
 sessions cannot be focused externally and must be closed normally before resuming.
 An idle session is not considered released. CLI must be installed as copilot.exe on PATH.
@@ -714,8 +730,10 @@ Reopening the page reuses up to 100 conversation metadata entries while reconnec
 Metadata is also saved locally under `%LOCALAPPDATA%\StartScreen\CopilotCache` after
 discovery and when leaving the page. It contains conversation IDs, titles, working
 directories, timestamps, and saved-conversation markers, not messages or live state.
-On a new VS launch, cached metadata is loaded off the UI thread and bound before
-Copilot service initialization, with a dispatcher yield to allow rendering first.
+On a new VS launch, cached metadata and fresh VS saved metadata are loaded off the UI
+thread. Fresh saved metadata is bound before Copilot service initialization, with a
+dispatcher yield to allow rendering first; older Start Screen cache reads cannot
+overwrite that fresh inventory.
 Component-model acquisition, Copilot MEF activation, and backend selection run on
 background threads. Session subscriptions, nested request observers, and UI updates
 remain on the UI thread, but are queued in batches of at most eight callbacks with
@@ -723,7 +741,7 @@ an eight-millisecond cooperative budget between callbacks. User input can run be
 batches. Readiness includes completion of queued attachment work, and all sessions
 remain observed for attention signals. Hiding the page cancels connection waits and
 queued callbacks; a connection that finishes afterward is not attached.
-The first launch without a cache still depends on VS discovery. Cached entries show
+The first launch without a Start Screen cache can also list saved VS sessions before live discovery. Metadata-only entries show
 no state badge and never retain old running or permission state. Completed discovery
 replaces stale entries, including deleting history when the catalog is empty.
 Cache errors are logged to Output without disabling
@@ -733,22 +751,29 @@ Workspace selection filters sessions by their reported working directory; sessio
 whose directory is not yet known are not attributed to a selected workspace.
 
 These are internal, version-sensitive contracts, not a supported Copilot SDK API.
-The harness does not expose a force-relist operation. Refresh reconnects to its
-current in-memory catalog; it cannot force saved history from other processes to
+The harness does not expose a force-relist operation. Refresh keeps an existing live
+connection and its attention subscriptions, and rescans saved metadata without
+reusing parsed-file caches. It cannot force saved history from other processes to
 be re-listed, or obtain their live activity. Missing or incompatible contracts
 produce an explicit unavailable status; discovery
 in progress is not reported as an empty successful result. Refresh retries the
-connection. Subscriptions are removed while the page is hidden or closed. Copilot
+connection only when disconnected. Subscriptions are removed while the page is hidden or closed. Copilot
 activity remains accessible without a GitHub/Azure DevOps dashboard connection.
-Local discovery reads at most 100 recent CLI/VS Code metadata directories from
-`%USERPROFILE%\.copilot\session-state`. VS Code's read-only native session catalog
-must map the backing runtime ID to a native Agents session ID; unsupported legacy
-formats and unmapped sessions are not shown. Creator metadata determines the icon,
-not the last app that resumed a session. No transcripts are scanned for discovery.
-The catalog is read through `Microsoft.Data.Sqlite.Core` using Windows' built-in
-SQLite library, so the VSIX does not ship native SQLite binaries. This still
-depends on VS Code's internal catalog format; incompatible metadata is reported
-without changing the database.
+Local discovery examines at most 100 recent metadata directories per store from
+`%USERPROFILE%\.copilot\session-state` for CLI and
+`%LOCALAPPDATA%\Microsoft\VisualStudio\CopilotCli\session-state` for VS.
+CLI requires `client_name: github/cli`; VS accepts `visualstudio-chat` and
+`microsoft/visualstudio-chat`. Unknown or missing creators are not guessed.
+Saved VS metadata supplies the early inventory; live snapshots take precedence for
+matching IDs and can add unsaved conversations. Once the current VS backend is fully
+ready, its catalog is authoritative, including removal of absent sessions.
+Saved files alone cannot establish running state, pending requests, or safe ownership;
+native VS opening still requires a session confirmed by that backend. No file-system
+watcher or extra CLI server is started.
+Creator metadata determines inclusion, not the last app that resumed a session.
+VS Code-created sessions are not shown, even when last resumed by CLI.
+No transcripts or SQLite databases are scanned for discovery, and the VSIX no
+longer includes SQLite dependencies.
 GitHub cloud discovery requires Agent tasks read permission and queries up to 30
 recent tasks. Synced local tasks are not treated as cloud agents. If the preview API
 omits cloud-origin metadata, unverified tasks are omitted with a diagnostic in Output.

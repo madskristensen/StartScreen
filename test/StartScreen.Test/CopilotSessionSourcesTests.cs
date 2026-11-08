@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Xml.Linq;
-using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
@@ -24,18 +23,57 @@ namespace StartScreen.Test
         private const string NativeId = "a304b9be-c94c-4585-81f8-570cae2025db";
 
         [TestMethod]
-        [DataRow("github/cli", "vscode-agent-host", 2)]
-        [DataRow("vscode-agent-host", "github/cli", 1)]
-        public void Metadata_UsesCreatorNotLastClient(string creator, string lastClient, int expectedOrigin)
+        [DataRow("github/cli", "vscode-agent-host", true)]
+        [DataRow("vscode-agent-host", "github/cli", false)]
+        [DataRow("unknown", "github/cli", false)]
+        [DataRow("visualstudio-chat", "github/cli", false)]
+        [DataRow("microsoft/visualstudio-chat", "github/cli", false)]
+        public void Metadata_UsesCreatorNotLastClient(string creator, string lastClient, bool supported)
         {
             var session = CopilotLocalSessions.ParseMetadata(Metadata(creator) + "last_client_name: " + lastClient + "\n", RuntimeId, "home");
-            Assert.AreEqual((CopilotSessionOrigin)expectedOrigin, session.Origin);
+            if (!supported)
+            {
+                Assert.IsNull(session);
+                return;
+            }
+            Assert.IsNotNull(session);
+            Assert.AreEqual(CopilotSessionOrigin.Cli, session.Origin);
             Assert.AreEqual(RuntimeId, session.Id);
             Assert.AreEqual("A title: with punctuation", session.Title);
             Assert.AreEqual(@"C:\Repos\Example", session.WorkingDirectory);
             Assert.IsFalse(session.IsRunning);
             Assert.IsFalse(session.NeedsAttention);
             Assert.AreEqual(string.Empty, session.StatusBadge);
+        }
+
+        [TestMethod]
+        [DataRow("visualstudio-chat", true)]
+        [DataRow("microsoft/visualstudio-chat", true)]
+        [DataRow("github/cli", false)]
+        [DataRow("vscode-agent-host", false)]
+        [DataRow("unknown", false)]
+        [DataRow("", false)]
+        public void Metadata_VisualStudioRequiresItsCreatorAndNeverInventsLiveState(string creator, bool supported)
+        {
+            var session = CopilotLocalSessions.ParseMetadata(Metadata(creator) + "last_client_name: github/cli\n",
+                RuntimeId, "vs-home", CopilotSessionOrigin.VisualStudio);
+            if (!supported)
+            {
+                Assert.IsNull(session);
+                return;
+            }
+            Assert.IsNotNull(session);
+            Assert.AreEqual(CopilotSessionOrigin.VisualStudio, session.Origin);
+            Assert.AreEqual(RuntimeId, session.Id);
+            Assert.AreEqual("vs-home", session.SessionHome);
+            Assert.AreEqual("A title: with punctuation", session.Title);
+            Assert.AreEqual(@"C:\Repos\Example", session.WorkingDirectory);
+            Assert.IsTrue(session.IsCached);
+            Assert.IsNull(session.IsResponding);
+            Assert.IsFalse(session.IsRunning);
+            Assert.IsFalse(session.NeedsAttention);
+            Assert.AreEqual(string.Empty, session.StatusBadge);
+            Assert.IsEmpty(DevHubWorkItem.GetCopilotItems([session], true));
         }
 
         [TestMethod]
@@ -57,199 +95,125 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public async Task Discovery_MapsNativeCodeIdsAndRetainsCliWithoutScanningTranscriptsAsync()
+        [DataRow(false, 2)]
+        [DataRow(true, 2)]
+        [DataRow(false, 0)]
+        [DataRow(true, 0)]
+        public async Task Discovery_ExcludesCodeAndRetainsSupportedCreatorsWithoutReadingDatabasesOrTranscriptsAsync(bool forceRefresh, int originValue)
         {
+            var origin = (CopilotSessionOrigin)originValue;
             using var directory = new TemporaryDirectory();
             var home = directory.GetPath("home");
-            var catalog = directory.GetPath("catalog");
             SaveMetadata(home, RuntimeId, "vscode-agent-host");
-            SaveMetadata(home, NativeId, "github/cli");
-            CreateCodeDatabase(Path.Combine(catalog, NativeId), RuntimeId);
-            var result = await CopilotLocalSessions.ReadAsync(home, catalog, CancellationToken.None);
-            Assert.HasCount(2, result.Sessions);
-            var code = result.Sessions.Single(session => session.Origin == CopilotSessionOrigin.VisualStudioCode);
-            Assert.AreEqual(RuntimeId, code.Id);
-            Assert.AreEqual(NativeId, code.NativeSessionId);
-            Assert.AreEqual(home, code.SessionHome);
-            Assert.AreEqual(string.Empty, result.Status);
-            Assert.IsTrue(result.Sessions.All(session => !session.IsRunning && !session.NeedsAttention));
-        }
-
-        [TestMethod]
-        public async Task Discovery_OmitsUnmappedCodeRatherThanInventingItsNativeIdAsync()
-        {
-            using var directory = new TemporaryDirectory();
-            SaveMetadata(directory.Path, RuntimeId, "vscode-agent-host");
-            var result = await CopilotLocalSessions.ReadAsync(directory.Path, directory.GetPath("missing"), CancellationToken.None);
-            Assert.HasCount(0, result.Sessions);
-            StringAssert.Contains(result.Status, "no compatible native-session mapping");
-        }
-
-        [TestMethod]
-        public async Task Discovery_CliOnlyDoesNotReadUnrelatedCodeDatabasesAsync()
-        {
-            using var directory = new TemporaryDirectory();
-            var catalog = directory.GetPath("catalog");
-            SaveMetadata(directory.Path, RuntimeId, "github/cli");
-            Directory.CreateDirectory(Path.Combine(catalog, NativeId));
-            File.WriteAllText(Path.Combine(catalog, NativeId, "session.db"), "not a SQLite database");
-
-            var result = await CopilotLocalSessions.ReadAsync(directory.Path, catalog, CancellationToken.None);
-
+            SaveMetadata(home, NativeId, origin == CopilotSessionOrigin.Cli ? "github/cli" : "visualstudio-chat");
+            var database = Path.Combine(home, "session-state", RuntimeId, "session.db");
+            var transcript = Path.Combine(home, "session-state", NativeId, "events.jsonl");
+            File.WriteAllText(database, "Not a database");
+            File.WriteAllText(transcript, "Not a transcript");
+            using var lockedDatabase = new FileStream(database, FileMode.Open, FileAccess.Read, FileShare.None);
+            using var lockedTranscript = new FileStream(transcript, FileMode.Open, FileAccess.Read, FileShare.None);
+            var cache = new CopilotLocalSessions.DiscoveryCache();
+            await CopilotLocalSessions.ReadAsync(home, CancellationToken.None, cache, origin: origin);
+            var result = await CopilotLocalSessions.ReadAsync(home, CancellationToken.None, cache, forceRefresh, origin);
             Assert.HasCount(1, result.Sessions);
-            Assert.AreEqual(CopilotSessionOrigin.Cli, result.Sessions[0].Origin);
+            var cli = result.Sessions.Single();
+            Assert.AreEqual(origin, cli.Origin);
+            Assert.AreEqual(NativeId, cli.Id);
+            Assert.AreEqual(home, cli.SessionHome);
             Assert.AreEqual(string.Empty, result.Status);
+            Assert.IsFalse(cli.IsRunning);
+            Assert.IsFalse(cli.NeedsAttention);
         }
 
         [TestMethod]
-        public void CodeCatalog_StopsAfterFindingRequiredMappingsWithoutReadingOlderDatabases()
+        [DataRow(2)]
+        [DataRow(0)]
+        public async Task DiscoveryCache_ReusesOnlyUnchangedMetadataAndClonesSnapshotsAsync(int originValue)
+        {
+            var origin = (CopilotSessionOrigin)originValue;
+            using var directory = new TemporaryDirectory();
+            var creator = origin == CopilotSessionOrigin.Cli ? "github/cli" : "microsoft/visualstudio-chat";
+            SaveMetadata(directory.Path, RuntimeId, creator);
+            var reads = 0;
+            var cache = new CopilotLocalSessions.DiscoveryCache(path =>
+            {
+                Interlocked.Increment(ref reads);
+                return CopilotLocalSessions.ReadBoundedText(path);
+            });
+            var first = await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, cache, origin: origin);
+            first.Sessions.Single().Title = "Caller mutation";
+            first.Sessions.Single().IsResponding = true;
+            var second = await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, cache, origin: origin);
+            Assert.AreEqual(1, reads);
+            Assert.AreEqual("A title: with punctuation", second.Sessions.Single().Title);
+            Assert.IsFalse(second.Sessions.Single().IsRunning);
+            Assert.AreNotSame(first.Sessions.Single(), second.Sessions.Single());
+
+            await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, cache, forceRefresh: true, origin: origin);
+            Assert.AreEqual(2, reads);
+            var path = Path.Combine(directory.Path, "session-state", RuntimeId, "workspace.yaml");
+            File.WriteAllText(path, Metadata(creator).Replace("A title: with punctuation", "Changed title"));
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(5));
+            var changed = await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, cache, origin: origin);
+            Assert.AreEqual(3, reads);
+            Assert.AreEqual("Changed title", changed.Sessions.Single().Title);
+            File.Delete(path);
+            Assert.IsEmpty((await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, cache, origin: origin)).Sessions);
+            SaveMetadata(directory.Path, RuntimeId, creator);
+            Assert.HasCount(1, (await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, cache, origin: origin)).Sessions);
+            Assert.AreEqual(4, reads);
+        }
+
+        [TestMethod]
+        public void Discovery_DoesNotReferenceSqlite()
+        {
+            var references = typeof(CopilotLocalSessions).Assembly.GetReferencedAssemblies();
+            Assert.IsFalse(references.Any(reference => reference.Name!.StartsWith("Microsoft.Data.Sqlite", StringComparison.OrdinalIgnoreCase)
+                || reference.Name.StartsWith("SQLitePCLRaw", StringComparison.OrdinalIgnoreCase)));
+        }
+
+        [TestMethod]
+        public async Task DiscoveryCache_ReportsMetadataFailuresAndRecoversWithoutStaleFallbackAsync()
         {
             using var directory = new TemporaryDirectory();
-            var newest = Path.Combine(directory.Path, NativeId);
-            CreateCodeDatabase(newest, RuntimeId);
-            var older = Path.Combine(directory.Path, Guid.NewGuid().ToString("D"));
-            Directory.CreateDirectory(older);
-            File.WriteAllText(Path.Combine(older, "session.db"), "not a SQLite database");
-            Directory.SetLastWriteTimeUtc(older, DateTime.UtcNow.AddDays(-1));
-            Directory.SetLastWriteTimeUtc(newest, DateTime.UtcNow);
-            var errors = new List<Exception>();
-            var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { RuntimeId };
-
-            var mappings = CopilotLocalSessions.ReadCodeMappings(directory.Path, CancellationToken.None, errors.Add, required);
-
-            Assert.HasCount(1, mappings);
-            Assert.AreEqual(NativeId, mappings[RuntimeId].NativeSessionId);
-            Assert.IsEmpty(errors);
-            CollectionAssert.AreEqual(new[] { RuntimeId }, required.ToArray());
+            SaveMetadata(directory.Path, RuntimeId, "github/cli");
+            var cache = new CopilotLocalSessions.DiscoveryCache();
+            Assert.HasCount(1, (await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, cache)).Sessions);
+            var path = Path.Combine(directory.Path, "session-state", RuntimeId, "workspace.yaml");
+            File.WriteAllText(path, "id: [invalid YAML");
+            var failed = await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, cache, forceRefresh: true);
+            Assert.IsEmpty(failed.Sessions);
+            StringAssert.Contains(failed.Status, "local Copilot session metadata could not be read");
+            SaveMetadata(directory.Path, RuntimeId, "github/cli");
+            var recovered = await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, cache);
+            Assert.HasCount(1, recovered.Sessions);
+            Assert.AreEqual(string.Empty, recovered.Status);
         }
 
         [TestMethod]
-        public void CodeCatalog_EmptyRequestedSetDoesNotOpenAnyDatabases()
+        [DataRow(2)]
+        [DataRow(0)]
+        public async Task Discovery_HonorsCancellationAsync(int originValue)
         {
-            using var directory = new TemporaryDirectory();
-            Directory.CreateDirectory(Path.Combine(directory.Path, NativeId));
-            File.WriteAllText(Path.Combine(directory.Path, NativeId, "session.db"), "not a SQLite database");
-            var errors = new List<Exception>();
-
-            var mappings = CopilotLocalSessions.ReadCodeMappings(directory.Path, CancellationToken.None, errors.Add, []);
-
-            Assert.IsEmpty(mappings);
-            Assert.IsEmpty(errors);
-        }
-
-        [TestMethod]
-        public async Task Discovery_WorkspacelessCodeShowsAFriendlyLabelInsteadOfItsInternalFolderAsync()
-        {
-            using var directory = new TemporaryDirectory();
-            var home = directory.GetPath("home");
-            var catalog = directory.GetPath("catalog");
-            var scratch = Path.Combine(home, "chats", NativeId);
-            SaveMetadata(home, RuntimeId, "vscode-agent-host", scratch);
-            CreateCodeDatabase(Path.Combine(catalog, NativeId), RuntimeId, true, new Uri(scratch).AbsoluteUri);
-
-            var result = await CopilotLocalSessions.ReadAsync(home, catalog, CancellationToken.None);
-            var session = result.Sessions.Single();
-            Assert.IsTrue(session.IsWorkspaceless);
-            Assert.IsNull(session.WorkingDirectory);
-            Assert.IsFalse(session.MatchesWorkspace(home));
-            Assert.AreEqual("No workspace", DevHubWorkItem.GetCopilotItems(result.Sessions, false).Single().Detail);
-            Assert.AreEqual(NativeId, session.NativeSessionId, "Changing the display must not affect native navigation.");
-            Assert.AreEqual("No workspace", DevHubWorkItem.GetCopilotItems([session.AsCached()], false).Single().Detail);
-        }
-
-        [TestMethod]
-        [DataRow("Native Workspace")]
-        [DataRow(NativeId)]
-        [DataRow("Percent%20Name")]
-        [DataRow("Hash # and spaces")]
-        public async Task Discovery_CodeUsesItsRealWorkspaceNameWhenAvailableAsync(string folder)
-        {
-            using var directory = new TemporaryDirectory();
-            var catalog = directory.GetPath("catalog");
-            SaveMetadata(directory.Path, RuntimeId, "vscode-agent-host");
-            CreateCodeDatabase(Path.Combine(catalog, NativeId), RuntimeId, false, "file:///c%3A/Repos/" + Uri.EscapeDataString(folder));
-
-            var result = await CopilotLocalSessions.ReadAsync(directory.Path, catalog, CancellationToken.None);
-            var session = result.Sessions.Single();
-            Assert.IsFalse(session.IsWorkspaceless);
-            Assert.AreEqual(@"c:\Repos\" + folder, session.WorkingDirectory);
-            Assert.IsTrue(session.MatchesWorkspace(@"C:\Repos"));
-            Assert.AreEqual(folder, DevHubWorkItem.GetCopilotItems(result.Sessions, false).Single().Detail);
-        }
-
-        [TestMethod]
-        public void CodeCatalog_IsReadOnlyAndDoesNotKeepTheDatabaseLocked()
-        {
-            using var directory = new TemporaryDirectory();
-            var database = CreateCodeDatabase(directory.Path, RuntimeId);
-            var before = File.ReadAllBytes(database);
-            Assert.AreEqual(RuntimeId, CopilotLocalSessions.ReadCodeMapping(database));
-            CollectionAssert.AreEqual(before, File.ReadAllBytes(database));
-            using var exclusive = new FileStream(database, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-            Assert.IsTrue(exclusive.CanWrite);
-            Assert.Throws<SqliteException>(() => CopilotLocalSessions.ReadCodeMapping(directory.GetPath("missing.db")));
-            Assert.IsFalse(File.Exists(directory.GetPath("missing.db")));
-        }
-
-        [TestMethod]
-        public void CodeCatalog_UsesWindowsSystemSqlite()
-        {
-            using var directory = new TemporaryDirectory();
-            var database = CreateCodeDatabase(directory.Path, RuntimeId);
-
-            Assert.AreEqual(RuntimeId, CopilotLocalSessions.ReadCodeMapping(database));
-            Assert.AreEqual("winsqlite3", SQLitePCL.raw.GetNativeLibraryName());
-        }
-
-        [TestMethod]
-        public void CodeCatalog_ReadsCommittedWalMetadataWhileWriterIsOpen()
-        {
-            using var directory = new TemporaryDirectory();
-            var database = CreateCodeDatabase(directory.Path, RuntimeId);
-            using var connection = new SqliteConnection("Data Source=" + database + ";Pooling=False");
-            connection.Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = "PRAGMA journal_mode=WAL; UPDATE session_metadata SET value = $data WHERE key = 'defaultChatProviderData'";
-            command.Parameters.AddWithValue("$data", JsonSerializer.Serialize(new { sdkSessionId = NativeId }));
-            command.ExecuteNonQuery();
-
-            Assert.IsTrue(File.Exists(database + "-wal"));
-            Assert.AreEqual(NativeId, CopilotLocalSessions.ReadCodeMapping(database));
-        }
-
-        [TestMethod]
-        public async Task Discovery_HonorsCancellationAsync()
-        {
+            var origin = (CopilotSessionOrigin)originValue;
             using var directory = new TemporaryDirectory();
             using var cancellation = new CancellationTokenSource();
             cancellation.Cancel();
-            await Assert.ThrowsAsync<OperationCanceledException>(() => CopilotLocalSessions.ReadAsync(directory.Path, directory.Path, cancellation.Token));
+            await Assert.ThrowsAsync<OperationCanceledException>(() => CopilotLocalSessions.ReadAsync(directory.Path, cancellation.Token, origin: origin));
         }
 
         [TestMethod]
-        public async Task Discovery_IsBoundedTo100RecentMetadataDirectoriesAsync()
+        [DataRow(2)]
+        [DataRow(0)]
+        public async Task Discovery_IsBoundedTo100RecentMetadataDirectoriesAsync(int originValue)
         {
+            var origin = (CopilotSessionOrigin)originValue;
             using var directory = new TemporaryDirectory();
             for (var index = 0; index < 105; index++)
-                SaveMetadata(directory.Path, Guid.NewGuid().ToString("D"), "github/cli");
-            var result = await CopilotLocalSessions.ReadAsync(directory.Path, directory.GetPath("missing"), CancellationToken.None);
+                SaveMetadata(directory.Path, Guid.NewGuid().ToString("D"), origin == CopilotSessionOrigin.Cli ? "github/cli" : "visualstudio-chat");
+            var result = await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, origin: origin);
             Assert.HasCount(100, result.Sessions);
             Assert.AreEqual(string.Empty, result.Status);
-        }
-
-        [TestMethod]
-        public void CodeCatalog_RejectsMalformedMappingsWithoutInventingAnId()
-        {
-            using var directory = new TemporaryDirectory();
-            var database = CreateCodeDatabase(directory.Path, RuntimeId);
-            using (var connection = new SqliteConnection("Data Source=" + database + ";Pooling=False"))
-            {
-                connection.Open();
-                using var command = connection.CreateCommand();
-                command.CommandText = "UPDATE session_metadata SET value = '[]' WHERE key = 'defaultChatProviderData'";
-                command.ExecuteNonQuery();
-            }
-            Assert.Throws<InvalidDataException>(() => CopilotLocalSessions.ReadCodeMapping(database));
         }
 
         [TestMethod]
@@ -258,8 +222,8 @@ namespace StartScreen.Test
         [DataRow(0, 2, true)]
         [DataRow(0, 3, false)]
         [DataRow(1, 0, false)]
-        [DataRow(1, 1, true)]
-        [DataRow(1, 2, true)]
+        [DataRow(1, 1, false)]
+        [DataRow(1, 2, false)]
         [DataRow(1, 3, false)]
         [DataRow(2, 0, false)]
         [DataRow(2, 1, false)]
@@ -269,6 +233,7 @@ namespace StartScreen.Test
         [DataRow(3, 1, false)]
         [DataRow(3, 2, false)]
         [DataRow(3, 3, true)]
+        [DataRow(99, 99, false)]
         public void Destinations_OfferOnlyTestedCombinations(int source, int destination, bool expected)
         {
             Assert.AreEqual(expected, CopilotSessionLauncher.Supports((CopilotSessionOrigin)source, (CopilotSessionOrigin)destination));
@@ -293,17 +258,13 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void CodeLaunch_UsesNativeIdAndNormalHomeWithoutATerminal()
+        public void CliLaunch_UsesDefaultHomeAndRejectsRemovedCodeDestinations()
         {
-            var session = new CopilotActivitySession { Id = RuntimeId, NativeSessionId = NativeId, Origin = CopilotSessionOrigin.VisualStudioCode };
-            var launch = CopilotSessionLauncher.CreateStartInfo(session, CopilotSessionOrigin.VisualStudioCode, @"C:\Code\Code.exe");
-            Assert.AreEqual("--open-url vscode://agents/agent-host-session/ahp-session/" + NativeId, launch.Arguments);
+            var session = new CopilotActivitySession { Id = RuntimeId, Origin = CopilotSessionOrigin.Cli };
+            var launch = CopilotSessionLauncher.CreateStartInfo(session, CopilotSessionOrigin.Cli, "copilot.exe");
+            Assert.AreEqual("--resume=" + RuntimeId, launch.Arguments);
             Assert.AreEqual(CopilotLocalSessions.DefaultHome, launch.EnvironmentVariables["COPILOT_HOME"]);
-            launch = CopilotSessionLauncher.CreateStartInfo(session, CopilotSessionOrigin.Cli, "copilot.exe");
-            Assert.AreEqual(CopilotLocalSessions.DefaultHome, launch.EnvironmentVariables["COPILOT_HOME"]);
-            session.NativeSessionId = null;
-            Assert.Throws<InvalidOperationException>(() => CopilotSessionLauncher.CreateStartInfo(session, CopilotSessionOrigin.VisualStudioCode, "Code.exe"));
-            session.Origin = CopilotSessionOrigin.Cli;
+            Assert.Throws<InvalidOperationException>(() => CopilotSessionLauncher.CreateStartInfo(session, (CopilotSessionOrigin)1, "Code.exe"));
             Assert.Throws<InvalidOperationException>(() => CopilotSessionLauncher.CreateStartInfo(session, CopilotSessionOrigin.VisualStudio, "devenv.exe"));
         }
 
@@ -329,7 +290,6 @@ namespace StartScreen.Test
         [TestMethod]
         [DoNotParallelize]
         [DataRow(0)]
-        [DataRow(1)]
         [DataRow(2)]
         public void CliMenu_ReleasedSessionsWithAnUnheldForkLockAreEnabled(int origin)
         {
@@ -345,7 +305,7 @@ namespace StartScreen.Test
                 CopilotSessionMenu.Current = new CopilotSessionMenu
                 {
                     Session = session,
-                    CliUnavailableReason = CopilotSessionLauncher.CliUnavailableReason(session, false,
+                    CliUnavailableReason = CopilotSessionLauncher.CliUnavailableReason(session,
                         _ => CopilotSessionLauncher.SavedSessionUnavailableReason(directory.Path)),
                 };
                 CopilotSessionMenu.Update(command, CopilotSessionOrigin.Cli);
@@ -395,17 +355,17 @@ namespace StartScreen.Test
         public void Ownership_DoesNotTreatIdleCachedOrLiveSessionsAsReleased()
         {
             var session = new CopilotActivitySession { Id = RuntimeId, Origin = CopilotSessionOrigin.VisualStudio, IsResponding = false };
-            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session, false));
+            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session));
             session.IsTranscript = true;
             session.IsCached = true;
-            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session, false));
+            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session));
             session.IsCached = false;
             session.IsTranscript = false;
             session.PendingPermissions = 1;
-            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session, false));
+            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session));
             session.PendingPermissions = 0;
-            session.Origin = CopilotSessionOrigin.VisualStudioCode;
-            StringAssert.Contains(CopilotSessionLauncher.CliUnavailableReason(session, true), "Close VS Code");
+            session.Origin = (CopilotSessionOrigin)1;
+            StringAssert.Contains(CopilotSessionLauncher.CliUnavailableReason(session), "cannot be opened in CLI");
         }
 
         [TestMethod]
@@ -430,13 +390,13 @@ namespace StartScreen.Test
                 return CopilotSessionLauncher.SavedSessionUnavailableReason(directory.Path);
             }
 
-            Assert.IsNull(CopilotSessionLauncher.CliUnavailableReason(session, false, ReadSavedState));
+            Assert.IsNull(CopilotSessionLauncher.CliUnavailableReason(session, ReadSavedState));
             Assert.AreEqual(Path.Combine(CopilotLocalSessions.VisualStudioHome, "session-state", RuntimeId), checkedPath);
             File.WriteAllText(directory.GetPath("inuse.123.lock"), "");
-            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session, false, ReadSavedState));
+            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session, ReadSavedState));
             File.Delete(directory.GetPath("inuse.123.lock"));
             File.AppendAllText(events, "{\"type\":\"session.resume\"}\n");
-            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session, false, ReadSavedState));
+            Assert.IsNotNull(CopilotSessionLauncher.CliUnavailableReason(session, ReadSavedState));
         }
 
         [TestMethod]
@@ -454,7 +414,7 @@ namespace StartScreen.Test
                 IsResponding = responding,
             };
             var checkedDisk = false;
-            var reason = CopilotSessionLauncher.CliUnavailableReason(session, false, _ =>
+            var reason = CopilotSessionLauncher.CliUnavailableReason(session, _ =>
             {
                 checkedDisk = true;
                 return null;
@@ -793,7 +753,7 @@ namespace StartScreen.Test
             var sessions = Enum.GetValues(typeof(CopilotSessionOrigin)).Cast<CopilotSessionOrigin>()
                 .Select(origin => new CopilotActivitySession { Id = RuntimeId, Origin = origin, Repository = "owner/repo" }).ToArray();
             var cards = DevHubWorkItem.GetCopilotItems(sessions, false);
-            Assert.HasCount(4, cards);
+            Assert.HasCount(3, cards);
             foreach (var card in cards)
             {
                 Assert.AreEqual("Open in " + card.CopilotSession.OriginName, card.ActionText);
@@ -805,17 +765,12 @@ namespace StartScreen.Test
             Assert.AreEqual(agent.Id, CopilotMonikers.ForOrigin(CopilotSessionOrigin.VisualStudio).Id);
             Assert.AreEqual(KnownMonikers.Console.Id, CopilotMonikers.ForOrigin(CopilotSessionOrigin.Cli).Id);
             Assert.AreEqual(KnownMonikers.GitHub.Id, CopilotMonikers.ForOrigin(CopilotSessionOrigin.GitHub).Id);
-            var codeProperty = typeof(KnownMonikers).GetProperty("VisualStudioCode");
-            var code = codeProperty?.GetValue(null) is Microsoft.VisualStudio.Imaging.Interop.ImageMoniker moniker
-                ? moniker : KnownMonikers.VisualStudioOnline;
-            Assert.AreEqual(code.Id, CopilotMonikers.ForOrigin(CopilotSessionOrigin.VisualStudioCode).Id);
-            Assert.HasCount(4, sessions.Select(session => session.Key).Distinct().ToArray());
+            Assert.HasCount(3, sessions.Select(session => session.Key).Distinct().ToArray());
             Assert.AreEqual("owner/repo", cards.Single(card => card.CopilotSession.Origin == CopilotSessionOrigin.GitHub).Detail);
         }
 
         [TestMethod]
         [DataRow(0, "Visual Studio")]
-        [DataRow(1, "VS Code")]
         [DataRow(2, "Terminal")]
         [DataRow(3, "GitHub")]
         public void Cards_SourceTooltipsIdentifyTheApp(int origin, string expected)
@@ -849,31 +804,6 @@ namespace StartScreen.Test
             Directory.CreateDirectory(directory);
             File.WriteAllText(Path.Combine(directory, "workspace.yaml"), Metadata(client).Replace(RuntimeId, id)
                 .Replace(@"C:\Repos\Example", workingDirectory ?? @"C:\Repos\Example"));
-        }
-
-        private static string CreateCodeDatabase(string directory, string runtimeId, bool? workspaceless = null, string? workingDirectory = null)
-        {
-            Directory.CreateDirectory(directory);
-            var path = Path.Combine(directory, "session.db");
-            using var connection = new SqliteConnection("Data Source=" + path + ";Pooling=False");
-            connection.Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = "CREATE TABLE session_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
-                + "INSERT INTO session_metadata VALUES ('defaultChatProviderData', $data);"
-                + "INSERT INTO session_metadata VALUES ('vscode.session.initiator', '{\"name\":\"vscode-editor-window\"}');";
-            command.Parameters.AddWithValue("$data", JsonSerializer.Serialize(new { sdkSessionId = runtimeId }));
-            if (workspaceless.HasValue)
-            {
-                command.CommandText += "INSERT INTO session_metadata VALUES ('agentHost.workspaceless', $workspaceless);";
-                command.Parameters.AddWithValue("$workspaceless", workspaceless.Value ? "true" : "false");
-            }
-            if (workingDirectory != null)
-            {
-                command.CommandText += "INSERT INTO session_metadata VALUES ('copilot.workingDirectory', $directory);";
-                command.Parameters.AddWithValue("$directory", workingDirectory);
-            }
-            command.ExecuteNonQuery();
-            return path;
         }
 
         private sealed class AsyncHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler

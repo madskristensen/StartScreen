@@ -227,6 +227,36 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task ExtendedHistory_TracksSettingsChangesAndDoesNotRetainTransientMergesAsync()
+        {
+            var storedTime = new DateTime(2026, 1, 1);
+            var options = new Options
+            {
+                ExtendedMruItems = JsonSerializer.Serialize(new[]
+                {
+                    new { Path = @"C:\Code\App\App.sln", Name = "App", Type = 0, LastAccessed = storedTime }
+                })
+            };
+            var current = new MruItem { Path = @"C:\Code\App\App.slnx", Type = MruItemType.Solution };
+            MruService.RestoreStoredAccessTimes([current], options);
+            Assert.AreEqual(storedTime, current.LastAccessed);
+            current.LastAccessed = storedTime.AddDays(1);
+            Assert.IsEmpty(await MruService.GetExtendedOnlyItemsAsync([current], options, persistChanges: false));
+
+            var history = await MruService.GetExtendedOnlyItemsAsync([], options, persistChanges: false);
+            Assert.AreEqual(storedTime, history.Single().LastAccessed, "An unpublished merge must not mutate the parsed snapshot.");
+            options.ExtendedMruItems = JsonSerializer.Serialize(new[]
+            {
+                new { Path = @"C:\Code\Other\Other.sln", Name = "Other", Type = 0, LastAccessed = storedTime.AddDays(2) }
+            });
+            history = await MruService.GetExtendedOnlyItemsAsync([], options, persistChanges: false);
+            Assert.AreEqual(@"C:\Code\Other\Other.sln", history.Single().Path);
+            Assert.AreEqual(storedTime.AddDays(2), history.Single().LastAccessed);
+            options.ExtendedMruItems = string.Empty;
+            Assert.IsEmpty(await MruService.GetExtendedOnlyItemsAsync([], options, persistChanges: false));
+        }
+
+        [TestMethod]
         public void InitialExists_IsOptimisticUntilBackgroundResultIsApplied()
         {
             using var directory = new TemporaryDirectory();

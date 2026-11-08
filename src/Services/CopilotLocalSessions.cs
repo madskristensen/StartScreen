@@ -2,10 +2,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 using YamlDotNet.Core;
@@ -22,18 +20,84 @@ namespace StartScreen.Services
     internal static class CopilotLocalSessions
     {
         internal const int MaximumSessions = 100;
+
+        internal sealed class DiscoveryCache
+        {
+            private readonly object _sync = new();
+            private readonly Dictionary<string, CachedSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
+            private readonly Func<string, string> _readText;
+
+            internal DiscoveryCache(Func<string, string> readText = null)
+            {
+                _readText = readText ?? ReadBoundedText;
+            }
+
+            internal CopilotActivitySession ReadSession(string path, string id, string home, Func<IDeserializer> getDeserializer, bool forceRefresh,
+                CopilotSessionOrigin origin)
+            {
+                path = Path.GetFullPath(path);
+                lock (_sync)
+                {
+                    var stamp = GetStamp(path);
+                    CopilotActivitySession session;
+                    if (!forceRefresh && _sessions.TryGetValue(path, out var cached) && cached.Stamp == stamp && cached.Origin == origin)
+                        session = cached.Value;
+                    else
+                    {
+                        _sessions.Remove(path);
+                        session = ParseMetadata(_readText(path), id, home, getDeserializer(), origin);
+                        if (GetStamp(path) == stamp)
+                        {
+                            _sessions[path] = new CachedSession { Stamp = stamp, Value = session, Origin = origin };
+                            if (_sessions.Count > MaximumSessions)
+                                _sessions.Remove(_sessions.Keys.First());
+                        }
+                    }
+                    var copy = session?.Clone();
+                    if (copy != null)
+                        copy.SessionHome = home;
+                    return copy;
+                }
+            }
+
+            internal void PruneSessions(HashSet<string> paths)
+            {
+                lock (_sync)
+                {
+                    foreach (var path in _sessions.Keys.Where(path => !paths.Contains(path)).ToArray())
+                        _sessions.Remove(path);
+                }
+            }
+
+            private static (long Length, DateTime WrittenUtc, DateTime CreatedUtc) GetStamp(string path)
+            {
+                var file = new FileInfo(path);
+                return (file.Length, file.LastWriteTimeUtc, file.CreationTimeUtc);
+            }
+
+            private sealed class CachedSession
+            {
+                internal (long Length, DateTime WrittenUtc, DateTime CreatedUtc) Stamp;
+                internal CopilotActivitySession Value;
+                internal CopilotSessionOrigin Origin;
+            }
+        }
+
         internal static string VisualStudioHome => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Microsoft", "VisualStudio", "CopilotCli");
         internal static string DefaultHome => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilot");
-        internal static string CodeCatalog => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Code", "agentSessionData");
-
-        internal static async Task<CopilotSessionDiscovery> ReadAsync(string home, string codeCatalog, CancellationToken token)
+        internal static async Task<CopilotSessionDiscovery> ReadAsync(string home, CancellationToken token,
+            DiscoveryCache cache = null, bool forceRefresh = false, CopilotSessionOrigin origin = CopilotSessionOrigin.Cli)
         {
+            if (origin != CopilotSessionOrigin.Cli && origin != CopilotSessionOrigin.VisualStudio)
+                throw new ArgumentOutOfRangeException(nameof(origin));
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
+            token.ThrowIfCancellationRequested();
             var sessions = new List<CopilotActivitySession>();
             var failures = 0;
-            var unsupported = 0;
-            var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().WithDuplicateKeyChecking().Build();
+            IDeserializer deserializer = null;
+            IDeserializer GetDeserializer() => deserializer ??= new DeserializerBuilder().IgnoreUnmatchedProperties().WithDuplicateKeyChecking().Build();
+            var metadataPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var root = Path.Combine(home, "session-state");
             if (Directory.Exists(root))
             {
@@ -45,9 +109,11 @@ namespace StartScreen.Services
                     var path = Path.Combine(directory.FullName, "workspace.yaml");
                     if (!File.Exists(path))
                         continue;
+                    metadataPaths.Add(Path.GetFullPath(path));
                     try
                     {
-                        var session = ParseMetadata(ReadBoundedText(path), directory.Name, home, deserializer);
+                        var session = cache == null ? ParseMetadata(ReadBoundedText(path), directory.Name, home, GetDeserializer(), origin)
+                            : cache.ReadSession(path, directory.Name, home, GetDeserializer, forceRefresh, origin);
                         if (session == null)
                             continue;
                         sessions.Add(session);
@@ -61,47 +127,26 @@ namespace StartScreen.Services
                 }
             }
             token.ThrowIfCancellationRequested();
-            var codeSessions = sessions.Where(session => session.Origin == CopilotSessionOrigin.VisualStudioCode).ToArray();
-            if (codeSessions.Length > 0)
-            {
-                var mappings = ReadCodeMappings(codeCatalog, token, ex =>
-                {
-                    ex.LogAsync().FileAndForget(nameof(CopilotLocalSessions));
-                    failures++;
-                }, new HashSet<string>(codeSessions.Select(session => session.Id), StringComparer.OrdinalIgnoreCase));
-                foreach (var session in codeSessions)
-                {
-                    token.ThrowIfCancellationRequested();
-                    if (!mappings.TryGetValue(session.Id, out var native))
-                    {
-                        unsupported++;
-                        sessions.Remove(session);
-                        continue;
-                    }
-                    session.NativeSessionId = native.NativeSessionId;
-                    session.IsWorkspaceless = native.IsWorkspaceless;
-                    session.WorkingDirectory = native.IsWorkspaceless ? null : native.WorkingDirectory ?? session.WorkingDirectory;
-                }
-            }
+            cache?.PruneSessions(metadataPaths);
             return new CopilotSessionDiscovery
             {
                 Sessions = sessions.OrderByDescending(session => session.LastActivity).ToArray(),
-                Status = string.Join(" ", new[]
-                {
-                    failures > 0 ? "Some local Copilot session metadata could not be read. Refresh to retry." : null,
-                    unsupported > 0 ? "Some VS Code sessions have no compatible native-session mapping and are not shown." : null,
-                }.Where(message => message != null)),
+                Status = failures > 0 ? "Some local Copilot session metadata could not be read. Refresh to retry." : string.Empty,
             };
         }
 
-        internal static CopilotActivitySession ParseMetadata(string yaml, string directoryId, string home)
+        internal static CopilotActivitySession ParseMetadata(string yaml, string directoryId, string home,
+            CopilotSessionOrigin origin = CopilotSessionOrigin.Cli)
         {
             return ParseMetadata(yaml, directoryId, home,
-                new DeserializerBuilder().IgnoreUnmatchedProperties().WithDuplicateKeyChecking().Build());
+                new DeserializerBuilder().IgnoreUnmatchedProperties().WithDuplicateKeyChecking().Build(), origin);
         }
 
-        private static CopilotActivitySession ParseMetadata(string yaml, string directoryId, string home, IDeserializer deserializer)
+        private static CopilotActivitySession ParseMetadata(string yaml, string directoryId, string home, IDeserializer deserializer,
+            CopilotSessionOrigin origin)
         {
+            if (origin != CopilotSessionOrigin.Cli && origin != CopilotSessionOrigin.VisualStudio)
+                throw new ArgumentOutOfRangeException(nameof(origin));
             if (yaml == null || yaml.Length > 65536)
                 throw new InvalidDataException("Copilot session metadata is missing or too large.");
             var parser = new Parser(new StringReader(yaml));
@@ -120,13 +165,9 @@ namespace StartScreen.Services
             if (!Guid.TryParseExact(metadata.Id, "D", out var id) || !string.Equals(metadata.Id, directoryId, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The Copilot session ID does not match its saved directory.");
             // client_name records the creator. last_client_name changes when another app resumes it.
-            var origin = metadata.ClientName switch
-            {
-                "github/cli" => CopilotSessionOrigin.Cli,
-                "vscode-agent-host" => CopilotSessionOrigin.VisualStudioCode,
-                _ => (CopilotSessionOrigin?)null,
-            };
-            if (!origin.HasValue)
+            var supported = origin == CopilotSessionOrigin.Cli ? metadata.ClientName == "github/cli"
+                : metadata.ClientName == "visualstudio-chat" || metadata.ClientName == "microsoft/visualstudio-chat";
+            if (!supported)
                 return null;
             if (!DateTimeOffset.TryParse(metadata.UpdatedAt ?? metadata.CreatedAt, CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind, out var updated))
@@ -134,113 +175,13 @@ namespace StartScreen.Services
             return new CopilotActivitySession
             {
                 Id = id.ToString("D"),
-                Origin = origin.Value,
+                Origin = origin,
+                IsCached = origin == CopilotSessionOrigin.VisualStudio,
                 SessionHome = home,
                 Title = string.IsNullOrWhiteSpace(metadata.Name) ? "Untitled conversation" : metadata.Name,
                 WorkingDirectory = metadata.WorkingDirectory,
                 LastActivity = updated,
             };
-        }
-
-        internal static Dictionary<string, CodeSessionMetadata> ReadCodeMappings(string catalog, CancellationToken token,
-            Action<Exception> onError, HashSet<string> requiredSessionIds = null)
-        {
-            var mappings = new Dictionary<string, CodeSessionMetadata>(StringComparer.OrdinalIgnoreCase);
-            var remaining = requiredSessionIds == null ? null : new HashSet<string>(requiredSessionIds, StringComparer.OrdinalIgnoreCase);
-            token.ThrowIfCancellationRequested();
-            if (remaining?.Count == 0)
-                return mappings;
-            if (!Directory.Exists(catalog))
-                return mappings;
-            foreach (var directory in new DirectoryInfo(catalog).EnumerateDirectories()
-                .Where(directory => Guid.TryParseExact(directory.Name, "D", out _))
-                .OrderByDescending(directory => directory.LastWriteTimeUtc).Take(200))
-            {
-                token.ThrowIfCancellationRequested();
-                var path = Path.Combine(directory.FullName, "session.db");
-                if (!File.Exists(path))
-                    continue;
-                try
-                {
-                    var metadata = ReadCodeMetadata(path);
-                    if (metadata != null && (remaining == null || remaining.Contains(metadata.RuntimeId))
-                        && !mappings.ContainsKey(metadata.RuntimeId))
-                    {
-                        metadata.NativeSessionId = directory.Name;
-                        mappings.Add(metadata.RuntimeId, metadata);
-                        remaining?.Remove(metadata.RuntimeId);
-                        if (remaining?.Count == 0)
-                            break;
-                    }
-                }
-                catch (Exception ex) when (ex is SqliteException || ex is IOException || ex is UnauthorizedAccessException
-                    || ex is JsonException || ex is InvalidDataException)
-                {
-                    onError(ex);
-                }
-            }
-            return mappings;
-        }
-
-        internal static string ReadCodeMapping(string path) => ReadCodeMetadata(path)?.RuntimeId;
-
-        private static CodeSessionMetadata ReadCodeMetadata(string path)
-        {
-            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = path,
-                Mode = SqliteOpenMode.ReadOnly,
-                Pooling = false,
-                DefaultTimeout = 1,
-            }.ToString());
-            connection.Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = "SELECT key, value FROM session_metadata WHERE key IN ('defaultChatProviderData', 'agentHost.workspaceless', 'copilot.workingDirectory')";
-            using var reader = command.ExecuteReader();
-            var metadata = new CodeSessionMetadata();
-            while (reader.Read())
-            {
-                var value = reader.GetString(1);
-                if (value.Length > 16384)
-                    throw new InvalidDataException("VS Code session metadata is too large.");
-                switch (reader.GetString(0))
-                {
-                    case "defaultChatProviderData":
-                        using (var json = JsonDocument.Parse(value))
-                        {
-                            if (json.RootElement.ValueKind != JsonValueKind.Object)
-                                throw new InvalidDataException("VS Code session metadata is not an object.");
-                            if (json.RootElement.TryGetProperty("sdkSessionId", out var id) && id.ValueKind == JsonValueKind.String
-                                && Guid.TryParseExact(id.GetString(), "D", out var parsed))
-                                metadata.RuntimeId = parsed.ToString("D");
-                        }
-                        break;
-                    case "agentHost.workspaceless":
-                        if (!bool.TryParse(value, out var workspaceless))
-                            throw new InvalidDataException("VS Code session workspace metadata is not a boolean.");
-                        metadata.IsWorkspaceless = workspaceless;
-                        break;
-                    case "copilot.workingDirectory":
-                        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || !uri.IsFile)
-                            throw new InvalidDataException("VS Code session workspace metadata is not a file URI.");
-                        var directory = uri.LocalPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-                        // VS Code encodes the drive colon, which .NET Framework leaves as a rooted URI path.
-                        if (directory.Length >= 4 && directory[0] == Path.DirectorySeparatorChar && char.IsLetter(directory[1])
-                            && directory[2] == Path.VolumeSeparatorChar && directory[3] == Path.DirectorySeparatorChar)
-                            directory = directory.Substring(1);
-                        metadata.WorkingDirectory = directory;
-                        break;
-                }
-            }
-            return metadata.RuntimeId == null ? null : metadata;
-        }
-
-        internal sealed class CodeSessionMetadata
-        {
-            internal string RuntimeId { get; set; }
-            internal string NativeSessionId { get; set; }
-            internal string WorkingDirectory { get; set; }
-            internal bool IsWorkspaceless { get; set; }
         }
 
         internal static string ReadBoundedText(string path)

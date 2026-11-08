@@ -354,7 +354,7 @@ namespace StartScreen.ToolWindows.Controls
         private void UpdateBusyState()
         {
             IsBusy = !_isDisposed && (_isConnectionLoading || _activityLoadCount > 0
-                || _copilotConnecting || _copilotAdapter != null && !_copilotAdapter.IsReady);
+                || _copilotSourcesLoading);
         }
 
         internal static void ResetStatusPanels(params UIElement[] panels)

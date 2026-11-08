@@ -32,13 +32,6 @@ namespace StartScreen.Commands
         protected override Task ExecuteAsync(OleMenuCmdEventArgs e) => CopilotSessionMenu.ExecuteAsync(CopilotSessionOrigin.VisualStudio);
     }
 
-    [Command(PackageIds.OpenCopilotInCode)]
-    internal sealed class OpenCopilotInCode : BaseCommand<OpenCopilotInCode>
-    {
-        protected override void BeforeQueryStatus(EventArgs e) => CopilotSessionMenu.Update(Command, CopilotSessionOrigin.VisualStudioCode);
-        protected override Task ExecuteAsync(OleMenuCmdEventArgs e) => CopilotSessionMenu.ExecuteAsync(CopilotSessionOrigin.VisualStudioCode);
-    }
-
     [Command(PackageIds.OpenCopilotInCli)]
     internal sealed class OpenCopilotInCli : BaseCommand<OpenCopilotInCli>
     {

@@ -267,6 +267,9 @@ namespace StartScreen.Services.DevHub
                 var repositoryQueue = new Queue<(IDevHubProvider Provider, RemoteRepoIdentifier Repo)>();
                 var steps = new Dictionary<Task<(string Key, DevHubActivitySnapshot Snapshot)>, string>();
                 var publications = new DashboardPublicationWindow();
+                var inventories = new AsyncQueue<(string Key, DevHubActivitySnapshot Snapshot)>();
+                var inventoryUpdate = inventories.DequeueAsync(requestToken);
+                var completedSources = new HashSet<string>(StringComparer.Ordinal);
                 Task publicationDelay = null;
                 void PublishUpdate(bool force = false)
                 {
@@ -287,14 +290,28 @@ namespace StartScreen.Services.DevHub
                         repositoryTasks.Add(task);
                 }
 
+                void AddActivitySource(IDevHubProvider provider, DevHubActivityKind kind, DevHubActivityOptions activityOptions,
+                    RemoteRepoIdentifier repo, string key, string step, bool repository = false)
+                {
+                    var progressiveOptions = new DevHubActivityOptions(activityOptions.MaxItems, activityOptions.IncludeCompleted,
+                        activityOptions.RefreshContext, snapshot =>
+                        {
+                            if (requestToken.IsCancellationRequested)
+                                return;
+                            // A late preview can race with refresh completion.
+                            inventories.TryEnqueue((key, snapshot));
+                        });
+                    AddSource(key, step, () => FetchActivityAsync(provider, kind, progressiveOptions, repo, requestToken), repository);
+                }
+
                 void AddProviderSources(IDevHubProvider provider)
                 {
-                    AddSource(provider.DisplayName + "/issues", $"Loading {provider.DisplayName} issues...",
-                        () => FetchActivityAsync(provider, DevHubActivityKind.Issues, options, null, requestToken));
-                    AddSource(provider.DisplayName + "/pulls", $"Loading {provider.DisplayName} pull requests...",
-                        () => FetchActivityAsync(provider, DevHubActivityKind.PullRequests, options, null, requestToken));
-                    AddSource(provider.DisplayName + "/builds", $"Loading {provider.DisplayName} builds...",
-                        () => FetchActivityAsync(provider, DevHubActivityKind.CiRuns, options, null, requestToken));
+                    AddActivitySource(provider, DevHubActivityKind.Issues, options, null,
+                        provider.DisplayName + "/issues", $"Loading {provider.DisplayName} issues...");
+                    AddActivitySource(provider, DevHubActivityKind.PullRequests, options, null,
+                        provider.DisplayName + "/pulls", $"Loading {provider.DisplayName} pull requests...");
+                    AddActivitySource(provider, DevHubActivityKind.CiRuns, options, null,
+                        provider.DisplayName + "/builds", $"Loading {provider.DisplayName} builds...");
                     AddSource(provider.DisplayName + "/discovery", $"Finding {provider.DisplayName} repositories...", async () =>
                     {
                         var result = await DevHubActivityRequest.RunAsync(() => provider.GetActivityReposAsync(candidateUrls, requestToken),
@@ -314,19 +331,37 @@ namespace StartScreen.Services.DevHub
                             var (provider, repo) = repositoryQueue.Dequeue();
                             var repoOptions = new DevHubActivityOptions(options.MaxItems == DevHubActivityOptions.DefaultLimit
                                 ? _dashboardRepoItemCount : options.MaxItems, options.IncludeCompleted, refreshContext);
-                            AddSource(provider.DisplayName + "/repo/" + repo.ToString().ToLowerInvariant(),
+                            AddActivitySource(provider, DevHubActivityKind.Repository, repoOptions, repo,
+                                provider.DisplayName + "/repo/" + repo.ToString().ToLowerInvariant(),
                                 $"Loading {provider.DisplayName} activity for {repo.DisplayName}...",
-                                () => FetchActivityAsync(provider, DevHubActivityKind.Repository, repoOptions, repo, requestToken), repository: true);
+                                repository: true);
                         }
 
                         stepProgress?.Report(remaining.Count > 0 ? steps[remaining[0]] : "Checking connected provider accounts...");
-                        var pendingTasks = authentications.Cast<Task>().Concat(remaining);
+                        var pendingTasks = authentications.Cast<Task>().Concat(remaining).Append(inventoryUpdate);
                         if (publicationDelay != null)
                             pendingTasks = pendingTasks.Append(publicationDelay);
                         var completedTask = await Task.WhenAny(pendingTasks).WithCancellation(cancellationToken);
                         cancellationToken.ThrowIfCancellationRequested();
                         if (generation != _getCredentialGeneration() || queryContext != _getQueryContext())
                             return InvalidateContext(progress);
+                        if (ReferenceEquals(completedTask, inventoryUpdate))
+                        {
+                            var (inventoryKey, inventorySnapshot) = await inventoryUpdate;
+                            inventoryUpdate = inventories.DequeueAsync(requestToken);
+                            if (!completedSources.Contains(inventoryKey))
+                            {
+                                dashboard.Sources.TryGetValue(inventoryKey, out var previousInventory);
+                                if (inventorySnapshot.RepoIdentifier != null && previousInventory != null)
+                                {
+                                    inventorySnapshot.Issues = previousInventory.Issues;
+                                    inventorySnapshot.CiRuns = previousInventory.CiRuns;
+                                }
+                                dashboard.Sources[inventoryKey] = RetainFailedSource(inventorySnapshot, previousInventory);
+                                PublishUpdate();
+                            }
+                            continue;
+                        }
                         if (ReferenceEquals(completedTask, publicationDelay))
                         {
                             PublishUpdate(true);
@@ -372,6 +407,7 @@ namespace StartScreen.Services.DevHub
                         repositoryTasks.Remove(completed);
                         steps.Remove(completed);
                         var (key, snapshot) = await completed;
+                        completedSources.Add(key);
                         dashboard.Sources.TryGetValue(key, out var previous);
                         dashboard.Sources[key] = RetainFailedSource(snapshot, previous);
                         if (key.EndsWith("/discovery", StringComparison.Ordinal))
@@ -402,6 +438,7 @@ namespace StartScreen.Services.DevHub
                 finally
                 {
                     requests.Cancel();
+                    inventories.Complete();
                     try
                     {
                         await Task.WhenAll(authentications.Cast<Task>().Concat(remaining));
@@ -622,7 +659,7 @@ namespace StartScreen.Services.DevHub
         /// minutes unless forced; authentication still checks the current credential.
         /// </summary>
         public async Task<DevHubDashboard> ScopeToRepoAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken,
-            DevHubActivityOptions options = null, bool forceRefresh = false)
+            DevHubActivityOptions options = null, bool forceRefresh = false, IProgress<DevHubDashboard> progress = null)
         {
             if (repo == null)
                 return CurrentDashboard;
@@ -674,14 +711,49 @@ namespace StartScreen.Services.DevHub
                 IncludesCompleted = options.IncludeCompleted,
                 CacheContext = context,
             };
-            var snapshot = cached?.Snapshot ?? (verified ? await FetchActivityAsync(provider, DevHubActivityKind.Repository, options, repo, cancellationToken)
-                : new DevHubActivitySnapshot
+            var inventoryFinished = 0;
+            var progressiveOptions = progress == null ? options : new DevHubActivityOptions(options.MaxItems, options.IncludeCompleted, options.RefreshContext, inventory =>
+            {
+                if (progress == null || Volatile.Read(ref inventoryFinished) != 0 || cancellationToken.IsCancellationRequested
+                    || requestId != Volatile.Read(ref _scopeRequestId) || generation != _getCredentialGeneration()
+                    || queryContext != _getQueryContext())
+                    return;
+                var preview = new DevHubDashboard
                 {
-                    Status = provider == null ? DevHubActivityStatus.Unavailable
-                        : authentication.Status == DevHubActivityStatus.Success || authentication.Status == DevHubActivityStatus.Partial
-                            ? DevHubActivityStatus.Unauthorized : authentication.Status,
-                    RepoIdentifier = repo,
-                });
+                    Users = users.ToList(),
+                    IdentityContext = dashboard.IdentityContext,
+                    CredentialGeneration = authenticationGeneration,
+                    QueryContext = queryContext,
+                    FetchedAt = dashboard.FetchedAt,
+                    ActivityLimit = options.MaxItems,
+                    IncludesCompleted = options.IncludeCompleted,
+                    CacheContext = context,
+                    IsRefreshing = true,
+                    PullRequests = inventory.PullRequests,
+                    Issues = inventory.Issues,
+                    CiRuns = inventory.CiRuns,
+                };
+                preview.Sources[repo.ToString().ToLowerInvariant()] = inventory;
+                if (!string.IsNullOrEmpty(inventory.Message))
+                    preview.ActivityWarnings[repo.ToString().ToLowerInvariant()] = inventory.Message;
+                progress.Report(preview);
+            });
+            DevHubActivitySnapshot snapshot;
+            try
+            {
+                snapshot = cached?.Snapshot ?? (verified ? await FetchActivityAsync(provider, DevHubActivityKind.Repository, progressiveOptions, repo, cancellationToken)
+                    : new DevHubActivitySnapshot
+                    {
+                        Status = provider == null ? DevHubActivityStatus.Unavailable
+                            : authentication.Status == DevHubActivityStatus.Success || authentication.Status == DevHubActivityStatus.Partial
+                                ? DevHubActivityStatus.Unauthorized : authentication.Status,
+                        RepoIdentifier = repo,
+                    });
+            }
+            finally
+            {
+                Volatile.Write(ref inventoryFinished, 1);
+            }
             cancellationToken.ThrowIfCancellationRequested();
             if (generation != _getCredentialGeneration() || queryContext != _getQueryContext()
                 || context != CreateScopedContext(users, options, new[] { GetLookupUrl(repo) }))

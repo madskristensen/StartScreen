@@ -124,6 +124,13 @@ namespace StartScreen.Models.DevHub
         public string ChecksSummary { get; set; }
         public string ChecksUrl { get; set; }
 
+        internal DevHubPullRequest Clone()
+        {
+            var copy = (DevHubPullRequest)MemberwiseClone();
+            copy.LinkedWorkItems = LinkedWorkItems == null ? null : new Dictionary<string, string>(LinkedWorkItems);
+            return copy;
+        }
+
         [JsonIgnore]
         public bool IsOpen => !IsMerged && (string.Equals(Status, "open", StringComparison.OrdinalIgnoreCase)
             || string.Equals(Status, "conflicts", StringComparison.OrdinalIgnoreCase) || IsDraft);

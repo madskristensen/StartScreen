@@ -4,6 +4,7 @@ using StartScreen.Models.DevHub;
 using StartScreen.Services;
 using Microsoft.VisualStudio.Copilot.Harness;
 using Microsoft.VisualStudio.Threading;
+using StartScreen.ToolWindows.Controls;
 
 namespace StartScreen.Test
 {
@@ -669,6 +670,108 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task SavedMetadata_PopulatesCardsBeforeLiveAttachmentAndLiveStateWinsAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var backend = new FakeBackend();
+            backend.SessionsReady.Publish(false);
+            var session = new FakeSession();
+            session.Title.Publish("Live title");
+            var permission = new FakePermission();
+            session.ChatEvents.Replace(permission);
+            var unsaved = new FakeSession();
+            backend.Sessions.Replace(session, unsaved);
+            var queue = new Queue<Action>();
+            var errors = new List<Exception>();
+            using var adapter = new CopilotHarnessAdapter(queue.Enqueue, errors.Add);
+            adapter.StartBackend(backend);
+            var id = session.SessionId.Guid.ToString("D");
+            var path = directory.GetPath(Path.Combine("session-state", id, "workspace.yaml"));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, $"id: {id}\nclient_name: visualstudio-chat\nname: Saved title\ncwd: 'C:\\Code\\App'\nupdated_at: 2026-11-06T19:03:27.900Z\n");
+
+            var metadata = await CopilotLocalSessions.ReadAsync(directory.Path, CancellationToken.None, origin: CopilotSessionOrigin.VisualStudio);
+            var cache = new CopilotActivityCache();
+            cache.Update(metadata.Sessions, true);
+            var early = cache.Update(adapter.Sessions, adapter.IsReady);
+            Assert.IsFalse(adapter.IsReady);
+            Assert.IsEmpty(adapter.Sessions);
+            Assert.HasCount(1, DevHubWorkItem.GetCopilotItems(early, false));
+            Assert.AreEqual("Saved title", early.Single().Title);
+            Assert.AreEqual(@"C:\Code\App", early.Single().WorkingDirectory);
+            Assert.AreEqual(string.Empty, early.Single().StatusBadge);
+
+            while (queue.Count > 0)
+                queue.Dequeue()();
+            var enriched = cache.Update(adapter.Sessions, adapter.IsReady);
+            Assert.IsFalse(adapter.IsReady);
+            Assert.HasCount(2, enriched);
+            Assert.AreEqual("Live title", enriched.Single(item => item.Id == id).Title);
+            Assert.AreEqual("Waiting", enriched.Single(item => item.Id == id).StatusBadge);
+            Assert.IsFalse(enriched.Single(item => item.Id == id).IsCached);
+            Assert.IsTrue(enriched.Any(item => item.Id == unsaved.SessionId.Guid.ToString("D")));
+            Assert.HasCount(1, DevHubWorkItem.GetCopilotItems(enriched, true));
+            backend.Sessions.Replace();
+            backend.SessionsReady.Publish(true);
+            while (queue.Count > 0)
+                queue.Dequeue()();
+            Assert.IsTrue(adapter.IsReady);
+            Assert.IsEmpty(cache.Update(adapter.Sessions, adapter.IsReady));
+            Assert.AreEqual(0, permission.State.SubscriberCount);
+            Assert.IsEmpty(errors);
+        }
+
+        [STATestMethod]
+        public void Refresh_KeepsTheConnectedAdapterAndPermissionSubscriptions()
+        {
+            var backend = new FakeBackend();
+            var session = new FakeSession();
+            var permission = new FakePermission();
+            session.ChatEvents.Replace(permission);
+            backend.Sessions.Replace(session);
+            using var adapter = CreateAdapter();
+            adapter.StartBackend(backend);
+            var panel = CreatePanel();
+            var field = typeof(DevHubPanel).GetField("_copilotAdapter", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            field.SetValue(panel, adapter);
+
+            panel.RefreshCopilotActivity();
+
+            Assert.AreSame(adapter, field.GetValue(panel));
+            Assert.IsTrue(adapter.HasSession(session.SessionId.Guid.ToString("D")));
+            Assert.AreEqual(1, session.Title.SubscriberCount);
+            Assert.AreEqual(1, permission.State.SubscriberCount);
+            permission.State.Publish("Accepted");
+            Assert.IsFalse(adapter.Sessions.Single().NeedsAttention);
+            Assert.AreEqual("Idle", adapter.Sessions.Single().StatusBadge);
+        }
+
+        [STATestMethod]
+        public void BusyState_DoesNotWaitForTheLiveIndexButTracksSavedSourceRefresh()
+        {
+            var backend = new FakeBackend();
+            backend.SessionsReady.Publish(false);
+            using var adapter = CreateAdapter();
+            adapter.StartBackend(backend);
+            var panel = CreatePanel();
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            typeof(DevHubPanel).GetField("_copilotAdapter", flags)!.SetValue(panel, adapter);
+            typeof(DevHubPanel).GetField("_copilotConnecting", flags)!.SetValue(panel, true);
+            var updateBusy = typeof(DevHubPanel).GetMethod("UpdateBusyState", flags)!;
+
+            updateBusy.Invoke(panel, null);
+            Assert.IsFalse(adapter.IsReady);
+            Assert.IsFalse(panel.IsBusy);
+            var loading = typeof(DevHubPanel).GetField("_copilotSourcesLoading", flags)!;
+            loading.SetValue(panel, true);
+            updateBusy.Invoke(panel, null);
+            Assert.IsTrue(panel.IsBusy);
+            loading.SetValue(panel, false);
+            updateBusy.Invoke(panel, null);
+            Assert.IsFalse(panel.IsBusy);
+        }
+
+        [TestMethod]
         public void Cache_RetainsOnlyBoundedMetadataNeverLiveOrPermissionState()
         {
             var now = DateTimeOffset.UtcNow;
@@ -817,6 +920,26 @@ namespace StartScreen.Test
             Assert.AreEqual(0, child.ChatEvents.Changes.SubscriberCount);
             Assert.AreEqual(0, question.State.SubscriberCount);
             Assert.IsEmpty(errors);
+        }
+
+        private static DevHubPanel CreatePanel()
+        {
+            var application = System.Windows.Application.Current ?? new System.Windows.Application();
+            var stylesKey = Microsoft.VisualStudio.Shell.VsResourceKeys.ThemedDialogDefaultStylesKey;
+            if (!application.Resources.Contains(stylesKey))
+                application.Resources.Add(stylesKey, new System.Windows.ResourceDictionary());
+            AddStyle(Microsoft.VisualStudio.Shell.VsResourceKeys.ThemedDialogComboBoxStyleKey, typeof(System.Windows.Controls.ComboBox));
+            AddStyle(Microsoft.VisualStudio.Shell.VsResourceKeys.TextBoxStyleKey, typeof(System.Windows.Controls.TextBox));
+            return new DevHubPanel();
+
+            void AddStyle(object key, Type targetType)
+            {
+                if (application.Resources.Contains(key))
+                    return;
+                var style = new System.Windows.Style(targetType);
+                style.Seal();
+                application.Resources.Add(key, style);
+            }
         }
 
         [TestMethod]

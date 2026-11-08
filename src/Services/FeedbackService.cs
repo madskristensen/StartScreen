@@ -29,7 +29,7 @@ namespace StartScreen.Services
         {
             Timeout = TimeSpan.FromSeconds(30),
         };
-        private static readonly Regex _htmlTags = new Regex("<[^>]+>", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+        private static readonly Regex _htmlTags = new Regex("<[^>]+>", RegexOptions.None, TimeSpan.FromSeconds(1));
         internal static FeedbackService Instance { get; } = new FeedbackService(diskCache: new FeedbackCache(Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StartScreen", "FeedbackCache")));
         private readonly HttpClient _client;
@@ -149,19 +149,35 @@ namespace StartScreen.Services
                 }
                 while (read < total);
 
-                var tickets = new List<FeedbackTicket>();
                 var candidates = ids.ToArray();
-                for (var offset = 0; offset < candidates.Length; offset += _concurrency)
+                var tickets = new FeedbackTicket[candidates.Length];
+                var next = -1;
+                using var hydration = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                async Task HydrateAsync()
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    FeedbackTicket[] batch = await Task.WhenAll(candidates.Skip(offset).Take(_concurrency)
-                        .Select(id => GetTicketAsync(id, principalId, token.Token, cancellationToken)));
-                    tickets.AddRange(batch.Where(ticket => ticket != null));
+                    try
+                    {
+                        while (true)
+                        {
+                            hydration.Token.ThrowIfCancellationRequested();
+                            var index = Interlocked.Increment(ref next);
+                            if (index >= candidates.Length)
+                                return;
+                            tickets[index] = await GetTicketAsync(candidates[index], principalId, token.Token, hydration.Token);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        hydration.Cancel();
+                        await ex.LogAsync();
+                        throw;
+                    }
                 }
+                await Task.WhenAll(Enumerable.Range(0, Math.Min(_concurrency, candidates.Length)).Select(_ => HydrateAsync()));
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var snapshot = new FeedbackSnapshot(principalId,
-                    tickets.OrderByDescending(ticket => ticket.UpdatedUtc).ThenByDescending(ticket => ticket.Id)
+                    tickets.Where(ticket => ticket != null).OrderByDescending(ticket => ticket.UpdatedUtc).ThenByDescending(ticket => ticket.Id)
                         .Take(MaximumTicketCount).ToArray(), _utcNow());
                 if (_diskCache != null)
                     await _diskCache.WriteAsync(snapshot, cancellationToken);

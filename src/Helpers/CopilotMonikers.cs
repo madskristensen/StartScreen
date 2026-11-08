@@ -15,7 +15,6 @@ namespace StartScreen.Helpers
         internal static ImageMoniker ForOrigin(CopilotSessionOrigin origin) => origin switch
         {
             CopilotSessionOrigin.VisualStudio => _agent,
-            CopilotSessionOrigin.VisualStudioCode => _visualStudioCode,
             CopilotSessionOrigin.Cli => KnownMonikers.Console,
             CopilotSessionOrigin.GitHub => KnownMonikers.GitHub,
             _ => throw new ArgumentOutOfRangeException(nameof(origin)),
@@ -32,7 +31,6 @@ namespace StartScreen.Helpers
         };
 
         private static readonly ImageMoniker _agent = Resolve("Agent", GitHubCopilot);
-        private static readonly ImageMoniker _visualStudioCode = Resolve("VisualStudioCode", KnownMonikers.VisualStudioOnline);
 
         private static ImageMoniker Resolve(string name, ImageMoniker fallback) => typeof(KnownMonikers).GetProperty(name)?.GetValue(null)
             is ImageMoniker moniker ? moniker : fallback;

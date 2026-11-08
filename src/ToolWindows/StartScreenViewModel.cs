@@ -433,9 +433,9 @@ namespace StartScreen.ToolWindows
             _repositorySummaries = new Services.DevHub.DevHubRepoSummaryService(shutdownToken);
             _getServiceHealthStatusAsync = getServiceHealthStatusAsync ?? ServiceHealthService.GetStatusAsync;
             _getServiceHealthTaskFactory = getServiceHealthTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
-            _getFeedbackAsync = getFeedbackAsync ?? FeedbackService.Instance.GetTicketsAsync;
+            _getFeedbackAsync = getFeedbackAsync ?? ((force, token) => FeedbackService.Instance.GetTicketsAsync(force, token));
             _getCachedFeedbackAsync = getCachedFeedbackAsync ?? (getFeedbackAsync == null
-                ? FeedbackService.Instance.GetCachedTicketsAsync : _ => Task.FromResult<FeedbackSnapshot>(null));
+                ? token => FeedbackService.Instance.GetCachedTicketsAsync(token) : _ => Task.FromResult<FeedbackSnapshot>(null));
             _getFeedbackTaskFactory = getFeedbackTaskFactory ?? (() => StartScreenPackage.BackgroundTaskFactory);
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             NewsSection = newsSection ?? new NewsSectionViewModel(GetBackgroundCancellationToken);
@@ -792,6 +792,7 @@ namespace StartScreen.ToolWindows
             //    UI is updated. Options is just a settings-store read and is needed
             //    for pinned-item state.
             Options options = await Options.GetLiveInstanceAsync();
+            StartupDiagnostics.Mark("MRU settings loaded");
             bool hadHistory = !string.IsNullOrEmpty(options.ExtendedMruItems) || !string.IsNullOrEmpty(options.PinnedItems);
             List<MruItem> mruItems;
             try
@@ -802,10 +803,13 @@ namespace StartScreen.ToolWindows
             {
                 _initialMruOptionsNeedSave |= hadHistory && string.IsNullOrEmpty(options.ExtendedMruItems) && string.IsNullOrEmpty(options.PinnedItems);
             }
+            StartupDiagnostics.Mark("VS recent projects loaded");
             List<MruItem> extendedItems = await MruService.GetExtendedOnlyItemsAsync(mruItems, options, cancellationToken, persistChanges: false);
+            StartupDiagnostics.Mark("extended MRU merged");
             var allItems = mruItems.Concat(extendedItems).ToList();
             if (!_mruMetadataCacheLoaded)
                 await _mruMetadataCache.LoadAsync(cancellationToken);
+            StartupDiagnostics.Mark("MRU metadata cache loaded");
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();

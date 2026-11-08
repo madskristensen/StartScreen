@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Windows.Threading;
+using Microsoft.VisualStudio.Threading;
 using StartScreen.Models;
 using StartScreen.Services;
 using StartScreen.Services.DevHub;
@@ -12,6 +13,11 @@ namespace StartScreen.ToolWindows.Controls
     public partial class DevHubPanel
     {
         private IReadOnlyList<CopilotActivitySession> _localCopilotSessions = Array.Empty<CopilotActivitySession>();
+        private readonly CopilotLocalSessions.DiscoveryCache _localCopilotCache = new();
+        private readonly CopilotLocalSessions.DiscoveryCache _visualStudioCopilotCache = new();
+        private JoinableTask _visualStudioCopilotRefresh;
+        private bool _visualStudioCopilotMetadataLoaded;
+        private string _visualStudioCopilotStatus;
         private IReadOnlyList<CopilotActivitySession> _cloudCopilotSessions = Array.Empty<CopilotActivitySession>();
         private CancellationTokenSource _copilotSourcesCancellation;
         private DispatcherTimer _copilotSourcesTimer;
@@ -46,32 +52,40 @@ namespace StartScreen.ToolWindows.Controls
         private async Task RefreshCopilotSourcesAsync(CancellationToken token, bool forceRefresh = false)
         {
             _copilotSourcesLoading = true;
+            UpdateBusyState();
             try
             {
-                await System.Threading.Tasks.Task.WhenAll(RefreshLocalCopilotAsync(token), RefreshCloudCopilotAsync(token, forceRefresh));
+                _visualStudioCopilotRefresh = StartScreenPackage.BackgroundTaskFactory.RunAsync(() => RefreshVisualStudioCopilotMetadataAsync(token, forceRefresh));
+                await System.Threading.Tasks.Task.WhenAll(_visualStudioCopilotRefresh.Task,
+                    RefreshLocalCopilotAsync(token, forceRefresh), RefreshCloudCopilotAsync(token, forceRefresh));
             }
             finally
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (_copilotSourcesCancellation?.Token == token)
+                {
                     _copilotSourcesLoading = false;
+                    UpdateBusyState();
+                }
             }
         }
 
-        private async Task RefreshLocalCopilotAsync(CancellationToken token)
+        private async Task RefreshVisualStudioCopilotMetadataAsync(CancellationToken token, bool forceRefresh)
         {
-            using var progress = Progress?.Start(step: "Reading CLI and VS Code Copilot sessions...");
+            using var progress = Progress?.Start(step: CopilotLoadingStep);
             progress?.Report((0, 1));
             var elapsed = Stopwatch.StartNew();
             try
             {
-                var result = await CopilotLocalSessions.ReadAsync(CopilotLocalSessions.DefaultHome, CopilotLocalSessions.CodeCatalog, token);
+                var result = await CopilotLocalSessions.ReadAsync(CopilotLocalSessions.VisualStudioHome, token,
+                    _visualStudioCopilotCache, forceRefresh, CopilotSessionOrigin.VisualStudio);
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
                 if (token.IsCancellationRequested || _isDisposed)
                     return;
-                _localCopilotSessions = result.Sessions;
-                _localCopilotStatus = result.Status;
-                OutputLog.Info("Copilot", $"CLI/VS Code discovery finished in {elapsed.ElapsedMilliseconds} ms ({result.Sessions.Count} sessions).");
+                _copilotCache.Update(result.Sessions, true);
+                _visualStudioCopilotMetadataLoaded = true;
+                _visualStudioCopilotStatus = result.Status;
+                OutputLog.Info("Copilot", $"VS saved metadata discovery finished in {elapsed.ElapsedMilliseconds} ms ({result.Sessions.Count} sessions).");
                 progress?.Complete();
                 RenderCopilotActivity();
             }
@@ -85,7 +99,41 @@ namespace StartScreen.ToolWindows.Controls
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (!token.IsCancellationRequested && !_isDisposed)
                 {
-                    _localCopilotStatus = "CLI and VS Code session discovery failed. Refresh to retry. Details are in the Activity Log.";
+                    _visualStudioCopilotStatus = "VS saved session discovery failed. Refresh to retry. Details are in the Activity Log.";
+                    RenderCopilotActivity();
+                }
+            }
+        }
+
+        private async Task RefreshLocalCopilotAsync(CancellationToken token, bool forceRefresh)
+        {
+            using var progress = Progress?.Start(step: "Reading CLI Copilot sessions...");
+            progress?.Report((0, 1));
+            var elapsed = Stopwatch.StartNew();
+            try
+            {
+                var result = await CopilotLocalSessions.ReadAsync(CopilotLocalSessions.DefaultHome, token,
+                    _localCopilotCache, forceRefresh);
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
+                if (token.IsCancellationRequested || _isDisposed)
+                    return;
+                _localCopilotSessions = result.Sessions;
+                _localCopilotStatus = result.Status;
+                OutputLog.Info("Copilot", $"CLI discovery finished in {elapsed.ElapsedMilliseconds} ms ({result.Sessions.Count} sessions).");
+                progress?.Complete();
+                RenderCopilotActivity();
+            }
+            catch (OperationCanceledException ex) when (token.IsCancellationRequested)
+            {
+                await ex.LogAsync();
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (!token.IsCancellationRequested && !_isDisposed)
+                {
+                    _localCopilotStatus = "CLI session discovery failed. Refresh to retry. Details are in the Activity Log.";
                     RenderCopilotActivity();
                 }
             }
@@ -142,7 +190,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateCopilotStatus()
         {
-            var status = string.Join(" ", new[] { _copilotConnectionError, _copilotCacheError, _localCopilotStatus,
+            var status = string.Join(" ", new[] { _copilotConnectionError, _copilotCacheError, _visualStudioCopilotStatus, _localCopilotStatus,
                 Options.Instance.DevHubGitHubEnabled ? _cloudCopilotStatus : null }.Where(message => !string.IsNullOrWhiteSpace(message)));
             if (status == _lastCopilotStatus)
                 return;
@@ -162,7 +210,9 @@ namespace StartScreen.ToolWindows.Controls
             _copilotSourcesCancellation?.Cancel();
             _copilotSourcesCancellation?.Dispose();
             _copilotSourcesCancellation = null;
+            _visualStudioCopilotRefresh = null;
             _copilotSourcesLoading = false;
+            UpdateBusyState();
             _cloudCopilotSessions = _cloudCopilotSessions.Select(session => session.AsCached()).ToArray();
         }
     }

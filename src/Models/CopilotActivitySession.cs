@@ -4,10 +4,10 @@ namespace StartScreen.Models
 {
     internal enum CopilotSessionOrigin
     {
-        VisualStudio,
-        VisualStudioCode,
-        Cli,
-        GitHub
+        // Keep existing origin IDs; 1 was VS Code.
+        VisualStudio = 0,
+        Cli = 2,
+        GitHub = 3
     }
 
     internal sealed class CopilotActivitySession
@@ -15,13 +15,11 @@ namespace StartScreen.Models
         public string Id { get; set; }
         public CopilotSessionOrigin Origin { get; set; }
         public string SessionHome { get; set; }
-        public string NativeSessionId { get; set; }
         public string WebUrl { get; set; }
         public string Repository { get; set; }
         public string RemoteState { get; set; }
         public string Title { get; set; }
         public string WorkingDirectory { get; set; }
-        public bool IsWorkspaceless { get; set; }
         public DateTimeOffset LastActivity { get; set; }
         public bool? IsResponding { get; set; }
         public bool IsTranscript { get; set; }
@@ -33,7 +31,6 @@ namespace StartScreen.Models
         public string OriginName => Origin switch
         {
             CopilotSessionOrigin.VisualStudio => "Visual Studio",
-            CopilotSessionOrigin.VisualStudioCode => "VS Code",
             CopilotSessionOrigin.Cli => "CLI",
             CopilotSessionOrigin.GitHub => "GitHub",
             _ => throw new InvalidOperationException("Unknown Copilot session origin."),
@@ -51,17 +48,17 @@ namespace StartScreen.Models
             : IsRunning ? "Running"
             : IsResponding == false ? "Idle" : "Live activity is not available for this conversation.";
 
+        internal CopilotActivitySession Clone() => (CopilotActivitySession)MemberwiseClone();
+
         internal CopilotActivitySession AsCached() => new()
         {
             Id = Id,
             Origin = Origin,
             SessionHome = SessionHome,
-            NativeSessionId = NativeSessionId,
             WebUrl = WebUrl,
             Repository = Repository,
             Title = Title,
             WorkingDirectory = WorkingDirectory,
-            IsWorkspaceless = IsWorkspaceless,
             LastActivity = LastActivity,
             IsTranscript = IsTranscript,
             IsCached = true,

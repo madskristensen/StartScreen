@@ -8,10 +8,15 @@ namespace StartScreen.Services
 {
     internal static class CopilotSessionLauncher
     {
-        internal static bool Supports(CopilotSessionOrigin source, CopilotSessionOrigin destination) => source == destination
-            || destination == CopilotSessionOrigin.Cli && (source == CopilotSessionOrigin.VisualStudio || source == CopilotSessionOrigin.VisualStudioCode);
+        internal static bool Supports(CopilotSessionOrigin source, CopilotSessionOrigin destination) => source switch
+        {
+            CopilotSessionOrigin.VisualStudio => destination == CopilotSessionOrigin.VisualStudio || destination == CopilotSessionOrigin.Cli,
+            CopilotSessionOrigin.Cli => destination == CopilotSessionOrigin.Cli,
+            CopilotSessionOrigin.GitHub => destination == CopilotSessionOrigin.GitHub,
+            _ => false,
+        };
 
-        internal static string CliUnavailableReason(CopilotActivitySession session, bool codeRunning,
+        internal static string CliUnavailableReason(CopilotActivitySession session,
             Func<string, string> readSavedState = null)
         {
             if (!Supports(session.Origin, CopilotSessionOrigin.Cli))
@@ -21,8 +26,6 @@ namespace StartScreen.Services
             // A live activity stream means VS still has the session loaded, even while idle.
             if (session.Origin == CopilotSessionOrigin.VisualStudio && session.IsResponding.HasValue)
                 return "Close the original session first; Visual Studio still has it loaded.";
-            if (session.Origin == CopilotSessionOrigin.VisualStudioCode && codeRunning)
-                return "Close VS Code first; its agent host may still own this session.";
             return (readSavedState ?? SavedSessionUnavailableReason)(SessionDirectory(session));
         }
 
@@ -71,23 +74,6 @@ namespace StartScreen.Services
         internal static string FindCliExecutable() => FindOnPath("copilot.exe")
             ?? throw new FileNotFoundException("GitHub Copilot CLI was not found. Install it and add copilot.exe to PATH, then refresh.");
 
-        internal static string FindCodeExecutable()
-        {
-            var local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Microsoft VS Code", "Code.exe");
-            var system = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft VS Code", "Code.exe");
-            if (File.Exists(local))
-                return local;
-            if (File.Exists(system))
-                return system;
-            var executable = FindOnPath("Code.exe");
-            if (executable != null)
-                return executable;
-            var command = FindOnPath("code.cmd");
-            executable = command == null ? null : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(command), "..", "Code.exe"));
-            return executable != null && File.Exists(executable) ? executable
-                : throw new FileNotFoundException("VS Code was not found. Install VS Code with native Agents support, then refresh.");
-        }
-
         private static string FindOnPath(string name)
         {
             foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator))
@@ -116,11 +102,6 @@ namespace StartScreen.Services
                 arguments = "--resume=" + id.ToString("D");
                 home = session.Origin == CopilotSessionOrigin.VisualStudio ? CopilotLocalSessions.VisualStudioHome : CopilotLocalSessions.DefaultHome;
             }
-            else if (destination == CopilotSessionOrigin.VisualStudioCode && Guid.TryParseExact(session.NativeSessionId, "D", out var nativeId))
-            {
-                arguments = "--open-url vscode://agents/agent-host-session/ahp-session/" + nativeId.ToString("D");
-                home = CopilotLocalSessions.DefaultHome;
-            }
             else
                 throw new InvalidOperationException("No compatible native session destination was found.");
             var start = new ProcessStartInfo(executable, arguments)
@@ -135,18 +116,5 @@ namespace StartScreen.Services
             return start;
         }
 
-        internal static bool IsCodeRunning()
-        {
-            var processes = Process.GetProcessesByName("Code");
-            try
-            {
-                return processes.Length > 0;
-            }
-            finally
-            {
-                foreach (var process in processes)
-                    process.Dispose();
-            }
-        }
     }
 }

@@ -46,14 +46,11 @@ namespace StartScreen.ToolWindows.Controls
                         throw new InvalidOperationException("Visual Studio session ownership is unknown. Refresh and try again.");
                 }
                 await TaskScheduler.Default.SwitchTo(alwaysYield: true);
-                var executable = destination == CopilotSessionOrigin.Cli ? CopilotSessionLauncher.FindCliExecutable() : CopilotSessionLauncher.FindCodeExecutable();
-                if (destination == CopilotSessionOrigin.Cli)
-                {
-                    // Recheck immediately before launch, not just when constructing the menu.
-                    var reason = await GetCliUnavailableReasonAsync(session);
-                    if (reason != null)
-                        throw new InvalidOperationException(reason);
-                }
+                var executable = CopilotSessionLauncher.FindCliExecutable();
+                // Recheck immediately before launch, not just when constructing the menu.
+                var reason = await GetCliUnavailableReasonAsync(session);
+                if (reason != null)
+                    throw new InvalidOperationException(reason);
                 var start = CopilotSessionLauncher.CreateStartInfo(session, destination, executable);
                 using var process = Process.Start(start) ?? throw new InvalidOperationException("The app could not be started.");
             }
@@ -71,7 +68,7 @@ namespace StartScreen.ToolWindows.Controls
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
             try
             {
-                return CopilotSessionLauncher.CliUnavailableReason(session, CopilotSessionLauncher.IsCodeRunning());
+                return CopilotSessionLauncher.CliUnavailableReason(session);
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException
                 || ex is System.ComponentModel.Win32Exception)

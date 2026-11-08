@@ -687,6 +687,16 @@ namespace StartScreen.ToolWindows
             DevHubPanelControl.SetActivityLoading(true);
             _isWorkspaceDevHubRefreshing = true;
             UpdateDevHubLoadingState();
+            var scopeProgress = new Progress<DevHubDashboard>(dashboard =>
+            {
+                if (_isDisposed || !_isWorkspaceDevHubRefreshing || cancellationToken.IsCancellationRequested
+                    || !Equals(repo, ViewModel.SelectedRepository)
+                    || dashboard.CredentialGeneration != DevHubCredentialHelper.AccountGeneration
+                    || dashboard.QueryContext != (Options.Instance.DevHubSearchQuery ?? string.Empty))
+                    return;
+                _workspaceDashboard = dashboard;
+                UpdateDevHubPanel(dashboard);
+            });
             ViewModel.RefreshSelectedRepositorySummaryAsync(ViewModel.SelectedMruItem, cancellationToken)
                 .FileAndForget(nameof(StartScreenControl));
             StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
@@ -695,7 +705,7 @@ namespace StartScreen.ToolWindows
                 try
                 {
                     await TaskScheduler.Default;
-                    var dashboard = await _devHubService.ScopeToRepoAsync(repo, cancellationToken, activityOptions, forceRefresh);
+                    var dashboard = await _devHubService.ScopeToRepoAsync(repo, cancellationToken, activityOptions, forceRefresh, scopeProgress);
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                     cancellationToken.ThrowIfCancellationRequested();
                     if (Equals(repo, ViewModel.SelectedRepository))

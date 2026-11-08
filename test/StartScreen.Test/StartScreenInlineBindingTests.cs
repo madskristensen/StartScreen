@@ -36,7 +36,7 @@ namespace StartScreen.Test
             var untrimmed = new TextBlock { Text = status.Text, FontFamily = status.FontFamily, FontSize = fontSize };
             untrimmed.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
 
-            Assert.AreEqual("Loading VS Copilot...", status.Text);
+            Assert.AreEqual("Reading VS Copilot...", status.Text);
             Assert.IsLessThanOrEqualTo(status.ActualWidth, untrimmed.DesiredSize.Width,
                 $"The {untrimmed.DesiredSize.Width:F1}px caption must fit the {status.ActualWidth:F1}px header at font size {fontSize}.");
         }

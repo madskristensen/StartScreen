@@ -24,7 +24,7 @@ namespace StartScreen.Services.DevHub
         }
 
         internal async Task<HttpResponseMessage> SendAsync(HttpClient client, HttpRequestMessage request,
-            DevHubCredential credential, CancellationToken cancellationToken, bool readOnlyPost = false)
+            DevHubCredential credential, CancellationToken cancellationToken, bool readOnlyPost = false, SemaphoreSlim readGate = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             CancellationToken shutdown = _getShutdownToken();
@@ -83,9 +83,24 @@ namespace StartScreen.Services.DevHub
                                 foreach (var header in contentHeaders)
                                     copy.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
                             }
-                            using var response = await client.SendAsync(copy, HttpCompletionOption.ResponseHeadersRead, current.Cancellation.Token);
-                            var bytes = await HttpResponseReader.ReadBytesAsync(response, current.Cancellation.Token);
-                            return new BufferedResponse(response, bytes);
+                            if (readGate != null)
+                                await readGate.WaitAsync(current.Cancellation.Token);
+                            try
+                            {
+                                current.Cancellation.Token.ThrowIfCancellationRequested();
+                                lock (transport.Gate)
+                                {
+                                    if (current.WaiterTokens.All(token => token.IsCancellationRequested))
+                                        throw new OperationCanceledException("All callers of this shared read were canceled.");
+                                }
+                                using var response = await client.SendAsync(copy, HttpCompletionOption.ResponseHeadersRead, current.Cancellation.Token);
+                                var bytes = await HttpResponseReader.ReadBytesAsync(response, current.Cancellation.Token);
+                                return new BufferedResponse(response, bytes);
+                            }
+                            finally
+                            {
+                                readGate?.Release();
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -105,7 +120,7 @@ namespace StartScreen.Services.DevHub
                     if (transport.Pending.Count < 256)
                         transport.Pending.Add(key, entry);
                 }
-                entry.Waiters++;
+                entry.WaiterTokens.Add(cancellationToken);
             }
 
             try
@@ -121,7 +136,8 @@ namespace StartScreen.Services.DevHub
                 var release = false;
                 lock (transport.Gate)
                 {
-                    if (--entry.Waiters == 0)
+                    entry.WaiterTokens.Remove(cancellationToken);
+                    if (entry.WaiterTokens.Count == 0)
                     {
                         release = true;
                         if (transport.Pending.TryGetValue(key, out Entry pending) && ReferenceEquals(pending, entry))
@@ -177,7 +193,7 @@ namespace StartScreen.Services.DevHub
 
             internal CancellationTokenSource Cancellation { get; }
             internal Task<BufferedResponse> Task { get; set; }
-            internal int Waiters { get; set; }
+            internal List<CancellationToken> WaiterTokens { get; } = new List<CancellationToken>();
         }
 
         private sealed class BufferedResponse
