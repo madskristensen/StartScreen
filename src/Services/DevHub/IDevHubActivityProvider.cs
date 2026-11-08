@@ -28,17 +28,25 @@ namespace StartScreen.Services.DevHub
         Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(DevHubRefreshContext context, CancellationToken cancellationToken);
     }
 
+    internal interface IDevHubAuthenticationProvider
+    {
+        Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(bool forceRefresh, CancellationToken cancellationToken);
+    }
+
     /// <summary>An immutable workspace discovery result shared only within one dashboard operation.</summary>
     internal sealed class DevHubRefreshContext
     {
-        public DevHubRefreshContext(IEnumerable<string> remoteUrls, DevHubActivityStatus status = DevHubActivityStatus.Success)
+        public DevHubRefreshContext(IEnumerable<string> remoteUrls, DevHubActivityStatus status = DevHubActivityStatus.Success,
+            bool forceRefresh = false)
         {
             RemoteUrls = Array.AsReadOnly((remoteUrls ?? Array.Empty<string>()).ToArray());
             Status = status;
+            ForceRefresh = forceRefresh;
         }
 
         public IReadOnlyList<string> RemoteUrls { get; }
         public DevHubActivityStatus Status { get; }
+        public bool ForceRefresh { get; }
     }
 
     internal sealed class DevHubActivityOptions

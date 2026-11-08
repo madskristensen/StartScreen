@@ -16,7 +16,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// GitHub provider for the Dev Hub.
     /// Fetches PRs, issues, and CI status from the GitHub REST API.
     /// </summary>
-    internal sealed class GitHubDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource
+    internal sealed class GitHubDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource, IDevHubAuthenticationProvider
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -45,6 +45,7 @@ namespace StartScreen.Services.DevHub.Providers
         }
 
         private readonly DevHubIdentityCache _identityCache = new DevHubIdentityCache();
+        private readonly DevHubCredentialCache<DevHubUser> _users = new DevHubCredentialCache<DevHubUser>(TimeSpan.FromMinutes(5));
 
         private static string GetPreferredGitHubAccount()
         {
@@ -100,7 +101,8 @@ namespace StartScreen.Services.DevHub.Providers
         }
 
         internal async Task<DevHubUser> GetAuthenticatedUserAsync(HttpClient httpClient, DevHubCredential credential,
-            CancellationToken cancellationToken, Func<CancellationToken, Task<DevHubCredential>> reacquireCredential = null)
+            CancellationToken cancellationToken, Func<CancellationToken, Task<DevHubCredential>> reacquireCredential = null,
+            bool forceRefresh = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (credential == null)
@@ -108,6 +110,17 @@ namespace StartScreen.Services.DevHub.Providers
 
             try
             {
+                var generation = _users.Generation;
+                if (!_users.IsCurrent(credential, generation))
+                {
+                    DevHubActivityRequest.Failed(unauthorized: true);
+                    return null;
+                }
+                var resource = DevHubMetadataCache.GetClientScope(httpClient) + "|https://api.github.com/user";
+                if (!forceRefresh && _users.TryGetValue(credential, resource, out var cached))
+                    return cached;
+                if (forceRefresh)
+                    _users.Remove(credential, resource);
                 var response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken, httpClient, observe: false);
 
                 // Token expired - invalidate cache and retry once with a fresh credential.
@@ -123,6 +136,7 @@ namespace StartScreen.Services.DevHub.Providers
                         return null;
                     }
 
+                    generation = _users.Generation;
                     response = await SendGetAsync(credential, "https://api.github.com/user", cancellationToken, httpClient);
                 }
 
@@ -136,9 +150,7 @@ namespace StartScreen.Services.DevHub.Providers
                 {
                     var root = doc.RootElement;
                     var login = root.GetProperty("login").GetString();
-                    _identityCache.Remember(credential, "https://api.github.com/user", login);
-
-                    return new DevHubUser
+                    var user = new DevHubUser
                     {
                         Username = login,
                         IdentityId = root.TryGetProperty("id", out var id) ? id.ToString() : login,
@@ -151,6 +163,15 @@ namespace StartScreen.Services.DevHub.Providers
                         ProviderName = DisplayName,
                         Host = "github.com",
                     };
+                    cancellationToken.ThrowIfCancellationRequested();
+                    user.CredentialContext = DevHubMetadataCache.GetKey(credential, resource);
+                    if (!_users.Store(credential, resource, user, generation))
+                    {
+                        DevHubActivityRequest.Failed(unauthorized: true);
+                        return null;
+                    }
+                    _identityCache.Remember(credential, "https://api.github.com/user", login);
+                    return user;
                 }
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
@@ -164,6 +185,13 @@ namespace StartScreen.Services.DevHub.Providers
         public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)
         {
             var user = await GetAuthenticatedUserAsync(cancellationToken);
+            return user != null ? new[] { user } : Array.Empty<DevHubUser>();
+        }
+
+        public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(bool forceRefresh, CancellationToken cancellationToken)
+        {
+            var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
+            var user = await GetAuthenticatedUserAsync(_httpClient, credential, cancellationToken, forceRefresh: forceRefresh);
             return user != null ? new[] { user } : Array.Empty<DevHubUser>();
         }
 

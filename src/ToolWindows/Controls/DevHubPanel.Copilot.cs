@@ -47,7 +47,7 @@ namespace StartScreen.ToolWindows.Controls
         internal void RefreshCopilotActivity()
         {
             StopCopilotActivity();
-            StartCopilotActivity();
+            StartCopilotActivity(forceRefresh: true);
         }
 
         private void CopilotVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -64,12 +64,12 @@ namespace StartScreen.ToolWindows.Controls
             StopCopilotActivity();
         }
 
-        private void StartCopilotActivity()
+        private void StartCopilotActivity(bool forceRefresh = false)
         {
             if (_isDisposed || StartScreenPackage.ShutdownToken.IsCancellationRequested
                 || !_copilotLoaded || !IsVisible)
                 return;
-            StartCopilotSources();
+            StartCopilotSources(forceRefresh);
             if (_copilotAdapter != null || _copilotConnecting)
                 return;
             ConnectCopilotActivityAsync().FileAndForget(nameof(DevHubPanel));

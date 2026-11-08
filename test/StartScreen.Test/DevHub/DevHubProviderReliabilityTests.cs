@@ -11,6 +11,122 @@ namespace StartScreen.Test.DevHub
     public class DevHubProviderReliabilityTests
     {
         [TestMethod]
+        [DataRow("GitHub")]
+        [DataRow("Bitbucket")]
+        [DataRow("Azure DevOps")]
+        public async Task VerifiedProfilesReuseMatchingCredentialsButForcedRefreshAndTokenChangesFetchAgainAsync(string name)
+        {
+            var requests = 0;
+            using var client = new HttpClient(new Handler(_ =>
+            {
+                requests++;
+                return Profile();
+            }));
+            var authenticate = Authentication(name, client);
+            var first = await authenticate(Credential(), false);
+            var cached = await authenticate(Credential(), false);
+
+            Assert.IsNotNull(first);
+            Assert.IsNotNull(cached);
+            Assert.AreEqual(first.IdentityId, cached.IdentityId);
+            Assert.AreEqual(first.DisplayName, cached.DisplayName);
+            Assert.AreEqual(first.CredentialContext, cached.CredentialContext);
+            Assert.AreEqual(1, requests);
+            await authenticate(Credential(), true);
+            Assert.AreEqual(2, requests);
+            var changed = await authenticate(new DevHubCredential("me", "different-token"), false);
+            Assert.IsNotNull(changed);
+            Assert.AreNotEqual(first.CredentialContext, changed.CredentialContext);
+            Assert.AreEqual(3, requests);
+        }
+
+        [TestMethod]
+        [DataRow("GitHub")]
+        [DataRow("Bitbucket")]
+        [DataRow("Azure DevOps")]
+        public async Task ExpiredOrMissingCredentialsCannotReuseVerifiedProfilesAsync(string name)
+        {
+            var requests = 0;
+            using var client = new HttpClient(new Handler(_ =>
+            {
+                requests++;
+                return Profile();
+            }));
+            var authenticate = Authentication(name, client);
+            Assert.IsNotNull(await authenticate(Credential(), false));
+
+            Assert.IsNull(await authenticate(new DevHubCredential("test-token", DateTimeOffset.UtcNow.AddSeconds(-1)), false));
+            Assert.IsNull(await authenticate(null!, false));
+            Assert.AreEqual(1, requests);
+        }
+
+        [TestMethod]
+        [DataRow("GitHub")]
+        [DataRow("Bitbucket")]
+        [DataRow("Azure DevOps")]
+        public async Task FailedForcedVerificationCannotResurrectOldProfileAsync(string name)
+        {
+            var requests = 0;
+            var offline = false;
+            using var client = new HttpClient(new Handler(_ =>
+            {
+                requests++;
+                return offline ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : Profile();
+            }));
+            var authenticate = Authentication(name, client);
+            Assert.IsNotNull(await authenticate(Credential(), false));
+            offline = true;
+            Assert.IsNull(await authenticate(Credential(), true));
+
+            Assert.IsNull(await authenticate(Credential(), false));
+            Assert.AreEqual(3, requests);
+        }
+
+        [TestMethod]
+        public async Task CacheRestoreAndBackgroundRefreshShareVerifiedBitbucketProfileButManualRefreshRevalidatesAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var profiles = 0;
+            var acquisitions = 0;
+            using var client = new HttpClient(new Handler(request =>
+            {
+                if (request.RequestUri!.AbsolutePath.EndsWith("/user"))
+                {
+                    profiles++;
+                    return Profile();
+                }
+                return Json("{\"values\":[]}");
+            }));
+            BitbucketDevHubProvider Provider() => new(client, _ =>
+            {
+                acquisitions++;
+                return Task.FromResult(Credential());
+            }, hasStoredCredential: () => true);
+            var cache = new DevHubCacheService(directory.Path);
+            DevHubService Service(BitbucketDevHubProvider provider) => new(cache, [provider],
+                _ => Task.FromResult<IReadOnlyList<string>>(["https://bitbucket.org/owner/repo"]),
+                () => DevHubSortOrder.MostRecent, () => string.Empty, () => 0);
+            await Service(Provider()).RefreshAsync(CancellationToken.None);
+            var saved = await cache.ReadDashboardAsync();
+            Assert.IsNotNull(saved);
+            saved.FetchedAt = DateTime.UtcNow.AddHours(-4);
+            await cache.WriteDashboardAsync(saved);
+            File.SetLastWriteTimeUtc(Path.Combine(directory.Path, "dashboard.json"), saved.FetchedAt);
+            profiles = 0;
+            acquisitions = 0;
+            var service = Service(Provider());
+
+            Assert.IsNotNull(await service.LoadFromCacheAsync());
+            Assert.IsTrue(service.IsCacheStale());
+            await service.RefreshAsync(CancellationToken.None);
+
+            Assert.AreEqual(1, profiles, "The immediate background update must not repeat cache restoration's profile request.");
+            Assert.IsGreaterThanOrEqualTo(2, acquisitions, "Every operation must still acquire the currently selected credential.");
+            await service.RefreshAsync(CancellationToken.None, forceRefresh: true);
+            Assert.AreEqual(2, profiles);
+        }
+
+        [TestMethod]
         [DataRow(null, false, false)]
         [DataRow("https://github.com/owner/repo", false, false)]
         [DataRow("https://github.com/bitbucket.org/repo", false, false)]
@@ -264,6 +380,33 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual("tfs.contoso.com:9443", provider.GetCredentialHost(RemoteRepoIdentifier.TryParse("https://tfs.contoso.com:9443/tfs/Collection/Project/_git/Repo")!));
         }
 
+        private static Func<DevHubCredential, bool, Task<DevHubUser>> Authentication(string name, HttpClient client)
+        {
+            if (name == "GitHub")
+            {
+                var provider = new GitHubDevHubProvider();
+                return (credential, force) => provider.GetAuthenticatedUserAsync(client, credential, CancellationToken.None, forceRefresh: force);
+            }
+            DevHubCredential current = null!;
+            if (name == "Bitbucket")
+            {
+                var provider = new BitbucketDevHubProvider(client, _ => Task.FromResult(current), hasStoredCredential: () => true);
+                return async (credential, force) =>
+                {
+                    current = credential;
+                    var users = await provider.GetAuthenticatedUsersAsync(new DevHubRefreshContext([], forceRefresh: force), CancellationToken.None);
+                    return users.FirstOrDefault()!;
+                };
+            }
+            var ado = new AzureDevOpsDevHubProvider(client, (_, _, _) => Task.FromResult(current), (_, _) => { });
+            return (credential, force) =>
+            {
+                current = credential;
+                return ado.GetUserForHostAsync("dev.azure.com", "https://app.vssps.visualstudio.com/_apis/profile/profiles/me", CancellationToken.None, force);
+            };
+        }
+
+        private static HttpResponseMessage Profile() => Json("{\"login\":\"me\",\"username\":\"me\",\"uuid\":\"{me}\",\"id\":\"identity\",\"displayName\":\"My profile\",\"display_name\":\"My profile\"}");
         private static DevHubCredential Credential() => new("me", "test-token");
         private static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK) { Content = new StringContent(json) };
 

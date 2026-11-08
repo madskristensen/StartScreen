@@ -12,6 +12,8 @@ namespace StartScreen.Models.DevHub
 
         public string IdentityId { get; set; }
 
+        internal string CredentialContext { get; set; }
+
         /// <summary>
         /// The display name (e.g., "Mads Kristensen").
         /// </summary>

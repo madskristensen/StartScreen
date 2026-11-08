@@ -17,24 +17,31 @@ namespace StartScreen.Services
     {
         private const int _maximumTasks = 30;
         internal const int MaximumRepositoryConcurrency = 4;
+        private static readonly DevHubCredentialCache<string> _repositories = new DevHubCredentialCache<string>(TimeSpan.FromHours(1));
         private static readonly HttpClient _client = new(new HttpClientHandler { AllowAutoRedirect = false })
         {
             Timeout = TimeSpan.FromSeconds(15),
         };
 
-        internal static async Task<CopilotSessionDiscovery> ReadAsync(string account, CancellationToken token)
+        internal static async Task<CopilotSessionDiscovery> ReadAsync(string account, CancellationToken token, bool forceRefresh = false)
         {
             var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", account, token);
             if (credential == null)
                 return new CopilotSessionDiscovery { Status = "Connect GitHub to load cloud-agent sessions." };
-            return await ReadAsync(_client, credential, token);
+            return await ReadAsync(_client, credential, token, forceRefresh);
         }
 
-        internal static async Task<CopilotSessionDiscovery> ReadAsync(HttpClient client, DevHubCredential credential, CancellationToken token)
+        internal static async Task<CopilotSessionDiscovery> ReadAsync(HttpClient client, DevHubCredential credential, CancellationToken token,
+            bool forceRefresh = false, DevHubCredentialCache<string> repositoryCache = null)
         {
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
+            token.ThrowIfCancellationRequested();
+            var cache = repositoryCache ?? _repositories;
+            var generation = cache.Generation;
+            EnsureCredentialCurrent(cache, credential, generation);
             using var json = await GetAsync(client, credential,
                 $"https://api.github.com/agents/tasks?per_page={_maximumTasks}&sort=updated_at&direction=desc", token);
+            EnsureCredentialCurrent(cache, credential, generation);
             if (!json.RootElement.TryGetProperty("tasks", out var tasks) || tasks.ValueKind != JsonValueKind.Array)
                 throw new JsonException("GitHub returned no agent task list.");
             var sessions = new List<CopilotActivitySession>();
@@ -70,6 +77,12 @@ namespace StartScreen.Services
             var resolved = await Task.WhenAll(pending.Where(item => item.RepositoryId.HasValue)
                 .Select(item => item.RepositoryId.Value).Distinct().Select(async number =>
                 {
+                    var resource = DevHubMetadataCache.GetClientScope(client) + "|https://api.github.com/repositories/" + number;
+                    EnsureCredentialCurrent(cache, credential, generation);
+                    if (!forceRefresh && cache.TryGetValue(credential, resource, out var cached))
+                        return (Id: number, Repository: cached);
+                    if (forceRefresh)
+                        cache.Remove(credential, resource);
                     await concurrency.WaitAsync(token);
                     try
                     {
@@ -77,6 +90,10 @@ namespace StartScreen.Services
                         var repository = detail.RootElement.GetProperty("full_name").GetString();
                         if (!IsRepository(repository))
                             throw new JsonException("GitHub returned an invalid repository name.");
+                        token.ThrowIfCancellationRequested();
+                        EnsureCredentialCurrent(cache, credential, generation);
+                        if (!cache.Store(credential, resource, repository, generation))
+                            throw new UnauthorizedAccessException("GitHub credentials changed or expired. Refresh to retry.");
                         return (Id: number, Repository: repository);
                     }
                     finally
@@ -84,6 +101,8 @@ namespace StartScreen.Services
                         concurrency.Release();
                     }
                 }));
+            token.ThrowIfCancellationRequested();
+            EnsureCredentialCurrent(cache, credential, generation);
             var repositories = resolved.ToDictionary(item => item.Id, item => item.Repository);
             foreach (var item in pending)
             {
@@ -112,6 +131,12 @@ namespace StartScreen.Services
                 Sessions = sessions,
                 Status = unidentified ? "GitHub omitted origin metadata for some tasks; unverified and synced local tasks are not shown as cloud agents." : null,
             };
+        }
+
+        private static void EnsureCredentialCurrent(DevHubCredentialCache<string> cache, DevHubCredential credential, int generation)
+        {
+            if (!cache.IsCurrent(credential, generation))
+                throw new UnauthorizedAccessException("GitHub credentials changed or expired. Refresh to retry.");
         }
 
         internal static bool IsCloudTask(JsonElement task)

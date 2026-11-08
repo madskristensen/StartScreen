@@ -229,7 +229,7 @@ namespace StartScreen.Services.DevHub
                 var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken),
                     urls => urls.Count > 0, cancellationToken);
                 workProgress?.Report((++completedWork, totalWork));
-                var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status);
+                var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status, forceRefresh);
                 options = new DevHubActivityOptions(options.MaxItems, options.IncludeCompleted, refreshContext);
                 var dashboard = new DevHubDashboard
                 {
@@ -497,7 +497,9 @@ namespace StartScreen.Services.DevHub
             {
                 var users = context != null && provider is IDevHubRefreshProvider refreshProvider
                     ? await refreshProvider.GetAuthenticatedUsersAsync(context, cancellationToken)
-                    : await provider.GetAuthenticatedUsersAsync(cancellationToken);
+                    : provider is IDevHubAuthenticationProvider authenticationProvider
+                        ? await authenticationProvider.GetAuthenticatedUsersAsync(context?.ForceRefresh == true, cancellationToken)
+                        : await provider.GetAuthenticatedUsersAsync(cancellationToken);
                 return users ?? Array.Empty<DevHubUser>();
             }, users => users.Count > 0, cancellationToken);
         }
@@ -616,10 +618,11 @@ namespace StartScreen.Services.DevHub
         /// <summary>
         /// Fetches a separate repository view without replacing the aggregate dashboard or
         /// its cache. This prevents overlapping MRU selections and global refreshes from
-        /// overwriting each other's results.
+        /// overwriting each other's results. Successful matching views are reused for five
+        /// minutes unless forced; authentication still checks the current credential.
         /// </summary>
         public async Task<DevHubDashboard> ScopeToRepoAsync(RemoteRepoIdentifier repo, CancellationToken cancellationToken,
-            DevHubActivityOptions options = null)
+            DevHubActivityOptions options = null, bool forceRefresh = false)
         {
             if (repo == null)
                 return CurrentDashboard;
@@ -635,12 +638,15 @@ namespace StartScreen.Services.DevHub
             if (authenticationGeneration != _getCredentialGeneration() || queryContext != _getQueryContext())
                 return InvalidateContext();
             var users = (authentication?.Value ?? Array.Empty<DevHubUser>()).ToList();
-            var context = CreateContext(users, options, new[] { GetLookupUrl(repo) });
+            var context = CreateScopedContext(users, options, new[] { GetLookupUrl(repo) });
             var generation = _getCredentialGeneration();
+            var verified = provider != null && users.Any(user => string.IsNullOrEmpty(user.Host)
+                || string.Equals(user.Host, repo.Host, StringComparison.OrdinalIgnoreCase));
+            ScopedSource cached = null;
             long scopeEpoch;
             lock (_scopeGate)
             {
-                var scopeContext = generation + ":" + CreateContext(users, options, Array.Empty<string>());
+                var scopeContext = generation + ":" + CreateScopedContext(users, options, Array.Empty<string>());
                 PruneScopedSources();
                 if (_scopedContext != scopeContext && requestId >= _scopedContextRequestId)
                 {
@@ -653,6 +659,9 @@ namespace StartScreen.Services.DevHub
                 }
                 scopeEpoch = _scopedContext == scopeContext ? _scopedEpoch : -1;
                 _scopedContextRequestId = Math.Max(_scopedContextRequestId, requestId);
+                if (verified && !forceRefresh && authentication.Status == DevHubActivityStatus.Success
+                    && scopeEpoch == _scopedEpoch && _scopedSources.TryGetValue(context, out var source) && !source.Snapshot.IsStale)
+                    cached = source;
             }
             var dashboard = new DevHubDashboard
             {
@@ -660,29 +669,27 @@ namespace StartScreen.Services.DevHub
                 IdentityContext = CreateIdentityContext(users),
                 CredentialGeneration = authenticationGeneration,
                 QueryContext = queryContext,
-                FetchedAt = DateTime.UtcNow,
+                FetchedAt = cached?.StoredAt.UtcDateTime ?? _utcNow().UtcDateTime,
                 ActivityLimit = options.MaxItems,
                 IncludesCompleted = options.IncludeCompleted,
                 CacheContext = context,
             };
-            var verified = provider != null && users.Any(user => string.IsNullOrEmpty(user.Host)
-                || string.Equals(user.Host, repo.Host, StringComparison.OrdinalIgnoreCase));
-            var snapshot = verified ? await FetchActivityAsync(provider, DevHubActivityKind.Repository, options, repo, cancellationToken)
+            var snapshot = cached?.Snapshot ?? (verified ? await FetchActivityAsync(provider, DevHubActivityKind.Repository, options, repo, cancellationToken)
                 : new DevHubActivitySnapshot
                 {
                     Status = provider == null ? DevHubActivityStatus.Unavailable
                         : authentication.Status == DevHubActivityStatus.Success || authentication.Status == DevHubActivityStatus.Partial
                             ? DevHubActivityStatus.Unauthorized : authentication.Status,
                     RepoIdentifier = repo,
-                };
+                });
             cancellationToken.ThrowIfCancellationRequested();
             if (generation != _getCredentialGeneration() || queryContext != _getQueryContext()
-                || context != CreateContext(users, options, new[] { GetLookupUrl(repo) }))
+                || context != CreateScopedContext(users, options, new[] { GetLookupUrl(repo) }))
                 return InvalidateContext();
             lock (_scopeGate)
             {
                 PruneScopedSources();
-                if (verified && scopeEpoch == _scopedEpoch)
+                if (verified && cached == null && scopeEpoch == _scopedEpoch)
                 {
                     _scopedSources.TryGetValue(context, out var previous);
                     snapshot = RetainFailedSource(snapshot, previous?.Snapshot);
@@ -699,6 +706,12 @@ namespace StartScreen.Services.DevHub
                 dashboard.ActivityWarnings[repo.ToString().ToLowerInvariant()] = !string.IsNullOrEmpty(snapshot.Message) ? snapshot.Message
                     : $"Repository activity {snapshot.Status.ToString().ToLowerInvariant()}. Showing stale activity where available. Refresh to retry.";
             return dashboard;
+        }
+
+        private string CreateScopedContext(IEnumerable<DevHubUser> users, DevHubActivityOptions options, IEnumerable<string> urls)
+        {
+            return HashContext(CreateContext(users, options, urls) + JsonSerializer.Serialize(users.Select(user => user.CredentialContext)
+                .OrderBy(value => value, StringComparer.Ordinal).ToArray()));
         }
 
         /// <summary>
@@ -854,8 +867,9 @@ namespace StartScreen.Services.DevHub
         {
             if (_scopedCredentialGeneration != _getCredentialGeneration() || _scopedQuery != _getQueryContext())
                 ClearScopedSources();
-            var cutoff = _utcNow().AddMinutes(-5);
-            foreach (var key in _scopedSources.Where(pair => pair.Value.StoredAt <= cutoff).Select(pair => pair.Key).ToArray())
+            var now = _utcNow();
+            var cutoff = now.AddMinutes(-5);
+            foreach (var key in _scopedSources.Where(pair => pair.Value.StoredAt <= cutoff || pair.Value.StoredAt > now).Select(pair => pair.Key).ToArray())
                 _scopedSources.Remove(key);
         }
 

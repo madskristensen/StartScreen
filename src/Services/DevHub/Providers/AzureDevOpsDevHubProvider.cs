@@ -31,6 +31,7 @@ namespace StartScreen.Services.DevHub.Providers
         private readonly Action<string, DevHubCredential> _invalidateCredential;
         private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _getRemoteUrls;
         private readonly Func<IReadOnlyList<string>> _getCredentialHosts;
+        private readonly DevHubCredentialCache<DevHubUser> _users = new DevHubCredentialCache<DevHubUser>(TimeSpan.FromMinutes(5));
 
         public AzureDevOpsDevHubProvider() : this(_sharedHttpClient, DevHubCredentialHelper.GetAzureDevOpsCredentialAsync,
             (host, credential) =>
@@ -207,7 +208,7 @@ namespace StartScreen.Services.DevHub.Providers
             {
                 var attempt = await DevHubActivityRequest.RunAsync(async () =>
                 {
-                    var authenticatedUser = await GetUserForHostAsync(credentialHost, profileUrl, cancellationToken);
+                    var authenticatedUser = await GetUserForHostAsync(credentialHost, profileUrl, cancellationToken, context?.ForceRefresh == true);
                     return authenticatedUser == null ? Array.Empty<DevHubUser>() : new[] { authenticatedUser };
                 }, users => users.Length > 0, cancellationToken);
                 attempts.Add((credentialHost, attempt));
@@ -231,7 +232,8 @@ namespace StartScreen.Services.DevHub.Providers
             return results;
         }
 
-        internal async Task<DevHubUser> GetUserForHostAsync(string credentialHost, string profileUrl, CancellationToken cancellationToken)
+        internal async Task<DevHubUser> GetUserForHostAsync(string credentialHost, string profileUrl, CancellationToken cancellationToken,
+            bool forceRefresh = false)
         {
             if (string.IsNullOrWhiteSpace(credentialHost))
                 return null;
@@ -239,11 +241,27 @@ namespace StartScreen.Services.DevHub.Providers
             try
             {
                 var credential = await _acquireCredential(credentialHost, profileUrl, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 if (credential == null)
                     return null;
 
+                var generation = _users.Generation;
+                if (!_users.IsCurrent(credential, generation))
+                {
+                    DevHubActivityRequest.Failed(unauthorized: true);
+                    return null;
+                }
+                var resource = credentialHost + "|" + profileUrl;
+                if (!forceRefresh && _users.TryGetValue(credential, resource, out var cached))
+                    return cached;
+                if (forceRefresh)
+                    _users.Remove(credential, resource);
                 bool isCloud = credentialHost.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase);
-                using var response = await SendAuthenticatedGetAsync(credentialHost, credential, profileUrl, cancellationToken);
+                using var response = await SendAuthenticatedGetAsync(credentialHost, credential, profileUrl, cancellationToken, used =>
+                {
+                    credential = used;
+                    generation = _users.Generation;
+                });
                 if (!response.IsSuccessStatusCode)
                     return null;
 
@@ -251,6 +269,7 @@ namespace StartScreen.Services.DevHub.Providers
                 using (var doc = JsonDocument.Parse(json))
                 {
                     var root = doc.RootElement;
+                    DevHubUser user;
 
                     if (isCloud && profileUrl.Contains("/_apis/profile/profiles/me", StringComparison.OrdinalIgnoreCase))
                     {
@@ -258,7 +277,7 @@ namespace StartScreen.Services.DevHub.Providers
                             || string.IsNullOrWhiteSpace(profileId.GetString()))
                             throw new JsonException("Azure DevOps did not return an authenticated profile.");
 
-                        return new DevHubUser
+                        user = new DevHubUser
                         {
                             Username = root.TryGetProperty("emailAddress", out var email) ? email.GetString() : credential.Username ?? profileId.GetString(),
                             IdentityId = profileId.GetString(),
@@ -268,37 +287,48 @@ namespace StartScreen.Services.DevHub.Providers
                             Host = AzureDevOpsServerHelper.CloudHost,
                         };
                     }
-
-                    // Organization-scoped connectionData works for guest tenants and on-premises servers.
-                    if (!root.TryGetProperty("authenticatedUser", out var authUser) || authUser.ValueKind != JsonValueKind.Object
-                        || !authUser.TryGetProperty("id", out var userId) || userId.ValueKind != JsonValueKind.String
-                        || string.IsNullOrWhiteSpace(userId.GetString()) || userId.GetString() == Guid.Empty.ToString())
-                        throw new JsonException("Azure DevOps did not return an authenticated identity.");
-
-                    _identityCache.Remember(credential, profileUrl, userId.GetString());
-                    string username = credential.Username ?? userId.GetString();
-                    string displayName = credential.Username;
-                    if (authUser.TryGetProperty("providerDisplayName", out var pd) && pd.ValueKind == JsonValueKind.String)
-                        displayName = pd.GetString();
-                    if (authUser.TryGetProperty("customDisplayName", out var cd) && cd.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(cd.GetString()))
-                        displayName = cd.GetString();
-                    if (authUser.TryGetProperty("properties", out var props)
-                        && props.TryGetProperty("Account", out var acct)
-                        && acct.TryGetProperty("$value", out var acctVal)
-                        && acctVal.ValueKind == JsonValueKind.String)
+                    else
                     {
-                        username = acctVal.GetString();
+                        // Organization-scoped connectionData works for guest tenants and on-premises servers.
+                        if (!root.TryGetProperty("authenticatedUser", out var authUser) || authUser.ValueKind != JsonValueKind.Object
+                            || !authUser.TryGetProperty("id", out var userId) || userId.ValueKind != JsonValueKind.String
+                            || string.IsNullOrWhiteSpace(userId.GetString()) || userId.GetString() == Guid.Empty.ToString())
+                            throw new JsonException("Azure DevOps did not return an authenticated identity.");
+
+                        string username = credential.Username ?? userId.GetString();
+                        string displayName = credential.Username;
+                        if (authUser.TryGetProperty("providerDisplayName", out var pd) && pd.ValueKind == JsonValueKind.String)
+                            displayName = pd.GetString();
+                        if (authUser.TryGetProperty("customDisplayName", out var cd) && cd.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(cd.GetString()))
+                            displayName = cd.GetString();
+                        if (authUser.TryGetProperty("properties", out var props)
+                            && props.TryGetProperty("Account", out var acct)
+                            && acct.TryGetProperty("$value", out var acctVal)
+                            && acctVal.ValueKind == JsonValueKind.String)
+                        {
+                            username = acctVal.GetString();
+                        }
+
+                        user = new DevHubUser
+                        {
+                            Username = username,
+                            IdentityId = userId.GetString(),
+                            DisplayName = displayName ?? username,
+                            AvatarUrl = null,
+                            ProviderName = DisplayName,
+                            Host = isCloud ? AzureDevOpsServerHelper.CloudHost : new Uri(profileUrl).Host,
+                        };
                     }
-
-                    return new DevHubUser
+                    cancellationToken.ThrowIfCancellationRequested();
+                    user.CredentialContext = DevHubMetadataCache.GetKey(credential, resource);
+                    if (!_users.Store(credential, resource, user, generation))
                     {
-                        Username = username,
-                        IdentityId = userId.GetString(),
-                        DisplayName = displayName ?? username,
-                        AvatarUrl = null,
-                        ProviderName = DisplayName,
-                        Host = isCloud ? AzureDevOpsServerHelper.CloudHost : new Uri(profileUrl).Host,
-                    };
+                        DevHubActivityRequest.Failed(unauthorized: true);
+                        return null;
+                    }
+                    if (!profileUrl.Contains("/_apis/profile/profiles/me", StringComparison.OrdinalIgnoreCase))
+                        _identityCache.Remember(credential, profileUrl, user.IdentityId);
+                    return user;
                 }
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
@@ -649,12 +679,14 @@ namespace StartScreen.Services.DevHub.Providers
         public string GetIssuesWebUrl(RemoteRepoIdentifier repo) =>
             $"{GetBaseUrl(repo)}/{repo.Project}/_workitems";
 
-        private async Task<HttpResponseMessage> SendAuthenticatedGetAsync(string host, DevHubCredential credential, string url, CancellationToken cancellationToken)
+        private async Task<HttpResponseMessage> SendAuthenticatedGetAsync(string host, DevHubCredential credential, string url, CancellationToken cancellationToken,
+            Action<DevHubCredential> credentialUsed = null)
         {
-            return await SendAuthenticatedAsync(host, credential, url, null, cancellationToken);
+            return await SendAuthenticatedAsync(host, credential, url, null, cancellationToken, credentialUsed);
         }
 
-        private async Task<HttpResponseMessage> SendAuthenticatedAsync(string host, DevHubCredential credential, string url, string json, CancellationToken cancellationToken)
+        private async Task<HttpResponseMessage> SendAuthenticatedAsync(string host, DevHubCredential credential, string url, string json, CancellationToken cancellationToken,
+            Action<DevHubCredential> credentialUsed = null)
         {
             if (credential.IsBearer)
             {
@@ -663,6 +695,7 @@ namespace StartScreen.Services.DevHub.Providers
                     return DevHubActivityRequest.Observe(new HttpResponseMessage(HttpStatusCode.Unauthorized));
             }
 
+            credentialUsed?.Invoke(credential);
             var response = await SendAsync(credential, url, json, cancellationToken);
             if (response.StatusCode != HttpStatusCode.Unauthorized)
                 return DevHubActivityRequest.Observe(response);
@@ -680,6 +713,7 @@ namespace StartScreen.Services.DevHub.Providers
             if (fresh == null)
                 return DevHubActivityRequest.Observe(new HttpResponseMessage(HttpStatusCode.Unauthorized));
 
+            credentialUsed?.Invoke(fresh);
             var retried = await SendAsync(fresh, url, json, cancellationToken);
             try
             {

@@ -8,6 +8,67 @@ namespace StartScreen.Test.DevHub
     public class DevHubScopedCacheTests
     {
         [TestMethod]
+        public async Task ReSelectingRepositoryReusesItsSuccessfulViewWithoutExtendingLifetimeAsync()
+        {
+            var now = DateTimeOffset.UtcNow;
+            var originalTime = now;
+            var calls = 0;
+            var provider = new Provider { Fetch = (repo, _) =>
+            {
+                calls++;
+                return Task.FromResult(Ready(repo));
+            } };
+            var service = Service(provider, () => now);
+            await service.ScopeToRepoAsync(Repo(0), CancellationToken.None);
+            await service.ScopeToRepoAsync(Repo(1), CancellationToken.None);
+            now = now.AddMinutes(4);
+
+            var cached = await service.ScopeToRepoAsync(Repo(0), CancellationToken.None);
+
+            Assert.AreEqual(2, calls, "Returning to a recent repository must not fetch its details again.");
+            Assert.AreEqual("repo0", cached.PullRequests.Single().Title);
+            Assert.AreEqual(originalTime.UtcDateTime, cached.FetchedAt);
+            now = now.AddMinutes(1);
+            await service.ScopeToRepoAsync(Repo(0), CancellationToken.None);
+            Assert.AreEqual(3, calls, "A cache hit must not move the five-minute expiration.");
+        }
+
+        [TestMethod]
+        public async Task ForcedSelectionReloadsSuccessfulViewAsync()
+        {
+            var calls = 0;
+            var provider = new Provider { Fetch = (repo, _) =>
+            {
+                calls++;
+                var snapshot = Ready(repo);
+                snapshot.PullRequests[0].Title = "revision " + calls;
+                return Task.FromResult(snapshot);
+            } };
+            var service = Service(provider);
+            await service.ScopeToRepoAsync(Repo(0), CancellationToken.None);
+
+            var refreshed = await service.ScopeToRepoAsync(Repo(0), CancellationToken.None, forceRefresh: true);
+
+            Assert.AreEqual(2, calls);
+            Assert.AreEqual("revision 2", refreshed.PullRequests.Single().Title);
+        }
+
+        [TestMethod]
+        public async Task FailedSelectionIsRetriedInsteadOfBecomingSuccessfulCacheHitAsync()
+        {
+            var calls = 0;
+            var provider = new Provider { Fetch = (repo, _) => Task.FromResult(++calls == 1 ? Failed(repo) : Ready(repo)) };
+            var service = Service(provider);
+            Assert.AreEqual(DevHubActivityStatus.Unavailable, (await service.ScopeToRepoAsync(Repo(0), CancellationToken.None)).Status);
+
+            var retried = await service.ScopeToRepoAsync(Repo(0), CancellationToken.None);
+
+            Assert.AreEqual(2, calls);
+            Assert.AreEqual(DevHubActivityStatus.Success, retried.Status);
+            Assert.AreEqual("repo0", retried.PullRequests.Single().Title);
+        }
+
+        [TestMethod]
         public async Task CapacityEvictsOldestSnapshotButRetainsRecentFailureFallbackAsync()
         {
             var now = DateTimeOffset.UtcNow;
@@ -22,7 +83,7 @@ namespace StartScreen.Test.DevHub
             provider.Fetch = (repo, _) => Task.FromResult(Failed(repo));
 
             var evicted = await service.ScopeToRepoAsync(Repo(0), CancellationToken.None);
-            var recent = await service.ScopeToRepoAsync(Repo(DevHubService.ScopedSourceCapacity), CancellationToken.None);
+            var recent = await service.ScopeToRepoAsync(Repo(DevHubService.ScopedSourceCapacity), CancellationToken.None, forceRefresh: true);
 
             Assert.IsEmpty(evicted.PullRequests);
             Assert.HasCount(1, recent.PullRequests);
@@ -50,6 +111,7 @@ namespace StartScreen.Test.DevHub
         [DataRow("identity")]
         [DataRow("query")]
         [DataRow("credential")]
+        [DataRow("token")]
         [DataRow("limit")]
         [DataRow("completed")]
         public async Task ContextChangeRemovesOldEntriesInsteadOfResurrectingThemAsync(string change)
@@ -66,6 +128,7 @@ namespace StartScreen.Test.DevHub
                 case "identity": provider.Identity = "after"; break;
                 case "query": query = "after"; break;
                 case "credential": generation++; break;
+                case "token": provider.CredentialContext = "new-token-scope"; break;
                 case "limit": options = new DevHubActivityOptions(20); break;
                 case "completed": options = new DevHubActivityOptions(10, includeCompleted: true); break;
             }
@@ -75,6 +138,7 @@ namespace StartScreen.Test.DevHub
             provider.Identity = "before";
             query = "before";
             generation = 0;
+            provider.CredentialContext = null;
             provider.Fetch = (repo, _) => Task.FromResult(Failed(repo));
             var result = await service.ScopeToRepoAsync(Repo(0), CancellationToken.None, originalOptions);
 
@@ -98,7 +162,8 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual(2, service.ScopedSourceCount);
             provider.Fetch = (repo, _) => Task.FromResult(Failed(repo));
 
-            var results = await Task.WhenAll(service.ScopeToRepoAsync(Repo(0), CancellationToken.None), service.ScopeToRepoAsync(Repo(1), CancellationToken.None));
+            var results = await Task.WhenAll(service.ScopeToRepoAsync(Repo(0), CancellationToken.None, forceRefresh: true),
+                service.ScopeToRepoAsync(Repo(1), CancellationToken.None, forceRefresh: true));
 
             Assert.AreEqual("repo0", results[0].PullRequests.Single().Title);
             Assert.AreEqual("repo1", results[1].PullRequests.Single().Title);
@@ -194,6 +259,7 @@ namespace StartScreen.Test.DevHub
         {
             internal string Identity { get; set; } = "before";
             internal string IdentityHost { get; set; } = "github.com";
+            internal string? CredentialContext { get; set; }
             internal Func<Task<IReadOnlyList<DevHubUser>>>? Authenticate { get; set; }
             internal Func<RemoteRepoIdentifier, DevHubActivityOptions, Task<DevHubActivitySnapshot>> Fetch { get; set; } = (repo, _) => Task.FromResult(Ready(repo));
             public string DisplayName => "Test";
@@ -203,7 +269,10 @@ namespace StartScreen.Test.DevHub
             {
                 if (Authenticate != null)
                     return Authenticate();
-                return Task.FromResult<IReadOnlyList<DevHubUser>>([new DevHubUser { ProviderName = "Test", Host = IdentityHost, Username = Identity, IdentityId = Identity }]);
+                return Task.FromResult<IReadOnlyList<DevHubUser>>([new DevHubUser
+                {
+                    ProviderName = "Test", Host = IdentityHost, Username = Identity, IdentityId = Identity, CredentialContext = CredentialContext,
+                }]);
             }
             public async Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken) => (await GetAuthenticatedUsersAsync(cancellationToken)).Single();
             public Task<DevHubActivitySnapshot> FetchActivityAsync(DevHubActivityKind kind, DevHubActivityOptions options, RemoteRepoIdentifier repo, CancellationToken cancellationToken) => Fetch(repo, options);

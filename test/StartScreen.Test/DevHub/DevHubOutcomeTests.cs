@@ -933,7 +933,7 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual("scoped", first.Issues.Single().Title);
             provider.Detail = _ => Task.FromException<DevHubRepoDetail>(new HttpRequestException("Offline"));
 
-            var failed = await service.ScopeToRepoAsync(_repo, CancellationToken.None);
+            var failed = await service.ScopeToRepoAsync(_repo, CancellationToken.None, forceRefresh: true);
             Assert.AreEqual("scoped", failed.Issues.Single().Title);
             Assert.AreEqual(DevHubActivityStatus.Partial, failed.Status);
             StringAssert.Contains(failed.FilterByRepo(_repo).ActivityWarning, "stale");
@@ -1529,7 +1529,7 @@ namespace StartScreen.Test.DevHub
             await service.RefreshAsync(CancellationToken.None);
             Assert.AreEqual(1, service.ScopedSourceCount);
             github.Detail = _ => Task.FromException<DevHubRepoDetail>(new HttpRequestException("Offline"));
-            var retained = await service.ScopeToRepoAsync(_repo, CancellationToken.None);
+            var retained = await service.ScopeToRepoAsync(_repo, CancellationToken.None, forceRefresh: true);
             Assert.AreEqual("scoped", retained.Issues.Single().Title);
             github.Username = "changed scoped account";
             await service.RefreshAsync(CancellationToken.None);

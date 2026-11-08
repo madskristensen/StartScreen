@@ -47,6 +47,10 @@ scan. That scan reads recent-project paths without loading solution timestamps o
 other unrelated MRU metadata. Repository-dependent providers reuse the scan result,
 and cached PRs still wait for both repository-context and account validation.
 Fresh cached Git remotes avoid repeating repository scans during this validation.
+Verified provider profiles are reused for five minutes only while the current
+credential, account generation, and provider endpoint still match. This avoids
+repeating profile requests between cache restoration and background updates.
+Manual Refresh revalidates provider profiles.
 Verified cached activity yields to rendering before a stale activity refresh starts.
 Recent-project details are also persisted locally: Git branch and status, commit
 time, ahead/behind counts, stashes, operations, existence, last access, and Copilot
@@ -102,6 +106,12 @@ Thumbnail downloads are limited to 2 MiB, decoded before atomic publication, and
 invalid cached images are removed and downloaded again. The thumbnail disk cache
 retains at most 100 images. Repository-scope activity caches evict older entries,
 and changing scope releases hidden activity cards from the previous context.
+Successful repository views are reused for five minutes without extending their
+freshness on selection. Changed credentials or activity settings invalidate reuse;
+failed views are retried and manual Refresh bypasses the cache.
+GitHub cloud Copilot repository-ID/name mappings are cached for one hour per
+credential and client. Task lists still update each minute; manual Refresh reloads
+the mappings too. Expired credentials and account changes prevent cached reuse.
 Large activity reorders rebuild the visible collection instead of repeatedly
 searching and moving items. Unchanged refreshes retain existing item instances.
 Activity card messages, including build failures, are limited to two lines with

@@ -23,7 +23,7 @@ namespace StartScreen.ToolWindows.Controls
         private int _cloudCopilotAccountGeneration;
         private bool _copilotSourcesLoading;
 
-        private void StartCopilotSources()
+        private void StartCopilotSources(bool forceRefresh = false)
         {
             if (_copilotSourcesCancellation != null)
                 return;
@@ -34,7 +34,7 @@ namespace StartScreen.ToolWindows.Controls
             };
             _copilotSourcesTimer.Tick += CopilotSourcesTimer_Tick;
             _copilotSourcesTimer.Start();
-            RefreshCopilotSourcesAsync(_copilotSourcesCancellation.Token).FileAndForget(nameof(DevHubPanel));
+            RefreshCopilotSourcesAsync(_copilotSourcesCancellation.Token, forceRefresh).FileAndForget(nameof(DevHubPanel));
         }
 
         private void CopilotSourcesTimer_Tick(object sender, EventArgs e)
@@ -43,12 +43,12 @@ namespace StartScreen.ToolWindows.Controls
                 RefreshCopilotSourcesAsync(_copilotSourcesCancellation.Token).FileAndForget(nameof(DevHubPanel));
         }
 
-        private async Task RefreshCopilotSourcesAsync(CancellationToken token)
+        private async Task RefreshCopilotSourcesAsync(CancellationToken token, bool forceRefresh = false)
         {
             _copilotSourcesLoading = true;
             try
             {
-                await System.Threading.Tasks.Task.WhenAll(RefreshLocalCopilotAsync(token), RefreshCloudCopilotAsync(token));
+                await System.Threading.Tasks.Task.WhenAll(RefreshLocalCopilotAsync(token), RefreshCloudCopilotAsync(token, forceRefresh));
             }
             finally
             {
@@ -91,7 +91,7 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
-        private async Task RefreshCloudCopilotAsync(CancellationToken token)
+        private async Task RefreshCloudCopilotAsync(CancellationToken token, bool forceRefresh = false)
         {
             var enabled = Options.Instance.DevHubGitHubEnabled;
             var account = Options.Instance.DevHubGitHubAccount;
@@ -101,7 +101,7 @@ namespace StartScreen.ToolWindows.Controls
             var elapsed = Stopwatch.StartNew();
             try
             {
-                var result = enabled ? await CopilotCloudSessions.ReadAsync(account, token) : new CopilotSessionDiscovery();
+                var result = enabled ? await CopilotCloudSessions.ReadAsync(account, token, forceRefresh) : new CopilotSessionDiscovery();
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(token);
                 if (!IsCloudCopilotRequestCurrent(account, generation, token))
                     return;

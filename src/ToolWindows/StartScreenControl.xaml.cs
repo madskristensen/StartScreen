@@ -656,7 +656,7 @@ namespace StartScreen.ToolWindows
             ViewModel.SetRepositoryScope(repo);
         }
 
-        private void RefreshWorkspaceScope()
+        private void RefreshWorkspaceScope(bool forceRefresh = false)
         {
             if (_isDisposed || _lifetimeCancellation.IsCancellationRequested)
                 return;
@@ -686,7 +686,7 @@ namespace StartScreen.ToolWindows
                 try
                 {
                     await TaskScheduler.Default;
-                    var dashboard = await _devHubService.ScopeToRepoAsync(repo, cancellationToken, activityOptions);
+                    var dashboard = await _devHubService.ScopeToRepoAsync(repo, cancellationToken, activityOptions, forceRefresh);
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                     cancellationToken.ThrowIfCancellationRequested();
                     if (Equals(repo, ViewModel.SelectedRepository))
@@ -934,7 +934,7 @@ namespace StartScreen.ToolWindows
                 cancellationToken.ThrowIfCancellationRequested();
                 UpdateDevHubPanel();
                 if (ViewModel.SelectedRepository != null)
-                    RefreshWorkspaceScope();
+                    RefreshWorkspaceScope(forceRefresh);
                 StartupDiagnostics.Mark("Dev Hub remote refresh completed");
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)

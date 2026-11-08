@@ -25,6 +25,7 @@ namespace StartScreen.Services.DevHub.Providers
         private readonly Func<CancellationToken, Task<DevHubCredential>> _acquireCredential;
         private readonly DevHubIdentityCache _identityCache;
         private readonly Func<bool> _hasStoredCredential;
+        private readonly DevHubCredentialCache<DevHubUser> _users = new DevHubCredentialCache<DevHubUser>(TimeSpan.FromMinutes(5));
 
         public BitbucketDevHubProvider() : this(_httpClient,
             token => DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", token))
@@ -94,12 +95,29 @@ namespace StartScreen.Services.DevHub.Providers
 
         public async Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken)
         {
+            return await GetAuthenticatedUserAsync(cancellationToken, forceRefresh: false);
+        }
+
+        private async Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken, bool forceRefresh)
+        {
             var credential = await _acquireCredential(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (credential == null)
                 return null;
 
             try
             {
+                var generation = _users.Generation;
+                if (!_users.IsCurrent(credential, generation))
+                {
+                    DevHubActivityRequest.Failed(unauthorized: true);
+                    return null;
+                }
+                const string resource = "https://api.bitbucket.org/2.0/user";
+                if (!forceRefresh && _users.TryGetValue(credential, resource, out var cached))
+                    return cached;
+                if (forceRefresh)
+                    _users.Remove(credential, resource);
                 var response = await SendGetAsync(credential, "https://api.bitbucket.org/2.0/user", cancellationToken, observe: false);
 
                 // Token expired - invalidate cache and retry once with a fresh credential.
@@ -114,6 +132,7 @@ namespace StartScreen.Services.DevHub.Providers
                         return null;
                     }
 
+                    generation = _users.Generation;
                     response = await SendGetAsync(credential, "https://api.bitbucket.org/2.0/user", cancellationToken);
                 }
 
@@ -137,9 +156,7 @@ namespace StartScreen.Services.DevHub.Providers
                     var identity = GetUserIdentity(root);
                     if (string.IsNullOrEmpty(identity))
                         throw new JsonException("Bitbucket did not return an authenticated identity.");
-                    _identityCache.Remember(credential, "https://api.bitbucket.org/2.0/user", identity);
-
-                    return new DevHubUser
+                    var user = new DevHubUser
                     {
                         Username = username ?? credential.Username,
                         IdentityId = identity,
@@ -148,6 +165,15 @@ namespace StartScreen.Services.DevHub.Providers
                         ProviderName = DisplayName,
                         Host = "bitbucket.org",
                     };
+                    cancellationToken.ThrowIfCancellationRequested();
+                    user.CredentialContext = DevHubMetadataCache.GetKey(credential, resource);
+                    if (!_users.Store(credential, resource, user, generation))
+                    {
+                        DevHubActivityRequest.Failed(unauthorized: true);
+                        return null;
+                    }
+                    _identityCache.Remember(credential, resource, identity);
+                    return user;
                 }
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
@@ -158,12 +184,13 @@ namespace StartScreen.Services.DevHub.Providers
             }
         }
 
-        public Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(DevHubRefreshContext context, CancellationToken cancellationToken)
+        public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(DevHubRefreshContext context, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!context.RemoteUrls.Any(url => ParseRemoteUrl(url) != null) && !_hasStoredCredential())
-                return Task.FromResult<IReadOnlyList<DevHubUser>>(Array.Empty<DevHubUser>());
-            return GetAuthenticatedUsersAsync(cancellationToken);
+                return Array.Empty<DevHubUser>();
+            var user = await GetAuthenticatedUserAsync(cancellationToken, context.ForceRefresh);
+            return user != null ? new[] { user } : Array.Empty<DevHubUser>();
         }
 
         public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(CancellationToken cancellationToken)

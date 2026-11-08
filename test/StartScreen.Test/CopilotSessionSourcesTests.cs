@@ -612,6 +612,124 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public async Task CloudDiscovery_ReusesRepositoryNamesButAlwaysReloadsTasksAndHonorsForcedRefreshAsync()
+        {
+            var taskRequests = 0;
+            var repositoryRequests = 0;
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+            {
+                if (request.RequestUri!.AbsolutePath == "/agents/tasks")
+                    return CloudTaskResponse(++taskRequests == 1 ? "in_progress" : "completed");
+                repositoryRequests++;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(new { full_name = "owner/revision" + repositoryRequests })),
+                };
+            }));
+            var credential = new DevHubCredential("user", "test-token");
+            var first = await CopilotCloudSessions.ReadAsync(client, credential, CancellationToken.None);
+            var cached = await CopilotCloudSessions.ReadAsync(client, credential, CancellationToken.None);
+
+            Assert.AreEqual(2, taskRequests);
+            Assert.AreEqual(1, repositoryRequests);
+            Assert.AreEqual("owner/revision1", cached.Sessions.Single().Repository);
+            Assert.IsTrue(first.Sessions.Single().IsRunning);
+            Assert.IsFalse(cached.Sessions.Single().IsRunning, "Task state must remain live even when its repository mapping is cached.");
+            var forced = await CopilotCloudSessions.ReadAsync(client, credential, CancellationToken.None, forceRefresh: true);
+            Assert.AreEqual("owner/revision2", forced.Sessions.Single().Repository);
+            Assert.AreEqual(2, repositoryRequests);
+            var changed = await CopilotCloudSessions.ReadAsync(client, new DevHubCredential("user", "different-token"), CancellationToken.None);
+            Assert.AreEqual("owner/revision3", changed.Sessions.Single().Repository);
+            Assert.AreEqual(3, repositoryRequests);
+        }
+
+        [TestMethod]
+        [DataRow(3599, 1)]
+        [DataRow(3600, 2)]
+        public async Task CloudDiscovery_RepositoryNamesExpireAfterOneHourAsync(int seconds, int expectedRepositoryRequests)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var cache = new DevHubCredentialCache<string>(TimeSpan.FromHours(1), () => now, () => 0);
+            var repositories = 0;
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+            {
+                if (request.RequestUri!.AbsolutePath == "/agents/tasks")
+                    return CloudTaskResponse("completed");
+                repositories++;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"full_name\":\"owner/repo\"}") };
+            }));
+            var credential = new DevHubCredential("user", "test-token");
+            await CopilotCloudSessions.ReadAsync(client, credential, CancellationToken.None, repositoryCache: cache);
+            now = now.AddSeconds(seconds);
+
+            await CopilotCloudSessions.ReadAsync(client, credential, CancellationToken.None, repositoryCache: cache);
+
+            Assert.AreEqual(expectedRepositoryRequests, repositories);
+        }
+
+        [TestMethod]
+        public async Task CloudDiscovery_CachedMappingCannotHideTaskAuthorizationFailureAsync()
+        {
+            var denied = false;
+            var repositories = 0;
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+            {
+                if (request.RequestUri!.AbsolutePath == "/agents/tasks")
+                    return denied ? new HttpResponseMessage(HttpStatusCode.Forbidden) : CloudTaskResponse("completed");
+                repositories++;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"full_name\":\"owner/repo\"}") };
+            }));
+            var credential = new DevHubCredential("user", "test-token");
+            await CopilotCloudSessions.ReadAsync(client, credential, CancellationToken.None);
+            denied = true;
+
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => CopilotCloudSessions.ReadAsync(client, credential, CancellationToken.None));
+            Assert.AreEqual(1, repositories);
+        }
+
+        [TestMethod]
+        public async Task CloudDiscovery_InvalidatedLookupCannotPopulateRepositoryCacheAsync()
+        {
+            var generation = 0;
+            var invalidate = true;
+            var repositories = 0;
+            var cache = new DevHubCredentialCache<string>(TimeSpan.FromHours(1), getGeneration: () => generation);
+            using var client = new HttpClient(new TestHttpMessageHandler((request, _) =>
+            {
+                if (request.RequestUri!.AbsolutePath == "/agents/tasks")
+                    return CloudTaskResponse("completed");
+                repositories++;
+                if (invalidate)
+                    generation++;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"full_name\":\"owner/repo\"}") };
+            }));
+            var credential = new DevHubCredential("user", "test-token");
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => CopilotCloudSessions.ReadAsync(client, credential,
+                CancellationToken.None, repositoryCache: cache));
+            invalidate = false;
+
+            var current = await CopilotCloudSessions.ReadAsync(client, credential, CancellationToken.None, repositoryCache: cache);
+
+            Assert.AreEqual(2, repositories);
+            Assert.AreEqual("owner/repo", current.Sessions.Single().Repository);
+        }
+
+        private static HttpResponseMessage CloudTaskResponse(string state) => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                tasks = new[] { new
+                {
+                    id = RuntimeId,
+                    repository = new { id = 123 },
+                    agent_collaborators = new[] { new { slug = "copilot-swe-agent" } },
+                    state,
+                    updated_at = "2026-11-07T19:00:00Z",
+                } },
+            })),
+        };
+
+        [TestMethod]
         public async Task CloudDiscovery_CancellationStopsActiveAndQueuedRepositoryLookupsAsync()
         {
             var tasks = Enumerable.Range(1, 8).Select(index => new
