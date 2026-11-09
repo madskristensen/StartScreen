@@ -747,6 +747,26 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
+        public void ActivityLoading_HidesAccountRecoveryAndTracksOverlappingRequests()
+        {
+            var panel = CreatePanel();
+            var recovery = (System.Windows.Controls.StackPanel)panel.FindName("AccountRecoveryPanel");
+            recovery.Visibility = System.Windows.Visibility.Visible;
+
+            panel.SetActivityLoading(true);
+            Assert.AreEqual(System.Windows.Visibility.Collapsed, recovery.Visibility);
+            Assert.IsTrue(panel.IsBusy);
+            panel.SetActivityLoading(true);
+            panel.SetActivityLoading(false);
+            Assert.IsTrue(panel.IsBusy, "Finishing one request must not finish the overlapping refresh.");
+            Assert.AreEqual(System.Windows.Visibility.Collapsed, recovery.Visibility);
+
+            panel.SetActivityLoading(false);
+            Assert.IsFalse(panel.IsBusy);
+            Assert.AreEqual(System.Windows.Visibility.Collapsed, recovery.Visibility, "No dashboard must not produce account recovery.");
+        }
+
+        [STATestMethod]
         public void BusyState_DoesNotWaitForTheLiveIndexButTracksSavedSourceRefresh()
         {
             var backend = new FakeBackend();
@@ -1043,6 +1063,7 @@ namespace StartScreen.Test
         public List<FakeSessionId> Deleted { get; } = [];
         public FakeCreateOptions? CreateOptions { get; private set; }
         public FakeSession NextSession { get; set; } = new();
+        public Func<FakeSessionId, CancellationToken, Task>? DeleteAsync { get; set; }
         public Task<IBackendSession> CreateNewSessionAsync(FakeCreateOptions options)
         {
             CreateOptions = options;
@@ -1053,6 +1074,8 @@ namespace StartScreen.Test
         {
             cancellationToken.ThrowIfCancellationRequested();
             Deleted.Add(sessionId);
+            if (DeleteAsync != null)
+                return DeleteAsync(sessionId, cancellationToken);
             return Task.CompletedTask;
         }
     }
@@ -1156,9 +1179,12 @@ namespace StartScreen.Test
         public IBackendSession? OpenedSession { get; private set; }
         public bool UserInitiated { get; private set; }
         public bool IsReady { get; set; } = true;
+        public Func<CancellationToken, Task<FakeSessionId?>>? ReadyAsync { get; set; }
         public Task<FakeSessionId?> WaitForSessionReadyAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (ReadyAsync != null)
+                return ReadyAsync(cancellationToken);
             return Task.FromResult(IsReady ? OpenedSession?.SessionId : null);
         }
         public void OpenSession(IBackendSession session, bool userInitiated = false)

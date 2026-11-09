@@ -65,6 +65,33 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task WorkspaceChat_WaitsPastHistoryAndPreviousSessionUntilTheNewChatIsReadyAsync(bool previousSession)
+        {
+            var backend = new FakeBackend();
+            var reads = 0;
+            var navigator = new FakeNavigator
+            {
+                ReadyAsync = _ =>
+                {
+                    Assert.IsNull(backend.NextSession.ChangedDirectory);
+                    Assert.IsNull(backend.NextSession.Request);
+                    Assert.IsEmpty(backend.Deleted);
+                    return Task.FromResult<FakeSessionId?>(++reads == 1
+                        ? previousSession ? new FakeSessionId() : null
+                        : backend.NextSession.SessionId);
+                },
+            };
+
+            await CopilotChatLauncher.StartWorkspaceAsync(new FakeBackends(backend), navigator, Path.GetTempPath(), CancellationToken.None);
+
+            Assert.AreEqual(2, reads);
+            Assert.AreEqual(Path.GetFullPath(Path.GetTempPath()), backend.NextSession.ChangedDirectory);
+            Assert.IsEmpty(backend.Deleted);
+        }
+
+        [TestMethod]
         public async Task WorkspaceChat_AllowsAnUnchangeableBackendAlreadyInTheRequestedDirectoryAsync()
         {
             var backend = new FakeBackend();
@@ -123,10 +150,36 @@ namespace StartScreen.Test
         public async Task WorkspaceChat_UnreadySessionIsRemovedWithoutChangingDirectoryAsync()
         {
             var backend = new FakeBackend();
-            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => CopilotChatLauncher.StartWorkspaceAsync(
-                new FakeBackends(backend), new FakeNavigator { IsReady = false }, Path.GetTempPath(), CancellationToken.None));
+            using var cancellation = new CancellationTokenSource();
+            var navigator = new FakeNavigator
+            {
+                ReadyAsync = _ =>
+                {
+                    cancellation.Cancel();
+                    return Task.FromResult<FakeSessionId?>(null);
+                },
+            };
+            await Assert.ThrowsAsync<OperationCanceledException>(() => CopilotChatLauncher.StartWorkspaceAsync(
+                new FakeBackends(backend), navigator, Path.GetTempPath(), cancellation.Token));
             CollectionAssert.AreEqual(new[] { backend.NextSession.SessionId }, backend.Deleted);
             Assert.IsNull(backend.NextSession.ChangedDirectory);
+            Assert.IsNull(backend.NextSession.Request);
+        }
+
+        [TestMethod]
+        public async Task WorkspaceChat_CleanupFailurePreservesAndExplainsBothErrorsAsync()
+        {
+            var backend = new FakeBackend();
+            backend.NextSession.ChangeDirectoryAsync = (_, _) => Task.FromException(new InvalidOperationException("Directory change failed"));
+            backend.DeleteAsync = (_, _) => Task.FromException(new IOException("Session deletion failed"));
+
+            var error = await Assert.ThrowsExactlyAsync<AggregateException>(() => CopilotChatLauncher.StartWorkspaceAsync(
+                new FakeBackends(backend), new FakeNavigator(), Path.GetTempPath(), CancellationToken.None));
+
+            StringAssert.Contains(error.Message, "Directory change failed");
+            StringAssert.Contains(error.Message, "Session deletion failed");
+            Assert.HasCount(2, error.InnerExceptions);
+            CollectionAssert.AreEqual(new[] { backend.NextSession.SessionId }, backend.Deleted);
             Assert.IsNull(backend.NextSession.Request);
         }
 
@@ -175,9 +228,42 @@ namespace StartScreen.Test
         public async Task StartAsync_DoesNotSendToAnUnreadyChatAsync()
         {
             var backend = new FakeBackend();
-            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
-                CopilotChatLauncher.StartAsync(new FakeBackends(backend), new FakeNavigator { IsReady = false }, "Fix issue", CancellationToken.None));
+            using var cancellation = new CancellationTokenSource();
+            var navigator = new FakeNavigator
+            {
+                ReadyAsync = _ =>
+                {
+                    cancellation.Cancel();
+                    return Task.FromResult<FakeSessionId?>(null);
+                },
+            };
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                CopilotChatLauncher.StartAsync(new FakeBackends(backend), navigator, "Fix issue", cancellation.Token));
             Assert.IsNull(backend.NextSession.Request);
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task StartAsync_DoesNotSendUntilTheNewChatReplacesThePreviousViewAsync(bool previousSession)
+        {
+            var backend = new FakeBackend();
+            var reads = 0;
+            var navigator = new FakeNavigator
+            {
+                ReadyAsync = _ =>
+                {
+                    Assert.IsNull(backend.NextSession.Request);
+                    return Task.FromResult<FakeSessionId?>(++reads == 1
+                        ? previousSession ? new FakeSessionId() : null
+                        : backend.NextSession.SessionId);
+                },
+            };
+
+            await CopilotChatLauncher.StartAsync(new FakeBackends(backend), navigator, "Fix issue", CancellationToken.None);
+
+            Assert.AreEqual(2, reads);
+            Assert.AreEqual("Fix issue", backend.NextSession.Request?.Prompt);
         }
 
         [TestMethod]

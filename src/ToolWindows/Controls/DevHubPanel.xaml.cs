@@ -193,10 +193,17 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateAccountRecovery(DevHubDashboard dashboard)
         {
+            if (dashboard == null)
+            {
+                AccountRecoveryPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+            // A completed cache or scope snapshot can arrive while another activity request is still running.
+            var isActivityLoading = _activityLoadCount > 0;
             var unavailableProviders = new List<string>();
-            if (Options.Instance.DevHubAzureDevOpsEnabled && HasUnavailableAccountVerification(dashboard, AzureDevOpsServerHelper.CloudHost, _currentFilterRepo))
+            if (Options.Instance.DevHubAzureDevOpsEnabled && HasUnavailableAccountVerification(dashboard, AzureDevOpsServerHelper.CloudHost, _currentFilterRepo, isActivityLoading))
                 unavailableProviders.Add("Azure DevOps");
-            if (Options.Instance.DevHubGitHubEnabled && HasUnavailableAccountVerification(dashboard, "github.com", _currentFilterRepo))
+            if (Options.Instance.DevHubGitHubEnabled && HasUnavailableAccountVerification(dashboard, "github.com", _currentFilterRepo, isActivityLoading))
                 unavailableProviders.Add("GitHub");
             AccountVerificationUnavailableText.Text = unavailableProviders.Count == 0 ? string.Empty
                 : $"{string.Join(" and ", unavailableProviders)} account verification is unavailable. Check your network or VPN connection, then refresh. This does not necessarily mean your account needs reauthentication.";
@@ -204,9 +211,9 @@ namespace StartScreen.ToolWindows.Controls
             VisualStudioAccountRecoveryText.Visibility = ShouldShowAccountRecovery(dashboard, AzureDevOpsServerHelper.CloudHost,
                 Options.Instance.DevHubAzureDevOpsEnabled
                     && Options.Instance.DevHubAdoAuthentication != AzureDevOpsAuthenticationMode.Disconnected
-                    && Options.Instance.DevHubAdoAuthentication != AzureDevOpsAuthenticationMode.PersonalAccessToken, _currentFilterRepo)
+                    && Options.Instance.DevHubAdoAuthentication != AzureDevOpsAuthenticationMode.PersonalAccessToken, _currentFilterRepo, isActivityLoading)
                 ? Visibility.Visible : Visibility.Collapsed;
-            GitHubAccountRecoveryText.Visibility = ShouldShowAccountRecovery(dashboard, "github.com", Options.Instance.DevHubGitHubEnabled, _currentFilterRepo)
+            GitHubAccountRecoveryText.Visibility = ShouldShowAccountRecovery(dashboard, "github.com", Options.Instance.DevHubGitHubEnabled, _currentFilterRepo, isActivityLoading)
                 ? Visibility.Visible : Visibility.Collapsed;
             AccountRecoveryPanel.Visibility = VisualStudioAccountRecoveryText.Visibility == Visibility.Visible
                 || GitHubAccountRecoveryText.Visibility == Visibility.Visible
@@ -215,10 +222,10 @@ namespace StartScreen.ToolWindows.Controls
             if (dashboard != null && !dashboard.HasAuthentication)
             {
                 if (VisualStudioAccountRecoveryText.Visibility == Visibility.Visible
-                    || HasUnavailableAccountVerification(dashboard, AzureDevOpsServerHelper.CloudHost, _currentFilterRepo))
+                    || HasUnavailableAccountVerification(dashboard, AzureDevOpsServerHelper.CloudHost, _currentFilterRepo, isActivityLoading))
                     ConnectAdoTextBlock.Visibility = Visibility.Collapsed;
                 if (GitHubAccountRecoveryText.Visibility == Visibility.Visible
-                    || HasUnavailableAccountVerification(dashboard, "github.com", _currentFilterRepo))
+                    || HasUnavailableAccountVerification(dashboard, "github.com", _currentFilterRepo, isActivityLoading))
                     ConnectGitHubTextBlock.Visibility = Visibility.Collapsed;
                 if (ConnectAdoTextBlock.Visibility == Visibility.Collapsed && ConnectGitHubTextBlock.Visibility == Visibility.Collapsed
                     && GitHubCredentialHelpTextBlock.Visibility == Visibility.Collapsed)
@@ -226,15 +233,17 @@ namespace StartScreen.ToolWindows.Controls
             }
         }
 
-        internal static bool ShouldShowAccountRecovery(DevHubDashboard dashboard, string host, bool enabled, RemoteRepoIdentifier filterRepo = null)
+        internal static bool ShouldShowAccountRecovery(DevHubDashboard dashboard, string host, bool enabled, RemoteRepoIdentifier filterRepo = null,
+            bool isActivityLoading = false)
         {
-            return NeedsAccountRecovery(dashboard, host, enabled, filterRepo)
+            return NeedsAccountRecovery(dashboard, host, enabled, filterRepo, isActivityLoading)
                 && (dashboard.HasAuthentication || HasRejectedAccount(dashboard, host));
         }
 
-        internal static bool NeedsAccountRecovery(DevHubDashboard dashboard, string host, bool enabled, RemoteRepoIdentifier filterRepo = null)
+        internal static bool NeedsAccountRecovery(DevHubDashboard dashboard, string host, bool enabled, RemoteRepoIdentifier filterRepo = null,
+            bool isActivityLoading = false)
         {
-            if (!enabled || dashboard == null || dashboard.IsRefreshing || !IsAccountProviderInScope(host, filterRepo))
+            if (!enabled || dashboard == null || dashboard.IsRefreshing || isActivityLoading || !IsAccountProviderInScope(host, filterRepo))
                 return false;
             return (!dashboard.HasProvider(host) && !HasUnavailableAccountVerification(dashboard, host, filterRepo))
                 || HasRejectedAccount(dashboard, host);
@@ -248,9 +257,10 @@ namespace StartScreen.ToolWindows.Controls
                 && pair.Value.Status == DevHubActivityStatus.Unauthorized);
         }
 
-        internal static bool HasUnavailableAccountVerification(DevHubDashboard dashboard, string host, RemoteRepoIdentifier filterRepo = null)
+        internal static bool HasUnavailableAccountVerification(DevHubDashboard dashboard, string host, RemoteRepoIdentifier filterRepo = null,
+            bool isActivityLoading = false)
         {
-            if (dashboard == null || dashboard.IsRefreshing || dashboard.HasProvider(host) || !IsAccountProviderInScope(host, filterRepo))
+            if (dashboard == null || dashboard.IsRefreshing || isActivityLoading || dashboard.HasProvider(host) || !IsAccountProviderInScope(host, filterRepo))
                 return false;
             var provider = host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ? "GitHub/" : "Azure DevOps/";
             return dashboard.Sources.Any(pair => (pair.Key.StartsWith(provider, StringComparison.OrdinalIgnoreCase)

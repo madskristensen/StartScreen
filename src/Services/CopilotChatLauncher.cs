@@ -46,9 +46,7 @@ namespace StartScreen.Services
             open.Invoke(navigator, new[] { session, (object)true });
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(15));
-            var readyId = await InvokeAsync(ready, navigator, timeout.Token);
-            if (readyId == null || !Equals(readyId, CopilotHarnessAdapter.Read(session, "SessionId")))
-                throw new InvalidOperationException("The new Copilot chat did not become active. Try again.");
+            await WaitForSessionAsync(ready, navigator, session, timeout.Token);
             var response = await InvokeAsync(send, session, request, cancellationToken);
             if (CopilotHarnessAdapter.Read(response, "Status")?.ToString() != "Success")
             {
@@ -91,9 +89,7 @@ namespace StartScreen.Services
                 timeout.CancelAfter(TimeSpan.FromSeconds(15));
                 timeout.Token.ThrowIfCancellationRequested();
                 open.Invoke(navigator, new[] { session, (object)true });
-                var readyId = await InvokeAsync(ready, navigator, timeout.Token).WithCancellation(timeout.Token);
-                if (readyId == null || !Equals(readyId, CopilotHarnessAdapter.Read(session, "SessionId")))
-                    throw new InvalidOperationException("The new Copilot chat did not become active. Try again.");
+                await WaitForSessionAsync(ready, navigator, session, timeout.Token);
                 var directories = CopilotHarnessAdapter.Read(session, "WorkingDirectory") as IObservable<string>
                     ?? throw new NotSupportedException("Copilot cannot verify the chat's working directory.");
                 var matched = new System.Threading.Tasks.TaskCompletionSource<bool>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
@@ -123,9 +119,25 @@ namespace StartScreen.Services
                 catch (Exception cleanupError)
                 {
                     await cleanupError.LogAsync();
-                    throw new AggregateException("The workspace chat failed and its new empty session could not be removed.", ex, cleanupError);
+                    throw new AggregateException("The workspace chat failed: " + ex.GetBaseException().Message
+                        + " The new empty session could not be removed: " + cleanupError.GetBaseException().Message, ex, cleanupError);
                 }
                 throw;
+            }
+        }
+
+        private static async Task WaitForSessionAsync(MethodInfo ready, object navigator, object session, CancellationToken cancellationToken)
+        {
+            var sessionId = CopilotHarnessAdapter.Read(session, "SessionId");
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var readyId = await InvokeAsync(ready, navigator, cancellationToken).WithCancellation(cancellationToken);
+                if (readyId != null && Equals(readyId, sessionId))
+                    return;
+
+                // OpenSession starts asynchronous navigation; readiness can still describe the previous view.
+                await System.Threading.Tasks.Task.Delay(100, cancellationToken);
             }
         }
 

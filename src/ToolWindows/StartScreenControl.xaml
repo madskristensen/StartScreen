@@ -412,9 +412,7 @@
                 <DockPanel Grid.Column="0" Margin="24 20 16 16">
                 <TextBlock DockPanel.Dock="Top" Text="Recent" Style="{StaticResource StartScreen.Heading}" Margin="0 0 0 16"/>
                 <StackPanel x:Name="ViewFilters" DockPanel.Dock="Bottom" Margin="0 12 0 0">
-                    <CheckBox Content="Solutions only" IsChecked="{Binding ShowSolutionsOnly, Mode=TwoWay}"
-                              ToolTip="Show only solutions in Recent. Pinned items are always included." HorizontalAlignment="Left"/>
-                    <CheckBox x:Name="ShowSnoozedItems" Content="Show snoozed items" Margin="0 6 0 0" HorizontalAlignment="Left"
+                    <CheckBox x:Name="ShowSnoozedItems" Content="Show snoozed items" HorizontalAlignment="Left"
                               IsChecked="{Binding ShowSnoozedItems, ElementName=DevHubPanelControl, Mode=TwoWay}"
                               ToolTip="Include temporarily hidden PRs, issues, and builds in the work feeds. Right-click a snoozed item to unsnooze it early."/>
                 </StackPanel>

@@ -6,6 +6,24 @@ using StartScreen.ToolWindows;
 
 namespace StartScreen.Commands
 {
+    [Command(PackageIds.SolutionsOnlyCommand)]
+    internal sealed class SolutionsOnlyCommand : BaseCommand<SolutionsOnlyCommand>
+    {
+        protected override void BeforeQueryStatus(EventArgs e)
+        {
+            Command.Enabled = StartScreenWindow.CurrentViewModel != null;
+            Command.Checked = StartScreenWindow.CurrentViewModel?.ShowSolutionsOnly == true;
+        }
+
+        protected override Task ExecuteAsync(OleMenuCmdEventArgs e)
+        {
+            var viewModel = StartScreenWindow.CurrentViewModel;
+            if (viewModel != null)
+                viewModel.ShowSolutionsOnly = !viewModel.ShowSolutionsOnly;
+            return Task.CompletedTask;
+        }
+    }
+
     [Command(PackageIds.ClearAllRecentCommand)]
     internal sealed class ClearAllRecentCommand : BaseCommand<ClearAllRecentCommand>
     {

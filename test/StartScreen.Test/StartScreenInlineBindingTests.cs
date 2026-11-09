@@ -1578,24 +1578,30 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void SolutionsOnly_IsDockedBelowRecentItemsOutsideTheirScroller()
+        public void SolutionsOnly_IsTheFirstRecentMenuCommandSeparatedFromClearingActions()
         {
             using var stream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
             Assert.IsNotNull(stream);
             var document = XDocument.Load(stream);
             XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-            XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var filter = document.Descendants(presentation + "CheckBox")
-                .Single(element => element.Attribute("Content")?.Value == "Solutions only");
-            var recent = document.Descendants(presentation + "ListBox")
-                .Single(element => element.Attribute(xaml + "Name")?.Value == "MruPanel");
-
-            Assert.AreSame(recent.Parent!.Parent, filter.Parent!.Parent);
-            Assert.AreEqual("ViewFilters", filter.Parent.Attribute(xaml + "Name")?.Value);
-            Assert.AreEqual("Bottom", filter.Parent.Attribute("DockPanel.Dock")?.Value);
-            Assert.AreEqual("Left", filter.Attribute("HorizontalAlignment")?.Value);
-            Assert.AreEqual("{Binding ShowSolutionsOnly, Mode=TwoWay}", filter.Attribute("IsChecked")?.Value);
-            Assert.AreEqual("Show only solutions in Recent. Pinned items are always included.", filter.Attribute("ToolTip")?.Value);
+            Assert.IsFalse(document.Descendants(presentation + "CheckBox")
+                .Any(element => element.Attribute("Content")?.Value == "Solutions only"));
+            using var menuStream = typeof(StartScreenInlineBindingTests).Assembly.GetManifestResourceStream("VSCommandTable.vsct");
+            Assert.IsNotNull(menuStream);
+            var menu = XDocument.Load(menuStream);
+            XNamespace vsct = "http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable";
+            var groups = menu.Descendants(vsct + "Group")
+                .Where(group => group.Element(vsct + "Parent")?.Attribute("id")?.Value == "ClearRecentMenu")
+                .OrderBy(group => Convert.ToInt32(group.Attribute("priority")!.Value, 16)).ToList();
+            Assert.AreEqual("RecentFiltersGroup", groups[0].Attribute("id")?.Value);
+            Assert.AreEqual("ClearRecentGroup", groups[1].Attribute("id")?.Value);
+            var filters = menu.Descendants(vsct + "Button")
+                .Where(button => button.Element(vsct + "Parent")?.Attribute("id")?.Value == "RecentFiltersGroup").ToList();
+            Assert.HasCount(1, filters);
+            Assert.AreEqual("SolutionsOnlyCommand", filters[0].Attribute("id")?.Value);
+            Assert.AreEqual("Solutions only", filters[0].Element(vsct + "Strings")?.Element(vsct + "ButtonText")?.Value);
+            Assert.AreEqual(PackageIds.SolutionsOnlyCommand, Convert.ToInt32(menu.Descendants(vsct + "IDSymbol")
+                .Single(symbol => symbol.Attribute("name")?.Value == "SolutionsOnlyCommand").Attribute("value")!.Value, 16));
         }
 
         [TestMethod]

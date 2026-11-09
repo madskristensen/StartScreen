@@ -28,6 +28,7 @@ namespace StartScreen.ToolWindows.Controls
             if (_activityLoadCount == 0)
                 _isConnectionLoading = false;
             UpdateBusyState();
+            UpdateAccountRecovery(_currentDashboard);
             if (!loading && _activityLoadCount == 0)
                 SelectInitialMyWorkTab();
         }

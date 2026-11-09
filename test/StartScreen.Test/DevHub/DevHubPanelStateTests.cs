@@ -12,6 +12,45 @@ namespace StartScreen.Test.DevHub
     public class DevHubPanelStateTests
     {
         [TestMethod]
+        [DataRow("github.com", DevHubActivityStatus.Unauthorized)]
+        [DataRow("dev.azure.com", DevHubActivityStatus.Unauthorized)]
+        [DataRow("github.com", DevHubActivityStatus.Unavailable)]
+        [DataRow("dev.azure.com", DevHubActivityStatus.Unavailable)]
+        public void AccountRecovery_CompletedSnapshotsStayHiddenWhileActivityIsLoading(string host, DevHubActivityStatus status)
+        {
+            var dashboard = new DevHubDashboard();
+            var repo = new RemoteRepoIdentifier(host, "owner", "repo");
+            dashboard.Sources["repository"] = new DevHubActivitySnapshot { RepoIdentifier = repo, Status = status };
+            Assert.IsFalse(dashboard.IsRefreshing);
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, host, true, repo, isActivityLoading: true));
+            Assert.IsFalse(DevHubPanel.ShouldShowAccountRecovery(dashboard, host, true, repo, isActivityLoading: true));
+            Assert.IsFalse(DevHubPanel.HasUnavailableAccountVerification(dashboard, host, repo, isActivityLoading: true));
+
+            Assert.AreEqual(status == DevHubActivityStatus.Unauthorized,
+                DevHubPanel.ShouldShowAccountRecovery(dashboard, host, true, repo, isActivityLoading: false),
+                "A genuine final rejection must become actionable when all activity requests finish.");
+            Assert.AreEqual(status == DevHubActivityStatus.Unavailable,
+                DevHubPanel.HasUnavailableAccountVerification(dashboard, host, repo, isActivityLoading: false));
+        }
+
+        [TestMethod]
+        [DataRow("github.com")]
+        [DataRow("dev.azure.com")]
+        public void AccountRecovery_SuccessfulRefreshNeverExposesAnIntermediateReauthenticationMessage(string host)
+        {
+            var repo = new RemoteRepoIdentifier(host, "owner", "repo");
+            var intermediate = new DevHubDashboard();
+            intermediate.Sources["repository"] = new DevHubActivitySnapshot { RepoIdentifier = repo, Status = DevHubActivityStatus.Unauthorized };
+            Assert.IsFalse(DevHubPanel.ShouldShowAccountRecovery(intermediate, host, true, repo, isActivityLoading: true));
+
+            var authenticated = new DevHubDashboard();
+            authenticated.Users.Add(new DevHubUser { Host = host });
+            Assert.IsFalse(DevHubPanel.ShouldShowAccountRecovery(authenticated, host, true, repo, isActivityLoading: true));
+            Assert.IsFalse(DevHubPanel.ShouldShowAccountRecovery(authenticated, host, true, repo, isActivityLoading: false));
+            Assert.IsFalse(DevHubPanel.HasUnavailableAccountVerification(authenticated, host, repo, isActivityLoading: false));
+        }
+
+        [TestMethod]
         [DataRow("github.com", "GitHub/authentication")]
         [DataRow("dev.azure.com", "Azure DevOps/authentication")]
         [DataRow("dev.azure.com", "scoped repository")]

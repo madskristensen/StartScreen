@@ -215,7 +215,7 @@ namespace StartScreen.Test.DevHub
             var recovery = screen.Descendants().Single(element => element.Attribute(xaml + "Name")?.Value == "ShowSnoozedItems");
             Assert.AreEqual("{Binding ShowSnoozedItems, ElementName=DevHubPanelControl, Mode=TwoWay}", recovery.Attribute("IsChecked")?.Value);
             Assert.AreEqual("ViewFilters", recovery.Parent!.Attribute(xaml + "Name")?.Value);
-            Assert.IsTrue(recovery.ElementsBeforeSelf().Any(element => element.Attribute("Content")?.Value == "Solutions only"));
+            Assert.IsFalse(recovery.ElementsBeforeSelf().Any());
             Assert.AreEqual("Bottom", recovery.Parent.Attribute("DockPanel.Dock")?.Value);
         }
 

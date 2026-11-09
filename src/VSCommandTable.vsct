@@ -39,6 +39,9 @@
       <Group guid="StartScreen" id="ClearRecentGroup" priority="0x0100">
         <Parent guid="StartScreen" id="ClearRecentMenu"/>
       </Group>
+      <Group guid="StartScreen" id="RecentFiltersGroup" priority="0x0050">
+        <Parent guid="StartScreen" id="ClearRecentMenu"/>
+      </Group>
       <Group guid="StartScreen" id="CopilotSessionGroup" priority="0x0100">
         <Parent guid="StartScreen" id="CopilotSessionMenu"/>
       </Group>
@@ -64,6 +67,13 @@
     <!--This section defines the elements the user can interact with, like a menu command or a button
         or combo box in a toolbar. -->
     <Buttons>
+      <Button guid="StartScreen" id="SolutionsOnlyCommand" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="RecentFiltersGroup"/>
+        <Strings>
+          <ButtonText>Solutions only</ButtonText>
+          <ToolTipText>Show only solutions in Recent. Pinned items are always included.</ToolTipText>
+        </Strings>
+      </Button>
       <Button guid="StartScreen" id="MruPruneWorktrees" priority="0x0100" type="Button">
         <Parent guid="StartScreen" id="MruWorktreeMaintenance"/>
         <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
@@ -269,6 +279,8 @@
       <IDSymbol name="ClearAllRecentCommand" value="0x0101" />
       <IDSymbol name="ClearAllButPinnedCommand" value="0x0102" />
       <IDSymbol name="ClearMissingRecentCommand" value="0x0103" />
+      <IDSymbol name="SolutionsOnlyCommand" value="0x0104" />
+      <IDSymbol name="RecentFiltersGroup" value="0x000D" />
       <IDSymbol name="CopilotSessionMenu" value="0x1001" />
       <IDSymbol name="CopilotSessionGroup" value="0x0003" />
       <IDSymbol name="OpenCopilotInVisualStudio" value="0x0110" />
