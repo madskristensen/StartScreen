@@ -82,7 +82,7 @@ The **News & updates** sidebar gives you more than headlines:
 
 - **Blogs** - curated developer news from sources including the Visual Studio and .NET blogs, with support for your own RSS or Atom feeds.
 - **Videos** - recent videos from the Visual Studio YouTube channel.
-- **Events** - upcoming developer conferences, with descriptions, thumbnails, confirmed dates, and locations. Click an event card (or press Enter or Space when focused) to open its official page in your default browser. Visual Studio Live! entries link to the Visual Studio subscriber discount benefit; eligibility and the amount depend on your subscription and the event.
+- **Events** - upcoming developer conferences, with descriptions, thumbnails, and confirmed dates and locations on one line. Click an event card (or press Enter or Space when focused) to open its official page in your default browser. Routine update and cache messages are hidden; errors and empty-state notices remain visible. Visual Studio Live! entries link to the Visual Studio subscriber discount benefit; eligibility and the amount depend on your subscription and the event.
 - **What's New** - features shipped with your installed Visual Studio version.
 - **Feedback** - Developer Community tickets you created or upvoted, with their latest status, using your signed-in Visual Studio account.
 

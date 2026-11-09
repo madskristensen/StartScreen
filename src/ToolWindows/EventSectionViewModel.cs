@@ -54,7 +54,7 @@ namespace StartScreen.ToolWindows
             _isRefreshingEvents = true;
             RefreshState.IsLoading = true;
             OnPropertyChanged(nameof(IsRefreshingEvents));
-            SetStatus("Loading events...");
+            SetStatus(null);
             try
             {
                 var result = await _getEventsAsync(force, request.Token);
@@ -74,9 +74,9 @@ namespace StartScreen.ToolWindows
                 if (failures > 0)
                 {
                     RefreshState.IsPartial = true;
-                    SetStatus(result.Message + " Some event thumbnails could not be cached or loaded.");
+                    SetStatus((result.Message + " Some event thumbnails could not be cached or loaded.").TrimStart());
                 }
-                OutputLog.Refresh("Events", EventsStatus, RefreshState);
+                OutputLog.Refresh("Events", EventsStatus ?? "Events loaded.", RefreshState);
             }
             catch (Exception ex)
             {

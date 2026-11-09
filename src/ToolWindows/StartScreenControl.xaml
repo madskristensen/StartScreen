@@ -194,8 +194,8 @@
                     AutomationProperties.Name="{Binding Name}" AutomationProperties.HelpText="{Binding DateRange}">
                 <StackPanel>
                     <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                        <Border Height="60" VerticalAlignment="Top" ClipToBounds="True" CornerRadius="3"
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Height="75" VerticalAlignment="Top" ClipToBounds="True" CornerRadius="3"
                                 Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}">
                             <Grid>
                                 <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Calendar}" Width="24" Height="24"/>
@@ -210,8 +210,15 @@
                                        TextWrapping="Wrap" local:Typography.MaxLineCount="3" TextTrimming="WordEllipsis" ToolTip="{Binding Description}"/>
                         </StackPanel>
                     </Grid>
-                    <TextBlock Text="{Binding DateRange}" Style="{StaticResource StartScreen.Metadata}" Margin="0 8 0 0" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding Location}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.7" Margin="0 2 0 0" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="EventMetadata" Style="{StaticResource StartScreen.Metadata}" Margin="0 8 0 0"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}">
+                        <TextBlock.Text>
+                            <MultiBinding StringFormat="{}{0}  |  {1}">
+                                <Binding Path="DateRange"/>
+                                <Binding Path="Location"/>
+                            </MultiBinding>
+                        </TextBlock.Text>
+                    </TextBlock>
                     <TextBlock Style="{StaticResource StartScreen.Metadata}" Margin="0 6 0 0" TextWrapping="Wrap"
                                Visibility="{Binding HasSubscriberDiscount, Converter={StaticResource BoolToVisibilityConverter}}">
                         <Hyperlink NavigateUri="{Binding SubscriberDiscountUrl}" RequestNavigate="EventLink_RequestNavigate"

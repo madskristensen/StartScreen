@@ -90,7 +90,7 @@ namespace StartScreen.Services
             image.BeginInit();
             image.StreamSource = stream;
             image.CacheOption = BitmapCacheOption.OnLoad;
-            image.DecodePixelWidth = 160;
+            image.DecodePixelWidth = 200;
             image.EndInit();
             image.Freeze();
             return image;

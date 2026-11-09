@@ -29,7 +29,7 @@
       "endDate": "2026-11-20",
       "location": "Orlando, USA",
       "url": "https://vslive.com/ecg/live360events/events/orlando-2026/vslive.aspx",
-      "thumbnailUrl": "https://vslive.com/-/media/ecg/live360/2026/orlando/news-events/l360_or26_attendeepreviewguide_cover_sized.png",
+      "thumbnailUrl": "https://vslive.com/~/media/ecg/live360/2026/orlando/l360_or26_website_thumbnail.jpg",
       "subscriberDiscountUrl": "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/",
       "sources": [
         "https://vslive.com/ecg/live360events/events/orlando-2026/vslive.aspx",
@@ -93,7 +93,7 @@
       "endDate": "2027-03-26",
       "location": "Las Vegas, USA",
       "url": "https://vslive.com/events/las-vegas-2027/home.aspx",
-      "thumbnailUrl": "https://vslive.com/~/media/ecg/vslive/vsliveog1.jpg",
+      "thumbnailUrl": "https://vslive.com/~/media/ecg/vslive/2027/lasvegas/vsl_lv27_website_thumbnail_500x380.jpg",
       "subscriberDiscountUrl": "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/",
       "sources": [
         "https://vslive.com/events/las-vegas-2027/home.aspx",
@@ -107,7 +107,7 @@
       "endDate": "2027-05-06",
       "location": "Austin, USA",
       "url": "https://vslive.com/events/austin-2027/home.aspx",
-      "thumbnailUrl": "https://vslive.com/~/media/ecg/vslive/vsliveog1.jpg",
+      "thumbnailUrl": "https://vslive.com/~/media/ecg/vslive/2027/austin/vsl_au27_website_thumbnail_500x380.jpg",
       "subscriberDiscountUrl": "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/",
       "sources": [
         "https://vslive.com/events/austin-2027/home.aspx",
@@ -131,7 +131,7 @@
       "endDate": "2027-08-06",
       "location": "Redmond, USA",
       "url": "https://vslive.com/events/microsofthq-2027/home.aspx",
-      "thumbnailUrl": "https://vslive.com/~/media/ecg/vslive/vsliveog1.jpg",
+      "thumbnailUrl": "https://vslive.com/~/media/ecg/vslive/2027/redmond/vslail_hq27_website_thumbnail_500x380.jpg",
       "subscriberDiscountUrl": "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/",
       "sources": [
         "https://vslive.com/events/microsofthq-2027/home.aspx",

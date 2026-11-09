@@ -36,6 +36,54 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
+        [DataRow(false, false, null)]
+        [DataRow(true, false, null)]
+        [DataRow(false, true, "No upcoming events with confirmed dates are listed yet.")]
+        [DataRow(true, false, "Could not update events. Showing the cached schedule.")]
+        [DataRow(false, false, "Events updated, but the seven-day disk cache could not be saved.")]
+        public void InlineStatus_HidesRoutineUpdatesWithoutReservingSpaceButRetainsNotices(bool cached, bool empty, string? message)
+        {
+            using var context = CreateContext();
+            StartScreenViewModel? model = null;
+            using var section = new EventSectionViewModel(getTaskFactory: () => context.Factory,
+                getEventsAsync: (_, _) =>
+                {
+                    Assert.IsNull(model!.EventsStatus, "Loading must not introduce another routine status label.");
+                    return Task.FromResult(new EventFeedResult
+                    {
+                        Events = empty ? Array.Empty<ConferenceEvent>() : [new ConferenceEvent { Name = "Confirmed" }],
+                        IsCached = cached, IsStale = cached && message != null, Message = message,
+                        LastSuccessfulRefreshUtc = DateTimeOffset.UtcNow,
+                    });
+                }, loadThumbnailsAsync: (_, _) => Task.FromResult(0));
+            using var screen = model = new StartScreenViewModel(CancellationToken.None, eventSection: section);
+            var document = ReadScreen();
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            XNamespace controls = "clr-namespace:StartScreen.ToolWindows.Controls;assembly=StartScreen";
+            var definition = document.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding EventsStatus}");
+            var root = (StackPanel)SharedXamlReader.Parse(new XElement(p + "StackPanel",
+                new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
+                new XElement(p + "StackPanel.Resources", new XElement(controls + "NullToCollapsedConverter",
+                    new XAttribute(x + "Key", "NullToCollapsedConverter"))),
+                new XElement(definition), new XElement(p + "Border", new XAttribute("Height", "20"))).ToString());
+            root.DataContext = screen;
+            context.Factory.Run(() => section.ActivateTabAsync());
+            root.Measure(new Size(320, double.PositiveInfinity));
+            root.Arrange(new Rect(0, 0, 320, root.DesiredSize.Height));
+            root.UpdateLayout();
+            var status = (TextBlock)root.Children[0];
+            Assert.AreEqual(message, screen.EventsStatus);
+            Assert.AreEqual(message == null ? Visibility.Collapsed : Visibility.Visible, status.Visibility);
+            Assert.AreEqual(message ?? string.Empty, status.Text);
+            if (message == null)
+            {
+                Assert.AreEqual(0d, root.Children[1].TranslatePoint(new Point(), root).Y, 0.01);
+                Assert.IsFalse(screen.UnifiedRefreshDetails.Contains("Events:"));
+            }
+        }
+
+        [STATestMethod]
         public void Activation_LoadsAndReportsProgressAndPartialThumbnailFailure()
         {
             using var context = CreateContext();
@@ -131,8 +179,10 @@ namespace StartScreen.Test
             Assert.AreEqual("EventCard_MouseUp", surface.Attribute("MouseUp")!.Value);
             Assert.AreEqual("EventCard_KeyDown", surface.Attribute("KeyDown")!.Value);
             Assert.IsTrue(card.Descendants(p + "Image").Any(item => item.Attribute("Source")?.Value == "{Binding Thumbnail}"));
-            foreach (var binding in new[] { "Name", "Description", "DateRange", "Location" })
+            foreach (var binding in new[] { "Name", "Description" })
                 Assert.IsTrue(card.Descendants(p + "TextBlock").Any(item => item.Attribute("Text")?.Value == "{Binding " + binding + "}"));
+            CollectionAssert.AreEqual(new[] { "DateRange", "Location" }, card.Descendants(p + "MultiBinding")
+                .Single().Elements(p + "Binding").Select(item => item.Attribute("Path")!.Value).ToArray());
             var discount = card.Descendants(p + "Hyperlink").Single();
             Assert.AreEqual("{Binding SubscriberDiscountUrl}", discount.Attribute("NavigateUri")!.Value);
             Assert.AreEqual("EventLink_RequestNavigate", discount.Attribute("RequestNavigate")!.Value);
@@ -142,7 +192,8 @@ namespace StartScreen.Test
         [DataRow(280d, 12d)]
         [DataRow(320d, 20d)]
         [DataRow(480d, 20d)]
-        public void EventCards_WrapDateLocationAndDiscountWithoutClippingAndFollowThemeChanges(double width, double fontSize)
+        [DataRow(280d, 32d)]
+        public void EventCards_KeepDateAndLocationOnOneLineWithoutClippingAndFollowThemeChanges(double width, double fontSize)
         {
             var document = ReadScreen();
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -169,6 +220,8 @@ namespace StartScreen.Test
             root.UpdateLayout();
             var card = (Border)root.Children[0];
             Assert.IsTrue(card.Focusable);
+            var thumbnailFrame = Descendants<Border>(card).Single(item => item.Height == 75);
+            Assert.AreEqual(100d, thumbnailFrame.ActualWidth);
             var blocks = Descendants<TextBlock>(card).ToArray();
             foreach (var block in blocks)
             {
@@ -176,6 +229,12 @@ namespace StartScreen.Test
                 Assert.IsLessThanOrEqualTo(width + 0.01, block.TranslatePoint(new Point(block.ActualWidth, 0), root).X);
                 Assert.IsLessThanOrEqualTo(root.ActualHeight + 0.01, block.TranslatePoint(new Point(0, block.ActualHeight), root).Y);
             }
+            var metadata = blocks.Single(item => item.Name == "EventMetadata");
+            var conference = (ConferenceEvent)root.DataContext;
+            Assert.AreEqual(conference.DateRange + "  |  " + conference.Location, metadata.Text);
+            Assert.AreEqual(TextWrapping.NoWrap, metadata.TextWrapping);
+            Assert.AreEqual(TextTrimming.CharacterEllipsis, metadata.TextTrimming);
+            Assert.AreEqual(metadata.Text, metadata.ToolTip);
             var title = blocks.Single(item => item.Text.StartsWith("Visual Studio Live!", StringComparison.Ordinal));
             Assert.AreSame(SystemColors.WindowTextBrush, title.Foreground);
             root.Resources["TestThemeBrush"] = SystemColors.HighlightTextBrush;
@@ -184,7 +243,7 @@ namespace StartScreen.Test
 
         private static EventFeedResult Result(string name) => new EventFeedResult
         {
-            Events = [new ConferenceEvent { Name = name }], Message = "Events updated just now.", LastSuccessfulRefreshUtc = DateTimeOffset.UtcNow,
+            Events = [new ConferenceEvent { Name = name }], LastSuccessfulRefreshUtc = DateTimeOffset.UtcNow,
         };
 
         private static JoinableTaskContext CreateContext() => new JoinableTaskContext(Thread.CurrentThread,

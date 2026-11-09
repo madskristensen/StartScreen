@@ -203,7 +203,7 @@ namespace StartScreen.ToolWindows
                     statuses.Add($"News: {LastNewsRefreshText}");
                 if (!string.IsNullOrWhiteSpace(LastYouTubeRefreshText))
                     statuses.Add($"Videos: {LastYouTubeRefreshText}");
-                if (EventSection.RefreshState.HasRefreshed)
+                if (!string.IsNullOrWhiteSpace(EventsStatus))
                     statuses.Add($"Events: {EventsStatus}");
                 if (_feedbackRequested)
                     statuses.Add($"Feedback: {FeedbackStatus ?? LastFeedbackRefreshText}");

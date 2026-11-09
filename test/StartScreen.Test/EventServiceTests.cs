@@ -37,6 +37,7 @@ namespace StartScreen.Test
             Assert.AreEqual(requests, handler.RequestCount);
             Assert.AreEqual(requests == 1, result.IsCached);
             Assert.AreEqual("Scheduled", result.Events.Single().Name);
+            Assert.IsNull(result.Message, "Successful fresh and cached schedules must not show routine update messages.");
         }
 
         [TestMethod]
@@ -197,6 +198,7 @@ namespace StartScreen.Test
             Assert.AreEqual(0, await new EventService(client, directory.Path, () => clock).LoadThumbnailsAsync(first, CancellationToken.None));
             Assert.AreSame(first[0].Thumbnail, first[1].Thumbnail);
             Assert.IsTrue(first[0].Thumbnail!.IsFrozen);
+            Assert.AreEqual(200, first[0].Thumbnail!.DecodePixelWidth);
             clock = _now.AddDays(6);
             Assert.AreEqual(0, await new EventService(client, directory.Path, () => clock).LoadThumbnailsAsync(Items(), CancellationToken.None));
             Assert.AreEqual(1, handler.RequestCount);

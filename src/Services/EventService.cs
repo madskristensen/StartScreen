@@ -159,7 +159,7 @@ namespace StartScreen.Services
                 IsCached = cached,
                 LastSuccessfulRefreshUtc = snapshot.FetchedAtUtc,
                 Message = events.Length == 0 ? "No upcoming events with confirmed dates are listed yet."
-                    : cached ? "Showing cached events (updated at most once every seven days)." : "Events updated just now.",
+                    : null,
             };
         }
 
