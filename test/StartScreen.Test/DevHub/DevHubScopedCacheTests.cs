@@ -192,18 +192,38 @@ namespace StartScreen.Test.DevHub
         public async Task OlderAuthenticationCannotReplaceNewIdentityContextAsync()
         {
             var oldAuthentication = new TaskCompletionSource<IReadOnlyList<DevHubUser>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var oldAuthenticationStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var calls = 0;
-            var provider = new Provider { Authenticate = () => ++calls == 1 ? oldAuthentication.Task : Task.FromResult(Users("after")) };
+            var provider = new Provider { Authenticate = () =>
+            {
+                if (Interlocked.Increment(ref calls) != 1)
+                    return Task.FromResult(Users("after"));
+                oldAuthenticationStarted.SetResult(true);
+                return oldAuthentication.Task;
+            } };
             var service = Service(provider);
             var old = service.ScopeToRepoAsync(Repo(0), CancellationToken.None);
-            await service.ScopeToRepoAsync(Repo(1), CancellationToken.None);
-
-            oldAuthentication.SetResult(Users("before"));
-            await old;
+            try
+            {
+                await CompleteWithinTimeoutAsync(oldAuthenticationStarted.Task);
+                await CompleteWithinTimeoutAsync(service.ScopeToRepoAsync(Repo(1), CancellationToken.None));
+            }
+            finally
+            {
+                oldAuthentication.TrySetResult(Users("before"));
+            }
+            await CompleteWithinTimeoutAsync(old);
 
             Assert.AreEqual(1, service.ScopedSourceCount);
             provider.Fetch = (repo, _) => Task.FromResult(Failed(repo));
-            Assert.IsEmpty((await service.ScopeToRepoAsync(Repo(0), CancellationToken.None)).PullRequests);
+            Assert.IsEmpty((await CompleteWithinTimeoutAsync(service.ScopeToRepoAsync(Repo(0), CancellationToken.None))).PullRequests);
+
+            static async Task<T> CompleteWithinTimeoutAsync<T>(Task<T> task)
+            {
+                Assert.AreSame(task, await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(10))),
+                    "The authentication race test did not complete its expected synchronization step within ten seconds.");
+                return await task;
+            }
         }
 
         [TestMethod]
