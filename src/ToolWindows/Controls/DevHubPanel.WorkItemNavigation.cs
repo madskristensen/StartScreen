@@ -20,6 +20,7 @@ namespace StartScreen.ToolWindows.Controls
             }
             try
             {
+                EnsureActivityPreferences();
                 var sessionId = CopilotWorkItemPrompt.CanStartChat(item)
                     ? await CopilotWorkItemSessions.FindAsync(CopilotWorkItemSessions.DefaultFile, item, StartScreenPackage.ShutdownToken) : null;
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
@@ -82,6 +83,11 @@ namespace StartScreen.ToolWindows.Controls
                     case PackageIds.DevHubCopyUrl:
                         Clipboard.SetText(item.WebUrl);
                         break;
+                    case PackageIds.DevHubPinItem:
+                    case PackageIds.DevHubSnoozeItem:
+                    case PackageIds.DevHubSnoozeItemDay:
+                        await SaveActivityPreferenceAsync(item, id);
+                        break;
                     case PackageIds.DevHubScopeToRepo:
                         ScopeToRepo(item.RepoIdentifier);
                         break;
@@ -108,17 +114,7 @@ namespace StartScreen.ToolWindows.Controls
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(StartScreenPackage.ShutdownToken);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(StartScreenPackage.ShutdownToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(15));
-            _copilotComponentModel = await VS.GetServiceAsync<SComponentModel, IComponentModel>()
-                ?? throw new NotSupportedException("Visual Studio's component model is unavailable.");
-            var backends = GetCopilotExport(CopilotHarnessAdapter.BackendsContract);
-            var registry = GetCopilotExport(CopilotHarnessAdapter.NavigatorRegistryContract);
-            var shell = await VS.GetServiceAsync<SVsUIShell, IVsUIShell>();
-            var chatWindow = new Guid("40ea2e6b-2121-4bb8-a43e-c83c04b51041");
-            ErrorHandler.ThrowOnFailure(shell.FindToolWindow((uint)__VSFINDTOOLWIN.FTW_fForceCreate, ref chatWindow, out IVsWindowFrame frame));
-            ErrorHandler.ThrowOnFailure(frame.Show());
-            object navigator;
-            while ((navigator = CopilotHarnessAdapter.Read(registry, "Current")) == null)
-                await System.Threading.Tasks.Task.Delay(100, timeout.Token);
+            var (backends, navigator) = await GetChatServicesAsync(timeout.Token);
             if (sessionId != null)
             {
                 if (await CopilotChatLauncher.TryResumeAsync(backends, navigator, sessionId, timeout.Token))
@@ -129,6 +125,32 @@ namespace StartScreen.ToolWindows.Controls
             }
             sessionId = await CopilotChatLauncher.StartAsync(backends, navigator, CopilotWorkItemPrompt.Create(item), StartScreenPackage.ShutdownToken);
             await CopilotWorkItemSessions.SaveAsync(CopilotWorkItemSessions.DefaultFile, item, sessionId, StartScreenPackage.ShutdownToken);
+        }
+
+        internal async Task StartWorkspaceChatAsync(string directory, CancellationToken cancellationToken)
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            var (backends, navigator) = await GetChatServicesAsync(timeout.Token);
+            await CopilotChatLauncher.StartWorkspaceAsync(backends, navigator, directory, cancellationToken);
+        }
+
+        private async System.Threading.Tasks.Task<(object Backends, object Navigator)> GetChatServicesAsync(CancellationToken cancellationToken)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            _copilotComponentModel = await VS.GetServiceAsync<SComponentModel, IComponentModel>()
+                ?? throw new NotSupportedException("Visual Studio's component model is unavailable.");
+            var backends = GetCopilotExport(CopilotHarnessAdapter.BackendsContract);
+            var registry = GetCopilotExport(CopilotHarnessAdapter.NavigatorRegistryContract);
+            var shell = await VS.GetServiceAsync<SVsUIShell, IVsUIShell>()
+                ?? throw new NotSupportedException("Visual Studio's chat window is unavailable.");
+            var chatWindow = new Guid("40ea2e6b-2121-4bb8-a43e-c83c04b51041");
+            ErrorHandler.ThrowOnFailure(shell.FindToolWindow((uint)__VSFINDTOOLWIN.FTW_fForceCreate, ref chatWindow, out IVsWindowFrame frame));
+            ErrorHandler.ThrowOnFailure(frame.Show());
+            object navigator;
+            while ((navigator = CopilotHarnessAdapter.Read(registry, "Current")) == null)
+                await System.Threading.Tasks.Task.Delay(100, cancellationToken);
+            return (backends, navigator);
         }
     }
 }

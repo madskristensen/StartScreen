@@ -1040,6 +1040,7 @@ namespace StartScreen.Test
         public FakeCollection Sessions { get; } = new();
         public FakeValue<bool> SessionsReady { get; } = new(true);
         public List<FakeSession> Created { get; } = [];
+        public List<FakeSessionId> Deleted { get; } = [];
         public FakeCreateOptions? CreateOptions { get; private set; }
         public FakeSession NextSession { get; set; } = new();
         public Task<IBackendSession> CreateNewSessionAsync(FakeCreateOptions options)
@@ -1048,6 +1049,12 @@ namespace StartScreen.Test
             Created.Add(NextSession);
             return Task.FromResult<IBackendSession>(NextSession);
         }
+        public Task DeleteSessionAsync(FakeSessionId sessionId, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Deleted.Add(sessionId);
+            return Task.CompletedTask;
+        }
     }
 
     public sealed class FakeSession : IBackendSession, IDisposable
@@ -1055,6 +1062,19 @@ namespace StartScreen.Test
         public FakeSessionId SessionId { get; } = new();
         public FakeValue<string> Title { get; } = new("Conversation");
         public FakeValue<string?> WorkingDirectory { get; } = new(@"C:\Code\App");
+        IObservable<string?> IBackendSession.WorkingDirectory => WorkingDirectory;
+        public bool CanChangeWorkingDirectory { get; set; } = true;
+        public string? ChangedDirectory { get; private set; }
+        public Func<string, CancellationToken, Task>? ChangeDirectoryAsync { get; set; }
+        public Task ChangeWorkingDirectoryAsync(string path, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ChangedDirectory = path;
+            if (ChangeDirectoryAsync != null)
+                return ChangeDirectoryAsync(path, cancellationToken);
+            WorkingDirectory.Publish(path);
+            return Task.CompletedTask;
+        }
         public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
         public FakeValue<DateTimeOffset> LastActivity { get; } = new(DateTimeOffset.UtcNow);
         public FakeValue<bool> IsResponding { get; } = new(false);
@@ -1158,10 +1178,14 @@ namespace Microsoft.VisualStudio.Copilot.Harness
     public interface ICopilotBackend
     {
         Task<IBackendSession> CreateNewSessionAsync(StartScreen.Test.FakeCreateOptions options);
+        Task DeleteSessionAsync(StartScreen.Test.FakeSessionId sessionId, CancellationToken cancellationToken);
     }
     public interface IBackendSession
     {
         StartScreen.Test.FakeSessionId SessionId { get; }
+        IObservable<string?> WorkingDirectory { get; }
+        bool CanChangeWorkingDirectory { get; }
+        Task ChangeWorkingDirectoryAsync(string path, CancellationToken cancellationToken);
         Task<StartScreen.Test.FakeChatResponse> SendAsync(StartScreen.Test.FakeChatSendRequest request, CancellationToken cancellationToken);
     }
     public interface IBackendChatConfirmation { }

@@ -142,6 +142,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <TextBlock Text="{Binding DisplayTitle}">
                         <TextBlock.Style>
@@ -240,7 +241,7 @@
                                Visibility="{Binding NextActionText, Converter={StaticResource NullToCollapsedConverter}}"/>
                     </StackPanel>
                     <TextBlock Grid.Column="2" Grid.RowSpan="3" Text="{Binding ActivityDateText}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.65"
-                               HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
+                               HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" ToolTip="{Binding ActivityDateToolTip}"/>
                     <ItemsControl Grid.Row="2" ItemsSource="{Binding Labels}" Margin="0 2 0 0" Focusable="False">
                         <ItemsControl.Style>
                             <Style TargetType="ItemsControl">
@@ -304,6 +305,9 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <TextBlock Grid.Row="4" Grid.ColumnSpan="3" Text="{Binding PreferenceText}"
+                               Style="{StaticResource StartScreen.Metadata}" Opacity="0.7" Margin="0 3 0 0"
+                               Visibility="{Binding PreferenceText, Converter={StaticResource NullToCollapsedConverter}}"/>
                 </Grid>
                     <Border x:Name="ActivitySeparator" Grid.Column="1" Grid.Row="1"
                             Margin="0 6 0 0" Style="{StaticResource StartScreen.Separator}">
@@ -902,6 +906,8 @@
         <!-- Dashboard Content -->
         <DockPanel x:Name="DashboardPanel" Grid.Row="1">
 
+            <TextBlock x:Name="ActivityPreferencesError" DockPanel.Dock="Top" Visibility="Collapsed" TextWrapping="Wrap" Margin="8 0 8 8"/>
+
             <StackPanel x:Name="AccountRecoveryPanel" DockPanel.Dock="Top" Visibility="Collapsed" Margin="8 0 0 12">
                 <TextBlock x:Name="AccountVerificationUnavailableText" TextWrapping="Wrap" Visibility="Collapsed"/>
                 <TextBlock x:Name="VisualStudioAccountRecoveryText" TextWrapping="Wrap" Visibility="Collapsed">
@@ -947,7 +953,7 @@
                         <WrapPanel ButtonBase.Click="ActivityFilter_Click">
                             <RadioButton x:Name="MyWorkAttentionFilter" Content="Attention" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"
-                                         ToolTip="All items with a known action for you, newest updated first."/>
+                                         ToolTip="Items that need you and items you pinned here. Right-click a PR, issue, or build and choose Pin to Attention. Pinned items first, then newest updated."/>
                             <RadioButton x:Name="MyWorkCopilotFilter" Content="Copilot" GroupName="MyWorkKind" IsChecked="True"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="MyWorkPrFilter" Content="PRs" GroupName="MyWorkKind"
@@ -958,13 +964,43 @@
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                         </WrapPanel>
                     </DockPanel>
-                    <DockPanel Grid.Row="1" Margin="8 0 8 8" Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <Button DockPanel.Dock="Right" Content="All repositories" Click="ClearFilter_Click"
-                                Style="{DynamicResource ActionButtonStyle}" MinWidth="0" MinHeight="24" Padding="6 2" Margin="8 0 0 0"/>
-                        <TextBlock Text="{Binding WorkSectionTitle}" Style="{StaticResource StartScreen.Metadata}" TextTrimming="CharacterEllipsis"
-                                   VerticalAlignment="Center" ToolTip="{Binding WorkSectionTitle}"/>
-                    </DockPanel>
-                    <Grid Grid.Row="2" Margin="8 0 18 10">
+                    <Border x:Name="RepositoryScopeStrip" Grid.Row="1" Margin="8 0 8 12" Padding="8 6" CornerRadius="3"
+                            Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}"
+                            BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBorderBrushKey}}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelectedMruItem}" Value="True">
+                                        <Setter Property="BorderThickness" Value="1"/>
+                                        <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <TextBlock x:Name="RepositoryScopeLabel" Text="{Binding RepositoryScopeLabel}" TextWrapping="Wrap"
+                                       Style="{StaticResource StartScreen.Metadata}"
+                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+                            <TextBlock x:Name="RepositoryScopeName" Grid.Row="1" Text="{Binding RepositoryScopeName}"
+                                       Style="{StaticResource StartScreen.CardTitle}" TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding RepositoryScopeName}"
+                                       Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                            <TextBlock x:Name="ClearRepositoryScope" Grid.Column="1" Grid.RowSpan="2" Margin="12 0 0 0"
+                                       VerticalAlignment="Center" Style="{StaticResource StartScreen.Metadata}"
+                                       Visibility="{Binding HasSelectedMruItem, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <Hyperlink Click="ClearFilter_Click" ToolTip="Show activity across all repositories"
+                                           AutomationProperties.Name="Clear repository filter"
+                                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">Clear filter</Hyperlink>
+                            </TextBlock>
+                        </Grid>
+                    </Border>
+                    <Border Grid.Row="2" Margin="0 0 0 10" Padding="8 0" HorizontalAlignment="Left"
+                            Width="{Binding ActualWidth, ElementName=MyWorkList}">
+                    <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="220"/>
@@ -994,7 +1030,7 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock Grid.Column="2" HorizontalAlignment="Right" Opacity="0.65">
+                        <TextBlock x:Name="MyWorkDateHeading" Grid.Column="2" HorizontalAlignment="Right" TextAlignment="Right" Opacity="0.65">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource StartScreen.Metadata}">
                                     <Setter Property="Text" Value="Updated"/>
@@ -1005,6 +1041,7 @@
                             </TextBlock.Style>
                         </TextBlock>
                     </Grid>
+                    </Border>
                     <ScrollViewer Grid.Row="3" Style="{StaticResource StartScreen.ScrollViewer}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
                         <StackPanel>
                             <ItemsControl x:Name="MyWorkList" AlternationCount="2147483647" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>

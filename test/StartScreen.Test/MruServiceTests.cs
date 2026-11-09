@@ -2,8 +2,11 @@ using System.Runtime.Remoting.Messaging;
 using System.Runtime.Remoting.Proxies;
 using LibGit2Sharp;
 using Microsoft.VisualStudio.Settings;
+using Microsoft.VisualStudio.Shell.CodeContainerManagement;
 using StartScreen.Models;
 using StartScreen.Services;
+using StartScreen.ToolWindows;
+using CodeContainer = Microsoft.VisualStudio.Shell.CodeContainerManagement.CodeContainer;
 
 namespace StartScreen.Test
 {
@@ -38,6 +41,68 @@ namespace StartScreen.Test
                 var call = (IMethodCallMessage)message;
                 return new ReturnMessage(invoke(call), null, 0, call.LogicalCallContext, call);
             }
+        }
+
+        [TestMethod]
+        [DataRow(@"C:\Unavailable\NewFolder", MruItemType.Folder)]
+        [DataRow(@"C:\Unavailable\NewSolution.slnx", MruItemType.Solution)]
+        [DataRow(@"C:\Unavailable\NewProject.csproj", MruItemType.Project)]
+        public void RecentAccessTimes_GroupNewWorkspacesBeforeMetadataLoads(string path, MruItemType type)
+        {
+            var opened = DateTimeOffset.UtcNow;
+            var container = new CodeContainer(new CodeContainerLocalProperties(path, CodeContainerType.Folder, null), null, false, opened);
+            var list = (ISettingsList)new SettingsProxy(typeof(ISettingsList), call =>
+            {
+                Assert.AreEqual("GetValueOrDefault", call.MethodName);
+                Assert.AreEqual(typeof(CodeContainer), call.MethodBase.GetGenericArguments().Single());
+                Assert.AreEqual(path, call.Args[0]);
+                return container;
+            }).GetTransparentProxy();
+            var item = new MruItem { Path = path, Type = type, LastAccessed = DateTime.Today.AddYears(-1) };
+
+            MruService.ApplyRecentAccessTimes([item], list);
+
+            Assert.AreEqual(opened.LocalDateTime, item.LastAccessed);
+            Assert.AreEqual("Today", item.TimeGroup);
+            Assert.IsTrue(item.HasRecentAccessTime);
+            using var model = new StartScreenViewModel([item, new MruItem { LastAccessed = DateTime.Today.AddDays(-2) }]);
+            Assert.AreSame(item, model.VisibleMruItems[0]);
+            item.ApplyFallbackAccessTime(DateTime.Today.AddYears(-1));
+            item.ApplyMetadata(new MruItem.Metadata { LastAccessed = DateTime.Today.AddDays(1) }, includeActivity: false);
+            Assert.AreEqual(opened.LocalDateTime, item.LastAccessed, "Filesystem and cached metadata must not replace the VS timestamp.");
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void RecentAccessTimes_MissingOrUndatedEntryRetainsFallback(bool undated)
+        {
+            var item = new MruItem { Path = @"C:\Unavailable\Folder", Type = MruItemType.Folder, LastAccessed = DateTime.Today.AddDays(-2) };
+            var container = undated ? new CodeContainer(new CodeContainerLocalProperties(item.Path, CodeContainerType.Folder, null), null, false, default) : null;
+            var list = (ISettingsList)new SettingsProxy(typeof(ISettingsList), _ => container).GetTransparentProxy();
+
+            MruService.ApplyRecentAccessTimes([item], null);
+            MruService.ApplyRecentAccessTimes([item], list);
+
+            Assert.IsFalse(item.HasRecentAccessTime);
+            Assert.AreEqual(DateTime.Today.AddDays(-2), item.LastAccessed);
+            item.ApplyFallbackAccessTime(DateTime.Today.AddDays(-3));
+            Assert.AreEqual(DateTime.Today.AddDays(-2), item.LastAccessed);
+            item.ApplyFallbackAccessTime(DateTime.Today);
+            Assert.AreEqual(DateTime.Today, item.LastAccessed);
+        }
+
+        [TestMethod]
+        public void ParseFolder_WithoutVsDirectoryUsesWorkspaceTimestamp()
+        {
+            using var directory = new TemporaryDirectory();
+            var written = DateTime.Today.AddDays(-2);
+            Directory.SetLastWriteTime(directory.Path, written);
+
+            MruItem item = MruService.ParseMruEntry(directory.Path + "|{guid}|False|Folder");
+
+            Assert.AreEqual(written, item.LastAccessed);
+            Assert.IsFalse(Directory.Exists(Path.Combine(directory.Path, ".vs")));
         }
 
         [TestMethod]

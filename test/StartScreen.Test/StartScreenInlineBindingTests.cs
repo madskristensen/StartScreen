@@ -149,9 +149,10 @@ namespace StartScreen.Test
             }.Contains(setter.Attribute("Property")?.Value)));
             Assert.IsFalse(style.Elements(p + "Style.Triggers").Any());
 
-            var allRepositories = ReadLayoutXaml("DevHubPanel.xaml").Descendants(p + "Button")
-                .Single(element => element.Attribute("Content")?.Value == "All repositories");
-            Assert.AreEqual("{DynamicResource ActionButtonStyle}", allRepositories.Attribute("Style")!.Value);
+            var clearScope = ReadLayoutXaml("DevHubPanel.xaml").Descendants(p + "Hyperlink")
+                .Single(element => element.Attribute("Click")?.Value == "ClearFilter_Click");
+            Assert.AreEqual("Clear filter", clearScope.Value);
+            Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}", clearScope.Attribute("Foreground")!.Value);
 
             var attach = document.Descendants(p + "Button")
                 .Single(element => element.Attribute(x + "Name")?.Value == "AttachToProcessButton");
@@ -159,6 +160,69 @@ namespace StartScreen.Test
                 attach.Descendants(p + "Path").Single().Attribute("Fill")!.Value);
             Assert.AreEqual("{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=Button}}",
                 attach.Descendants(p + "Border").Single().Attribute("BorderBrush")!.Value);
+        }
+
+        [STATestMethod]
+        [DataRow(320d, 12d)]
+        [DataRow(320d, 20d)]
+        [DataRow(520d, 12d)]
+        [DataRow(520d, 20d)]
+        public void RepositoryScopeStrip_ShowsExplicitScopeFitsLongNamesAndClearsForMultipleProjects(double width, double fontSize)
+        {
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            Assert.IsFalse(document.Descendants(p + "Button").Any(element => element.Attribute("Content")?.Value == "All repositories"));
+            var definition = new XElement(document.Descendants(p + "Border")
+                .Single(element => element.Attribute(x + "Name")?.Value == "RepositoryScopeStrip"));
+            definition.Descendants(p + "Hyperlink").Attributes("Click").Remove();
+            var container = (Grid)XamlReader.Parse(new XElement(p + "Grid", new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
+                new XElement(p + "Grid.Resources", new XElement(p + "BooleanToVisibilityConverter",
+                    new XAttribute(x + "Key", "BoolToVisibilityConverter"))), definition).ToString());
+            var strip = (Border)container.Children[0];
+            StartScreen.ToolWindows.Typography.SetEnvironmentSize(strip, fontSize);
+            var item = new Models.MruItem { Name = "VS", RemoteUrl = "https://dev.azure.com/organization/project/_git/a-very-long-repository-name-that-does-not-fit-on-one-line" };
+            using var model = new StartScreenViewModel([item]);
+            strip.DataContext = model;
+            var label = (TextBlock)strip.FindName("RepositoryScopeLabel");
+            var name = (TextBlock)strip.FindName("RepositoryScopeName");
+            var clear = (TextBlock)strip.FindName("ClearRepositoryScope");
+            void Layout()
+            {
+                strip.Measure(new Size(width, double.PositiveInfinity));
+                strip.Arrange(new Rect(0, 0, width, strip.DesiredSize.Height));
+                strip.UpdateLayout();
+            }
+            Layout();
+            Assert.AreEqual(Visibility.Collapsed, strip.Visibility);
+            Assert.AreEqual(0d, strip.DesiredSize.Height, "The unfiltered scope must not reserve vertical space.");
+            Assert.AreEqual(Visibility.Collapsed, name.Visibility);
+            Assert.AreEqual(Visibility.Collapsed, clear.Visibility);
+
+            strip.Resources["TestThemeBrush"] = SystemColors.WindowBrush;
+            model.SetMruSelection([item]);
+            Layout();
+            Assert.AreEqual(Visibility.Visible, strip.Visibility);
+            Assert.AreEqual("Filtered to repository:", label.Text);
+            Assert.AreEqual(model.SelectedRepository.DisplayName, name.Text);
+            Assert.AreEqual(name.Text, name.ToolTip);
+            Assert.AreEqual(TextTrimming.CharacterEllipsis, name.TextTrimming);
+            Assert.AreEqual(Visibility.Visible, clear.Visibility);
+            Assert.AreEqual(new Thickness(1), strip.BorderThickness);
+            Assert.AreSame(SystemColors.WindowBrush, strip.Background);
+            Assert.IsGreaterThan(0d, name.ActualWidth);
+            Assert.IsLessThanOrEqualTo(clear.TranslatePoint(new Point(), strip).X, name.TranslatePoint(new Point(name.ActualWidth, 0), strip).X);
+            Assert.IsLessThanOrEqualTo(width, clear.TranslatePoint(new Point(clear.ActualWidth, 0), strip).X);
+            strip.Resources["TestThemeBrush"] = SystemColors.HighlightBrush;
+            Assert.AreSame(SystemColors.HighlightBrush, strip.Background, "Scope colors must follow theme changes.");
+
+            model.SetMruSelection([item, new Models.MruItem()]);
+            Layout();
+            Assert.AreEqual(Visibility.Collapsed, strip.Visibility);
+            Assert.AreEqual(0d, strip.DesiredSize.Height, "Clearing the scope must also remove its spacing.");
+            Assert.AreEqual(Visibility.Collapsed, name.Visibility);
+            Assert.AreEqual(Visibility.Collapsed, clear.Visibility);
+            Assert.AreEqual(new Thickness(0), strip.BorderThickness);
         }
 
         [STATestMethod]
@@ -215,10 +279,7 @@ namespace StartScreen.Test
                 "Loading secondary content must not shift the column boundary.");
         }
 
-        [STATestMethod]
-        [DataRow(false)]
-        [DataRow(true)]
-        public void RecentItems_HaveComfortableRowsAndRoomForReviewDetails(bool hasReviews)
+        internal static Border ParseMruCard()
         {
             var document = ReadLayoutXaml("MruItemControl.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -246,7 +307,15 @@ namespace StartScreen.Test
                 element.Attribute("Property")?.Value == "Foreground").Remove();
             definition.AddFirst(new XElement(p + "Border.Resources",
                 new XElement(p + "BooleanToVisibilityConverter", new XAttribute(x + "Key", "BoolToVisibilityConverter")), styles));
-            var card = (Border)XamlReader.Parse(definition.ToString());
+            return (Border)XamlReader.Parse(definition.ToString());
+        }
+
+        [STATestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void RecentItems_HaveComfortableRowsAndRoomForReviewDetails(bool hasReviews)
+        {
+            var card = ParseMruCard();
             var item = new Models.MruItem { Name = "hubitat-drivers", GitBranch = "main" };
             item.ApplyRepositorySummary("Loaded", "Review details", 0, hasReviews ? 2 : 0);
             card.DataContext = item;
@@ -282,6 +351,8 @@ namespace StartScreen.Test
             icon.ReplaceWith(new XElement(p + "Border", new XAttribute("Width", "12"), new XAttribute("Height", "12")));
             var rowDefinition = new XElement(document.Descendants(p + "Grid")
                 .Single(element => element.Attribute(x + "Name")?.Value == "RepositoryStatusRow"));
+            foreach (var worktreeIcon in rowDefinition.Descendants().Where(element => element.Name.LocalName == "CrispImage").ToArray())
+                worktreeIcon.ReplaceWith(new XElement(p + "Border", new XAttribute("Width", "12"), new XAttribute("Height", "12")));
             Assert.AreEqual("RepositoryReviews_Click", rowDefinition.Elements(p + "Button").First().Attribute("Click")!.Value);
             foreach (var click in badgeDefinition.DescendantsAndSelf().Concat(rowDefinition.DescendantsAndSelf()).Attributes("Click").ToArray())
                 click.Remove();
@@ -298,7 +369,8 @@ namespace StartScreen.Test
             var badge = (Button)grid.Children[0];
             var row = (Grid)grid.Children[1];
             var reviews = (Button)row.Children[0];
-            Assert.AreEqual(1, row.Children.Count);
+            Assert.AreEqual(2, row.Children.Count);
+            Assert.AreEqual("WorktreeIndicator", ((StackPanel)row.Children[1]).Name);
             var item = new Models.MruItem { RemoteUrl = "https://github.com/o/r.git" };
             grid.DataContext = item;
 #pragma warning disable VSTHRD001 // Drain bindings on the current STA thread, not a thread switch.
@@ -675,7 +747,12 @@ namespace StartScreen.Test
             var layout = StartScreenControl.CalculateContentLayout(width, true);
             Assert.IsFalse(layout.Stacked);
             var grid = new Grid();
-            grid.DataContext = new { HasSelectedMruItem = repositorySelected, WorkSectionTitle = "hubitat-drivers" };
+            grid.DataContext = new
+            {
+                HasSelectedMruItem = repositorySelected,
+                RepositoryScopeLabel = repositorySelected ? "Filtered to repository:" : "Across all repositories",
+                RepositoryScopeName = repositorySelected ? "owner/hubitat-drivers" : "",
+            };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(layout.WorkWidth) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var bladesDefinition = work.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "WorkBlades");
@@ -741,19 +818,22 @@ namespace StartScreen.Test
                 Assert.IsLessThanOrEqualTo(label.TranslatePoint(new Point(), header).X,
                     filters.TranslatePoint(new Point(filters.ActualWidth, 0), header).X);
             }
-            var scope = new XElement(bladesDefinition.Elements(p + "Grid").First().Elements(p + "DockPanel").Last());
-            scope.Elements(p + "Button").Single().Attribute("Click")!.Remove();
+            var scope = new XElement(bladesDefinition.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "RepositoryScopeStrip"));
+            scope.Descendants(p + "Hyperlink").Single().Attribute("Click")!.Remove();
             var scopeRoot = (Grid)XamlReader.Parse(new XElement(p + "Grid", new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName),
                 new XElement(p + "Grid.Resources", new XElement(p + "BooleanToVisibilityConverter",
                     new XAttribute(x + "Key", "BoolToVisibilityConverter"))), scope).ToString());
-            var scopePanel = (DockPanel)scopeRoot.Children[0];
+            var scopePanel = (Border)scopeRoot.Children[0];
             scopeRoot.DataContext = grid.DataContext;
 #pragma warning disable VSTHRD001 // Apply inherited bindings on the isolated layout test's STA thread.
             scopeRoot.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
 #pragma warning restore VSTHRD001
             scopePanel.Measure(new Size(layout.WorkWidth, double.PositiveInfinity));
             Assert.AreEqual(repositorySelected ? Visibility.Visible : Visibility.Collapsed, scopePanel.Visibility);
-            Assert.AreEqual("hubitat-drivers", scopePanel.Children.OfType<TextBlock>().Single().Text);
+            Assert.AreEqual(repositorySelected ? "Filtered to repository:" : "Across all repositories", ((TextBlock)scopeRoot.FindName("RepositoryScopeLabel")).Text);
+            var scopeName = (TextBlock)scopeRoot.FindName("RepositoryScopeName");
+            Assert.AreEqual(repositorySelected ? Visibility.Visible : Visibility.Collapsed, scopeName.Visibility);
+            Assert.AreEqual(repositorySelected ? "owner/hubitat-drivers" : "", scopeName.Text);
             var scroll = screen.Descendants(p + "ScrollViewer").Single(element => element.Attribute(x + "Name")?.Value == "ContentScroll");
             Assert.AreEqual("Hidden", scroll.Attribute("HorizontalScrollBarVisibility")?.Value);
         }
@@ -1502,8 +1582,9 @@ namespace StartScreen.Test
             var recent = document.Descendants(presentation + "ListBox")
                 .Single(element => element.Attribute(xaml + "Name")?.Value == "MruPanel");
 
-            Assert.AreSame(recent.Parent!.Parent, filter.Parent);
-            Assert.AreEqual("Bottom", filter.Attribute("DockPanel.Dock")?.Value);
+            Assert.AreSame(recent.Parent!.Parent, filter.Parent!.Parent);
+            Assert.AreEqual("ViewFilters", filter.Parent.Attribute(xaml + "Name")?.Value);
+            Assert.AreEqual("Bottom", filter.Parent.Attribute("DockPanel.Dock")?.Value);
             Assert.AreEqual("Left", filter.Attribute("HorizontalAlignment")?.Value);
             Assert.AreEqual("{Binding ShowSolutionsOnly, Mode=TwoWay}", filter.Attribute("IsChecked")?.Value);
             Assert.AreEqual("Show only solutions in Recent. Pinned items are always included.", filter.Attribute("ToolTip")?.Value);

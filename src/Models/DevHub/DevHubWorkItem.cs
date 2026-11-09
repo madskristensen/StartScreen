@@ -57,6 +57,18 @@ namespace StartScreen.Models.DevHub
         public string WebUrl { get; private set; }
         public bool IsPullRequest { get; private set; }
         public DateTime UpdatedAt { get; private set; }
+        public bool IsPinned { get; private set; }
+        public bool IsSnoozed { get; private set; }
+        public DateTime? SnoozedUntilUtc { get; private set; }
+        public string PreferenceText => IsSnoozed ? $"Snoozed until {SnoozedUntilUtc.Value.ToLocalTime():g}"
+            : IsPinned ? "Pinned to Attention" : null;
+
+        internal void ApplyPreferences(DevHubItemPreferences preferences, DateTime nowUtc)
+        {
+            IsPinned = preferences.IsPinned(this);
+            SnoozedUntilUtc = preferences.GetSnoozedUntil(this);
+            IsSnoozed = SnoozedUntilUtc > nowUtc;
+        }
 
         internal static IReadOnlyList<DevHubWorkItem> GetCopilotItems(IEnumerable<CopilotActivitySession> sessions, bool needsAttention)
         {

@@ -63,6 +63,7 @@ namespace StartScreen.ToolWindows.Controls
 
         private void BeginWorkspaceVisit(object sender, RoutedEventArgs e)
         {
+            RefreshActivityPreferences();
             _activity.BeginVisit();
             ApplyMyWorkTabSelection();
             _copilotLoaded = true;

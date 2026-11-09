@@ -241,7 +241,7 @@ namespace StartScreen.ToolWindows
             {
                 if (_isDisposed)
                     return;
-                if (_selectedMruItem != value)
+                if (_selectedMruItem != value || _repositoryScopeOverride != null)
                 {
                     // Deselect previous
                     if (_selectedMruItem != null)
@@ -261,9 +261,7 @@ namespace StartScreen.ToolWindows
                     }
 
                     OnPropertyChanged();
-                    OnPropertyChanged(nameof(HasSelectedMruItem));
-                    OnPropertyChanged(nameof(WorkSectionTitle));
-                    OnPropertyChanged(nameof(SelectedRepository));
+                    NotifyWorkspaceScopeChanged();
                 }
             }
         }
@@ -321,7 +319,7 @@ namespace StartScreen.ToolWindows
         /// True when a search filter is active but produced no matching results.
         /// </summary>
         public bool HasNoSearchResults =>
-            !string.IsNullOrWhiteSpace(_searchFilter) &&
+            (!string.IsNullOrWhiteSpace(_searchFilter) || !string.IsNullOrWhiteSpace(TagFilter)) &&
             VisibleMruItems.Count == 0;
 
         public string DiscoverySectionTitle
@@ -463,6 +461,7 @@ namespace StartScreen.ToolWindows
                 {
                     _lifetimeCancellation.Dispose();
                     _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
+                    _worktreeCache.Invalidate();
                     NewsSection.Activate();
                     VideoSection.Activate();
                     _autoRefreshTimer?.Change(_autoRefreshInterval, _autoRefreshInterval);
@@ -572,6 +571,7 @@ namespace StartScreen.ToolWindows
             string selectedPath = SelectedMruItem?.Path;
             _allMruItems = new ObservableCollection<MruItem>(
                 mruItems ?? Enumerable.Empty<MruItem>());
+            ApplyMruTags();
             if (selectedPath != null)
             {
                 SelectedMruItem = _allMruItems.FirstOrDefault(item =>
@@ -1277,6 +1277,7 @@ namespace StartScreen.ToolWindows
             var filtered = !string.IsNullOrWhiteSpace(query);
             IEnumerable<MruItem> candidates = GetOrderedMruItems(_allMruItems)
                 .Where(item => MatchesMruFilter(item, query, ShowSolutionsOnly))
+                .Where(item => string.IsNullOrWhiteSpace(TagFilter) || _workspaceTags.Matches(item.Path, TagFilter))
                 .Take(25);
 
             var ordered = new List<MruItem>();

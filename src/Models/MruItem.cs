@@ -1,6 +1,9 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
+using StartScreen.Services;
 
 namespace StartScreen.Models
 {
@@ -43,6 +46,53 @@ namespace StartScreen.Models
         private int? _repositoryRequestedReviews;
         private string _branchActivityTooltip;
         private string _visitChangesTooltip;
+        private string _tagsText;
+        private string[] _tags = [];
+
+        public IReadOnlyList<string> Tags => _tags;
+
+        public string TagsText
+        {
+            get => _tagsText;
+            internal set
+            {
+                if (_tagsText == value)
+                    return;
+                _tagsText = value;
+                _tags = WorkspaceTagsService.ParseTags(value);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Tags));
+                OnPropertyChanged(nameof(HasTags));
+            }
+        }
+
+        public bool HasTags => _tags.Length > 0;
+
+        internal IReadOnlyList<GitWorktreeInfo> Worktrees { get; private set; } = Array.Empty<GitWorktreeInfo>();
+        internal int WorktreeGeneration { get; private set; } = -1;
+        public int AdditionalWorktreeCount => Worktrees.Count(worktree => !worktree.IsCurrent && !worktree.IsBare);
+        public bool HasAdditionalWorktrees => AdditionalWorktreeCount > 0;
+        public string WorktreeError { get; private set; }
+        public string WorktreeTooltip => WorktreeError ?? $"{AdditionalWorktreeCount} other worktree{(AdditionalWorktreeCount == 1 ? "" : "s")}. Right-click and choose Open Worktree. Hold Shift to open in a new instance.";
+
+        internal void ApplyWorktrees(IReadOnlyList<GitWorktreeInfo> worktrees, int generation)
+        {
+            Worktrees = worktrees ?? throw new ArgumentNullException(nameof(worktrees));
+            WorktreeGeneration = generation;
+            WorktreeError = null;
+            OnPropertyChanged(nameof(AdditionalWorktreeCount));
+            OnPropertyChanged(nameof(HasAdditionalWorktrees));
+            OnPropertyChanged(nameof(WorktreeError));
+            OnPropertyChanged(nameof(WorktreeTooltip));
+        }
+
+        internal void ApplyWorktreeFailure(string error, int generation)
+        {
+            WorktreeGeneration = generation;
+            WorktreeError = error;
+            OnPropertyChanged(nameof(WorktreeError));
+            OnPropertyChanged(nameof(WorktreeTooltip));
+        }
 
         public string VisitChangesTooltip => _visitChangesTooltip;
 
@@ -128,6 +178,20 @@ namespace StartScreen.Models
                     OnPropertyChanged(nameof(DisplayGroup));
                 }
             }
+        }
+
+        internal bool HasRecentAccessTime { get; private set; }
+
+        internal void ApplyRecentAccessTime(DateTime lastAccessed)
+        {
+            HasRecentAccessTime = true;
+            LastAccessed = lastAccessed;
+        }
+
+        internal void ApplyFallbackAccessTime(DateTime lastAccessed)
+        {
+            if (!HasRecentAccessTime && lastAccessed > LastAccessed)
+                LastAccessed = lastAccessed;
         }
 
         public bool IsPinned
@@ -618,8 +682,7 @@ namespace StartScreen.Models
         {
             if (includeLocal)
             {
-                if (metadata.LastAccessed > LastAccessed)
-                    LastAccessed = metadata.LastAccessed;
+                ApplyFallbackAccessTime(metadata.LastAccessed);
                 ApplyExists(metadata.Exists);
                 ApplyGitStatus(metadata.Git);
                 CopilotChatSessionCount = metadata.SessionCount;

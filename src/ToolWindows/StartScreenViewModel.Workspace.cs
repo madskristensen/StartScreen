@@ -23,6 +23,7 @@ namespace StartScreen.ToolWindows
         private RemoteRepoIdentifier _repositoryScopeOverride;
         private readonly DevHubRepoSummaryService _repositorySummaries;
         private HashSet<MruItem> _realizedMruItems;
+        private readonly GitWorktreeCache _worktreeCache = new();
 
         internal void EnableMruViewportTracking()
         {
@@ -52,6 +53,8 @@ namespace StartScreen.ToolWindows
         {
             var factory = StartScreenPackage.BackgroundTaskFactory;
             await factory.SwitchToMainThreadAsync(cancellationToken);
+            // Let newly published cards register their viewport visibility before choosing work.
+            await factory.YieldAsync(System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
             while (_mruMetadataLoadTask?.IsCompleted == false)
             {
                 try
@@ -67,17 +70,67 @@ namespace StartScreen.ToolWindows
             if (_isDisposed || !_mruMetadataCacheLoaded)
                 return;
             var items = GetMruMetadataCandidates(force);
-            if (items.Length == 0)
-                return;
-            _mruMetadataLoadTask = factory.RunAsync(async () =>
+            if (items.Length > 0)
             {
-                await factory.YieldAsync(System.Windows.Threading.DispatcherPriority.ContextIdle, cancellationToken);
-                await RefreshMruMetadataAsync(items, cancellationToken, force);
-                await factory.SwitchToMainThreadAsync(cancellationToken);
-                RefreshMruCollections();
-            });
-            await _mruMetadataLoadTask;
+                _mruMetadataLoadTask = factory.RunAsync(async () =>
+                {
+                    await Task.WhenAll(RefreshMruMetadataAsync(items, cancellationToken, force),
+                        RefreshWorktreesAsync(VisibleMruItems.ToArray(), cancellationToken));
+                    await factory.SwitchToMainThreadAsync(cancellationToken);
+                    RefreshMruCollections();
+                });
+                await _mruMetadataLoadTask;
+            }
+            var visible = VisibleMruItems.ToArray();
+            await Task.WhenAll(RefreshRepositorySummariesAsync(visible, cancellationToken),
+                RefreshWorktreesAsync(visible, cancellationToken));
         }
+
+        private async Task RefreshWorktreesAsync(IEnumerable<MruItem> items, CancellationToken cancellationToken)
+        {
+            int generation = _worktreeCache.Generation;
+            CancellationToken lifetime = GetBackgroundCancellationToken();
+            await Task.WhenAll(items.Where(item => item.Exists && item.WorktreeGeneration != generation
+                && (_realizedMruItems == null || _realizedMruItems.Contains(item) || item.IsPinned || ReferenceEquals(item, SelectedMruItem)))
+                .Select(async item =>
+                {
+                    try
+                    {
+                        var worktrees = await _worktreeCache.GetAsync(item.Path, lifetime).WithCancellation(cancellationToken);
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                        if (!_isDisposed && generation == _worktreeCache.Generation && _allMruItems.Contains(item))
+                            item.ApplyWorktrees(worktrees, generation);
+                    }
+                    catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested || lifetime.IsCancellationRequested)
+                    {
+                        await ex.LogAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        await ex.LogAsync();
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                        if (!_isDisposed && generation == _worktreeCache.Generation && _allMruItems.Contains(item))
+                        {
+                            item.ApplyWorktreeFailure("Worktree discovery unavailable. Refresh to try again. " + ex.Message, generation);
+                            OutputLog.Info("Workspace", $"Could not discover worktrees for {item.Path}: {ex.Message}");
+                        }
+                    }
+                }));
+        }
+        internal async Task PruneWorktreesAsync(MruItem item, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await GitWorktreeService.PruneAsync(item.Path, cancellationToken);
+            }
+            finally
+            {
+                _worktreeCache.Invalidate();
+            }
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            await RefreshWorktreesAsync(VisibleMruItems.ToArray(), cancellationToken);
+        }
+
         private bool _isRefreshingWorkspaceSignals;
         private int _workspaceSignalsGeneration;
         private int _repositorySummaryGeneration;
@@ -186,6 +239,11 @@ namespace StartScreen.ToolWindows
 
         public string WorkSectionTitle => _repositoryScopeOverride?.Repo ?? SelectedMruItem?.Name ?? "Your work";
 
+        public string RepositoryScopeLabel => SelectedRepository != null ? "Filtered to repository:"
+            : HasSelectedMruItem ? "Local workspace:" : "Across all repositories";
+
+        public string RepositoryScopeName => SelectedRepository?.DisplayName ?? SelectedMruItem?.Name;
+
         public string SelectedWorkspaceMessage => string.Empty;
 
         public RemoteRepoIdentifier SelectedRepository => _repositoryScopeOverride ?? RemoteRepoIdentifier.TryParse(SelectedMruItem?.RemoteUrl);
@@ -203,8 +261,20 @@ namespace StartScreen.ToolWindows
         internal void SetRepositoryScope(RemoteRepoIdentifier repo)
         {
             _repositoryScopeOverride = repo;
-            OnPropertyChanged(nameof(WorkSectionTitle));
+            NotifyWorkspaceScopeChanged();
+        }
+
+        internal void SetMruSelection(IReadOnlyList<MruItem> selection)
+        {
+            SelectedMruItem = selection.Count == 1 ? selection[0] : null;
+        }
+
+        private void NotifyWorkspaceScopeChanged()
+        {
             OnPropertyChanged(nameof(HasSelectedMruItem));
+            OnPropertyChanged(nameof(WorkSectionTitle));
+            OnPropertyChanged(nameof(RepositoryScopeLabel));
+            OnPropertyChanged(nameof(RepositoryScopeName));
             OnPropertyChanged(nameof(SelectedRepository));
         }
 
@@ -253,6 +323,7 @@ namespace StartScreen.ToolWindows
             {
                 if (force)
                 {
+                    _worktreeCache.Invalidate();
                     _repositorySummaryGeneration++;
                     _repositorySummaries.InvalidateAll();
                     _mruMetadataCache.InvalidateSummaries();
@@ -419,7 +490,6 @@ namespace StartScreen.ToolWindows
             try
             {
                 await RefreshVisibleMruMetadataAsync(cancellationToken);
-                await RefreshRepositorySummariesAsync([item], cancellationToken);
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
@@ -479,11 +549,12 @@ namespace StartScreen.ToolWindows
         {
             if (e.PropertyName == nameof(MruItem.RemoteUrl))
             {
-                OnPropertyChanged(nameof(SelectedRepository));
+                NotifyWorkspaceScopeChanged();
             }
             else if (e.PropertyName == nameof(MruItem.Name))
             {
                 OnPropertyChanged(nameof(WorkSectionTitle));
+                OnPropertyChanged(nameof(RepositoryScopeName));
             }
         }
 
@@ -493,7 +564,8 @@ namespace StartScreen.ToolWindows
                 && (!solutionsOnly || item.IsPinned || item.Type == MruItemType.Solution)
                 && (string.IsNullOrWhiteSpace(query)
                     || (item.Name?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-                    || (item.Path?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0));
+                    || (item.Path?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                    || (item.TagsText?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0));
         }
     }
 }

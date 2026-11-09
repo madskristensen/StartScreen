@@ -66,6 +66,38 @@
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
 
+        <Style x:Key="ProjectTagFilterStyle" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"/>
+            <Setter Property="Padding" Value="8 3"/>
+            <Setter Property="Margin" Value="0 0 6 6"/>
+            <Setter Property="local:Typography.Role" Value="Metadata"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="3" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" RecognizesAccessKey="False"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Tab item style for News sub-tabs -->
         <Style x:Key="NewsTabItemStyle" TargetType="TabItem">
             <Setter Property="Padding" Value="0 4"/>
@@ -338,8 +370,13 @@
                 </Grid.ColumnDefinitions>
                 <DockPanel Grid.Column="0" Margin="24 20 16 16">
                 <TextBlock DockPanel.Dock="Top" Text="Recent" Style="{StaticResource StartScreen.Heading}" Margin="0 0 0 16"/>
-                <CheckBox DockPanel.Dock="Bottom" Content="Solutions only" IsChecked="{Binding ShowSolutionsOnly, Mode=TwoWay}"
-                          ToolTip="Show only solutions in Recent. Pinned items are always included." Margin="0 12 0 0" HorizontalAlignment="Left"/>
+                <StackPanel x:Name="ViewFilters" DockPanel.Dock="Bottom" Margin="0 12 0 0">
+                    <CheckBox Content="Solutions only" IsChecked="{Binding ShowSolutionsOnly, Mode=TwoWay}"
+                              ToolTip="Show only solutions in Recent. Pinned items are always included." HorizontalAlignment="Left"/>
+                    <CheckBox x:Name="ShowSnoozedItems" Content="Show snoozed items" Margin="0 6 0 0" HorizontalAlignment="Left"
+                              IsChecked="{Binding ShowSnoozedItems, ElementName=DevHubPanelControl, Mode=TwoWay}"
+                              ToolTip="Include temporarily hidden PRs, issues, and builds in the work feeds. Right-click a snoozed item to unsnooze it early."/>
+                </StackPanel>
                 <!-- Search Box -->
                 <Grid DockPanel.Dock="Top" Margin="0 0 0 8" HorizontalAlignment="Stretch">
                     <Grid.ColumnDefinitions>
@@ -351,6 +388,8 @@
                             Grid.Column="0"
                             Height="32"
                             Style="{StaticResource SearchBoxStyle}"
+                            ToolTip="Search recent projects by name, path, or tag."
+                            AutomationProperties.Name="Search recent projects by name, path, or tag"
                             TextChanged="SearchBox_TextChanged"
                             PreviewKeyDown="SearchBox_PreviewKeyDown"/>
                     <TextBlock Grid.Column="0"
@@ -384,14 +423,38 @@
                     </Button>
                 </Grid>
 
+                <StackPanel x:Name="ProjectTagFilters" DockPanel.Dock="Top" Margin="0 0 0 4">
+                    <DockPanel LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Right" Style="{StaticResource StartScreen.Metadata}" Padding="6 2" VerticalAlignment="Center"
+                                   Visibility="{Binding HasTagFilter, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Hyperlink Click="ClearTagFilter_Click" TextDecorations="{x:Null}"
+                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"
+                                       ToolTip="Show all projects without removing tags.">Clear</Hyperlink>
+                        </TextBlock>
+                        <ItemsControl ItemsSource="{Binding TagFilters}" Focusable="False">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <ToggleButton Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=OneWay}" Click="TagFilter_Click"
+                                                  Style="{StaticResource ProjectTagFilterStyle}" ToolTip="Click to filter by this tag. Selected tags must all match."
+                                                  AutomationProperties.Name="{Binding Name}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </DockPanel>
+                </StackPanel>
                 <!-- MRU Section -->
                 <Grid>
                     <ListBox x:Name="MruPanel"
                              ItemsSource="{Binding Source={StaticResource GroupedMruItemsView}}"
+                             SelectionMode="Extended"
+                             SelectionChanged="MruPanel_SelectionChanged"
                              VerticalAlignment="Stretch"
                              VerticalContentAlignment="Top"
                              Background="Transparent"
-                             ToolTip="Select to preview. Double-click or Enter to open."
+                             ToolTip="Select to preview. Ctrl+click to select multiple projects. Right-click to add or remove tags. Double-click or Enter to open."
                              BorderThickness="0"
                              Focusable="False"
                              ScrollViewer.CanContentScroll="True"
@@ -461,8 +524,12 @@
                                     Loaded="MruItemControl_Loaded" Unloaded="MruItemControl_Unloaded"
                                     DataContextChanged="MruItemControl_DataContextChanged"
                                     SelectionRequested="MruItemControl_SelectionRequested"
+                                     PruneWorktreesRequested="MruItemControl_PruneWorktreesRequested"
+                                     NewChatRequested="MruItemControl_NewChatRequested"
                                     RepositorySummaryRequested="MruItemControl_RepositorySummaryRequested"
                                     RepositoryReviewsRequested="MruItemControl_RepositoryReviewsRequested"
+                                    AddTagsRequested="MruItemControl_AddTagsRequested"
+                                    RemoveTagsRequested="MruItemControl_RemoveTagsRequested"
                                     PinToggleRequested="MruItemControl_PinToggleRequested"
                                     RemoveRequested="MruItemControl_RemoveRequested"
                                     FocusSearchBoxRequested="MruItemControl_FocusSearchBoxRequested"

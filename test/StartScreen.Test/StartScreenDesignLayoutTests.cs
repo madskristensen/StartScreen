@@ -349,19 +349,33 @@ namespace StartScreen.Test
                 attribute.Remove();
             foreach (var image in resources.SelectMany(element => element.Descendants()).Where(element => element.Name.LocalName == "CrispImage").ToArray())
                 image.ReplaceWith(new XElement(_presentation + "Border", new XAttribute("Width", "16"), new XAttribute("Height", "16")));
+            var listDefinition = document.Descendants(_presentation + "ItemsControl")
+                .Single(element => element.Attribute(_xaml + "Name")?.Value == (team ? "IncomingList" : "MyWorkList"));
+            var content = new List<XElement> { new(listDefinition) };
+            if (!team)
+            {
+                var heading = new XElement(document.Descendants(_presentation + "TextBlock")
+                    .Single(element => element.Attribute(_xaml + "Name")?.Value == "MyWorkDateHeading")
+                    .Ancestors(_presentation + "Border").First());
+                heading.SetAttributeValue("Grid.Row", "0");
+                var scroll = new XElement(listDefinition.Ancestors(_presentation + "ScrollViewer").First());
+                scroll.SetAttributeValue("Grid.Row", "1");
+                content = [new XElement(_presentation + "Grid.RowDefinitions",
+                    new XElement(_presentation + "RowDefinition", new XAttribute("Height", "Auto")),
+                    new XElement(_presentation + "RowDefinition", new XAttribute("Height", "*"))), heading, scroll];
+            }
             var root = (Grid)SharedXamlReader.Parse(new XElement(_presentation + "Grid",
                 new XAttribute(XNamespace.Xmlns + "x", _xaml.NamespaceName),
                 new XAttribute(XNamespace.Xmlns + "controls", "clr-namespace:StartScreen.ToolWindows.Controls;assembly=StartScreen"),
                 new XElement(_presentation + "Grid.Resources", resources),
-                new XElement(document.Descendants(_presentation + "ItemsControl")
-                    .Single(element => element.Attribute(_xaml + "Name")?.Value == (team ? "IncomingList" : "MyWorkList")))).ToString());
+                content).ToString());
             var item = DevHubWorkItem.GetOwnPullRequests([new DevHubPullRequest
             {
                 Title = shortTitle ? "Short title" : "A long pull request title that should wrap without overlapping its status or date",
                 IsAuthoredByCurrentUser = true, Status = "open", WebUrl = "https://github.com/o/r/pull/1",
                 RepoDisplayName = "o/r", Number = "#1", Author = "A developer", UpdatedAt = DateTime.UtcNow.AddDays(-1),
             }]).Single();
-            var list = (ItemsControl)root.Children[0];
+            var list = (ItemsControl)root.FindName(team ? "IncomingList" : "MyWorkList");
             var companion = DevHubWorkItem.GetIncoming([new DevHubPullRequest
             {
                 Title = shortTitle ? "A much longer title that wraps across two lines of this team activity card" : "Short title",
@@ -406,7 +420,7 @@ namespace StartScreen.Test
             Assert.AreEqual(grid.ActualWidth, separator.ActualWidth, 0.01);
             Assert.AreEqual(team ? new Thickness(8, 10, 8, 10) : new Thickness(8, 4, 8, 4), card.Padding);
             Assert.AreEqual(team ? 12d : 6d, separator.Margin.Top);
-            Assert.IsGreaterThanOrEqualTo(Math.Round(grid.TranslatePoint(new Point(0, grid.ActualHeight), card).Y) + separator.Margin.Top,
+            Assert.IsGreaterThanOrEqualTo(Math.Round(grid.TranslatePoint(new Point(0, grid.ActualHeight), card).Y) + separator.Margin.Top - 0.01,
                 separator.TranslatePoint(new Point(), card).Y);
             if (team)
             {
@@ -442,6 +456,22 @@ namespace StartScreen.Test
                     status.TranslatePoint(new Point(), grid).X);
                 Assert.IsGreaterThanOrEqualTo(status.TranslatePoint(new Point(status.ActualWidth, 0), grid).X,
                     date.TranslatePoint(new Point(), grid).X);
+            }
+            if (!team)
+            {
+                var heading = Descendants<TextBlock>(root).Single(element => element.Name == "MyWorkDateHeading");
+                var scroll = Descendants<ScrollViewer>(root).Single();
+                Assert.AreEqual(TextAlignment.Right, heading.TextAlignment);
+                Assert.AreEqual(TextAlignment.Right, date.TextAlignment);
+                foreach (var height in new[] { 100d, 600d })
+                {
+                    for (var pass = 0; pass < 3; pass++)
+                        Layout(root, width, height);
+                    Assert.AreEqual(height == 100 ? Visibility.Visible : Visibility.Collapsed, scroll.ComputedVerticalScrollBarVisibility);
+                    Assert.AreEqual(heading.TranslatePoint(new Point(heading.ActualWidth, 0), root).X,
+                        date.TranslatePoint(new Point(date.ActualWidth, 0), root).X, 0.01,
+                        "The date header and values must share their right edge with or without a scrollbar.");
+                }
             }
             if (!team && shortTitle)
             {

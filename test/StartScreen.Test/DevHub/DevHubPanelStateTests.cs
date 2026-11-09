@@ -66,6 +66,67 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DataRow("dev.azure.com", "https://github.com/pr0g/cmake-examples", false)]
+        [DataRow("github.com", "https://github.com/pr0g/cmake-examples", true)]
+        [DataRow("github.com", "https://dev.azure.com/org/project/_git/repo", false)]
+        [DataRow("dev.azure.com", "https://dev.azure.com/org/project/_git/repo", true)]
+        [DataRow("dev.azure.com", "https://org.visualstudio.com/project/_git/repo", true)]
+        [DataRow("dev.azure.com", "https://tfs.contoso.com/collection/project/_git/repo", false)]
+        [DataRow("github.com", "https://gitlab.com/owner/repo", false)]
+        [DataRow("dev.azure.com", "https://gitlab.com/owner/repo", false)]
+        public void AccountWarnings_ApplyOnlyToTheSelectedRepositoryProvider(string host, string remoteUrl, bool relevant)
+        {
+            var repo = RemoteRepoIdentifier.TryParse(remoteUrl);
+            Assert.IsNotNull(repo);
+            var dashboard = new DevHubDashboard();
+            Assert.AreEqual(relevant, DevHubPanel.IsAccountProviderInScope(host, repo));
+            Assert.AreEqual(relevant, DevHubPanel.NeedsAccountRecovery(dashboard, host, true, repo));
+            dashboard.Sources["authentication"] = new DevHubActivitySnapshot
+            {
+                RepoIdentifier = new RemoteRepoIdentifier(host, "owner", "repo"),
+                Status = DevHubActivityStatus.Unavailable,
+            };
+            Assert.AreEqual(relevant, DevHubPanel.HasUnavailableAccountVerification(dashboard, host, repo));
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, host, true, repo));
+            dashboard.Sources["authentication"].Status = DevHubActivityStatus.Unauthorized;
+            Assert.AreEqual(relevant, DevHubPanel.NeedsAccountRecovery(dashboard, host, true, repo));
+            Assert.IsFalse(DevHubPanel.HasUnavailableAccountVerification(dashboard, host, repo));
+            Assert.IsTrue(DevHubPanel.NeedsAccountRecovery(dashboard, host, true), "All repositories must retain provider account recovery.");
+        }
+
+        [TestMethod]
+        public void AccountRecovery_ReturnsWhenLeavingAnUnrelatedRepositoryScope()
+        {
+            var dashboard = new DevHubDashboard();
+            dashboard.Users.Add(new DevHubUser { Host = "github.com" });
+            var github = RemoteRepoIdentifier.TryParse("https://github.com/pr0g/cmake-examples");
+            var ado = RemoteRepoIdentifier.TryParse("https://dev.azure.com/org/project/_git/repo");
+
+            Assert.IsTrue(DevHubPanel.NeedsAccountRecovery(dashboard, "dev.azure.com", true));
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, "dev.azure.com", true, github));
+            Assert.IsTrue(DevHubPanel.NeedsAccountRecovery(dashboard, "dev.azure.com", true, ado));
+            Assert.IsTrue(DevHubPanel.NeedsAccountRecovery(dashboard, "dev.azure.com", true));
+            Assert.IsFalse(DevHubPanel.NeedsAccountRecovery(dashboard, "dev.azure.com", true, github));
+        }
+
+        [TestMethod]
+        [DataRow("github.com", "GitHub/authentication")]
+        [DataRow("dev.azure.com", "Azure DevOps/authentication")]
+        public void AccountPrompts_SeparateInitialConnectionFromRejectedCredentials(string host, string source)
+        {
+            var dashboard = new DevHubDashboard();
+            Assert.IsFalse(DevHubPanel.ShouldShowAccountRecovery(dashboard, host, true), "Initial connection must not also show a recovery action.");
+            dashboard.Sources[source] = new DevHubActivitySnapshot { Status = DevHubActivityStatus.Unauthorized };
+            Assert.IsTrue(DevHubPanel.ShouldShowAccountRecovery(dashboard, host, true));
+            Assert.IsFalse(DevHubPanel.ShouldShowAccountRecovery(dashboard, host, false));
+            dashboard.Sources[source].Status = DevHubActivityStatus.Unavailable;
+            Assert.IsFalse(DevHubPanel.ShouldShowAccountRecovery(dashboard, host, true), "A network failure is not rejected credentials.");
+            dashboard.Users.Add(new DevHubUser { Host = host == "github.com" ? "dev.azure.com" : "github.com" });
+            dashboard.Sources.Clear();
+            Assert.IsTrue(DevHubPanel.ShouldShowAccountRecovery(dashboard, host, true), "A missing provider still needs an action when the dashboard is already connected elsewhere.");
+        }
+
+        [TestMethod]
         public void ActivityFailures_HaveNoDashboardBannerOrErrorPanel()
         {
             using var stream = typeof(DevHubPanelStateTests).Assembly.GetManifestResourceStream("DevHubPanel.xaml");

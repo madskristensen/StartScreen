@@ -25,6 +25,7 @@ namespace StartScreen.Commands
                     && CopilotReviewService.Supports(target.Item.WebUrl),
                 PackageIds.DevHubScopeToRepo => !target.IsScoped,
                 PackageIds.DevHubShowAllRepos => target.IsScoped,
+                PackageIds.DevHubSnoozeItemDay => !target.Item.IsSnoozed,
                 _ => true,
             });
             command.Enabled = command.Visible && (id == PackageIds.DevHubShowAllRepos
@@ -36,6 +37,10 @@ namespace StartScreen.Commands
             if (id == PackageIds.DevHubFixWithCopilot)
                 command.Text = target?.CopilotSessionId != null ? "Continue in Copilot"
                     : target?.Item.IsFailedBuild == true ? "Investigate with Copilot" : "Fix with Copilot";
+            if (id == PackageIds.DevHubPinItem)
+                command.Text = target?.Item.IsPinned == true ? "Unpin from Attention" : "Pin to Attention";
+            if (id == PackageIds.DevHubSnoozeItem)
+                command.Text = target?.Item.IsSnoozed == true ? "Unsnooze item" : "Snooze for 1 hour";
         }
 
     [Command(PackageIds.DevHubReviewInVisualStudio)]
@@ -92,5 +97,26 @@ namespace StartScreen.Commands
     {
         protected override void BeforeQueryStatus(EventArgs e) => DevHubWorkItemMenu.Update(Command, PackageIds.DevHubShowAllRepos);
         protected override Task ExecuteAsync(OleMenuCmdEventArgs e) => DevHubWorkItemMenu.ExecuteAsync(PackageIds.DevHubShowAllRepos);
+    }
+
+    [Command(PackageIds.DevHubPinItem)]
+    internal sealed class DevHubPinItem : BaseCommand<DevHubPinItem>
+    {
+        protected override void BeforeQueryStatus(EventArgs e) => DevHubWorkItemMenu.Update(Command, PackageIds.DevHubPinItem);
+        protected override Task ExecuteAsync(OleMenuCmdEventArgs e) => DevHubWorkItemMenu.ExecuteAsync(PackageIds.DevHubPinItem);
+    }
+
+    [Command(PackageIds.DevHubSnoozeItem)]
+    internal sealed class DevHubSnoozeItem : BaseCommand<DevHubSnoozeItem>
+    {
+        protected override void BeforeQueryStatus(EventArgs e) => DevHubWorkItemMenu.Update(Command, PackageIds.DevHubSnoozeItem);
+        protected override Task ExecuteAsync(OleMenuCmdEventArgs e) => DevHubWorkItemMenu.ExecuteAsync(PackageIds.DevHubSnoozeItem);
+    }
+
+    [Command(PackageIds.DevHubSnoozeItemDay)]
+    internal sealed class DevHubSnoozeItemDay : BaseCommand<DevHubSnoozeItemDay>
+    {
+        protected override void BeforeQueryStatus(EventArgs e) => DevHubWorkItemMenu.Update(Command, PackageIds.DevHubSnoozeItemDay);
+        protected override Task ExecuteAsync(OleMenuCmdEventArgs e) => DevHubWorkItemMenu.ExecuteAsync(PackageIds.DevHubSnoozeItemDay);
     }
 }

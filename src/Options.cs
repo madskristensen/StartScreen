@@ -7,8 +7,12 @@ namespace StartScreen
     /// Extension options stored in user settings.
     /// All settings are managed inline on the Start Screen UI, not via Tools > Options.
     /// </summary>
-    internal class Options : BaseOptionModel<Options>
+    internal partial class Options : BaseOptionModel<Options>
     {
+        [Browsable(false)]
+        [DefaultValue("")]
+        public string WorkspaceTagsJson { get; set; } = "";
+
         /// <summary>
         /// Semicolon-delimited list of pinned MRU item paths.
         /// </summary>

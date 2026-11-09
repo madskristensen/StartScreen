@@ -25,6 +25,22 @@
         <controls:NullToCollapsedConverter x:Key="NullToCollapsedConverter"/>
         <controls:ExistsToTextDecorationsConverter x:Key="ExistsToTextDecorationsConverter"/>
         <controls:ExistsToOpacityConverter x:Key="ExistsToOpacityConverter"/>
+        <Style x:Key="WorkspaceTagPillStyle" TargetType="Border">
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="7 1"/>
+            <Setter Property="Margin" Value="0 0 4 4"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBorderBrushKey}}"/>
+            <Setter Property="MaxWidth" Value="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
+            <Setter Property="Tag" Value="{DynamicResource {x:Static SystemParameters.HighContrastKey}}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="RepositoryLinkButtonStyle" TargetType="Button">
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Padding" Value="0"/>
@@ -66,6 +82,8 @@
             MouseEnter="RootBorder_MouseEnter"
             MouseLeave="RootBorder_MouseLeave"
             MouseUp="RootBorder_MouseUp"
+            MouseRightButtonUp="RootBorder_MouseRightButtonUp"
+            PreviewMouseRightButtonDown="RootBorder_PreviewMouseRightButtonDown"
             PreviewMouseLeftButtonDown="RootBorder_PreviewMouseLeftButtonDown"
             PreviewKeyDown="RootBorder_KeyDown"
             GotKeyboardFocus="RootBorder_GotKeyboardFocus"
@@ -74,7 +92,7 @@
             <Style TargetType="Border" BasedOn="{StaticResource StartScreen.CardSurface}">
                 <Setter Property="Background" Value="Transparent"/>
                 <Style.Triggers>
-                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                         <Setter Property="Background"
                                 Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarMouseOverBackgroundBeginBrushKey}}"/>
                     </DataTrigger>
@@ -146,6 +164,9 @@
                     <TextBlock Text="{Binding VisitChangesTooltip}" Margin="0 4 0 0" MaxWidth="400" TextWrapping="Wrap"
                                Visibility="{Binding VisitChangesTooltip, Converter={StaticResource NullToCollapsedConverter}}"/>
 
+                    <TextBlock Text="{Binding WorktreeError}" Margin="0 4 0 0" MaxWidth="400" TextWrapping="Wrap"
+                               Visibility="{Binding WorktreeError, Converter={StaticResource NullToCollapsedConverter}}"/>
+
                     <!-- Path -->
                     <StackPanel Orientation="Horizontal" Margin="0 6 0 0">
                         <TextBlock Text="Path: " Opacity="0.7"/>
@@ -164,6 +185,7 @@
             <imaging:CrispImage x:Name="Icon" Width="20" Height="20" Margin="0 0 8 0" VerticalAlignment="Top"/>
             <Grid Grid.Column="1">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
@@ -203,31 +225,45 @@
                         <imaging:CrispImage x:Name="PinIcon" Moniker="{x:Static catalog:KnownMonikers.Pin}" Width="16" Height="16"/>
                     </Button>
                 </Grid>
-                <Grid x:Name="RepositoryStatusRow" Grid.Row="1" Margin="0 3 0 0" ToolTip="{Binding RepositorySummaryTooltip}"
-                      Visibility="{Binding HasRequestedReviews, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ItemsControl x:Name="WorkspaceTagPills" Grid.Row="2" ItemsSource="{Binding Tags}" Margin="0 4 0 0" Focusable="False"
+                              AutomationProperties.Name="Project tags"
+                              Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource WorkspaceTagPillStyle}" ToolTip="{Binding}">
+                                <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" Style="{StaticResource StartScreen.Metadata}"
+                                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Grid x:Name="RepositoryStatusRow" Grid.Row="1" Margin="0 3 0 0" ToolTip="{Binding RepositorySummaryTooltip}">
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasRequestedReviews}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+                                <DataTrigger Binding="{Binding HasAdditionalWorktrees}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <Button Content="{Binding RepositoryReviewsText}" Click="RepositoryReviews_Click"
                             ToolTip="Review requests for you" AutomationProperties.Name="Review requests for you"
                             Style="{StaticResource RepositoryLinkButtonStyle}"
                             Visibility="{Binding HasRequestedReviews, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                    <StackPanel x:Name="WorktreeIndicator" Grid.Column="1" Orientation="Horizontal" Margin="8 0 0 0" VerticalAlignment="Center"
+                                ToolTip="{Binding WorktreeTooltip}" AutomationProperties.Name="{Binding WorktreeTooltip}"
+                                Visibility="{Binding HasAdditionalWorktrees, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.BranchFork}" Width="12" Height="12" Margin="0 0 4 0" Opacity="0.7"/>
+                        <TextBlock Text="{Binding AdditionalWorktreeCount}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.7"/>
+                    </StackPanel>
                 </Grid>
             </Grid>
         </Grid>
 
-        <!-- Context Menu -->
-        <Border.ContextMenu>
-            <ContextMenu>
-                <MenuItem Header="Open" Click="OpenMenuItem_Click" InputGestureText="Enter"/>
-                <MenuItem Header="Open in New Instance" Click="OpenInNewInstanceMenuItem_Click" InputGestureText="Ctrl+Enter"/>
-                <MenuItem Header="Open Containing Folder" Click="OpenFolderMenuItem_Click" InputGestureText="O"/>
-                <MenuItem Header="Open in Terminal" Click="OpenTerminalMenuItem_Click" InputGestureText="T"/>
-                <MenuItem Header="Git Pull" Click="GitPullMenuItem_Click" InputGestureText="G"/>
-                <MenuItem Header="Delete Copilot Chat Sessions" Click="DeleteCopilotChatMenuItem_Click"/>
-                <Separator/>
-                <MenuItem Header="Copy Path" Click="CopyPathMenuItem_Click" InputGestureText="Ctrl+C"/>
-                <Separator/>
-                <MenuItem Header="Pin" Click="PinMenuItem_Click" InputGestureText="P"/>
-                <MenuItem Header="Remove from List" Click="RemoveMenuItem_Click" InputGestureText="Del"/>
-            </ContextMenu>
-        </Border.ContextMenu>
     </Border>
 </UserControl>

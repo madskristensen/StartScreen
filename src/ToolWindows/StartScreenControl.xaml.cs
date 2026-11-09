@@ -60,6 +60,7 @@ namespace StartScreen.ToolWindows
             // LoadMruAsync raises PropertyChanged on GroupedMruItems, instead of
             // waiting until the Loaded handler awaits _loadTask before binding.
             DataContext = _viewModel;
+            _viewModel.LoadWorkspaceTagsAsync(options.WorkspaceTagsJson).FileAndForget(nameof(StartScreenControl));
             ApplyDevHubVisibility(options.DevHubEnabled);
             if (options.DevHubEnabled && _devHubService.CurrentDashboard != null)
                 ApplyStartupDevHubDashboard(_devHubService.CurrentDashboard);
@@ -792,17 +793,25 @@ namespace StartScreen.ToolWindows
 
         private void MruItemControl_SelectionRequested(object sender, MruItem item)
         {
-            ViewModel.SelectedMruItem = item;
+            ViewModel.SetMruSelection(MruPanel.SelectedItems.Cast<MruItem>().ToArray());
+        }
+
+        private void MruPanel_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (!_isDisposed && ReferenceEquals(e.OriginalSource, MruPanel))
+                ViewModel.SetMruSelection(MruPanel.SelectedItems.Cast<MruItem>().ToArray());
         }
 
         private void MruItemControl_RepositorySummaryRequested(object sender, MruItem item)
         {
+            MruItemControl.SelectMruItem(MruPanel, item, false, false);
             ViewModel.SelectedMruItem = item;
             DevHubPanelControl.ShowPullRequests();
         }
 
         private void MruItemControl_RepositoryReviewsRequested(object sender, MruItem item)
         {
+            MruItemControl.SelectMruItem(MruPanel, item, false, false);
             ViewModel.SelectedMruItem = item;
             DevHubPanelControl.ShowRequestedReviews();
         }
@@ -1194,6 +1203,16 @@ namespace StartScreen.ToolWindows
         private void PinnedItems_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             MruItemControl mruControl = FindAncestor<MruItemControl>(e.OriginalSource as DependencyObject);
+            if (mruControl?.DataContext is MruItem item && FindAncestor<Button>(e.OriginalSource as DependencyObject) == null)
+            {
+                bool toggle = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+                MruItemControl.SelectMruItem(MruPanel, item, toggle, false);
+                if (toggle)
+                {
+                    mruControl.FocusItem(true);
+                    e.Handled = true;
+                }
+            }
             mruControl?.HandlePreviewMouseLeftButtonDown(e);
         }
 

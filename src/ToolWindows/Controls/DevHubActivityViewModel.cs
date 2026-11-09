@@ -16,11 +16,20 @@ namespace StartScreen.ToolWindows.Controls
         private IReadOnlyList<DevHubCiRun> _builds = Array.Empty<DevHubCiRun>();
         private IReadOnlyList<DevHubWorkItem> _myWork = Array.Empty<DevHubWorkItem>();
         private IReadOnlyList<DevHubWorkItem> _incoming = Array.Empty<DevHubWorkItem>();
+        private IReadOnlyList<DevHubWorkItem> _attention = Array.Empty<DevHubWorkItem>();
         private Dictionary<string, ActivityItemState> _itemStates = new();
         private bool _initialFilterPending = true;
+        private readonly Func<DateTime> _utcNow;
+        private DevHubItemPreferences _preferences = new();
+        private bool _showSnoozed;
 
-        public DevHubActivityViewModel()
+        public DevHubActivityViewModel() : this(() => DateTime.UtcNow)
         {
+        }
+
+        internal DevHubActivityViewModel(Func<DateTime> utcNow)
+        {
+            _utcNow = utcNow;
             MyWorkItems = new ReadOnlyObservableCollection<DevHubWorkItem>(_visibleMyWork);
             IncomingItems = new ReadOnlyObservableCollection<DevHubWorkItem>(_visibleIncoming);
         }
@@ -34,7 +43,7 @@ namespace StartScreen.ToolWindows.Controls
         public bool MyWorkAttention { get; private set; }
         public int MyWorkCount => _myWork.Count;
         public int IncomingCount => _incoming.Count;
-        public int AttentionCount => _myWork.Count(item => item.NeedsAttention);
+        public int AttentionCount => _attention.Count;
         public int LoadedActivityCount => _pullRequests.Count + _issues.Count + _builds.Count;
         public string MyWorkCountText => MyWorkCount == 0 ? string.Empty : $" {MyWorkCount}";
         public string IncomingCountText => IncomingCount == 0 ? string.Empty : $" {IncomingCount}";
@@ -44,6 +53,12 @@ namespace StartScreen.ToolWindows.Controls
         public string MyWorkEmptyText => MyWorkAttention
             ? "No items need your attention in this view." : "No matching personal work in the loaded activity.";
         public string IncomingEmptyText => "No matching team activity.";
+
+        internal void SetPreferences(DevHubItemPreferences preferences, bool showSnoozed)
+        {
+            _preferences = preferences ?? throw new ArgumentNullException(nameof(preferences));
+            _showSnoozed = showSnoozed;
+        }
 
         public void UpdateRepositoryActivity(IReadOnlyList<DevHubPullRequest> pullRequests,
             IReadOnlyList<DevHubIssue> issues, IReadOnlyList<DevHubCiRun> builds,
@@ -67,6 +82,8 @@ namespace StartScreen.ToolWindows.Controls
             _myWork = ReuseItems(DevHubWorkItem.GetMyWork(_pullRequests, _issues, sessions,
                 sortOrder, includeCompleted, _builds), nextStates);
             _incoming = ReuseItems(DevHubWorkItem.GetIncoming(_pullRequests, _issues, _builds, sortOrder), nextStates);
+            _attention = _myWork.Where(item => item.NeedsAttention || (item.IsPinned && !item.IsCompleted))
+                .Concat(_incoming.Where(item => item.IsPinned && !item.IsCompleted)).ToArray();
             _itemStates = nextStates;
             UpdateProjections();
             if (previousMyWorkCount != MyWorkCount)
@@ -126,7 +143,7 @@ namespace StartScreen.ToolWindows.Controls
 
         public bool TrySelectInitialFilter()
         {
-            if (!_initialFilterPending || GetInitialMyWorkKind(_myWork) != DevHubWorkItemKind.All)
+            if (!_initialFilterPending || AttentionCount == 0)
                 return false;
             SetMyWorkFilter(DevHubWorkItemKind.All, true);
             return true;
@@ -134,15 +151,20 @@ namespace StartScreen.ToolWindows.Controls
 
         internal static DevHubWorkItemKind GetInitialMyWorkKind(IReadOnlyList<DevHubWorkItem> items)
         {
-            return items.Any(item => item.NeedsAttention) ? DevHubWorkItemKind.All : DevHubWorkItemKind.Copilot;
+            return items.Any(item => item.NeedsAttention || (item.IsPinned && !item.IsCompleted))
+                ? DevHubWorkItemKind.All : DevHubWorkItemKind.Copilot;
         }
 
         private void UpdateProjections()
         {
             var wasMyWorkEmpty = IsMyWorkEmpty;
             var wasIncomingEmpty = IsIncomingEmpty;
-            SynchronizeItems(_visibleMyWork, DevHubWorkItem.Filter(_myWork, MyWorkKind, MyWorkAttention));
-            SynchronizeItems(_visibleIncoming, DevHubWorkItem.Filter(_incoming, IncomingKind, false));
+            var personal = MyWorkAttention ? DevHubWorkItem.Filter(_attention, MyWorkKind, false)
+                .OrderByDescending(item => item.UpdatedAt).ToArray() : DevHubWorkItem.Filter(_myWork, MyWorkKind, false);
+            SynchronizeItems(_visibleMyWork, personal
+                .OrderByDescending(item => item.IsPinned).ToArray());
+            SynchronizeItems(_visibleIncoming, DevHubWorkItem.Filter(_incoming, IncomingKind, false)
+                .OrderByDescending(item => item.IsPinned).ToArray());
             if (wasMyWorkEmpty != IsMyWorkEmpty)
                 OnPropertyChanged(nameof(IsMyWorkEmpty));
             if (wasIncomingEmpty != IsIncomingEmpty)
@@ -152,14 +174,16 @@ namespace StartScreen.ToolWindows.Controls
         private IReadOnlyList<DevHubWorkItem> ReuseItems(IReadOnlyList<DevHubWorkItem> items,
             Dictionary<string, ActivityItemState> nextStates)
         {
+            var nowUtc = _utcNow();
             return items.Select(item =>
             {
+                item.ApplyPreferences(_preferences, nowUtc);
                 var key = $"{item.Kind}:{item.CopilotSessionId ?? item.WebUrl}";
                 var state = _itemStates.TryGetValue(key, out var previous) && previous.Matches(item)
                     ? previous : new ActivityItemState(item);
                 nextStates[key] = state;
                 return state.Item;
-            }).ToArray();
+            }).Where(item => _showSnoozed || !item.IsSnoozed).ToArray();
         }
 
         internal static void SynchronizeItems(ObservableCollection<DevHubWorkItem> collection, IReadOnlyList<DevHubWorkItem> items)
@@ -231,6 +255,8 @@ namespace StartScreen.ToolWindows.Controls
                     && Item.StatusDetails == item.StatusDetails && Item.CopilotStatus == item.CopilotStatus
                     && Item.CopilotStatusDetails == item.CopilotStatusDetails && Item.UpdatedAt == item.UpdatedAt
                     && Item.BranchDisplayText == item.BranchDisplayText && Item.IsCompleted == item.IsCompleted
+                    && Item.IsPinned == item.IsPinned && Item.IsSnoozed == item.IsSnoozed
+                    && Item.SnoozedUntilUtc == item.SnoozedUntilUtc
                     && Item.Section == item.Section && Equals(Item.RepoIdentifier, item.RepoIdentifier)
                     && _labels.Length == item.Labels.Count
                     && _labels.Zip(item.Labels, (left, right) => left.Name == right.Name && left.Color == right.Color).All(equal => equal);

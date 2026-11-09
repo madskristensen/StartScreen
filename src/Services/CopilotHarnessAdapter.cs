@@ -434,7 +434,7 @@ namespace StartScreen.Services
             public void Dispose() => _subscriptions.Dispose();
         }
 
-        private sealed class Observer<T>(Action<object> onNext, Action<Exception> onError, Action onCompleted) : IObserver<T>
+        internal sealed class Observer<T>(Action<object> onNext, Action<Exception> onError, Action onCompleted) : IObserver<T>
         {
             public void OnNext(T value) => onNext(value);
             public void OnError(Exception error) => onError(error);

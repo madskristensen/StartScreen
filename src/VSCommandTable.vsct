@@ -21,6 +21,15 @@
       <Menu guid="StartScreen" id="DevHubWorkItemMenu" type="Context">
         <Strings><CommandName>Dev Hub Activity</CommandName></Strings>
       </Menu>
+      <Menu guid="StartScreen" id="MruItemMenu" type="Context">
+        <Strings><CommandName>Recent project</CommandName></Strings>
+      </Menu>
+      <Menu guid="StartScreen" id="MruWorktreesMenu" type="Menu" priority="0x0450">
+        <Parent guid="StartScreen" id="MruOpenActions"/>
+        <Icon guid="ImageCatalogGuid" id="BranchFork"/><CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Open Worktree</ButtonText><CommandName>Open Worktree</CommandName></Strings>
+      </Menu>
     </Menus>
 
     <Groups>
@@ -39,14 +48,84 @@
       <Group guid="StartScreen" id="DevHubWorkItemCopy" priority="0x0200">
         <Parent guid="StartScreen" id="DevHubWorkItemMenu"/>
       </Group>
+      <Group guid="StartScreen" id="DevHubWorkItemPreferences" priority="0x0180">
+        <Parent guid="StartScreen" id="DevHubWorkItemMenu"/>
+      </Group>
       <Group guid="StartScreen" id="DevHubWorkItemScope" priority="0x0300">
         <Parent guid="StartScreen" id="DevHubWorkItemMenu"/>
       </Group>
+      <Group guid="StartScreen" id="MruOpenActions" priority="0x0100"><Parent guid="StartScreen" id="MruItemMenu"/></Group>
+      <Group guid="StartScreen" id="MruTagActions" priority="0x0200"><Parent guid="StartScreen" id="MruItemMenu"/></Group>
+      <Group guid="StartScreen" id="MruItemActions" priority="0x0300"><Parent guid="StartScreen" id="MruItemMenu"/></Group>
+      <Group guid="StartScreen" id="MruWorktreeActions" priority="0x0100"><Parent guid="StartScreen" id="MruWorktreesMenu"/></Group>
+      <Group guid="StartScreen" id="MruWorktreeMaintenance" priority="0x0200"><Parent guid="StartScreen" id="MruWorktreesMenu"/></Group>
     </Groups>
 
     <!--This section defines the elements the user can interact with, like a menu command or a button
         or combo box in a toolbar. -->
     <Buttons>
+      <Button guid="StartScreen" id="MruPruneWorktrees" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="MruWorktreeMaintenance"/>
+        <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Prune deleted worktrees...</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruNewChat" priority="0x0480" type="Button">
+        <Parent guid="StartScreen" id="MruOpenActions"/>
+        <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>New Chat Session</ButtonText></Strings>
+      </Button>
+      <!-- Reserve 0x2000-0x2FFF for the dynamic worktree list. -->
+      <Button guid="StartScreen" id="MruOpenWorktree" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="MruWorktreeActions"/>
+        <CommandFlag>DynamicItemStart</CommandFlag><CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>TextChanges</CommandFlag>
+        <Strings><ButtonText>Open worktree</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruOpen" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="MruOpenActions"/><Icon guid="ImageCatalogGuid" id="Open"/><CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Open</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruOpenNewInstance" priority="0x0200" type="Button">
+        <Parent guid="StartScreen" id="MruOpenActions"/>
+        <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Open in New Instance</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruOpenFolder" priority="0x0300" type="Button">
+        <Parent guid="StartScreen" id="MruOpenActions"/>
+        <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Open Containing Folder</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruOpenTerminal" priority="0x0400" type="Button">
+        <Parent guid="StartScreen" id="MruOpenActions"/>
+        <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Open in Terminal</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruGitPull" priority="0x0500" type="Button">
+        <Parent guid="StartScreen" id="MruOpenActions"/>
+        <Icon guid="ImageCatalogGuid" id="Pull"/><CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>TextChanges</CommandFlag><Strings><ButtonText>Git Pull</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruDeleteChats" priority="0x0600" type="Button">
+        <Parent guid="StartScreen" id="MruOpenActions"/><CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Delete Copilot Chat Sessions</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruAddTags" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="MruTagActions"/><CommandFlag>TextChanges</CommandFlag><Strings><ButtonText>Add tags...</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruRemoveTags" priority="0x0200" type="Button">
+        <Parent guid="StartScreen" id="MruTagActions"/><CommandFlag>TextChanges</CommandFlag><Strings><ButtonText>Remove tags...</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruCopyPath" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="MruItemActions"/><Icon guid="ImageCatalogGuid" id="Copy"/><CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Copy Path</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruPin" priority="0x0200" type="Button">
+        <Parent guid="StartScreen" id="MruItemActions"/><CommandFlag>TextChanges</CommandFlag><Strings><ButtonText>Pin</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruRemove" priority="0x0300" type="Button">
+        <Parent guid="StartScreen" id="MruItemActions"/><Strings><ButtonText>Remove from List</ButtonText></Strings>
+      </Button>
       <Button guid="StartScreen" id="DevHubOpenInBrowser" priority="0x0100" type="Button">
         <Parent guid="StartScreen" id="DevHubWorkItemActions"/>
         <Icon guid="ImageCatalogGuid" id="BrowserLink"/>
@@ -92,6 +171,22 @@
         <Icon guid="ImageCatalogGuid" id="Copy"/>
         <CommandFlag>IconIsMoniker</CommandFlag>
         <Strings><ButtonText>Copy URL</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubPinItem" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemPreferences"/>
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings><ButtonText>Pin to Attention</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubSnoozeItem" priority="0x0200" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemPreferences"/>
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings><ButtonText>Snooze for 1 hour</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubSnoozeItemDay" priority="0x0300" type="Button">
+        <Parent guid="StartScreen" id="DevHubWorkItemPreferences"/>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <Strings><ButtonText>Snooze for 1 day</ButtonText></Strings>
       </Button>
       <Button guid="StartScreen" id="DevHubScopeToRepo" priority="0x0100" type="Button">
         <Parent guid="StartScreen" id="DevHubWorkItemScope"/>
@@ -191,6 +286,31 @@
       <IDSymbol name="DevHubReviewInVisualStudio" value="0x0125" />
       <IDSymbol name="DevHubRequestCopilotReview" value="0x0126" />
       <IDSymbol name="DevHubNewCopilotChat" value="0x0127" />
+      <IDSymbol name="DevHubWorkItemPreferences" value="0x0007" />
+      <IDSymbol name="DevHubPinItem" value="0x0128" />
+      <IDSymbol name="DevHubSnoozeItem" value="0x0129" />
+      <IDSymbol name="DevHubSnoozeItemDay" value="0x012A" />
+      <IDSymbol name="MruItemMenu" value="0x1003" />
+      <IDSymbol name="MruOpenActions" value="0x0008" />
+      <IDSymbol name="MruTagActions" value="0x0009" />
+      <IDSymbol name="MruItemActions" value="0x000A" />
+      <IDSymbol name="MruOpen" value="0x0130" />
+      <IDSymbol name="MruOpenNewInstance" value="0x0131" />
+      <IDSymbol name="MruOpenFolder" value="0x0132" />
+      <IDSymbol name="MruOpenTerminal" value="0x0133" />
+      <IDSymbol name="MruGitPull" value="0x0134" />
+      <IDSymbol name="MruDeleteChats" value="0x0135" />
+      <IDSymbol name="MruCopyPath" value="0x0136" />
+      <IDSymbol name="MruPin" value="0x0137" />
+      <IDSymbol name="MruRemove" value="0x0138" />
+      <IDSymbol name="MruAddTags" value="0x0139" />
+      <IDSymbol name="MruRemoveTags" value="0x013A" />
+      <IDSymbol name="MruWorktreesMenu" value="0x1004" />
+      <IDSymbol name="MruWorktreeActions" value="0x000B" />
+      <IDSymbol name="MruWorktreeMaintenance" value="0x000C" />
+      <IDSymbol name="MruPruneWorktrees" value="0x013B" />
+      <IDSymbol name="MruNewChat" value="0x013C" />
+      <IDSymbol name="MruOpenWorktree" value="0x2000" />
     </GuidSymbol>
     
     <GuidSymbol name="autoload" value="{4add43ae-71e4-4eec-b622-2e8ed3452025}" />

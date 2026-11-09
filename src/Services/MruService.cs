@@ -13,6 +13,7 @@ using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using StartScreen.Helpers;
 using StartScreen.Models;
+using CodeContainer = Microsoft.VisualStudio.Shell.CodeContainerManagement.CodeContainer;
 using static Microsoft.VisualStudio.VSConstants;
 
 namespace StartScreen.Services
@@ -137,6 +138,7 @@ namespace StartScreen.Services
             List<MruItem> vsItems = MergeCurrentRecentProjects(itemsByKey.Values, recentProjectPaths, includeMetadata, metadataCache);
             if (!includeMetadata)
                 RestoreStoredAccessTimes(vsItems, options);
+            ApplyRecentAccessTimes(vsItems, recentProjects);
 
             // Apply pinned state from Options and build an ordered list for stable pin ordering
             var pinnedOrderList = (options.PinnedItems ?? "").Split([';'], StringSplitOptions.RemoveEmptyEntries);
@@ -168,6 +170,19 @@ namespace StartScreen.Services
             // Let the host select its serializer; creating the list directly can conflict
             // with the serializer used by newer Visual Studio Recent Projects implementations.
             return settingsManager == null ? null : new RecentProjectsRegistry(settingsManager).List;
+        }
+
+        internal static void ApplyRecentAccessTimes(IEnumerable<MruItem> items, ISettingsList recentProjects)
+        {
+            if (recentProjects == null)
+                return;
+
+            foreach (MruItem item in items)
+            {
+                var container = recentProjects.GetValueOrDefault<CodeContainer>(item.Path, null);
+                if (container != null && container.LastAccessed != default)
+                    item.ApplyRecentAccessTime(container.LastAccessed.LocalDateTime);
+            }
         }
 
         internal static Task<IReadOnlyList<string>> GetRepositoryRemoteUrlsAsync(CancellationToken cancellationToken)
@@ -442,7 +457,7 @@ namespace StartScreen.Services
                     }
                 }
                 return (Item: item, Status: status, SessionCount: sessionCount,
-                    LastAccessed: GetLastAccessTime(item.Path, item.Type, metadataCache));
+                    LastAccessed: item.HasRecentAccessTime ? item.LastAccessed : GetLastAccessTime(item.Path, item.Type, metadataCache));
             }, async (updates, token) =>
             {
                 await ApplyGitStatusUpdatesAsync(updates, token);
@@ -528,7 +543,7 @@ namespace StartScreen.Services
                     continue;
                 update.Item.ApplyGitStatus(update.Status);
                 update.Item.CopilotChatSessionCount = update.SessionCount;
-                update.Item.LastAccessed = update.LastAccessed;
+                update.Item.ApplyFallbackAccessTime(update.LastAccessed);
 
                 if (++index % 8 == 0)
                 {
@@ -711,14 +726,7 @@ namespace StartScreen.Services
                 {
                     // Open Folder scenario: check the .vs/ folder inside it
                     var vsDir = System.IO.Path.Combine(path, ".vs");
-                    try
-                    {
-                        return Directory.GetLastWriteTime(vsDir);
-                    }
-                    catch
-                    {
-                        return Directory.GetLastWriteTime(path);
-                    }
+                    return Directory.GetLastWriteTime(Directory.Exists(vsDir) ? vsDir : path);
                 }
 
                 // Solution/project file: look for .suo in the .vs/ folder
@@ -730,7 +738,7 @@ namespace StartScreen.Services
             }
             catch (Exception ex)
             {
-                ex.Log();
+                ex.LogAsync().FileAndForget(nameof(MruService));
             }
 
             return DateTime.Now;

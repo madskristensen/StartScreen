@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -16,9 +17,6 @@ namespace StartScreen.ToolWindows.Controls
     public partial class MruItemControl : UserControl
     {
         private MruItem MruItem => DataContext as MruItem;
-        private MenuItem _pinMenuItem;
-        private MenuItem _gitPullMenuItem;
-        private MenuItem _deleteCopilotChatMenuItem;
         private Point? _dragStartPoint;
         private bool _isGitPullRunning;
 
@@ -27,8 +25,12 @@ namespace StartScreen.ToolWindows.Controls
         public event EventHandler FocusSearchBoxRequested;
         public event EventHandler FocusDevHubRequested;
         public event EventHandler<MruItem> SelectionRequested;
+        public event EventHandler<MruItem> PruneWorktreesRequested;
+        public event EventHandler<MruItem> NewChatRequested;
         public event EventHandler<MruItem> RepositorySummaryRequested;
         public event EventHandler<MruItem> RepositoryReviewsRequested;
+        public event EventHandler<IReadOnlyList<MruItem>> AddTagsRequested;
+        public event EventHandler<IReadOnlyList<MruItem>> RemoveTagsRequested;
 
         public MruItemControl()
         {
@@ -38,29 +40,6 @@ namespace StartScreen.ToolWindows.Controls
             // Only show tooltip on mouse hover, not keyboard focus
             ToolTipService.SetIsEnabled(RootBorder, false);
 
-            ThemedContextMenuHelper.AttachLazyContextMenu(RootBorder, CreateContextMenu);
-        }
-
-        private ContextMenu CreateContextMenu()
-        {
-            var menu = new ContextMenu();
-            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("Open", "Open", OpenMenuItem_Click, KnownMonikers.Open, "Enter"));
-            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("OpenInNewInstance", "Open in New Instance", OpenInNewInstanceMenuItem_Click, KnownMonikers.NewWindow, "Ctrl+Enter"));
-            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("OpenFolder", "Open Containing Folder", OpenFolderMenuItem_Click, KnownMonikers.FolderOpened, "O"));
-            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("OpenTerminal", "Open in Terminal", OpenTerminalMenuItem_Click, KnownMonikers.Console, "T"));
-            _gitPullMenuItem = ThemedContextMenuHelper.CreateMenuItem("GitPull", "Git Pull", GitPullMenuItem_Click, KnownMonikers.GitRepository, "G");
-            menu.Items.Add(_gitPullMenuItem);
-            _deleteCopilotChatMenuItem = ThemedContextMenuHelper.CreateMenuItem("DeleteCopilotChat", "Delete Copilot Chat Sessions", DeleteCopilotChatMenuItem_Click, CopilotMonikers.GitHubCopilot);
-            menu.Items.Add(_deleteCopilotChatMenuItem);
-            menu.Items.Add(new Separator());
-            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("CopyPath", "Copy Path", CopyPathMenuItem_Click, KnownMonikers.Copy, "Ctrl+C"));
-            menu.Items.Add(new Separator());
-            _pinMenuItem = ThemedContextMenuHelper.CreateMenuItem("Pin", "Pin", PinMenuItem_Click, KnownMonikers.Pin, "P");
-            menu.Items.Add(_pinMenuItem);
-            menu.Items.Add(ThemedContextMenuHelper.CreateMenuItem("Remove", "Remove from List", RemoveMenuItem_Click, KnownMonikers.Cancel, "Del"));
-            ThemedContextMenuHelper.ApplyVsTheme(menu);
-            menu.Opened += ContextMenu_Opened;
-            return menu;
         }
 
         private void RepositoryReviews_Click(object sender, RoutedEventArgs e)
@@ -171,7 +150,8 @@ namespace StartScreen.ToolWindows.Controls
 
         internal void HandlePreviewMouseLeftButtonDown(MouseButtonEventArgs e)
         {
-            if (MruItem != null && MruItem.IsPinned)
+            _dragStartPoint = null;
+            if (MruItem != null && MruItem.IsPinned && Keyboard.Modifiers == ModifierKeys.None)
             {
                 _dragStartPoint = e.GetPosition(this);
             }
@@ -201,9 +181,21 @@ namespace StartScreen.ToolWindows.Controls
             if ((e.Key == Key.Enter || e.Key == Key.Space) && IsButtonSource(e.OriginalSource as DependencyObject))
                 return;
 
-            if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
+            if (e.Key == Key.Apps || (e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift))
+            {
+                e.Handled = true;
+                RequestContextMenu(RootBorder.PointToScreen(new Point(12, RootBorder.ActualHeight)));
+            }
+            else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 OpenInNewInstanceMenuItem_Click(sender, null);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                var list = FindMruList(this);
+                if (list != null)
+                    SelectMruItem(list, MruItem, true, false);
                 e.Handled = true;
             }
             else if (e.Key == Key.Enter)
@@ -263,13 +255,6 @@ namespace StartScreen.ToolWindows.Controls
                 FocusDevHubRequested?.Invoke(this, EventArgs.Empty);
                 e.Handled = true;
             }
-        }
-
-        private void ContextMenu_Opened(object sender, RoutedEventArgs e)
-        {
-            UpdatePinState();
-            UpdateGitPullState();
-            UpdateDeleteCopilotChatState();
         }
 
         private bool MoveToAdjacentMruItem(bool forward)
@@ -435,7 +420,6 @@ namespace StartScreen.ToolWindows.Controls
                 return;
 
             _isGitPullRunning = true;
-            UpdateGitPullState();
 
             try
             {
@@ -466,17 +450,7 @@ namespace StartScreen.ToolWindows.Controls
             finally
             {
                 _isGitPullRunning = false;
-                UpdateGitPullState();
             }
-        }
-
-        private void UpdateGitPullState()
-        {
-            if (_gitPullMenuItem == null)
-                return;
-
-            _gitPullMenuItem.Header = _isGitPullRunning ? "Pulling..." : "Git Pull";
-            _gitPullMenuItem.IsEnabled = !_isGitPullRunning && MruItem?.HasGitBranch == true && MruItem?.HasCurrentOperation != true;
         }
 
         private void CopyPathMenuItem_Click(object sender, RoutedEventArgs e)
@@ -496,18 +470,6 @@ namespace StartScreen.ToolWindows.Controls
         private void RemoveMenuItem_Click(object sender, RoutedEventArgs e)
         {
             RemoveRequested?.Invoke(this, MruItem);
-        }
-
-        private void UpdateDeleteCopilotChatState()
-        {
-            if (_deleteCopilotChatMenuItem == null)
-            {
-                return;
-            }
-
-            var hasSessions = MruItem?.HasCopilotChatSessions == true;
-            _deleteCopilotChatMenuItem.Visibility = hasSessions ? Visibility.Visible : Visibility.Collapsed;
-            _deleteCopilotChatMenuItem.IsEnabled = hasSessions;
         }
 
         private void DeleteCopilotChatMenuItem_Click(object sender, RoutedEventArgs e)
@@ -560,11 +522,6 @@ namespace StartScreen.ToolWindows.Controls
         {
             if (MruItem != null)
             {
-                if (_pinMenuItem != null)
-                {
-                    _pinMenuItem.Header = MruItem.IsPinned ? "Unpin" : "Pin";
-                }
-
                 PinIcon.Moniker = MruItem.IsPinned
                     ? KnownMonikers.Unpin
                     : KnownMonikers.Pin;
@@ -583,8 +540,11 @@ namespace StartScreen.ToolWindows.Controls
         /// <summary>
         /// Sets keyboard focus to the RootBorder.
         /// </summary>
-        internal void FocusItem()
+        internal void FocusItem(bool preserveSelection = false)
         {
+            var list = FindMruList(this);
+            if (list != null && !preserveSelection)
+                SelectMruItem(list, MruItem, false, false);
             RootBorder.Focus();
         }
     }

@@ -57,6 +57,29 @@ namespace StartScreen.Test
                 model.GetRepositorySummaryGroups(items).SelectMany(group => group).ToArray());
         }
 
+        [TestMethod]
+        public void NewMruCards_AreMetadataCandidatesAndReceiveSummariesAfterRealization()
+        {
+            var previous = new MruItem { Name = "Previous", Path = @"C:\Previous", Type = MruItemType.Folder };
+            var opened = new MruItem { Name = "New folder", Path = @"C:\New", Type = MruItemType.Folder };
+            opened.ApplyRecentAccessTime(DateTime.Now);
+            using var model = new StartScreenViewModel([previous]);
+            model.EnableMruViewportTracking();
+            model.SetMruItemRealized(previous, true);
+
+            model.SetMruItems([opened, previous]);
+            model.SetMruItemRealized(opened, true);
+            CollectionAssert.Contains(model.GetMruMetadataCandidates(), opened);
+            Assert.IsEmpty(model.GetRepositorySummaryGroups([opened]), "A new card needs local remote discovery first.");
+
+            opened.ApplyGitStatus(new GitStatus { BranchName = "main", RemoteUrl = "https://github.com/owner/new.git" });
+            var group = model.GetRepositorySummaryGroups([opened]).Single();
+            Assert.AreEqual(RemoteRepoIdentifier.TryParse(opened.RemoteUrl), group.Key);
+            group.Single().ApplyRepositorySummary("21 reviews", "21 requested reviews", 0, 21);
+            Assert.AreEqual("21 reviews", opened.RepositoryReviewsText);
+            Assert.AreEqual("Today", opened.TimeGroup);
+        }
+
         [STATestMethod]
         [DataRow(true)]
         [DataRow(false)]
@@ -282,6 +305,76 @@ namespace StartScreen.Test
 
             model.SelectedMruItem = second;
             CollectionAssert.AreEqual(new[] { @"C:\Second" }, model.GetCopilotWorkspaceRoots().ToArray());
+        }
+
+        [TestMethod]
+        [DataRow(true)]
+        [DataRow(false)]
+        public void RepositoryScope_UsesOnlyAnExactlySingleMruSelection(bool sameRepository)
+        {
+            var first = new MruItem { Name = "VS", RemoteUrl = "https://github.com/owner/VS.git" };
+            var second = new MruItem { Name = "Other", RemoteUrl = sameRepository ? first.RemoteUrl : "https://github.com/owner/other.git" };
+            using var model = new StartScreenViewModel([first, second]);
+            Assert.AreEqual("Across all repositories", model.RepositoryScopeLabel);
+            model.SetMruSelection([first]);
+            Assert.AreSame(first, model.SelectedMruItem);
+            Assert.AreEqual("Filtered to repository:", model.RepositoryScopeLabel);
+            Assert.AreEqual("owner/VS", model.RepositoryScopeName);
+
+            model.SetMruSelection([first, second]);
+            Assert.IsNull(model.SelectedMruItem);
+            Assert.IsNull(model.SelectedRepository);
+            Assert.IsFalse(model.HasSelectedMruItem);
+            Assert.AreEqual("Across all repositories", model.RepositoryScopeLabel);
+            Assert.IsNull(model.RepositoryScopeName);
+
+            model.SetMruSelection([second]);
+            Assert.AreSame(second, model.SelectedMruItem, "Removing a selection must scope to the remaining item, not the last clicked item.");
+            Assert.AreEqual(sameRepository ? "owner/VS" : "owner/other", model.RepositoryScopeName);
+            model.SetMruSelection([]);
+            Assert.AreEqual("Across all repositories", model.RepositoryScopeLabel);
+            Assert.IsNull(model.SelectedRepository);
+        }
+
+        [TestMethod]
+        public void RepositoryScope_ExplicitScopeClearsWhenMruSelectionIsNotSingle()
+        {
+            var first = new MruItem { Name = "First" };
+            var second = new MruItem { Name = "Second" };
+            using var model = new StartScreenViewModel([first, second]);
+            var repository = RemoteRepoIdentifier.TryParse("https://github.com/owner/repo.git");
+            model.SetRepositoryScope(repository);
+            Assert.AreEqual("Filtered to repository:", model.RepositoryScopeLabel);
+            Assert.AreEqual("owner/repo", model.RepositoryScopeName);
+            model.SetMruSelection([first, second]);
+            Assert.IsNull(model.SelectedRepository);
+            Assert.AreEqual("Across all repositories", model.RepositoryScopeLabel);
+            model.SetRepositoryScope(repository);
+            model.SetMruSelection([]);
+            Assert.IsNull(model.SelectedRepository);
+            Assert.IsFalse(model.HasSelectedMruItem);
+        }
+
+        [TestMethod]
+        public void RepositoryScope_LocalWorkspaceUpdatesWhenRemoteMetadataArrives()
+        {
+            var item = new MruItem { Name = "Local" };
+            using var model = new StartScreenViewModel([item]);
+            model.SetMruSelection([item]);
+            Assert.AreEqual("Local workspace:", model.RepositoryScopeLabel);
+            Assert.AreEqual("Local", model.RepositoryScopeName);
+            var changed = new List<string?>();
+            model.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+            item.Name = "Renamed";
+            Assert.AreEqual("Renamed", model.RepositoryScopeName);
+            CollectionAssert.Contains(changed, nameof(StartScreenViewModel.RepositoryScopeName));
+            changed.Clear();
+            item.RemoteUrl = "https://github.com/owner/repo.git";
+            Assert.AreEqual("Filtered to repository:", model.RepositoryScopeLabel);
+            Assert.AreEqual("owner/repo", model.RepositoryScopeName);
+            CollectionAssert.Contains(changed, nameof(StartScreenViewModel.RepositoryScopeLabel));
+            CollectionAssert.Contains(changed, nameof(StartScreenViewModel.RepositoryScopeName));
+            CollectionAssert.Contains(changed, nameof(StartScreenViewModel.SelectedRepository));
         }
 
         [TestMethod]

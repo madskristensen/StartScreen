@@ -41,6 +41,96 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task WorkspaceChat_CreatesABlankPersistentSessionAndVerifiesItsDirectoryAsync(bool driveRoot)
+        {
+            var backend = new FakeBackend();
+            var existing = new FakeSession();
+            backend.Sessions.Replace(existing);
+            var navigator = new FakeNavigator();
+            var directory = driveRoot ? Path.GetPathRoot(Path.GetTempPath())! : Path.GetTempPath();
+            await CopilotChatLauncher.StartWorkspaceAsync(new FakeBackends(backend), navigator, directory, CancellationToken.None);
+            Assert.AreSame(backend.NextSession, navigator.OpenedSession);
+            Assert.IsTrue(navigator.UserInitiated);
+            Assert.HasCount(1, backend.Created);
+            Assert.IsNotNull(backend.CreateOptions);
+            Assert.IsFalse(backend.CreateOptions.IsEphemeral);
+            Assert.AreEqual("StartScreen", backend.CreateOptions.Feature.Value);
+            Assert.AreEqual(Path.GetFullPath(directory), backend.NextSession.ChangedDirectory);
+            Assert.IsNull(backend.NextSession.Request, "Starting an empty chat must not send a fabricated prompt.");
+            Assert.IsNull(existing.Request);
+            Assert.IsEmpty(backend.Deleted);
+            Assert.AreEqual(0, backend.NextSession.WorkingDirectory.SubscriberCount);
+        }
+
+        [TestMethod]
+        public async Task WorkspaceChat_AllowsAnUnchangeableBackendAlreadyInTheRequestedDirectoryAsync()
+        {
+            var backend = new FakeBackend();
+            backend.NextSession.CanChangeWorkingDirectory = false;
+            backend.NextSession.WorkingDirectory.Publish(Path.GetTempPath().ToUpperInvariant());
+            await CopilotChatLauncher.StartWorkspaceAsync(new FakeBackends(backend), new FakeNavigator(), Path.GetTempPath(), CancellationToken.None);
+            Assert.IsNull(backend.NextSession.ChangedDirectory);
+            Assert.IsEmpty(backend.Deleted);
+        }
+
+        [TestMethod]
+        public async Task WorkspaceChat_UnsupportedBackendRemovesOnlyTheNewEmptySessionAsync()
+        {
+            var backend = new FakeBackend();
+            var existing = new FakeSession();
+            backend.Sessions.Replace(existing);
+            backend.NextSession.CanChangeWorkingDirectory = false;
+            await Assert.ThrowsExactlyAsync<NotSupportedException>(() => CopilotChatLauncher.StartWorkspaceAsync(
+                new FakeBackends(backend), new FakeNavigator(), Path.GetTempPath(), CancellationToken.None));
+            CollectionAssert.AreEqual(new[] { backend.NextSession.SessionId }, backend.Deleted);
+            Assert.IsNull(backend.NextSession.Request);
+            Assert.IsNull(existing.Request);
+            Assert.AreEqual(0, backend.NextSession.WorkingDirectory.SubscriberCount);
+        }
+
+        [TestMethod]
+        public async Task WorkspaceChat_DirectoryChangeMustActuallyBeReportedAndCancellationCleansUpAsync()
+        {
+            var backend = new FakeBackend();
+            using var cancellation = new CancellationTokenSource();
+            backend.NextSession.ChangeDirectoryAsync = (_, _) =>
+            {
+                backend.NextSession.WorkingDirectory.Publish(@"C:\wrong-workspace");
+                cancellation.Cancel();
+                return Task.CompletedTask;
+            };
+            await Assert.ThrowsAsync<OperationCanceledException>(() => CopilotChatLauncher.StartWorkspaceAsync(
+                new FakeBackends(backend), new FakeNavigator(), Path.GetTempPath(), cancellation.Token));
+            CollectionAssert.AreEqual(new[] { backend.NextSession.SessionId }, backend.Deleted);
+            Assert.IsNull(backend.NextSession.Request);
+            Assert.AreEqual(0, backend.NextSession.WorkingDirectory.SubscriberCount);
+        }
+
+        [TestMethod]
+        public async Task WorkspaceChat_RejectsMissingPathsAndIncompatibleNavigationBeforeCreationAsync()
+        {
+            var backend = new FakeBackend();
+            await Assert.ThrowsExactlyAsync<DirectoryNotFoundException>(() => CopilotChatLauncher.StartWorkspaceAsync(
+                new FakeBackends(backend), new FakeNavigator(), Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")), CancellationToken.None));
+            await Assert.ThrowsExactlyAsync<NotSupportedException>(() => CopilotChatLauncher.StartWorkspaceAsync(
+                new FakeBackends(backend), new object(), Path.GetTempPath(), CancellationToken.None));
+            Assert.IsEmpty(backend.Created);
+        }
+
+        [TestMethod]
+        public async Task WorkspaceChat_UnreadySessionIsRemovedWithoutChangingDirectoryAsync()
+        {
+            var backend = new FakeBackend();
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => CopilotChatLauncher.StartWorkspaceAsync(
+                new FakeBackends(backend), new FakeNavigator { IsReady = false }, Path.GetTempPath(), CancellationToken.None));
+            CollectionAssert.AreEqual(new[] { backend.NextSession.SessionId }, backend.Deleted);
+            Assert.IsNull(backend.NextSession.ChangedDirectory);
+            Assert.IsNull(backend.NextSession.Request);
+        }
+
+        [TestMethod]
         public async Task Resume_VerifiesAndOpensTheExistingSessionWithoutSendingOrCreatingAsync()
         {
             var backend = new FakeBackend();

@@ -49,5 +49,30 @@ namespace StartScreen
         public const int DevHubReviewInVisualStudio = 0x0125;
         public const int DevHubRequestCopilotReview = 0x0126;
         public const int DevHubNewCopilotChat = 0x0127;
+        public const int DevHubWorkItemPreferences = 0x0007;
+        public const int DevHubPinItem = 0x0128;
+        public const int DevHubSnoozeItem = 0x0129;
+        public const int DevHubSnoozeItemDay = 0x012A;
+        public const int MruItemMenu = 0x1003;
+        public const int MruOpenActions = 0x0008;
+        public const int MruTagActions = 0x0009;
+        public const int MruItemActions = 0x000A;
+        public const int MruOpen = 0x0130;
+        public const int MruOpenNewInstance = 0x0131;
+        public const int MruOpenFolder = 0x0132;
+        public const int MruOpenTerminal = 0x0133;
+        public const int MruGitPull = 0x0134;
+        public const int MruDeleteChats = 0x0135;
+        public const int MruCopyPath = 0x0136;
+        public const int MruPin = 0x0137;
+        public const int MruRemove = 0x0138;
+        public const int MruAddTags = 0x0139;
+        public const int MruRemoveTags = 0x013A;
+        public const int MruWorktreesMenu = 0x1004;
+        public const int MruWorktreeActions = 0x000B;
+        public const int MruWorktreeMaintenance = 0x000C;
+        public const int MruPruneWorktrees = 0x013B;
+        public const int MruNewChat = 0x013C;
+        public const int MruOpenWorktree = 0x2000;
     }
 }
