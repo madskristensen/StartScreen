@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -65,14 +67,38 @@ namespace StartScreen.Services
                 if (!force && cached != null && IsFresh(cached.FetchedAtUtc, _utcNow()))
                     return Present(cached, cached: true);
 
-                Snapshot downloaded;
+                Snapshot refreshed;
                 try
                 {
-                    using var response = await _client.GetAsync(FeedUrl, HttpCompletionOption.ResponseHeadersRead, token);
-                    response.EnsureSuccessStatusCode();
-                    var json = await HttpResponseReader.ReadStringAsync(response, token, 1024 * 1024);
-                    var catalog = Parse(json);
-                    downloaded = new Snapshot { Catalog = catalog, FetchedAtUtc = _utcNow() };
+                    using var request = new HttpRequestMessage(HttpMethod.Get, FeedUrl);
+                    if (cached != null)
+                    {
+                        request.Headers.IfModifiedSince = cached.LastModified;
+                        if (EntityTagHeaderValue.TryParse(cached.ETag, out var etag))
+                            request.Headers.IfNoneMatch.Add(etag);
+                    }
+                    using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+                    if (response.StatusCode == HttpStatusCode.NotModified && cached != null
+                        && (request.Headers.IfNoneMatch.Count > 0 || request.Headers.IfModifiedSince.HasValue))
+                    {
+                        refreshed = new Snapshot
+                        {
+                            Catalog = cached.Catalog, FetchedAtUtc = _utcNow(),
+                            ETag = response.Headers.ETag?.ToString() ?? cached.ETag,
+                            LastModified = response.Content?.Headers.LastModified ?? cached.LastModified,
+                        };
+                    }
+                    else
+                    {
+                        response.EnsureSuccessStatusCode();
+                        var json = await HttpResponseReader.ReadStringAsync(response, token, 1024 * 1024);
+                        var catalog = Parse(json);
+                        refreshed = new Snapshot
+                        {
+                            Catalog = catalog, FetchedAtUtc = _utcNow(), ETag = response.Headers.ETag?.ToString(),
+                            LastModified = response.Content.Headers.LastModified,
+                        };
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -87,10 +113,10 @@ namespace StartScreen.Services
                     return stale;
                 }
 
-                var result = Present(downloaded, cached: false);
+                var result = Present(refreshed, cached: false);
                 try
                 {
-                    await AtomicJsonCache.WriteAsync(path, downloaded, token, _jsonOptions);
+                    await AtomicJsonCache.WriteAsync(path, refreshed, token, _jsonOptions);
                 }
                 catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
                 {
@@ -166,6 +192,8 @@ namespace StartScreen.Services
         internal sealed class Snapshot
         {
             public DateTimeOffset FetchedAtUtc { get; set; }
+            public string ETag { get; set; }
+            public DateTimeOffset? LastModified { get; set; }
             public EventCatalog Catalog { get; set; }
         }
     }
