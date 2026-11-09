@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\..\events.json" LogicalName="events.json" />
     <EmbeddedResource Include="..\..\src\VSCommandTable.vsct" LogicalName="VSCommandTable.vsct" />
     <EmbeddedResource Include="..\..\src\ToolWindows\StartScreenControl.xaml" LogicalName="StartScreenControl.xaml" />
     <EmbeddedResource Include="..\..\src\ToolWindows\WorkspaceOrganizationDialog.xaml" LogicalName="WorkspaceOrganizationDialog.xaml" />

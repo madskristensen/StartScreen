@@ -1,0 +1,232 @@
+using System.Net;
+using System.Net.Http;
+using System.Text.Json;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using StartScreen.Models;
+using StartScreen.Services;
+
+namespace StartScreen.Test
+{
+    [TestClass]
+    public class EventServiceTests
+    {
+        private static readonly DateTimeOffset _now = new DateTimeOffset(new DateTime(2026, 11, 9, 12, 0, 0, DateTimeKind.Local)).ToUniversalTime();
+
+        [TestMethod]
+        [DataRow(167.999, 1)]
+        [DataRow(168d, 2)]
+        [DataRow(169d, 2)]
+        [DataRow(-1d, 2)]
+        public async Task Schedule_UsesTheRawHttpsFeedAndPersistentSevenDayCacheAsync(double hours, int requests)
+        {
+            using var directory = new TemporaryDirectory();
+            var clock = _now;
+            using var handler = new TestHttpMessageHandler((request, _) =>
+            {
+                Assert.AreEqual(EventService.FeedUrl, request.RequestUri!.AbsoluteUri);
+                Assert.AreEqual("https", request.RequestUri.Scheme);
+                return Json(Event("Scheduled", new DateTime(2026, 11, 30)));
+            });
+            using var client = new HttpClient(handler);
+            var first = new EventService(client, directory.Path, () => clock);
+            Assert.IsFalse((await first.GetAsync(false, CancellationToken.None)).IsCached);
+            clock = _now.AddHours(hours);
+            var reopened = new EventService(client, directory.Path, () => clock);
+            var result = await reopened.GetAsync(false, CancellationToken.None);
+            Assert.AreEqual(requests, handler.RequestCount);
+            Assert.AreEqual(requests == 1, result.IsCached);
+            Assert.AreEqual("Scheduled", result.Events.Single().Name);
+        }
+
+        [TestMethod]
+        public async Task Schedule_SortsConfirmedDatesAndRetainsOngoingEventsButNotExpiredOrUndatedAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var expired = Event("Expired", new DateTime(2026, 11, 7));
+            expired.EndDate = new DateTime(2026, 11, 8);
+            var ongoing = Event("Ongoing", new DateTime(2026, 11, 8));
+            ongoing.EndDate = new DateTime(2026, 11, 10);
+            using var handler = new TestHttpMessageHandler((_, _) => Json(
+                Event("Later", new DateTime(2027, 8, 2)), expired,
+                new ConferenceEvent { Name = "Not announced" },
+                Event("Next", new DateTime(2026, 11, 10)), ongoing));
+            using var client = new HttpClient(handler);
+            var service = new EventService(client, directory.Path, () => _now);
+            var result = await service.GetAsync(false, CancellationToken.None);
+            CollectionAssert.AreEqual(new[] { "Ongoing", "Next", "Later" }, result.Events.Select(item => item.Name).ToArray());
+            Assert.IsFalse(result.IsUnavailable);
+        }
+
+        [TestMethod]
+        public async Task FreshCache_StillRemovesEventsThatEndedSinceItsLastActivationAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var clock = _now;
+            using var handler = new TestHttpMessageHandler((_, _) => Json(Event("Today", new DateTime(2026, 11, 9))));
+            using var client = new HttpClient(handler);
+            var service = new EventService(client, directory.Path, () => clock);
+            Assert.HasCount(1, (await service.GetAsync(false, CancellationToken.None)).Events);
+            clock = clock.AddDays(1);
+            var result = await service.GetAsync(false, CancellationToken.None);
+            Assert.IsEmpty(result.Events);
+            Assert.IsTrue(result.IsCached);
+            Assert.AreEqual(1, handler.RequestCount);
+            StringAssert.Contains(result.Message, "No upcoming events");
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task FailedRefresh_PreservesTheLastGoodSnapshotAndDoesNotRestartItsSevenDayLifetimeAsync(bool invalidJson)
+        {
+            using var directory = new TemporaryDirectory();
+            var clock = _now;
+            using var handler = new TestHttpMessageHandler((_, request) => request == 1
+                ? Json(Event("Retained", new DateTime(2026, 11, 30)))
+                : invalidJson ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{broken") }
+                : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            using var client = new HttpClient(handler);
+            var service = new EventService(client, directory.Path, () => clock);
+            await service.GetAsync(false, CancellationToken.None);
+            clock = clock.AddDays(8);
+            var result = await service.GetAsync(false, CancellationToken.None);
+            Assert.AreEqual("Retained", result.Events.Single().Name);
+            Assert.IsTrue(result.IsCached);
+            Assert.IsTrue(result.IsStale);
+            Assert.IsFalse(result.IsUnavailable);
+            StringAssert.Contains(result.Message, "Could not update events");
+            var snapshot = await AtomicJsonCache.ReadAsync<EventService.Snapshot>(directory.GetPath("events.json"),
+                options: new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            Assert.AreEqual(_now, snapshot!.FetchedAtUtc);
+            await service.GetAsync(false, CancellationToken.None);
+            Assert.AreEqual(3, handler.RequestCount, "A failed refresh must remain eligible for retry.");
+        }
+
+        [TestMethod]
+        public async Task FirstLoadFailure_IsVisibleAndNeverCreatesAFreshEmptyCacheAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+            using var client = new HttpClient(handler);
+            var result = await new EventService(client, directory.Path, () => _now).GetAsync(false, CancellationToken.None);
+            Assert.IsTrue(result.IsUnavailable);
+            Assert.IsEmpty(result.Events);
+            StringAssert.Contains(result.Message, "unavailable");
+            Assert.IsFalse(File.Exists(directory.GetPath("events.json")));
+        }
+
+        [TestMethod]
+        public async Task ForceRefresh_BypassesTheFreshCacheAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var handler = new TestHttpMessageHandler((_, count) => Json(Event("Event " + count, new DateTime(2026, 11, 30))));
+            using var client = new HttpClient(handler);
+            var service = new EventService(client, directory.Path, () => _now);
+            await service.GetAsync(false, CancellationToken.None);
+            Assert.AreEqual("Event 2", (await service.GetAsync(true, CancellationToken.None)).Events.Single().Name);
+            Assert.AreEqual(2, handler.RequestCount);
+        }
+
+        [TestMethod]
+        public async Task Cancellation_NeverPublishesAnIncompleteSnapshotAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var cancellation = new CancellationTokenSource();
+            using var handler = new TestHttpMessageHandler((_, _) =>
+            {
+                cancellation.Cancel();
+                return Json(Event("Canceled", new DateTime(2026, 11, 30)));
+            });
+            using var client = new HttpClient(handler);
+            await Assert.ThrowsAsync<OperationCanceledException>(() => new EventService(client, directory.Path, () => _now)
+                .GetAsync(false, cancellation.Token));
+            Assert.IsFalse(File.Exists(directory.GetPath("events.json")));
+        }
+
+        [TestMethod]
+        [DataRow("http://example.com/image.png", false)]
+        [DataRow("https://example.com/image.png", true)]
+        public void Catalog_RequiresHttpsAndValidDateRanges(string thumbnail, bool invalidRange)
+        {
+            var item = Event("Invalid", new DateTime(2027, 1, 2));
+            item.ThumbnailUrl = thumbnail;
+            if (invalidRange)
+                item.EndDate = new DateTime(2027, 1, 1);
+            Assert.ThrowsExactly<InvalidDataException>(() => EventService.Parse(Serialize(item)));
+        }
+
+        [TestMethod]
+        public void CuratedCatalog_HasSourceLinksAndMarksSubscriberBenefits()
+        {
+            using var stream = typeof(EventServiceTests).Assembly.GetManifestResourceStream("events.json");
+            using var reader = new StreamReader(stream!);
+            var catalog = EventService.Parse(reader.ReadToEnd());
+            var dated = catalog.Events.Where(item => item.StartDate.HasValue).ToArray();
+            Assert.IsGreaterThanOrEqualTo(12, dated.Length);
+            foreach (var item in dated)
+            {
+                Assert.IsFalse(string.IsNullOrWhiteSpace(item.Location));
+                if (item.Location != "Virtual")
+                    Assert.AreEqual(2, item.Location.Split(',').Length, "Event locations use City, Country without venue or state details.");
+                Assert.IsFalse(string.IsNullOrWhiteSpace(item.Description));
+                Assert.IsNotNull(item.Sources);
+                Assert.IsNotEmpty(item.Sources);
+                Assert.AreEqual(item.Name.StartsWith("Visual Studio Live!", StringComparison.Ordinal), item.HasSubscriberDiscount);
+            }
+            foreach (var name in new[] { "Microsoft Build 2027", "GitHub Universe 2027", "DEVintersection" })
+                Assert.IsTrue(catalog.Events.Any(item => item.Name == name));
+            Assert.IsTrue(dated.Any(item => item.Name == ".NET Conf 2026"));
+            Assert.IsGreaterThanOrEqualTo(5, dated.Count(item => item.Name.StartsWith("NDC", StringComparison.Ordinal)));
+        }
+
+        [TestMethod]
+        public async Task Thumbnails_AreDeduplicatedAndCachedForSevenDaysAcrossServiceInstancesAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            var clock = _now;
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 0, 0, 255 }, 4)));
+            using var image = new MemoryStream();
+            encoder.Save(image);
+            using var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new ByteArrayContent(image.ToArray()) });
+            using var client = new HttpClient(handler);
+            ConferenceEvent[] Items() => [Event("First", new DateTime(2027, 1, 1)), Event("Second", new DateTime(2027, 2, 1))];
+            var first = Items();
+            Assert.AreEqual(0, await new EventService(client, directory.Path, () => clock).LoadThumbnailsAsync(first, CancellationToken.None));
+            Assert.AreSame(first[0].Thumbnail, first[1].Thumbnail);
+            Assert.IsTrue(first[0].Thumbnail!.IsFrozen);
+            clock = _now.AddDays(6);
+            Assert.AreEqual(0, await new EventService(client, directory.Path, () => clock).LoadThumbnailsAsync(Items(), CancellationToken.None));
+            Assert.AreEqual(1, handler.RequestCount);
+            clock = _now.AddDays(7);
+            Assert.AreEqual(0, await new EventService(client, directory.Path, () => clock).LoadThumbnailsAsync(Items(), CancellationToken.None));
+            Assert.AreEqual(2, handler.RequestCount);
+        }
+
+        [TestMethod]
+        public async Task ThumbnailFailure_ReportsPartialContentWithoutDiscardingTheEventAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var handler = new TestHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+            using var client = new HttpClient(handler);
+            var item = Event("Retained", new DateTime(2027, 1, 1));
+            Assert.AreEqual(1, await new EventService(client, directory.Path, () => _now).LoadThumbnailsAsync([item], CancellationToken.None));
+            Assert.IsNull(item.Thumbnail);
+            Assert.AreEqual("Retained", item.Name);
+        }
+
+        private static ConferenceEvent Event(string name, DateTime date) => new ConferenceEvent
+        {
+            Name = name, Description = "Developer conference", Location = "Seattle, USA", StartDate = date,
+            Url = "https://example.com/" + Uri.EscapeDataString(name), ThumbnailUrl = "https://example.com/thumbnail.png",
+        };
+
+        private static string Serialize(params ConferenceEvent[] items) => JsonSerializer.Serialize(new { version = 1, events = items });
+        private static HttpResponseMessage Json(params ConferenceEvent[] items) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(Serialize(items)),
+        };
+    }
+}

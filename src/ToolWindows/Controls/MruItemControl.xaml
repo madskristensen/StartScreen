@@ -27,12 +27,11 @@
         <controls:ExistsToOpacityConverter x:Key="ExistsToOpacityConverter"/>
         <Style x:Key="WorkspaceTagPillStyle" TargetType="Border">
             <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="Padding" Value="7 1"/>
-            <Setter Property="Margin" Value="0 0 4 4"/>
+            <Setter Property="Padding" Value="7 0"/>
+            <Setter Property="Margin" Value="8 0 0 0"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Background" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBorderBrushKey}}"/>
-            <Setter Property="MaxWidth" Value="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
             <Setter Property="Tag" Value="{DynamicResource {x:Static SystemParameters.HighContrastKey}}"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
@@ -74,7 +73,7 @@
     </UserControl.Resources>
     <Border x:Name="RootBorder"
             BorderThickness="0"
-            Padding="8 12 5 12"
+            Padding="8 4 5 4"
             MinHeight="48"
             Cursor="Hand"
             Focusable="True"
@@ -177,15 +176,17 @@
                 </StackPanel>
             </ToolTip>
         </Border.ToolTip>
-        <Grid>
+        <Grid VerticalAlignment="Center">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
+            <!-- Reserve two font-scaled lines so arriving metadata does not resize the row. -->
+            <TextBlock Grid.ColumnSpan="2" Width="0" Margin="0 2" Visibility="Hidden"
+                       Style="{StaticResource StartScreen.CardTitle}" typography:Typography.LineCount="2"/>
             <imaging:CrispImage x:Name="Icon" Width="20" Height="20" Margin="0 0 8 0" VerticalAlignment="Top"/>
             <Grid Grid.Column="1">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
@@ -225,21 +226,6 @@
                         <imaging:CrispImage x:Name="PinIcon" Moniker="{x:Static catalog:KnownMonikers.Pin}" Width="16" Height="16"/>
                     </Button>
                 </Grid>
-                <ItemsControl x:Name="WorkspaceTagPills" Grid.Row="2" ItemsSource="{Binding Tags}" Margin="0 4 0 0" Focusable="False"
-                              AutomationProperties.Name="Project tags"
-                              Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Style="{StaticResource WorkspaceTagPillStyle}" ToolTip="{Binding}">
-                                <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" Style="{StaticResource StartScreen.Metadata}"
-                                           Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
                 <Grid x:Name="RepositoryStatusRow" Grid.Row="1" Margin="0 3 0 0" ToolTip="{Binding RepositorySummaryTooltip}">
                     <Grid.Style>
                         <Style TargetType="Grid">
@@ -247,15 +233,23 @@
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding HasRequestedReviews}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
                                 <DataTrigger Binding="{Binding HasAdditionalWorktrees}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
+                                <DataTrigger Binding="{Binding HasTags}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Grid.Style>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <Button Content="{Binding RepositoryReviewsText}" Click="RepositoryReviews_Click"
                             ToolTip="Review requests for you" AutomationProperties.Name="Review requests for you"
                             Style="{StaticResource RepositoryLinkButtonStyle}"
                             Visibility="{Binding HasRequestedReviews, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                    <StackPanel x:Name="WorktreeIndicator" Grid.Column="1" Orientation="Horizontal" Margin="8 0 0 0" VerticalAlignment="Center"
+                    <Border x:Name="WorkspaceTagPills" Grid.Column="1" Style="{StaticResource WorkspaceTagPillStyle}"
+                            HorizontalAlignment="Left" VerticalAlignment="Center" ToolTip="{Binding TagsText}"
+                            AutomationProperties.Name="Project tags"
+                            Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <TextBlock Text="{Binding TagsText}" TextTrimming="CharacterEllipsis" Style="{StaticResource StartScreen.Metadata}"
+                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+                    </Border>
+                    <StackPanel x:Name="WorktreeIndicator" Grid.Column="2" Orientation="Horizontal" Margin="8 0 0 0" VerticalAlignment="Center"
                                 ToolTip="{Binding WorktreeTooltip}" AutomationProperties.Name="{Binding WorktreeTooltip}"
                                 Visibility="{Binding HasAdditionalWorktrees, Converter={StaticResource BoolToVisibilityConverter}}">
                         <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.BranchFork}" Width="12" Height="12" Margin="0 0 4 0" Opacity="0.7"/>

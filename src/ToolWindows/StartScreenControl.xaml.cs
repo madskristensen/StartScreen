@@ -128,6 +128,8 @@ namespace StartScreen.ToolWindows
             _viewModel.ActivateBackgroundWork();
             if (ReferenceEquals(NewsTabs.SelectedItem, VideosTab))
                 ActivateVideosTab();
+            else if (ReferenceEquals(NewsTabs.SelectedItem, EventsTab))
+                ActivateEventsTab();
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
             JoinableTask previousLoad = _controlLoadTask;
             _controlLoadTask = StartScreenPackage.BackgroundTaskFactory.RunAsync(async () =>
@@ -1453,6 +1455,8 @@ namespace StartScreen.ToolWindows
                 ViewModel.ForceRefreshNews();
                 ViewModel.ForceRefreshYouTube();
                 ViewModel.ForceRefreshFeedback();
+                if (ReferenceEquals(NewsTabs.SelectedItem, EventsTab))
+                    ActivateEventsTab(force: true);
             }
 
             DevHubPanel_RefreshRequested(this, System.EventArgs.Empty);
@@ -1521,6 +1525,10 @@ namespace StartScreen.ToolWindows
             else if (ReferenceEquals(selected, VideosTab))
             {
                 ActivateVideosTab();
+            }
+            else if (ReferenceEquals(selected, EventsTab))
+            {
+                ActivateEventsTab();
             }
             else if (ReferenceEquals(selected, FeedbackTab))
             {

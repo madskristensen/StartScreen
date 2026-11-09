@@ -328,7 +328,7 @@ namespace StartScreen.Test
             Assert.AreEqual(hasReviews ? Visibility.Visible : Visibility.Collapsed, details.Visibility);
             if (hasReviews)
             {
-                Assert.IsGreaterThan(48d, card.ActualHeight);
+                Assert.AreEqual(48d, card.ActualHeight, 0.01);
                 Assert.IsLessThanOrEqualTo(card.ActualHeight - card.Padding.Bottom,
                     details.TranslatePoint(new Point(0, details.ActualHeight), card).Y);
             }
@@ -369,8 +369,9 @@ namespace StartScreen.Test
             var badge = (Button)grid.Children[0];
             var row = (Grid)grid.Children[1];
             var reviews = (Button)row.Children[0];
-            Assert.AreEqual(2, row.Children.Count);
-            Assert.AreEqual("WorktreeIndicator", ((StackPanel)row.Children[1]).Name);
+            Assert.AreEqual(3, row.Children.Count);
+            Assert.AreEqual("WorkspaceTagPills", ((Border)row.Children[1]).Name);
+            Assert.AreEqual("WorktreeIndicator", ((StackPanel)row.Children[2]).Name);
             var item = new Models.MruItem { RemoteUrl = "https://github.com/o/r.git" };
             grid.DataContext = item;
 #pragma warning disable VSTHRD001 // Drain bindings on the current STA thread, not a thread switch.
@@ -918,10 +919,12 @@ namespace StartScreen.Test
         [DataRow(1, 320d)]
         [DataRow(2, 320d)]
         [DataRow(3, 320d)]
+        [DataRow(4, 320d)]
         [DataRow(0, 500d)]
         [DataRow(1, 500d)]
         [DataRow(2, 500d)]
         [DataRow(3, 500d)]
+        [DataRow(4, 500d)]
         public void NewsTabs_AlignWithoutClippingOrColoringContent(int selectedIndex, double width)
         {
             var document = ReadLayoutXaml("StartScreenControl.xaml");
@@ -947,6 +950,11 @@ namespace StartScreen.Test
                     var padding = card.Attribute("Padding")?.Value ?? SharedXamlReader.ReadResources().Descendants(p + "Thickness")
                         .Single(element => element.Attribute(x + "Key")?.Value == "StartScreen.CardPadding").Value;
                     content = new XElement(p + "Border", new XAttribute("Padding", padding), content);
+                }
+                else if (name == "EventsTab")
+                {
+                    var status = item.Descendants(p + "TextBlock").Single(element => element.Attribute("Text")?.Value == "{Binding EventsStatus}");
+                    content.SetAttributeValue("Margin", status.Attribute("Margin")!.Value);
                 }
                 else if (name == "FeedbackTab")
                 {

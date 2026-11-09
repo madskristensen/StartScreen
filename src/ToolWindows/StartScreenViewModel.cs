@@ -74,6 +74,10 @@ namespace StartScreen.ToolWindows
         public ObservableCollection<MruItem> VisibleMruItems => _visibleMruItems;
         internal NewsSectionViewModel NewsSection { get; }
         internal VideoSectionViewModel VideoSection { get; }
+        internal EventSectionViewModel EventSection { get; }
+        public ObservableCollection<ConferenceEvent> Events => EventSection.Events;
+        public string EventsStatus => EventSection.EventsStatus;
+        public bool IsRefreshingEvents => EventSection.IsRefreshingEvents;
         public ObservableCollection<NewsPost> NewsPosts => NewsSection.NewsPosts;
         public ObservableCollection<NewsPost> PinnedNewsPosts => NewsSection.PinnedNewsPosts;
         public ObservableCollection<WhatsNewArea> WhatsNewAreas { get; } = new ObservableCollection<WhatsNewArea>();
@@ -127,7 +131,7 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        public bool IsRefreshingAny => IsRefreshingNews || IsRefreshingYouTube || _isRefreshingDevHub
+        public bool IsRefreshingAny => IsRefreshingNews || IsRefreshingYouTube || IsRefreshingEvents || _isRefreshingDevHub
             || _isRefreshingWorkspaceSignals || IsRefreshingFeedback || RefreshStates.Any(state => state.IsLoading);
 
         public bool IsYouTubeUnavailable
@@ -181,6 +185,8 @@ namespace StartScreen.ToolWindows
                     refreshing.Add("news");
                 if (IsRefreshingYouTube)
                     refreshing.Add("videos");
+                if (IsRefreshingEvents)
+                    refreshing.Add("events");
                 if (IsRefreshingFeedback)
                     refreshing.Add("feedback");
                 if (_isRefreshingWorkspaceSignals || WorkspaceRefreshState.IsLoading)
@@ -197,6 +203,8 @@ namespace StartScreen.ToolWindows
                     statuses.Add($"News: {LastNewsRefreshText}");
                 if (!string.IsNullOrWhiteSpace(LastYouTubeRefreshText))
                     statuses.Add($"Videos: {LastYouTubeRefreshText}");
+                if (EventSection.RefreshState.HasRefreshed)
+                    statuses.Add($"Events: {EventsStatus}");
                 if (_feedbackRequested)
                     statuses.Add($"Feedback: {FeedbackStatus ?? LastFeedbackRefreshText}");
                 if (WorkspaceRefreshState.HasRefreshed)
@@ -425,7 +433,8 @@ namespace StartScreen.ToolWindows
             Func<JoinableTaskFactory> getFeedbackTaskFactory = null,
             NewsSectionViewModel newsSection = null,
             VideoSectionViewModel videoSection = null,
-            Func<CancellationToken, Task<FeedbackSnapshot>> getCachedFeedbackAsync = null)
+            Func<CancellationToken, Task<FeedbackSnapshot>> getCachedFeedbackAsync = null,
+            EventSectionViewModel eventSection = null)
         {
             _shutdownToken = shutdownToken;
             _repositorySummaries = new Services.DevHub.DevHubRepoSummaryService(shutdownToken);
@@ -438,8 +447,10 @@ namespace StartScreen.ToolWindows
             _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
             NewsSection = newsSection ?? new NewsSectionViewModel(GetBackgroundCancellationToken);
             VideoSection = videoSection ?? new VideoSectionViewModel(GetBackgroundCancellationToken);
+            EventSection = eventSection ?? new EventSectionViewModel(GetBackgroundCancellationToken);
             NewsSection.PropertyChanged += Section_PropertyChanged;
             VideoSection.PropertyChanged += Section_PropertyChanged;
+            EventSection.PropertyChanged += Section_PropertyChanged;
             BackgroundProgress.Changed += BackgroundProgress_Changed;
             RecentTemplates = new ObservableCollection<RecentTemplate>();
 
@@ -478,6 +489,7 @@ namespace StartScreen.ToolWindows
                 _lifetimeCancellation.Cancel();
                 NewsSection.Cancel();
                 VideoSection.Cancel();
+                EventSection.Cancel();
                 _feedbackRefreshCancellation?.Cancel();
                 _mruMetadataCancellation?.Cancel();
                 _repositorySummaries.CancelPendingRequests();
@@ -522,8 +534,10 @@ namespace StartScreen.ToolWindows
                 BackgroundProgress.Changed -= BackgroundProgress_Changed;
                 NewsSection.PropertyChanged -= Section_PropertyChanged;
                 VideoSection.PropertyChanged -= Section_PropertyChanged;
+                EventSection.PropertyChanged -= Section_PropertyChanged;
                 NewsSection.Dispose();
                 VideoSection.Dispose();
+                EventSection.Dispose();
                 FeedStore.FeedsChanged -= OnFeedsChanged;
                 if (_selectedMruItem != null)
                     _selectedMruItem.PropertyChanged -= SelectedMruItem_PropertyChanged;
@@ -595,9 +609,10 @@ namespace StartScreen.ToolWindows
                 return;
             if (e.PropertyName != nameof(NewsSectionViewModel.RefreshState))
                 OnPropertyChanged(e.PropertyName);
-            if (e.PropertyName == nameof(IsRefreshingNews) || e.PropertyName == nameof(IsRefreshingYouTube))
+            if (e.PropertyName == nameof(IsRefreshingNews) || e.PropertyName == nameof(IsRefreshingYouTube) || e.PropertyName == nameof(IsRefreshingEvents))
                 OnPropertyChanged(nameof(IsRefreshingAny));
             if (e.PropertyName == nameof(IsRefreshingNews) || e.PropertyName == nameof(IsRefreshingYouTube)
+                || e.PropertyName == nameof(IsRefreshingEvents) || e.PropertyName == nameof(EventsStatus)
                 || e.PropertyName == nameof(LastNewsRefreshText) || e.PropertyName == nameof(LastYouTubeRefreshText)
                 || e.PropertyName == nameof(NewsSectionViewModel.RefreshState))
                 NotifyRefreshStatusChanged();

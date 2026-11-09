@@ -27,6 +27,7 @@ namespace StartScreen.ToolWindows
         {
             SetSectionProgress("News", IsRefreshingNews);
             SetSectionProgress("Videos", IsRefreshingYouTube);
+            SetSectionProgress("Events", IsRefreshingEvents);
             SetSectionProgress("Feedback", IsRefreshingFeedback);
             SetSectionProgress("Workspace", _isRefreshingWorkspaceSignals || WorkspaceRefreshState.IsLoading);
         }
@@ -49,7 +50,7 @@ namespace StartScreen.ToolWindows
         internal SectionRefreshState WorkspaceRefreshState { get; } = new SectionRefreshState();
 
         private SectionRefreshState[] RefreshStates =>
-            [DevHubRefreshState, NewsRefreshState, VideoRefreshState, FeedbackRefreshState, WorkspaceRefreshState];
+            [DevHubRefreshState, NewsRefreshState, VideoRefreshState, EventSection.RefreshState, FeedbackRefreshState, WorkspaceRefreshState];
 
         internal void SetRefreshState(SectionRefreshState state, string message,
             bool cached = false, bool stale = false, bool partial = false, bool unavailable = false,

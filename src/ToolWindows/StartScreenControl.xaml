@@ -187,6 +187,40 @@
         <ItemsPanelTemplate x:Key="NewsCardsPanel">
             <UniformGrid Columns="{Binding NewsColumnCount}"/>
         </ItemsPanelTemplate>
+        <DataTemplate x:Key="EventCardTemplate">
+            <Border x:Name="EventCard" Style="{StaticResource StartScreen.CardSurface}" Margin="0 0 12 12"
+                    Focusable="True" Cursor="Hand" FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
+                    Loaded="EventCard_Loaded" MouseLeftButtonDown="EventCard_MouseDown" MouseUp="EventCard_MouseUp" KeyDown="EventCard_KeyDown"
+                    AutomationProperties.Name="{Binding Name}" AutomationProperties.HelpText="{Binding DateRange}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Height="60" VerticalAlignment="Top" ClipToBounds="True" CornerRadius="3"
+                                Background="{DynamicResource {x:Static platformui:EnvironmentColors.ComboBoxBackgroundBrushKey}}">
+                            <Grid>
+                                <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Calendar}" Width="24" Height="24"/>
+                                <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality"/>
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="12 0 0 0">
+                            <TextBlock Text="{Binding Name}" Style="{StaticResource StartScreen.CardTitle}" TextWrapping="Wrap"
+                                       local:Typography.MaxLineCount="2" TextTrimming="WordEllipsis" ToolTip="{Binding Name}"
+                                       Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+                            <TextBlock Text="{Binding Description}" Style="{StaticResource StartScreen.Body}" Opacity="0.7" Margin="0 4 0 0"
+                                       TextWrapping="Wrap" local:Typography.MaxLineCount="3" TextTrimming="WordEllipsis" ToolTip="{Binding Description}"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="{Binding DateRange}" Style="{StaticResource StartScreen.Metadata}" Margin="0 8 0 0" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Location}" Style="{StaticResource StartScreen.Metadata}" Opacity="0.7" Margin="0 2 0 0" TextWrapping="Wrap"/>
+                    <TextBlock Style="{StaticResource StartScreen.Metadata}" Margin="0 6 0 0" TextWrapping="Wrap"
+                               Visibility="{Binding HasSubscriberDiscount, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <Hyperlink NavigateUri="{Binding SubscriberDiscountUrl}" RequestNavigate="EventLink_RequestNavigate"
+                                   ToolTip="Check eligibility and redeem the offer through Visual Studio subscription benefits before registering. Discounts vary by event and subscription."
+                                   Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">Visual Studio subscriber discount</Hyperlink>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -678,6 +712,17 @@
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
+                                    </StackPanel>
+                                </TabItem>
+
+                                <TabItem x:Name="EventsTab" Header="Events" Style="{StaticResource NewsTabItemStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding EventsStatus}" TextWrapping="Wrap" Opacity="0.65" Margin="8 0 12 12"
+                                                   Visibility="{Binding EventsStatus, Converter={StaticResource NullToCollapsedConverter}}"
+                                                   AutomationProperties.LiveSetting="Polite"/>
+                                        <ItemsControl ItemsSource="{Binding Events}" Focusable="False" HorizontalAlignment="Stretch"
+                                                      ItemTemplate="{StaticResource EventCardTemplate}"
+                                                      Opacity="{Binding IsRefreshingEvents, Converter={StaticResource RefreshingToOpacityConverter}}"/>
                                     </StackPanel>
                                 </TabItem>
 

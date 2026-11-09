@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "verifiedOn": "2026-11-09",
+  "events": [
+    {
+      "name": "PASS Summit West 2026",
+      "description": "SQL Server, Azure data, analytics, and database engineering sessions, with a pre-conference training day.",
+      "startDate": "2026-11-09",
+      "endDate": "2026-11-11",
+      "location": "Seattle, USA",
+      "url": "https://passdatacommunitysummit.com/west/",
+      "thumbnailUrl": "https://passdatacommunitysummit.com/wp-content/uploads/2026/10/2-social-share-og-image-all-pages-full-logo-R.png",
+      "sources": ["https://passdatacommunitysummit.com/west/"]
+    },
+    {
+      "name": ".NET Conf 2026",
+      "description": "Free online sessions from Microsoft and the community covering the .NET 11 release, C#, web, mobile, and developer tools.",
+      "startDate": "2026-11-10",
+      "endDate": "2026-11-13",
+      "location": "Virtual",
+      "url": "https://www.dotnetconf.net/",
+      "thumbnailUrl": "https://www.dotnetconf.net/img/conf-og-metadata.png",
+      "sources": ["https://www.dotnetconf.net/"]
+    },
+    {
+      "name": "Visual Studio Live! Orlando 2026",
+      "description": "Microsoft-stack developer training at Live! 360, covering .NET, C#, Azure, AI, and application development.",
+      "startDate": "2026-11-15",
+      "endDate": "2026-11-20",
+      "location": "Orlando, USA",
+      "url": "https://vslive.com/ecg/live360events/events/orlando-2026/vslive.aspx",
+      "thumbnailUrl": "https://vslive.com/-/media/ecg/live360/2026/orlando/news-events/l360_or26_attendeepreviewguide_cover_sized.png",
+      "subscriberDiscountUrl": "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/",
+      "sources": [
+        "https://vslive.com/ecg/live360events/events/orlando-2026/vslive.aspx",
+        "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/"
+      ]
+    },
+    {
+      "name": "Microsoft Ignite 2026",
+      "description": "Microsoft technology sessions and hands-on learning across Azure, AI, security, data, and developer platforms. Optional pre-day workshops are November 16.",
+      "startDate": "2026-11-17",
+      "endDate": "2026-11-20",
+      "location": "San Francisco, USA",
+      "url": "https://ignite.microsoft.com/",
+      "thumbnailUrl": "https://eventtools.event.microsoft.com/cdn/Ignite2026/Phase_3_Tools/Open_Graph/FY27_Ignite_NewVisID_Event_OpenGraph_2_EventNameDate.jpg",
+      "sources": ["https://ignite.microsoft.com/"]
+    },
+    {
+      "name": "NDC Porto 2026",
+      "description": "Developer workshops and conference sessions on modern software engineering, .NET, cloud, and architecture.",
+      "startDate": "2026-11-17",
+      "endDate": "2026-11-20",
+      "location": "Vila Nova de Gaia, Portugal",
+      "url": "https://ndcporto.com/",
+      "thumbnailUrl": "https://ndcporto.com/images/content/1200x630-e0eaf09e989f.png",
+      "sources": ["https://ndcporto.com/"]
+    },
+    {
+      "name": "NDC AI 2026",
+      "description": "Practical workshops and talks on building software with AI, evaluating models, and integrating AI into development.",
+      "startDate": "2026-12-07",
+      "endDate": "2026-12-09",
+      "location": "Oslo, Norway",
+      "url": "https://ndc-ai.com/",
+      "thumbnailUrl": "https://ndc-ai.com/images/content/1200x630-af161aceb8bc.png",
+      "sources": ["https://ndc-ai.com/"]
+    },
+    {
+      "name": "NDC London 2027",
+      "description": "Software development workshops and talks spanning .NET, web, cloud, architecture, and engineering practices.",
+      "startDate": "2027-01-25",
+      "endDate": "2027-01-29",
+      "location": "London, United Kingdom",
+      "url": "https://ndclondon.com/",
+      "thumbnailUrl": "https://ndclondon.com/images/content/1200x630-0dfc0eaa09a5.png",
+      "sources": ["https://ndclondon.com/"]
+    },
+    {
+      "name": "NDC Security 2027",
+      "description": "Security-focused training for developers, covering secure design, application defense, and practical security techniques.",
+      "startDate": "2027-02-15",
+      "endDate": "2027-02-18",
+      "location": "Oslo, Norway",
+      "url": "https://ndcsecurity.com/",
+      "thumbnailUrl": "https://ndcsecurity.com/images/content/1200x630-c4c4fae024ef.jpg",
+      "sources": ["https://ndcsecurity.com/"]
+    },
+    {
+      "name": "Visual Studio Live! Las Vegas 2027",
+      "description": "Developer training on .NET, C#, Azure, AI-assisted development, and modern application platforms.",
+      "startDate": "2027-03-22",
+      "endDate": "2027-03-26",
+      "location": "Las Vegas, USA",
+      "url": "https://vslive.com/events/las-vegas-2027/home.aspx",
+      "thumbnailUrl": "https://vslive.com/~/media/ecg/vslive/vsliveog1.jpg",
+      "subscriberDiscountUrl": "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/",
+      "sources": [
+        "https://vslive.com/events/las-vegas-2027/home.aspx",
+        "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/"
+      ]
+    },
+    {
+      "name": "Visual Studio Live! Austin 2027",
+      "description": "Hands-on Microsoft-stack development training, including cloud applications, .NET, AI, and developer productivity.",
+      "startDate": "2027-05-02",
+      "endDate": "2027-05-06",
+      "location": "Austin, USA",
+      "url": "https://vslive.com/events/austin-2027/home.aspx",
+      "thumbnailUrl": "https://vslive.com/~/media/ecg/vslive/vsliveog1.jpg",
+      "subscriberDiscountUrl": "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/",
+      "sources": [
+        "https://vslive.com/events/austin-2027/home.aspx",
+        "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/"
+      ]
+    },
+    {
+      "name": "NDC Oslo 2027",
+      "description": "Workshops and a broad software development conference covering .NET, architecture, cloud, web, and engineering practices.",
+      "startDate": "2027-05-31",
+      "endDate": "2027-06-04",
+      "location": "Oslo, Norway",
+      "url": "https://ndcoslo.com/",
+      "thumbnailUrl": "https://ndcoslo.com/images/content/1200x630-7e3c0a57abb8.png",
+      "sources": ["https://ndcoslo.com/"]
+    },
+    {
+      "name": "Visual Studio Live! & AILive! Microsoft HQ 2027",
+      "description": "Developer and AI training at Microsoft headquarters, focused on .NET, Azure, modern applications, and AI-assisted development.",
+      "startDate": "2027-08-02",
+      "endDate": "2027-08-06",
+      "location": "Redmond, USA",
+      "url": "https://vslive.com/events/microsofthq-2027/home.aspx",
+      "thumbnailUrl": "https://vslive.com/~/media/ecg/vslive/vsliveog1.jpg",
+      "subscriberDiscountUrl": "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/",
+      "sources": [
+        "https://vslive.com/events/microsofthq-2027/home.aspx",
+        "https://devblogs.microsoft.com/visualstudio/keep-learning-keep-building-make-the-most-of-vslive-with-your-visual-studio-subscription/"
+      ]
+    },
+    {
+      "name": "Microsoft Build 2027",
+      "description": "Microsoft's developer conference. Dates and location have not been announced.",
+      "startDate": null,
+      "endDate": null,
+      "location": null,
+      "url": "https://build.microsoft.com/",
+      "thumbnailUrl": null,
+      "sources": ["https://build.microsoft.com/en-US/home"]
+    },
+    {
+      "name": "GitHub Universe 2027",
+      "description": "GitHub's developer conference. October 2027 has been announced, but exact dates and location are not yet confirmed.",
+      "startDate": null,
+      "endDate": null,
+      "location": null,
+      "url": "https://githubuniverse.com/",
+      "thumbnailUrl": null,
+      "sources": ["https://githubuniverse.com/"]
+    },
+    {
+      "name": "DEVintersection",
+      "description": "Developer conference covering the Microsoft development ecosystem. No future edition has confirmed dates.",
+      "startDate": null,
+      "endDate": null,
+      "location": null,
+      "url": "https://devintersection.com/",
+      "thumbnailUrl": null,
+      "sources": ["https://devintersection.com/"]
+    }
+  ]
+}

@@ -130,7 +130,7 @@ namespace StartScreen.Test
         [DataRow(220d, 12d)]
         [DataRow(220d, 20d)]
         [DataRow(320d, 12d)]
-        public void TagPills_WrapBelowReviewsWithoutClippingOrTakingHeaderSpace(double width, double fontSize)
+        public void TagSummary_SharesTheDetailsLineWithoutClippingReviewsOrTakingHeaderSpace(double width, double fontSize)
         {
             var card = StartScreenInlineBindingTests.ParseMruCard();
             StartScreen.ToolWindows.Typography.SetEnvironmentSize(card, fontSize);
@@ -142,29 +142,27 @@ namespace StartScreen.Test
             item.ApplyRepositorySummary("Loaded", "Review details", 42, 21);
             card.DataContext = item;
             Layout(card, width);
-            var pills = (ItemsControl)card.FindName("WorkspaceTagPills");
+            var pills = (Border)card.FindName("WorkspaceTagPills");
+            var tags = (TextBlock)pills.Child;
             var reviews = (Grid)card.FindName("RepositoryStatusRow");
             var name = (TextBlock)card.FindName("NameText");
             Assert.AreEqual("21 reviews", ((Button)reviews.Children[0]).Content);
             Assert.IsGreaterThan(0d, name.ActualWidth);
             Assert.IsGreaterThan(0d, pills.ActualHeight);
-            Assert.IsLessThanOrEqualTo(pills.TranslatePoint(new Point(), card).Y,
-                reviews.TranslatePoint(new Point(0, reviews.ActualHeight), card).Y);
-            var untrimmed = new TextBlock { Text = "21 reviews", FontSize = fontSize };
+            Assert.AreSame(reviews, pills.Parent);
+            Assert.AreEqual(item.TagsText, tags.Text);
+            Assert.AreEqual(item.TagsText, pills.ToolTip);
+            Assert.AreEqual(TextTrimming.CharacterEllipsis, tags.TextTrimming);
+            var reviewLink = (Button)reviews.Children[0];
+            var untrimmed = new TextBlock { Text = "21 reviews", FontSize = reviewLink.FontSize, FontFamily = reviewLink.FontFamily };
             untrimmed.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Assert.IsLessThanOrEqualTo(reviews.ActualWidth, untrimmed.DesiredSize.Width);
-            for (var index = 0; index < pills.Items.Count; index++)
-            {
-                var presenter = (ContentPresenter)pills.ItemContainerGenerator.ContainerFromIndex(index);
-                var pill = (Border)VisualTreeHelper.GetChild(presenter, 0);
-                Assert.IsGreaterThan(0d, pill.CornerRadius.TopLeft);
-                Assert.IsGreaterThan(0d, pill.ActualWidth);
-                Assert.AreEqual(item.Tags[index], pill.ToolTip);
-                Assert.IsLessThanOrEqualTo(width - card.Padding.Right + 0.01,
-                    pill.TranslatePoint(new Point(pill.ActualWidth, 0), card).X);
-                Assert.IsLessThanOrEqualTo(card.ActualHeight - card.Padding.Bottom + 0.01,
-                    pill.TranslatePoint(new Point(0, pill.ActualHeight), card).Y);
-            }
+            Assert.IsLessThanOrEqualTo(reviewLink.ActualWidth + 0.01, untrimmed.DesiredSize.Width);
+            Assert.IsGreaterThan(0d, pills.CornerRadius.TopLeft);
+            Assert.IsGreaterThan(0d, pills.ActualWidth);
+            Assert.IsLessThanOrEqualTo(width - card.Padding.Right + 0.01,
+                pills.TranslatePoint(new Point(pills.ActualWidth, 0), card).X);
+            Assert.IsLessThanOrEqualTo(card.ActualHeight - card.Padding.Bottom + 0.01,
+                pills.TranslatePoint(new Point(0, pills.ActualHeight), card).Y);
             item.TagsText = "";
             Layout(card, width);
             Assert.AreEqual(Visibility.Collapsed, pills.Visibility);
@@ -195,6 +193,57 @@ namespace StartScreen.Test
             finally
             {
                 MruItemMenu.Current = null;
+            }
+        }
+
+        [STATestMethod]
+        [DataRow(220d, 12d)]
+        [DataRow(320d, 12d)]
+        [DataRow(480d, 12d)]
+        [DataRow(220d, 20d)]
+        [DataRow(320d, 20d)]
+        [DataRow(480d, 20d)]
+        [DataRow(320d, 32d)]
+        public void RecentRows_KeepTheSameHeightAsReviewsTagsAndWorktreesArrive(double width, double fontSize)
+        {
+            var card = StartScreenInlineBindingTests.ParseMruCard();
+            StartScreen.ToolWindows.Typography.SetEnvironmentSize(card, fontSize);
+            var item = new MruItem { Name = "Project", Path = @"C:\main" };
+            card.DataContext = item;
+            Layout(card, width);
+            var height = card.ActualHeight;
+            if (fontSize == 12)
+                Assert.AreEqual(48d, height, 0.01);
+            else
+                Assert.IsGreaterThan(48d, height, "Rows must grow with the font rather than clipping larger text.");
+
+            foreach (var (reviews, worktrees, tags) in new[]
+            {
+                (21, false, ""),
+                (0, true, ""),
+                (0, false, "client, urgent, work, a very long project tag that must stay inside the card"),
+                (21, true, "client, urgent, work, a very long project tag that must stay inside the card"),
+                (0, false, ""),
+            })
+            {
+                item.GitBranch = "main";
+                item.ApplyRepositorySummary("Loaded", "Review details", 42, reviews);
+                item.ApplyWorktrees(worktrees ? [
+                    new GitWorktreeInfo { Path = item.Path, Branch = "main", IsCurrent = true },
+                    new GitWorktreeInfo { Path = @"C:\other", Branch = "topic" },
+                ] : [], 0);
+                item.TagsText = tags;
+                Layout(card, width);
+                Assert.AreEqual(height, card.ActualHeight, 0.01, "Metadata must not change the row height.");
+                var details = (Grid)card.FindName("RepositoryStatusRow");
+                if (reviews == 0 && !worktrees && tags.Length == 0)
+                    Assert.AreEqual(Visibility.Collapsed, details.Visibility);
+                else
+                {
+                    Assert.AreEqual(Visibility.Visible, details.Visibility);
+                    Assert.IsLessThanOrEqualTo(height - card.Padding.Bottom + 0.01,
+                        details.TranslatePoint(new Point(0, details.ActualHeight), card).Y);
+                }
             }
         }
 
@@ -315,9 +364,9 @@ namespace StartScreen.Test
             Layout(card, width);
             var reviews = (Button)details.Children[0];
             Assert.AreEqual("21 reviews", reviews.Content);
-            var untrimmed = new TextBlock { Text = "21 reviews", FontSize = fontSize };
+            var untrimmed = new TextBlock { Text = "21 reviews", FontSize = reviews.FontSize, FontFamily = reviews.FontFamily };
             untrimmed.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Assert.IsLessThanOrEqualTo(reviews.ActualWidth, untrimmed.DesiredSize.Width);
+            Assert.IsLessThanOrEqualTo(reviews.ActualWidth + 0.01, untrimmed.DesiredSize.Width);
             Assert.IsGreaterThan(0d, ((TextBlock)card.FindName("NameText")).ActualWidth);
             Assert.IsLessThanOrEqualTo(width - card.Padding.Right + 0.01,
                 indicator.TranslatePoint(new Point(indicator.ActualWidth, 0), card).X);
