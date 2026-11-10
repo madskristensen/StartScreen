@@ -104,6 +104,7 @@ namespace StartScreen.Test
 
         [TestMethod]
         [DataRow(@"C:\Code\App.sln")]
+        [DataRow(@"C:\Code\App.slnf")]
         [DataRow(@"\\unavailable\share\App.slnx")]
         [DataRow(@"C:\Code\App.CSPROJ")]
         public async Task DragClassification_SupportedExtensionsNeedNoDirectoryProbeAsync(string path)
@@ -115,7 +116,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public async Task DragClassification_RecognizesFoldersAndRejectsOtherFilesAsync()
+        public async Task DragClassification_RecognizesFoldersAndOrdinaryFilesAsync()
         {
             using var directory = new TemporaryDirectory();
             string folder = directory.GetPath("Workspace.txt");
@@ -124,7 +125,7 @@ namespace StartScreen.Test
             File.WriteAllText(file, string.Empty);
 
             Assert.IsTrue(await StartScreenControl.IsOpenablePathAsync(folder));
-            Assert.IsFalse(await StartScreenControl.IsOpenablePathAsync(file));
+            Assert.IsTrue(await StartScreenControl.IsOpenablePathAsync(file));
             Assert.IsFalse(await StartScreenControl.IsOpenablePathAsync(directory.GetPath("Missing")));
             Assert.IsFalse(await StartScreenControl.IsOpenablePathAsync(string.Empty));
         }

@@ -39,8 +39,6 @@ namespace StartScreen.ToolWindows
         private int _devHubRefreshGeneration;
         private bool _isGlobalDevHubRefreshing;
         private bool _isWorkspaceDevHubRefreshing;
-        private string _dragPath;
-        private bool _isDragPathOpenable;
 
         private StartScreenViewModel ViewModel => DataContext as StartScreenViewModel;
 
@@ -156,8 +154,6 @@ namespace StartScreen.ToolWindows
         {
             if (_isDisposed)
                 return;
-            _dragPath = null;
-            _isDragPathOpenable = false;
             _lifetimeCancellation.Cancel();
             _devHubStartup?.Cancel();
             _workspaceCancellation?.Cancel();
@@ -1627,73 +1623,76 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private static readonly string[] _openableExtensions = { ".sln", ".slnx", ".csproj", ".vbproj", ".fsproj", ".vcxproj" };
+        private static readonly string[] _openableExtensions = { ".sln", ".slnx", ".slnf", ".csproj", ".vbproj", ".fsproj", ".vcxproj" };
 
         private void UserControl_DragOver(object sender, DragEventArgs e)
         {
-            if (e.Data.GetDataPresent(DataFormats.FileDrop))
-            {
-                var files = (string[])e.Data.GetData(DataFormats.FileDrop);
-
-                if (files != null && files.Length > 0)
-                {
-                    var path = files[0];
-                    if (!string.Equals(_dragPath, path, StringComparison.Ordinal))
-                    {
-                        _dragPath = path;
-                        _isDragPathOpenable = false;
-                        UpdateDragPathAsync(path).FileAndForget(nameof(StartScreenControl));
-                    }
-                    e.Effects = _isDragPathOpenable ? DragDropEffects.Copy : DragDropEffects.None;
-                    e.Handled = true;
-                    return;
-                }
-            }
-
-            e.Effects = DragDropEffects.None;
-            e.Handled = true;
+            HandleFileDragOver(e);
         }
 
         private void UserControl_Drop(object sender, DragEventArgs e)
         {
-            _dragPath = null;
-            _isDragPathOpenable = false;
+            HandleFileDrop(e, path => OpenDroppedPathAsync(path).FileAndForget(nameof(StartScreenControl)));
+        }
+
+        internal static void HandleFileDragOver(DragEventArgs e)
+        {
             if (!e.Data.GetDataPresent(DataFormats.FileDrop))
                 return;
 
-            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
-            if (files == null || files.Length == 0)
-                return;
-
-            var path = files[0];
-            OpenDroppedPathAsync(path).FileAndForget(nameof(StartScreenControl));
+            // Accept Explorer paths without filesystem work during drag feedback.
+            var files = e.Data.GetData(DataFormats.FileDrop) as string[];
+            e.Effects = files != null && files.Length > 0
+                ? e.AllowedEffects & DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
         }
 
-        private async Task UpdateDragPathAsync(string path)
+        internal static void HandleFileDrop(DragEventArgs e, Action<string> openPath)
         {
-            try
-            {
-                var openable = await IsOpenablePathAsync(path);
-                if (!_isDisposed && string.Equals(_dragPath, path, StringComparison.Ordinal))
-                    _isDragPathOpenable = openable;
-            }
-            catch (Exception ex)
-            {
-                await ex.LogAsync();
-            }
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+                return;
+
+            e.Handled = true;
+            e.Effects = e.AllowedEffects & DragDropEffects.Copy;
+            if (e.Effects == DragDropEffects.None || !(e.Data.GetData(DataFormats.FileDrop) is string[] files))
+                return;
+
+            foreach (var path in files)
+                openPath(path);
         }
 
         private static async Task OpenDroppedPathAsync(string path)
         {
             try
             {
-                if (await IsOpenablePathAsync(path))
-                    await VsCommandService.OpenPathAsync(path);
+                await OpenDroppedPathCoreAsync(path, VsCommandService.OpenPathAsync, async file =>
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    // A non-text editor can open successfully without providing a text view.
+                    VsShellUtilities.OpenDocument(ServiceProvider.GlobalProvider, file, Guid.Empty, out _, out _, out var frame);
+                    if (frame == null)
+                        throw new InvalidOperationException($"Visual Studio could not open '{file}'.");
+                    Microsoft.VisualStudio.ErrorHandler.ThrowOnFailure(frame.Show());
+                });
             }
             catch (Exception ex)
             {
                 await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen", $"Could not open '{path}'. {ex.Message}");
             }
+        }
+
+        internal static async Task OpenDroppedPathCoreAsync(string path, Func<string, Task> openWorkspaceAsync,
+            Func<string, Task> openDocumentAsync)
+        {
+            if (!await IsOpenablePathAsync(path))
+                throw new FileNotFoundException("The dropped file or folder no longer exists.", path);
+
+            var isDirectory = await Task.Run(() => Directory.Exists(path));
+            if (isDirectory || _openableExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+                await openWorkspaceAsync(path);
+            else
+                await openDocumentAsync(path);
         }
 
         internal static Task<bool> IsOpenablePathAsync(string path)
@@ -1705,7 +1704,7 @@ namespace StartScreen.ToolWindows
             if (ext != null && _openableExtensions.Contains(ext))
                 return Task.FromResult(true);
 
-            return Task.Run(() => Directory.Exists(path));
+            return Task.Run(() => File.Exists(path) || Directory.Exists(path));
         }
     }
 
