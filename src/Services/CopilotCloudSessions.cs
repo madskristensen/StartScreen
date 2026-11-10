@@ -86,6 +86,7 @@ namespace StartScreen.Services
                     await concurrency.WaitAsync(token);
                     try
                     {
+                        token.ThrowIfCancellationRequested();
                         using var detail = await GetAsync(client, credential, "https://api.github.com/repositories/" + number, token);
                         var repository = detail.RootElement.GetProperty("full_name").GetString();
                         if (!IsRepository(repository))

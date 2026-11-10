@@ -690,15 +690,18 @@ namespace StartScreen.Test
         };
 
         [TestMethod]
-        public async Task CloudDiscovery_CancellationStopsActiveAndQueuedRepositoryLookupsAsync()
+        [DataRow(8)]
+        [DataRow(30)]
+        public async Task CloudDiscovery_CancellationStopsActiveAndQueuedRepositoryLookupsAsync(int repositoryCount)
         {
-            var tasks = Enumerable.Range(1, 8).Select(index => new
+            var tasks = Enumerable.Range(1, repositoryCount).Select(index => new
             {
                 id = Guid.NewGuid().ToString("D"),
                 repository = new { id = index },
                 agent_collaborators = new[] { new { slug = "copilot-swe-agent" } },
             }).ToArray();
             var requests = 0;
+            var stopped = 0;
             var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             using var client = new HttpClient(new AsyncHandler(async (request, token) =>
@@ -707,8 +710,15 @@ namespace StartScreen.Test
                     return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { tasks })) };
                 if (Interlocked.Increment(ref requests) == CopilotCloudSessions.MaximumRepositoryConcurrency)
                     started.TrySetResult(true);
-                await Task.Delay(Timeout.Infinite, token);
-                throw new AssertFailedException("Canceled repository requests must not return a response.");
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, token);
+                    throw new AssertFailedException("Canceled repository requests must not return a response.");
+                }
+                finally
+                {
+                    Interlocked.Increment(ref stopped);
+                }
             }));
             await Assert.ThrowsAsync<OperationCanceledException>(async () =>
             {
@@ -718,6 +728,7 @@ namespace StartScreen.Test
                 await discovery;
             });
             Assert.AreEqual(CopilotCloudSessions.MaximumRepositoryConcurrency, requests);
+            Assert.AreEqual(requests, stopped, "Discovery must await cancellation of every active lookup.");
         }
 
         [TestMethod]
