@@ -1,5 +1,8 @@
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.VisualStudio;
+using Microsoft.VisualStudio.Shell.Interop;
+using StartScreen.Commands;
 using StartScreen.Models.DevHub;
 
 namespace StartScreen.ToolWindows.Controls
@@ -20,6 +23,59 @@ namespace StartScreen.ToolWindows.Controls
         private string _activityPreferencesJson;
         private DispatcherTimer _snoozeExpiryTimer;
         private bool _isSavingActivityPreference;
+
+        private void ActivityOptions_Click(object sender, RoutedEventArgs e)
+        {
+            ShowActivityOptionsAsync().FileAndForget(nameof(DevHubPanel));
+        }
+
+        private async Task ShowActivityOptionsAsync()
+        {
+            try
+            {
+                var shell = await VS.GetServiceAsync<SVsUIShell, IVsUIShell>()
+                    ?? throw new InvalidOperationException("Visual Studio context menus are unavailable.");
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (_isDisposed || !IsVisible)
+                    return;
+                DevHubViewMenu.Current = new DevHubViewMenu
+                {
+                    GetShowSnoozedItems = () => ShowSnoozedItems,
+                    ToggleSnoozedItemsAsync = ToggleSnoozedItemsAsync,
+                };
+                try
+                {
+                    ErrorHandler.ThrowOnFailure(shell.UpdateCommandUI(1));
+                    var point = ActivityOptionsButton.PointToScreen(new Point(0, ActivityOptionsButton.ActualHeight));
+                    var guid = PackageGuids.StartScreen;
+                    var points = new[] { new POINTS { x = (short)point.X, y = (short)point.Y } };
+                    ErrorHandler.ThrowOnFailure(shell.ShowContextMenu(0, ref guid, PackageIds.DevHubViewMenu, points, null));
+                }
+                finally
+                {
+                    DevHubViewMenu.Current = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen", "Could not show activity options. " + ex.Message);
+            }
+        }
+
+        private async Task ToggleSnoozedItemsAsync()
+        {
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                ShowSnoozedItems = !ShowSnoozedItems;
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen", "Could not change snoozed item visibility. " + ex.Message);
+            }
+        }
 
         private void InitializeActivityPreferences()
         {

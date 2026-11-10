@@ -450,6 +450,49 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
+        public void RecentProjectMenu_SeparatesOpeningCopilotGitTagsAndItemActions()
+        {
+            XNamespace v = "http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable";
+            var menu = Read("VSCommandTable.vsct");
+            var groups = menu.Descendants(v + "Group")
+                .Where(element => element.Element(v + "Parent")?.Attribute("id")?.Value == "MruItemMenu")
+                .OrderBy(element => Convert.ToInt32(element.Attribute("priority")!.Value, 16)).ToArray();
+            CollectionAssert.AreEqual(new[] { "MruOpenActions", "MruCopilotActions", "MruGitActions", "MruTagActions", "MruItemActions" },
+                groups.Select(element => element.Attribute("id")!.Value).ToArray());
+            var expectedCommands = new[]
+            {
+                new[] { "MruOpen", "MruOpenNewInstance", "MruOpenFolder", "MruOpenTerminal" },
+                new[] { "MruNewChat", "MruDeleteChats" },
+                new[] { "MruWorktreesMenu", "MruGitPull", "MruGitFetch" },
+                new[] { "MruAddTags", "MruRemoveTags" },
+                new[] { "MruCopyPath", "MruPin", "MruRemove" },
+            };
+            for (var index = 0; index < groups.Length; index++)
+            {
+                var name = groups[index].Attribute("id")!.Value;
+                var commands = menu.Descendants().Where(element => element.Name == v + "Button" || element.Name == v + "Menu")
+                    .Where(element => element.Element(v + "Parent")?.Attribute("id")?.Value == name)
+                    .OrderBy(element => Convert.ToInt32(element.Attribute("priority")!.Value, 16))
+                    .Select(element => element.Attribute("id")!.Value).ToArray();
+                CollectionAssert.AreEqual(expectedCommands[index], commands, name);
+                var symbol = menu.Descendants(v + "IDSymbol").Single(element => element.Attribute("name")?.Value == name);
+                Assert.AreEqual(typeof(PackageIds).GetField(name)!.GetRawConstantValue(),
+                    Convert.ToInt32(symbol.Attribute("value")!.Value, 16));
+            }
+        }
+
+        [TestMethod]
+        public void OpenContainingFolder_UsesTheOpenFolderKnownMoniker()
+        {
+            XNamespace v = "http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable";
+            var button = Read("VSCommandTable.vsct").Descendants(v + "Button")
+                .Single(element => element.Attribute("id")?.Value == "MruOpenFolder");
+            Assert.AreEqual("ImageCatalogGuid", button.Element(v + "Icon")!.Attribute("guid")!.Value);
+            Assert.AreEqual("OpenFolder", button.Element(v + "Icon")!.Attribute("id")!.Value);
+            CollectionAssert.Contains(button.Elements(v + "CommandFlag").Select(element => element.Value).ToArray(), "IconIsMoniker");
+        }
+
+        [TestMethod]
         public void OpenWorktreeFlyout_UsesOneDynamicListAndReservedIdRange()
         {
             XNamespace v = "http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable";
@@ -500,7 +543,7 @@ namespace StartScreen.Test
             Assert.IsTrue(dialog.Descendants(p + "Button").Any(element => element.Attribute("Click")?.Value == "ApplyTags_Click"));
             var menu = Read("VSCommandTable.vsct");
             XNamespace v = "http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable";
-            foreach (var id in new[] { "MruOpen", "MruOpenNewInstance", "MruOpenFolder", "MruOpenTerminal", "MruGitPull", "MruDeleteChats", "MruCopyPath", "MruPin", "MruRemove", "MruAddTags", "MruRemoveTags" })
+            foreach (var id in new[] { "MruOpen", "MruOpenNewInstance", "MruOpenFolder", "MruOpenTerminal", "MruGitPull", "MruGitFetch", "MruDeleteChats", "MruCopyPath", "MruPin", "MruRemove", "MruAddTags", "MruRemoveTags" })
             {
                 Assert.IsTrue(menu.Descendants(v + "Button").Any(element => element.Attribute("id")?.Value == id));
                 var symbol = menu.Descendants(v + "IDSymbol").Single(element => element.Attribute("name")?.Value == id);
@@ -510,6 +553,48 @@ namespace StartScreen.Test
                 var attribute = handler.GetCustomAttributesData().Single(data => data.AttributeType.Name == "CommandAttribute");
                 Assert.AreEqual(commandId, attribute.ConstructorArguments[0].Value);
                 Assert.IsNotNull(handler.GetMethod("InitializeAsync", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy));
+            }
+        }
+
+        [TestMethod]
+        [DoNotParallelize]
+        [DataRow(false, false, false, true, true)]
+        [DataRow(true, false, false, true, false)]
+        [DataRow(false, true, false, true, false)]
+        [DataRow(false, false, true, true, false)]
+        [DataRow(false, false, false, false, false)]
+        public async Task GitCommands_DisableDuringEitherOperationAndRouteFetchAsync(bool pulling, bool fetching, bool merging, bool hasBranch, bool enabled)
+        {
+            var executed = 0;
+            MruItemMenu.Current = new MruItemMenu
+            {
+                Item = new MruItem { GitBranch = hasBranch ? "main" : null, CurrentOperation = merging ? "Merge" : null },
+                Selection = [new MruItem()],
+                IsPulling = pulling,
+                IsFetching = fetching,
+                ExecuteActionAsync = id => { executed = id; return Task.CompletedTask; },
+            };
+            try
+            {
+                var pull = Command(PackageIds.MruGitPull);
+                var fetch = Command(PackageIds.MruGitFetch);
+                Assert.AreEqual(enabled, pull.Enabled);
+                Assert.AreEqual(enabled, fetch.Enabled);
+                Assert.AreEqual(pulling ? "Pulling..." : "Git Pull", pull.Text);
+                Assert.AreEqual(fetching ? "Fetching..." : "Git Fetch", fetch.Text);
+                if (enabled)
+                {
+                    await MruItemMenu.ExecuteAsync(PackageIds.MruGitFetch);
+                    Assert.AreEqual(PackageIds.MruGitFetch, executed);
+                }
+                MruItemMenu.Current = null;
+                MruItemMenu.Update(fetch, PackageIds.MruGitFetch);
+                Assert.IsFalse(fetch.Enabled);
+                Assert.IsFalse(fetch.Visible);
+            }
+            finally
+            {
+                MruItemMenu.Current = null;
             }
         }
 

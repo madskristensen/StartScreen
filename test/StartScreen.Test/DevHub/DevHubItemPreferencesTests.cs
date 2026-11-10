@@ -194,13 +194,13 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public void NativeCommandsAndRecoveryControl_AreWired()
+        public void NativeCommandsAndActivityOptions_AreWired()
         {
             using var stream = typeof(DevHubItemPreferencesTests).Assembly.GetManifestResourceStream("VSCommandTable.vsct");
             Assert.IsNotNull(stream);
             var document = XDocument.Load(stream);
             XNamespace vsct = "http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable";
-            foreach (var name in new[] { "DevHubPinItem", "DevHubSnoozeItem", "DevHubSnoozeItemDay" })
+            foreach (var name in new[] { "DevHubPinItem", "DevHubSnoozeItem", "DevHubSnoozeItemDay", "DevHubShowSnoozedItems" })
             {
                 Assert.IsTrue(document.Descendants(vsct + "Button").Any(button => button.Attribute("id")?.Value == name));
                 Assert.IsTrue(document.Descendants(vsct + "IDSymbol").Any(symbol => symbol.Attribute("name")?.Value == name));
@@ -212,11 +212,66 @@ namespace StartScreen.Test.DevHub
             Assert.IsFalse(panel.Descendants().Any(element => element.Attribute(xaml + "Name")?.Value == "ShowSnoozedItems"));
             using var screenStream = typeof(DevHubItemPreferencesTests).Assembly.GetManifestResourceStream("StartScreenControl.xaml");
             var screen = XDocument.Load(screenStream!);
-            var recovery = screen.Descendants().Single(element => element.Attribute(xaml + "Name")?.Value == "ShowSnoozedItems");
-            Assert.AreEqual("{Binding ShowSnoozedItems, ElementName=DevHubPanelControl, Mode=TwoWay}", recovery.Attribute("IsChecked")?.Value);
-            Assert.AreEqual("ViewFilters", recovery.Parent!.Attribute(xaml + "Name")?.Value);
-            Assert.IsFalse(recovery.ElementsBeforeSelf().Any());
-            Assert.AreEqual("Bottom", recovery.Parent.Attribute("DockPanel.Dock")?.Value);
+            Assert.IsFalse(screen.Descendants().Any(element => element.Attribute(xaml + "Name")?.Value == "ShowSnoozedItems"));
+            Assert.IsFalse(screen.Descendants().Any(element => element.Attribute(xaml + "Name")?.Value == "ViewFilters"));
+            var options = panel.Descendants().Single(element => element.Attribute(xaml + "Name")?.Value == "ActivityOptionsButton");
+            Assert.AreEqual("...", options.Attribute("Content")?.Value);
+            Assert.AreEqual("ActivityOptions_Click", options.Attribute("Click")?.Value);
+            Assert.AreEqual("MyWorkBuildFilter", options.ElementsBeforeSelf().Last().Attribute(xaml + "Name")?.Value);
+            var toggle = document.Descendants(vsct + "Button").Single(element => element.Attribute("id")?.Value == "DevHubShowSnoozedItems");
+            Assert.AreEqual("DevHubViewFilters", toggle.Element(vsct + "Parent")?.Attribute("id")?.Value);
+            var group = document.Descendants(vsct + "Group").Single(element => element.Attribute("id")?.Value == "DevHubViewFilters");
+            Assert.AreEqual("DevHubViewMenu", group.Element(vsct + "Parent")?.Attribute("id")?.Value);
+            var nativeMenu = document.Descendants(vsct + "Menu").Single(element => element.Attribute("id")?.Value == "DevHubViewMenu");
+            Assert.AreEqual("Context", nativeMenu.Attribute("type")?.Value);
+            foreach (var name in new[] { "DevHubViewMenu", "DevHubViewFilters", "DevHubShowSnoozedItems" })
+            {
+                var symbol = document.Descendants(vsct + "IDSymbol").Single(element => element.Attribute("name")?.Value == name);
+                Assert.AreEqual(typeof(PackageIds).GetField(name)!.GetRawConstantValue(), Convert.ToInt32(symbol.Attribute("value")!.Value, 16));
+            }
+            var commandType = typeof(DevHubShowSnoozedItems);
+            Assert.AreEqual(PackageIds.DevHubShowSnoozedItems, commandType.GetCustomAttributesData()
+                .Single(attribute => attribute.AttributeType.Name == "CommandAttribute").ConstructorArguments[0].Value);
+        }
+
+        [TestMethod]
+        [DoNotParallelize]
+        public async Task ActivityOptions_SnoozedToggleTracksLiveStateAndClearsWhenMenuClosesAsync()
+        {
+            var showSnoozed = false;
+            var toggles = 0;
+            DevHubViewMenu.Current = new DevHubViewMenu
+            {
+                GetShowSnoozedItems = () => showSnoozed,
+                ToggleSnoozedItemsAsync = () => { showSnoozed = !showSnoozed; toggles++; return Task.CompletedTask; },
+            };
+            var command = new OleMenuCommand(null, new CommandID(PackageGuids.StartScreen, PackageIds.DevHubShowSnoozedItems));
+            try
+            {
+                DevHubViewMenu.Update(command);
+                Assert.IsTrue(command.Visible);
+                Assert.IsTrue(command.Enabled);
+                Assert.IsFalse(command.Checked);
+
+                await DevHubViewMenu.ExecuteAsync();
+                DevHubViewMenu.Update(command);
+                Assert.IsTrue(showSnoozed);
+                Assert.IsTrue(command.Checked);
+                await DevHubViewMenu.ExecuteAsync();
+                DevHubViewMenu.Update(command);
+                Assert.IsFalse(showSnoozed);
+                Assert.IsFalse(command.Checked);
+                Assert.AreEqual(2, toggles);
+            }
+            finally
+            {
+                DevHubViewMenu.Current = null;
+            }
+            DevHubViewMenu.Update(command);
+            Assert.IsFalse(command.Visible);
+            Assert.IsFalse(command.Enabled);
+            Assert.IsFalse(command.Checked);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => DevHubViewMenu.ExecuteAsync());
         }
 
         private static DevHubWorkItem Item(string url) => DevHubWorkItem.GetMyWork([], [new DevHubIssue

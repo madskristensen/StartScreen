@@ -19,6 +19,7 @@ namespace StartScreen.ToolWindows.Controls
         private MruItem MruItem => DataContext as MruItem;
         private Point? _dragStartPoint;
         private bool _isGitPullRunning;
+        private bool _isGitFetchRunning;
 
         public event EventHandler<MruItem> PinToggleRequested;
         public event EventHandler<MruItem> RemoveRequested;
@@ -412,29 +413,37 @@ namespace StartScreen.ToolWindows.Controls
             PullGitAsync().FileAndForget(nameof(MruItemControl));
         }
 
-        private async Task PullGitAsync()
+        private Task PullGitAsync()
+        {
+            return RunGitOperationAsync(fetch: false);
+        }
+
+        private async Task RunGitOperationAsync(bool fetch)
         {
             MruItem item = MruItem;
 
-            if (_isGitPullRunning || item?.HasGitBranch != true)
+            if (_isGitPullRunning || _isGitFetchRunning || item?.HasGitBranch != true || item.HasCurrentOperation)
                 return;
 
-            _isGitPullRunning = true;
+            _isGitPullRunning = !fetch;
+            _isGitFetchRunning = fetch;
+            var operation = fetch ? "fetch" : "pull";
 
             try
             {
-                await VS.StatusBar.ShowMessageAsync($"Pulling Git changes for {item.Name}...");
-                GitCommandResult result = await MruService.PullGitAsync(item, StartScreenPackage.ShutdownToken);
+                await VS.StatusBar.ShowMessageAsync($"{(fetch ? "Fetching" : "Pulling")} Git changes for {item.Name}...");
+                GitCommandResult result = fetch ? await MruService.FetchGitAsync(item, StartScreenPackage.ShutdownToken)
+                    : await MruService.PullGitAsync(item, StartScreenPackage.ShutdownToken);
                 StartScreenPackage.ShutdownToken.ThrowIfCancellationRequested();
 
                 if (!result.Succeeded)
                 {
-                    await VS.StatusBar.ShowMessageAsync($"Git pull failed for {item.Name}.");
-                    await VS.MessageBox.ShowErrorAsync("Start Screen", $"Git pull failed: {result.ErrorMessage}");
+                    await VS.StatusBar.ShowMessageAsync($"Git {operation} failed for {item.Name}.");
+                    await VS.MessageBox.ShowErrorAsync("Start Screen", $"Git {operation} failed: {result.ErrorMessage}");
                 }
                 else
                 {
-                    await VS.StatusBar.ShowMessageAsync($"Git pull completed for {item.Name}.");
+                    await VS.StatusBar.ShowMessageAsync($"Git {operation} completed for {item.Name}.");
                 }
             }
             catch (OperationCanceledException ex) when (StartScreenPackage.ShutdownToken.IsCancellationRequested)
@@ -444,12 +453,13 @@ namespace StartScreen.ToolWindows.Controls
             catch (Exception ex)
             {
                 await ex.LogAsync();
-                await VS.StatusBar.ShowMessageAsync($"Git pull failed for {item.Name}.");
-                await VS.MessageBox.ShowErrorAsync("Start Screen", $"Git pull failed: {ex.Message}");
+                await VS.StatusBar.ShowMessageAsync($"Git {operation} failed for {item.Name}.");
+                await VS.MessageBox.ShowErrorAsync("Start Screen", $"Git {operation} failed: {ex.Message}");
             }
             finally
             {
                 _isGitPullRunning = false;
+                _isGitFetchRunning = false;
             }
         }
 

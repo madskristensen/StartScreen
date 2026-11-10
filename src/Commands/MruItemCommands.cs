@@ -12,6 +12,7 @@ namespace StartScreen.Commands
         internal MruItem Item { get; set; }
         internal IReadOnlyList<MruItem> Selection { get; set; }
         internal bool IsPulling { get; set; }
+        internal bool IsFetching { get; set; }
         internal Func<int, Task> ExecuteActionAsync { get; set; }
         internal IReadOnlyList<GitWorktreeInfo> Worktrees { get; set; } = Array.Empty<GitWorktreeInfo>();
 
@@ -32,7 +33,8 @@ namespace StartScreen.Commands
             });
             command.Enabled = command.Visible && (id switch
             {
-                PackageIds.MruGitPull => !target.IsPulling && target.Item.HasGitBranch && !target.Item.HasCurrentOperation,
+                PackageIds.MruGitPull or PackageIds.MruGitFetch => !target.IsPulling && !target.IsFetching
+                    && target.Item.HasGitBranch && !target.Item.HasCurrentOperation,
                 PackageIds.MruRemoveTags => target.Selection.Any(item => item.HasTags),
                 PackageIds.MruNewChat => target.Item.Exists,
                 _ => true,
@@ -41,6 +43,8 @@ namespace StartScreen.Commands
                 command.Text = target?.Item.IsPinned == true ? "Unpin" : "Pin";
             if (id == PackageIds.MruGitPull)
                 command.Text = target?.IsPulling == true ? "Pulling..." : "Git Pull";
+            if (id == PackageIds.MruGitFetch)
+                command.Text = target?.IsFetching == true ? "Fetching..." : "Git Fetch";
             if (id == PackageIds.MruAddTags || id == PackageIds.MruRemoveTags)
             {
                 var count = target?.Selection.Count ?? 0;

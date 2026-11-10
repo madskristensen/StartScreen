@@ -77,6 +77,7 @@ namespace StartScreen.ToolWindows.Controls
                     Selection = selection,
                     Worktrees = item.Worktrees.ToArray(),
                     IsPulling = _isGitPullRunning,
+                    IsFetching = _isGitFetchRunning,
                     ExecuteActionAsync = id => ExecuteProjectActionAsync(id, selection),
                 };
                 try
@@ -109,6 +110,7 @@ namespace StartScreen.ToolWindows.Controls
                     case PackageIds.MruOpenFolder: OpenFolderMenuItem_Click(this, null); break;
                     case PackageIds.MruOpenTerminal: OpenTerminalMenuItem_Click(this, null); break;
                     case PackageIds.MruGitPull: await PullGitAsync(); break;
+                    case PackageIds.MruGitFetch: await RunGitOperationAsync(fetch: true); break;
                     case PackageIds.MruDeleteChats: await DeleteCopilotChatAsync(); break;
                     case PackageIds.MruCopyPath: CopyPathMenuItem_Click(this, null); break;
                     case PackageIds.MruPin: PinMenuItem_Click(this, null); break;

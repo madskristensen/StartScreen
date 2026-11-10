@@ -961,7 +961,12 @@
                             <RadioButton x:Name="MyWorkIssueFilter" Content="Issues" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
                             <RadioButton x:Name="MyWorkBuildFilter" Content="Builds" GroupName="MyWorkKind"
-                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
+                                         Style="{StaticResource ActivityFilterStyle}" Margin="0 0 4 6" Checked="ActivityFilter_Changed"/>
+                            <Button x:Name="ActivityOptionsButton" Content="..." Click="ActivityOptions_Click"
+                                    Style="{StaticResource StartScreen.IconActionButton}" Height="Auto" MinWidth="24" MinHeight="24"
+                                    VerticalAlignment="Center" Margin="0 0 0 6"
+                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"
+                                    ToolTip="Activity options" AutomationProperties.Name="Activity options"/>
                         </WrapPanel>
                     </DockPanel>
                     <Border x:Name="RepositoryScopeStrip" Grid.Row="1" Margin="8 0 8 12" Padding="8 6" CornerRadius="3"

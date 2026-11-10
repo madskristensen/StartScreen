@@ -334,7 +334,17 @@ namespace StartScreen.Helpers
         /// Runs git pull --quiet without credential prompts, with a two-minute deadline.
         /// Cancellation terminates Git and its credential/SSH child processes.
         /// </summary>
-        internal static async Task<GitCommandResult> PullAsync(string repoPath, CancellationToken cancellationToken = default)
+        internal static Task<GitCommandResult> PullAsync(string repoPath, CancellationToken cancellationToken = default)
+        {
+            return RunGitCommandAsync(repoPath, "pull", cancellationToken);
+        }
+
+        internal static Task<GitCommandResult> FetchAsync(string repoPath, CancellationToken cancellationToken = default)
+        {
+            return RunGitCommandAsync(repoPath, "fetch", cancellationToken);
+        }
+
+        private static async Task<GitCommandResult> RunGitCommandAsync(string repoPath, string operation, CancellationToken cancellationToken)
         {
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
             cancellationToken.ThrowIfCancellationRequested();
@@ -346,7 +356,7 @@ namespace StartScreen.Helpers
                 var psi = new ProcessStartInfo
                 {
                     FileName = "git",
-                    Arguments = "-c core.askPass= pull --quiet",
+                    Arguments = $"-c core.askPass= {operation} --quiet",
                     WorkingDirectory = repoPath,
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -356,7 +366,7 @@ namespace StartScreen.Helpers
 
                 SuppressCredentialPrompts(psi);
                 var result = await OwnedProcess.RunAsync(psi, TimeSpan.FromMinutes(2), cancellationToken);
-                return ToGitCommandResult(result, "Git pull timed out.", "Git pull failed.");
+                return ToGitCommandResult(result, $"Git {operation} timed out.", $"Git {operation} failed.");
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {

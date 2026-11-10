@@ -21,11 +21,14 @@
       <Menu guid="StartScreen" id="DevHubWorkItemMenu" type="Context">
         <Strings><CommandName>Dev Hub Activity</CommandName></Strings>
       </Menu>
+      <Menu guid="StartScreen" id="DevHubViewMenu" type="Context">
+        <Strings><CommandName>Activity options</CommandName></Strings>
+      </Menu>
       <Menu guid="StartScreen" id="MruItemMenu" type="Context">
         <Strings><CommandName>Recent project</CommandName></Strings>
       </Menu>
-      <Menu guid="StartScreen" id="MruWorktreesMenu" type="Menu" priority="0x0450">
-        <Parent guid="StartScreen" id="MruOpenActions"/>
+      <Menu guid="StartScreen" id="MruWorktreesMenu" type="Menu" priority="0x0100">
+        <Parent guid="StartScreen" id="MruGitActions"/>
         <Icon guid="ImageCatalogGuid" id="BranchFork"/><CommandFlag>IconIsMoniker</CommandFlag>
         <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
         <Strings><ButtonText>Open Worktree</ButtonText><CommandName>Open Worktree</CommandName></Strings>
@@ -57,7 +60,12 @@
       <Group guid="StartScreen" id="DevHubWorkItemScope" priority="0x0300">
         <Parent guid="StartScreen" id="DevHubWorkItemMenu"/>
       </Group>
+      <Group guid="StartScreen" id="DevHubViewFilters" priority="0x0100">
+        <Parent guid="StartScreen" id="DevHubViewMenu"/>
+      </Group>
       <Group guid="StartScreen" id="MruOpenActions" priority="0x0100"><Parent guid="StartScreen" id="MruItemMenu"/></Group>
+      <Group guid="StartScreen" id="MruCopilotActions" priority="0x0150"><Parent guid="StartScreen" id="MruItemMenu"/></Group>
+      <Group guid="StartScreen" id="MruGitActions" priority="0x0180"><Parent guid="StartScreen" id="MruItemMenu"/></Group>
       <Group guid="StartScreen" id="MruTagActions" priority="0x0200"><Parent guid="StartScreen" id="MruItemMenu"/></Group>
       <Group guid="StartScreen" id="MruItemActions" priority="0x0300"><Parent guid="StartScreen" id="MruItemMenu"/></Group>
       <Group guid="StartScreen" id="MruWorktreeActions" priority="0x0100"><Parent guid="StartScreen" id="MruWorktreesMenu"/></Group>
@@ -79,8 +87,8 @@
         <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
         <Strings><ButtonText>Prune deleted worktrees...</ButtonText></Strings>
       </Button>
-      <Button guid="StartScreen" id="MruNewChat" priority="0x0480" type="Button">
-        <Parent guid="StartScreen" id="MruOpenActions"/>
+      <Button guid="StartScreen" id="MruNewChat" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="MruCopilotActions"/>
         <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
         <Strings><ButtonText>New Chat Session</ButtonText></Strings>
       </Button>
@@ -102,6 +110,7 @@
       </Button>
       <Button guid="StartScreen" id="MruOpenFolder" priority="0x0300" type="Button">
         <Parent guid="StartScreen" id="MruOpenActions"/>
+        <Icon guid="ImageCatalogGuid" id="OpenFolder"/><CommandFlag>IconIsMoniker</CommandFlag>
         <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
         <Strings><ButtonText>Open Containing Folder</ButtonText></Strings>
       </Button>
@@ -110,13 +119,18 @@
         <CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
         <Strings><ButtonText>Open in Terminal</ButtonText></Strings>
       </Button>
-      <Button guid="StartScreen" id="MruGitPull" priority="0x0500" type="Button">
-        <Parent guid="StartScreen" id="MruOpenActions"/>
+      <Button guid="StartScreen" id="MruGitPull" priority="0x0200" type="Button">
+        <Parent guid="StartScreen" id="MruGitActions"/>
         <Icon guid="ImageCatalogGuid" id="Pull"/><CommandFlag>IconIsMoniker</CommandFlag>
         <CommandFlag>TextChanges</CommandFlag><Strings><ButtonText>Git Pull</ButtonText></Strings>
       </Button>
-      <Button guid="StartScreen" id="MruDeleteChats" priority="0x0600" type="Button">
-        <Parent guid="StartScreen" id="MruOpenActions"/><CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
+      <Button guid="StartScreen" id="MruGitFetch" priority="0x0300" type="Button">
+        <Parent guid="StartScreen" id="MruGitActions"/>
+        <Icon guid="ImageCatalogGuid" id="Download"/><CommandFlag>IconIsMoniker</CommandFlag>
+        <CommandFlag>TextChanges</CommandFlag><Strings><ButtonText>Git Fetch</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="MruDeleteChats" priority="0x0200" type="Button">
+        <Parent guid="StartScreen" id="MruCopilotActions"/><CommandFlag>DynamicVisibility</CommandFlag><CommandFlag>DefaultInvisible</CommandFlag>
         <Strings><ButtonText>Delete Copilot Chat Sessions</ButtonText></Strings>
       </Button>
       <Button guid="StartScreen" id="MruAddTags" priority="0x0100" type="Button">
@@ -197,6 +211,13 @@
         <CommandFlag>DynamicVisibility</CommandFlag>
         <CommandFlag>DefaultInvisible</CommandFlag>
         <Strings><ButtonText>Snooze for 1 day</ButtonText></Strings>
+      </Button>
+      <Button guid="StartScreen" id="DevHubShowSnoozedItems" priority="0x0100" type="Button">
+        <Parent guid="StartScreen" id="DevHubViewFilters"/>
+        <Strings>
+          <ButtonText>Show snoozed items</ButtonText>
+          <ToolTipText>Include temporarily hidden PRs, issues, and builds in both work feeds. Right-click a snoozed item to unsnooze it early.</ToolTipText>
+        </Strings>
       </Button>
       <Button guid="StartScreen" id="DevHubScopeToRepo" priority="0x0100" type="Button">
         <Parent guid="StartScreen" id="DevHubWorkItemScope"/>
@@ -302,8 +323,13 @@
       <IDSymbol name="DevHubPinItem" value="0x0128" />
       <IDSymbol name="DevHubSnoozeItem" value="0x0129" />
       <IDSymbol name="DevHubSnoozeItemDay" value="0x012A" />
+      <IDSymbol name="DevHubViewMenu" value="0x1005" />
+      <IDSymbol name="DevHubViewFilters" value="0x0010" />
+      <IDSymbol name="DevHubShowSnoozedItems" value="0x0140" />
       <IDSymbol name="MruItemMenu" value="0x1003" />
       <IDSymbol name="MruOpenActions" value="0x0008" />
+      <IDSymbol name="MruCopilotActions" value="0x000E" />
+      <IDSymbol name="MruGitActions" value="0x000F" />
       <IDSymbol name="MruTagActions" value="0x0009" />
       <IDSymbol name="MruItemActions" value="0x000A" />
       <IDSymbol name="MruOpen" value="0x0130" />
@@ -322,6 +348,7 @@
       <IDSymbol name="MruWorktreeMaintenance" value="0x000C" />
       <IDSymbol name="MruPruneWorktrees" value="0x013B" />
       <IDSymbol name="MruNewChat" value="0x013C" />
+      <IDSymbol name="MruGitFetch" value="0x013D" />
       <IDSymbol name="MruOpenWorktree" value="0x2000" />
     </GuidSymbol>
     

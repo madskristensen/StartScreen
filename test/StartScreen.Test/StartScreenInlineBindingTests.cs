@@ -775,6 +775,7 @@ namespace StartScreen.Test
                 foreach (var element in heading.Descendants())
                 {
                     element.Attribute("ButtonBase.Click")?.Remove();
+                    element.Attribute("Click")?.Remove();
                     element.Attribute("Checked")?.Remove();
                 }
                 var filterStyle = new XElement(work.Descendants(p + "Style")
@@ -859,6 +860,7 @@ namespace StartScreen.Test
             definition.Attribute("ButtonBase.Click")?.Remove();
             foreach (var element in definition.Descendants())
             {
+                element.Attribute("Click")?.Remove();
                 element.Attribute("Checked")?.Remove();
                 element.Attribute("Unchecked")?.Remove();
             }
@@ -1184,6 +1186,43 @@ namespace StartScreen.Test
             var borders = ToolWindows.Controls.DevHubPanel.CollectFocusableBorders(root);
 
             CollectionAssert.AreEqual(new[] { first, second }, borders);
+        }
+
+        [STATestMethod]
+        [DataRow(12d)]
+        [DataRow(18d)]
+        [DataRow(24d)]
+        public void ActivityOptions_AlignWithBuildTabTextAndKeepACompactGap(double fontSize)
+        {
+            var document = ReadLayoutXaml("DevHubPanel.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var blade = document.Descendants(p + "Grid")
+                .Single(element => element.Attribute(x + "Name")?.Value == "MyWorkBlade");
+            var root = CreateActivityFilters(document, blade);
+            var filters = (WrapPanel)root.Children[0];
+            var build = filters.Children.OfType<RadioButton>().Last();
+            var options = filters.Children.OfType<Button>().Single();
+            TextElement.SetFontSize(root, fontSize);
+            TextElement.SetFontFamily(root, new System.Windows.Media.FontFamily("Segoe UI"));
+            for (var pass = 0; pass < 2; pass++)
+            {
+                root.Measure(new Size(700, double.PositiveInfinity));
+                root.Arrange(new Rect(0, 0, 700, root.DesiredSize.Height));
+                root.UpdateLayout();
+            }
+            var tabContent = (ContentPresenter)build.Template.FindName("TabContent", build);
+            var tabText = (TextBlock)System.Windows.Media.VisualTreeHelper.GetChild(tabContent, 0);
+            var border = (Border)options.Template.FindName("ActionBorder", options);
+            var dots = (TextBlock)System.Windows.Media.VisualTreeHelper.GetChild(border.Child, 0);
+            Assert.AreEqual(build.FontSize, dots.FontSize);
+            Assert.AreEqual(build.FontFamily, dots.FontFamily);
+            Assert.AreEqual(tabText.TranslatePoint(new Point(0, tabText.BaselineOffset), root).Y,
+                dots.TranslatePoint(new Point(0, dots.BaselineOffset), root).Y, 0.1);
+            var gap = dots.TranslatePoint(new Point(), root).X
+                - tabText.TranslatePoint(new Point(tabText.ActualWidth, 0), root).X;
+            Assert.IsGreaterThanOrEqualTo(4d, gap);
+            Assert.IsLessThanOrEqualTo(16d, gap);
         }
 
         [STATestMethod]

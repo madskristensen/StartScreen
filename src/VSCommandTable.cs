@@ -55,8 +55,13 @@ namespace StartScreen
         public const int DevHubPinItem = 0x0128;
         public const int DevHubSnoozeItem = 0x0129;
         public const int DevHubSnoozeItemDay = 0x012A;
+        public const int DevHubViewMenu = 0x1005;
+        public const int DevHubViewFilters = 0x0010;
+        public const int DevHubShowSnoozedItems = 0x0140;
         public const int MruItemMenu = 0x1003;
         public const int MruOpenActions = 0x0008;
+        public const int MruCopilotActions = 0x000E;
+        public const int MruGitActions = 0x000F;
         public const int MruTagActions = 0x0009;
         public const int MruItemActions = 0x000A;
         public const int MruOpen = 0x0130;
@@ -75,6 +80,7 @@ namespace StartScreen
         public const int MruWorktreeMaintenance = 0x000C;
         public const int MruPruneWorktrees = 0x013B;
         public const int MruNewChat = 0x013C;
+        public const int MruGitFetch = 0x013D;
         public const int MruOpenWorktree = 0x2000;
     }
 }

@@ -2,6 +2,8 @@ using System.Diagnostics;
 using LibGit2Sharp;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using StartScreen.Helpers;
+using StartScreen.Models;
+using StartScreen.Services;
 
 namespace StartScreen.Test
 {
@@ -118,6 +120,87 @@ namespace StartScreen.Test
             Assert.IsTrue(result.Succeeded, result.ErrorMessage);
             Assert.AreEqual(0, counts.ahead);
             Assert.AreEqual(1, counts.behind);
+        }
+
+        [TestMethod]
+        [DataRow(true, MruItemType.Folder)]
+        [DataRow(true, MruItemType.Solution)]
+        [DataRow(false, MruItemType.Folder)]
+        public async Task WorkspaceGitOperation_UpdatesTrackingStatusAndOnlyPullChangesTheCheckoutAsync(bool fetch, MruItemType type)
+        {
+            using var directory = new TemporaryDirectory();
+            var remotePath = directory.GetPath("remote.git");
+            var clonePath = directory.GetPath("clone");
+            Repository.Init(remotePath, isBare: true);
+            using Repository seed = CreateRepositoryWithCommit(directory.GetPath("seed"));
+            File.WriteAllText(Path.Combine(seed.Info.WorkingDirectory, "local.txt"), "original local content");
+            LibGit2Sharp.Commands.Stage(seed, "local.txt");
+            seed.Commit("Track local file", CreateSignature(), CreateSignature());
+            var originalHead = seed.Head.Tip.Sha;
+            Remote remote = seed.Network.Remotes.Add("origin", remotePath);
+            seed.Network.Push(remote, seed.Head.CanonicalName, seed.Head.CanonicalName, new PushOptions());
+            Repository.Clone(remotePath, clonePath);
+            var trackedFile = Path.Combine(clonePath, "file.txt");
+            var originalContent = File.ReadAllText(trackedFile);
+            var localFile = Path.Combine(clonePath, "local.txt");
+            File.WriteAllText(localFile, "local work");
+            File.AppendAllText(Path.Combine(seed.Info.WorkingDirectory, "file.txt"), "changed");
+            LibGit2Sharp.Commands.Stage(seed, "file.txt");
+            seed.Commit("Next commit", CreateSignature(), CreateSignature());
+            seed.Network.Push(remote, seed.Head.CanonicalName, seed.Head.CanonicalName, new PushOptions());
+            seed.Network.Push(remote, seed.Head.CanonicalName, "refs/heads/topic", new PushOptions());
+            var workspacePath = type == MruItemType.Folder ? clonePath : Path.Combine(clonePath, "App.sln");
+            if (type == MruItemType.Solution)
+                File.WriteAllText(workspacePath, "");
+            var item = new MruItem { Path = workspacePath, Type = type };
+
+            var result = fetch ? await MruService.FetchGitAsync(item) : await MruService.PullGitAsync(item);
+
+            Assert.IsTrue(result.Succeeded, result.ErrorMessage);
+            using var clone = new Repository(clonePath);
+            Assert.AreEqual(fetch ? originalHead : seed.Head.Tip.Sha, clone.Head.Tip.Sha);
+            Assert.AreEqual(fetch ? originalContent : originalContent + "changed", File.ReadAllText(trackedFile));
+            Assert.AreEqual("local work", File.ReadAllText(localFile));
+            Assert.AreEqual(seed.Head.Tip.Sha, clone.Branches["origin/topic"].Tip.Sha,
+                "An explicit fetch must update all configured remote-tracking branches, not just the current upstream.");
+            Assert.AreEqual(seed.Head.FriendlyName, item.GitBranch);
+            Assert.AreEqual(0, item.CommitsAhead);
+            Assert.AreEqual(fetch ? 1 : 0, item.CommitsBehind);
+            Assert.IsTrue(item.HasUncommittedChanges);
+        }
+
+        [TestMethod]
+        public async Task Fetch_PreCanceledDoesNotStartGitAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => GitHelper.FetchAsync(Environment.CurrentDirectory, cancellation.Token));
+        }
+
+        [TestMethod]
+        public async Task Fetch_UnavailableRemoteReturnsGitFailureAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using Repository repository = CreateRepositoryWithCommit(directory.GetPath("repo"));
+            repository.Network.Remotes.Add("origin", directory.GetPath("missing-remote.git"));
+
+            var result = await MruService.FetchGitAsync(new MruItem { Path = repository.Info.WorkingDirectory, Type = MruItemType.Folder });
+
+            Assert.IsFalse(result.Succeeded);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(result.ErrorMessage));
+            StringAssert.Contains(result.ErrorMessage, "missing-remote.git");
+        }
+
+        [TestMethod]
+        public async Task Fetch_NonRepositoryReturnsExplicitFailureAsync()
+        {
+            using var directory = new TemporaryDirectory();
+
+            var result = await MruService.FetchGitAsync(new MruItem { Path = directory.Path, Type = MruItemType.Folder });
+
+            Assert.IsFalse(result.Succeeded);
+            Assert.AreEqual("The MRU item is not in a Git repository.", result.ErrorMessage);
         }
 
         [TestMethod]

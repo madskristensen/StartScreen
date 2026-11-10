@@ -310,6 +310,38 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
+        public void ActivityOptions_DotsFollowThemeChangesWithoutLosingTheirForegroundOnHover()
+        {
+            var definition = Read("DevHubPanel.xaml").Descendants(_presentation + "Button")
+                .Single(element => element.Attribute(_xaml + "Name")?.Value == "ActivityOptionsButton");
+            Assert.AreEqual("{StaticResource StartScreen.IconActionButton}", definition.Attribute("Style")?.Value);
+            Assert.AreEqual("{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}",
+                definition.Attribute("Foreground")?.Value);
+            definition.Attribute("Click")!.Remove();
+            var button = (Button)SharedXamlReader.Parse(definition.ToString());
+            button.Measure(new Size(100, 100));
+            button.Arrange(new Rect(0, 0, 24, 24));
+            button.UpdateLayout();
+            var border = (Border)button.Template.FindName("ActionBorder", button);
+            var presenter = (ContentPresenter)border.Child;
+            var dots = (TextBlock)VisualTreeHelper.GetChild(presenter, 0);
+            Assert.AreEqual("...", dots.Text);
+            foreach (var brush in new[] { Brushes.White, Brushes.Black, Brushes.Yellow })
+            {
+                button.Resources["TestThemeBrush"] = brush;
+                UpdateBindings(button);
+                Assert.AreSame(brush, button.Foreground);
+                Assert.AreSame(brush, dots.Foreground);
+            }
+            var hover = button.Template.Triggers.OfType<Trigger>()
+                .Single(trigger => trigger.Property == UIElement.IsMouseOverProperty);
+            var background = hover.Setters.OfType<Setter>().Single();
+            Assert.AreEqual("ActionBorder", background.TargetName);
+            Assert.AreEqual(Border.BackgroundProperty, background.Property);
+            Assert.IsInstanceOfType<DynamicResourceExtension>(background.Value);
+        }
+
+        [STATestMethod]
         public void RecentOptions_DotsAreLargerAndFollowThemeChanges()
         {
             var button = Read("StartScreenControl.xaml").Descendants(_presentation + "Button")
