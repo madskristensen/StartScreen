@@ -52,7 +52,7 @@ Need something new? The action bar puts **Create a new project**, **Open**, **Cl
 
 **My work** gathers your pull requests, created or assigned issues and tasks, builds, and Copilot sessions. The **Attention** feed highlights known actions such as requested reviews, failing checks on your PRs, and assigned work.
 
-**Team activity** keeps your teammates' pull requests, issues, and repository builds in view. Select a recent workspace to focus on one repository, or choose **All repositories** for the bigger picture.
+**Team activity** keeps your teammates' pull requests, issues, and repository builds in view. GitHub repository activity is loaded from the repositories in your recent workspaces, including work you are not personally involved in. Select a recent workspace to focus on one repository, or choose **All repositories** for the bigger picture. Background updates from other providers preserve the selected repository's activity; overlapping automatic refresh requests do not start a second activity refresh.
 
 Review pull requests in Visual Studio where supported, or open them on the web. Review and check status help you decide where to start; **Ready to merge** appears only when the provider supplies verified readiness.
 

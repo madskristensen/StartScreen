@@ -951,6 +951,8 @@ namespace StartScreen.ToolWindows
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            if (_isGlobalDevHubRefreshing && !forceRefresh)
+                return;
             using var work = _viewModel.BackgroundProgress.Start(step: "Refreshing activity...");
             var activityOptions = DevHubPanelControl.ActivityOptions;
             DevHubPanelControl.SetActivityLoading(true);
@@ -1048,7 +1050,7 @@ namespace StartScreen.ToolWindows
                 return;
             if (_workspaceDashboard != null && (_workspaceDashboard.CredentialGeneration != DevHubCredentialHelper.AccountGeneration
                 || _workspaceDashboard.QueryContext != (Options.Instance.DevHubSearchQuery ?? string.Empty)
-                || dashboard?.IdentityContext != null && dashboard.IdentityContext != _workspaceDashboard.IdentityContext))
+                || DevHubService.HasScopedIdentityChanged(dashboard, _workspaceDashboard)))
             {
                 _workspaceDashboard = null;
                 _workspaceError = null;

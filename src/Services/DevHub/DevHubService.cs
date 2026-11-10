@@ -493,6 +493,18 @@ namespace StartScreen.Services.DevHub
                 .ThenBy(user => user.IdentityId, StringComparer.Ordinal).ThenBy(user => user.Username, StringComparer.Ordinal).ToArray()));
         }
 
+        internal static bool HasScopedIdentityChanged(DevHubDashboard dashboard, DevHubDashboard scoped)
+        {
+            if (string.IsNullOrEmpty(dashboard?.IdentityContext))
+                return false;
+            return scoped.Users.GroupBy(user => user.ProviderName).Any(group =>
+            {
+                var users = dashboard.Users.Where(user => user.ProviderName == group.Key).ToList();
+                return (users.Count > 0 || !dashboard.IsRefreshing)
+                    && CreateIdentityContext(users) != CreateIdentityContext(group);
+            });
+        }
+
         private static string HashContext(string text)
         {
             using var sha = SHA256.Create();

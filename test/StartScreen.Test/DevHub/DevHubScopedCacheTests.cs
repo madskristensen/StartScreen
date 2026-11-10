@@ -8,6 +8,55 @@ namespace StartScreen.Test.DevHub
     public class DevHubScopedCacheTests
     {
         [TestMethod]
+        [DataRow("github.com", "dev.azure.com")]
+        [DataRow("dev.azure.com", "github.com")]
+        public async Task ScopedIdentity_OtherProviderUpdatesDoNotDiscardRepositoryActivityAsync(string host, string otherHost)
+        {
+            var service = Service(new Provider { IdentityHost = host });
+            var scoped = await service.ScopeToRepoAsync(new RemoteRepoIdentifier(host, "owner", "repo"), CancellationToken.None);
+            var dashboard = new DevHubDashboard
+            {
+                IdentityContext = "aggregate identity includes both providers",
+                Users = [.. scoped.Users, new DevHubUser { ProviderName = "Other", Host = otherHost, Username = "other" }],
+            };
+
+            Assert.AreNotEqual(dashboard.IdentityContext, scoped.IdentityContext);
+            Assert.IsFalse(DevHubService.HasScopedIdentityChanged(dashboard, scoped));
+            dashboard.Users[1].Username = "different account in the other provider";
+            Assert.IsFalse(DevHubService.HasScopedIdentityChanged(dashboard, scoped));
+            Assert.HasCount(1, scoped.PullRequests);
+            Assert.IsFalse(DevHubService.HasScopedIdentityChanged(null, scoped));
+        }
+
+        [TestMethod]
+        public async Task ScopedIdentity_ChangedAccountInvalidatesRepositoryActivityAsync()
+        {
+            var service = Service(new Provider());
+            var scoped = await service.ScopeToRepoAsync(Repo(0), CancellationToken.None);
+            var dashboard = new DevHubDashboard { IdentityContext = "changed", Users = Users("after").ToList() };
+
+            Assert.IsTrue(DevHubService.HasScopedIdentityChanged(dashboard, scoped));
+            dashboard.IsRefreshing = true;
+            Assert.IsTrue(DevHubService.HasScopedIdentityChanged(dashboard, scoped));
+        }
+
+        [TestMethod]
+        public async Task ScopedIdentity_PendingProviderAuthenticationDoesNotInvalidateUntilItCompletesAsync()
+        {
+            var scoped = await Service(new Provider()).ScopeToRepoAsync(Repo(0), CancellationToken.None);
+            var dashboard = new DevHubDashboard
+            {
+                IdentityContext = "only the other provider has authenticated",
+                Users = [new DevHubUser { ProviderName = "Other", Host = "dev.azure.com", Username = "other" }],
+                IsRefreshing = true,
+            };
+
+            Assert.IsFalse(DevHubService.HasScopedIdentityChanged(dashboard, scoped));
+            dashboard.IsRefreshing = false;
+            Assert.IsTrue(DevHubService.HasScopedIdentityChanged(dashboard, scoped));
+        }
+
+        [TestMethod]
         public async Task ReSelectingRepositoryReusesItsSuccessfulViewWithoutExtendingLifetimeAsync()
         {
             var now = DateTimeOffset.UtcNow;

@@ -99,13 +99,59 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async System.Threading.Tasks.Task GitHub_ReturnsEmptyAsync()
+        public async System.Threading.Tasks.Task GitHub_ReturnsWorkspaceRepositoriesAsync()
         {
             var urls = new[] { "https://github.com/owner/repo" };
 
             var repos = await _gitHub.GetActivityReposAsync(urls, CancellationToken.None);
 
+            Assert.HasCount(1, repos);
+            Assert.AreEqual("github.com", repos[0].Host);
+            Assert.AreEqual("owner", repos[0].Owner);
+            Assert.AreEqual("repo", repos[0].Repo);
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task GitHub_DeduplicatesHttpsAndSshRemotesAsync()
+        {
+            var repos = await _gitHub.GetActivityReposAsync(new[]
+            {
+                "https://github.com/owner/repo.git",
+                "git@github.com:Owner/Repo.git",
+                "https://github.com/owner/other",
+            }, CancellationToken.None);
+
+            Assert.HasCount(2, repos);
+            CollectionAssert.AreEquivalent(new[] { "repo", "other" }, repos.Select(repo => repo.Repo).ToArray());
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task GitHub_IgnoresInvalidAndOtherProviderRemotesAsync()
+        {
+            var repos = await _gitHub.GetActivityReposAsync(new[]
+            {
+                null, "", "   ", "not a url",
+                "https://dev.azure.com/org/project/_git/repo",
+                "https://bitbucket.org/owner/repo",
+            }, CancellationToken.None);
+
             Assert.IsEmpty(repos);
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task GitHub_NullInputReturnsEmptyAsync()
+        {
+            Assert.IsEmpty(await _gitHub.GetActivityReposAsync(null, CancellationToken.None));
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task GitHub_CancelledDiscoveryDoesNotReturnSuccessAsync()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => _gitHub.GetActivityReposAsync(
+                new[] { "https://github.com/owner/repo" }, cancellation.Token));
         }
     }
 }
