@@ -374,10 +374,13 @@ namespace StartScreen.Services.DevHub
                             if (!completedSources.Contains(inventoryKey))
                             {
                                 dashboard.Sources.TryGetValue(inventoryKey, out var previousInventory);
-                                if (inventorySnapshot.RepoIdentifier != null && previousInventory != null)
+                                if (previousInventory != null)
                                 {
-                                    inventorySnapshot.Issues = previousInventory.Issues;
-                                    inventorySnapshot.CiRuns = previousInventory.CiRuns;
+                                    inventorySnapshot.PullRequests = MergePullRequests(previousInventory.PullRequests, inventorySnapshot.PullRequests, mergeMetadata: false).ToList();
+                                    inventorySnapshot.Issues = MergeIssues(previousInventory.Issues, inventorySnapshot.Issues).ToList();
+                                    inventorySnapshot.CiRuns = inventorySnapshot.CiRuns.Concat(previousInventory.CiRuns)
+                                        .GroupBy(run => run.WebUrl ?? $"{run.RepoIdentifier}/{run.Timestamp:o}/{run.Name}")
+                                        .Select(group => group.First()).ToList();
                                 }
                                 dashboard.Sources[inventoryKey] = RetainFailedSource(inventorySnapshot, previousInventory);
                                 PublishUpdate();
@@ -469,7 +472,36 @@ namespace StartScreen.Services.DevHub
                                         Status = snapshot.Status,
                                     }, pair.Value);
                                 else if (!validKeys.Contains(pair.Key))
+                                {
+                                    // Keep legacy repository caches in the aggregate feeds until each feed finishes.
+                                    foreach (var suffix in new[] { "/pulls", "/issues", "/builds" })
+                                    {
+                                        var aggregateKey = provider.DisplayName + suffix;
+                                        if (completedSources.Contains(aggregateKey))
+                                            continue;
+                                        dashboard.Sources.TryGetValue(aggregateKey, out var aggregate);
+                                        dashboard.Sources[aggregateKey] = new DevHubActivitySnapshot
+                                        {
+                                            Status = aggregate?.Status ?? pair.Value.Status,
+                                            Message = aggregate?.Message ?? pair.Value.Message,
+                                            FetchedAt = aggregate?.FetchedAt ?? pair.Value.FetchedAt,
+                                            PullRequests = suffix == "/pulls"
+                                                ? MergePullRequests(pair.Value.PullRequests, aggregate?.PullRequests.Select(pr => pr.Clone())
+                                                    ?? Enumerable.Empty<DevHubPullRequest>(), mergeMetadata: false).ToList()
+                                                : new List<DevHubPullRequest>(),
+                                            Issues = suffix == "/issues"
+                                                ? MergeIssues(pair.Value.Issues, aggregate?.Issues.Select(issue => issue.Clone())
+                                                    ?? Enumerable.Empty<DevHubIssue>()).ToList()
+                                                : new List<DevHubIssue>(),
+                                            CiRuns = suffix == "/builds"
+                                                ? (aggregate?.CiRuns ?? Enumerable.Empty<DevHubCiRun>()).Concat(pair.Value.CiRuns)
+                                                    .GroupBy(run => run.WebUrl ?? $"{run.RepoIdentifier}/{run.Timestamp:o}/{run.Name}")
+                                                    .Select(group => group.First()).ToList()
+                                                : new List<DevHubCiRun>(),
+                                        };
+                                    }
                                     dashboard.Sources.Remove(pair.Key);
+                                }
                             }
 
                             foreach (var repo in snapshot.ActivityRepositories)
@@ -887,7 +919,7 @@ namespace StartScreen.Services.DevHub
         }
 
         internal static IEnumerable<DevHubPullRequest> MergePullRequests(IEnumerable<DevHubPullRequest> pullRequests,
-            IEnumerable<DevHubPullRequest> repositoryPullRequests)
+            IEnumerable<DevHubPullRequest> repositoryPullRequests, bool mergeMetadata = true)
         {
             var seen = new Dictionary<string, DevHubPullRequest>(StringComparer.OrdinalIgnoreCase);
             foreach (var pr in repositoryPullRequests.Concat(pullRequests))
@@ -904,11 +936,14 @@ namespace StartScreen.Services.DevHub
                     existing.IsAssignedToCurrentUser |= pr.IsAssignedToCurrentUser;
                     existing.IsReviewRequestedForCurrentUser |= pr.IsReviewRequestedForCurrentUser;
                     existing.IsMentioned |= pr.IsMentioned;
-                    existing.UnresolvedThreadCount = existing.UnresolvedThreadCount ?? pr.UnresolvedThreadCount;
-                    existing.CanMerge = existing.CanMerge ?? pr.CanMerge;
-                    existing.MergeBlockReason = existing.MergeBlockReason ?? pr.MergeBlockReason;
-                    existing.ChecksSummary = existing.ChecksSummary ?? pr.ChecksSummary;
-                    existing.ChecksUrl = existing.ChecksUrl ?? pr.ChecksUrl;
+                    if (mergeMetadata)
+                    {
+                        existing.UnresolvedThreadCount = existing.UnresolvedThreadCount ?? pr.UnresolvedThreadCount;
+                        existing.CanMerge = existing.CanMerge ?? pr.CanMerge;
+                        existing.MergeBlockReason = existing.MergeBlockReason ?? pr.MergeBlockReason;
+                        existing.ChecksSummary = existing.ChecksSummary ?? pr.ChecksSummary;
+                        existing.ChecksUrl = existing.ChecksUrl ?? pr.ChecksUrl;
+                    }
                     continue;
                 }
                 seen.Add(key, pr);

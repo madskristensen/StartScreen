@@ -99,20 +99,17 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async System.Threading.Tasks.Task GitHub_ReturnsWorkspaceRepositoriesAsync()
+        public async System.Threading.Tasks.Task GitHub_DashboardDoesNotScheduleWorkspaceRepositoryDetailsAsync()
         {
             var urls = new[] { "https://github.com/owner/repo" };
 
             var repos = await _gitHub.GetActivityReposAsync(urls, CancellationToken.None);
 
-            Assert.HasCount(1, repos);
-            Assert.AreEqual("github.com", repos[0].Host);
-            Assert.AreEqual("owner", repos[0].Owner);
-            Assert.AreEqual("repo", repos[0].Repo);
+            Assert.IsEmpty(repos);
         }
 
         [TestMethod]
-        public async System.Threading.Tasks.Task GitHub_DeduplicatesHttpsAndSshRemotesAsync()
+        public async System.Threading.Tasks.Task GitHub_DashboardDoesNotScheduleDetailsForMultipleRemotesAsync()
         {
             var repos = await _gitHub.GetActivityReposAsync(new[]
             {
@@ -121,8 +118,7 @@ namespace StartScreen.Test.DevHub
                 "https://github.com/owner/other",
             }, CancellationToken.None);
 
-            Assert.HasCount(2, repos);
-            CollectionAssert.AreEquivalent(new[] { "repo", "other" }, repos.Select(repo => repo.Repo).ToArray());
+            Assert.IsEmpty(repos);
         }
 
         [TestMethod]

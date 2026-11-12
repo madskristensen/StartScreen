@@ -268,7 +268,7 @@ namespace StartScreen.Services.DevHub.Providers
                     return Array.Empty<DevHubPullRequest>();
 
                 return await GetUserPullRequestsAsync(_httpClient, credential, login, options, cancellationToken,
-                    customQuery: Options.Instance.DevHubSearchQuery);
+                    customQuery: Options.Instance.DevHubSearchQuery, includeWorkspaceOwners: true);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
@@ -292,7 +292,7 @@ namespace StartScreen.Services.DevHub.Providers
                     return Array.Empty<DevHubIssue>();
 
                 return await GetUserIssuesAsync(_httpClient, credential, login, options, cancellationToken,
-                    customQuery: Options.Instance.DevHubSearchQuery);
+                    customQuery: Options.Instance.DevHubSearchQuery, includeWorkspaceOwners: true);
             }
             catch (Exception ex) when (!(ex is OperationCanceledException) || !cancellationToken.IsCancellationRequested)
             {
@@ -378,9 +378,8 @@ namespace StartScreen.Services.DevHub.Providers
         public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> candidateRemoteUrls, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var repos = (candidateRemoteUrls ?? Array.Empty<string>())
-                .Select(ParseRemoteUrl).Where(repo => repo != null).Distinct().ToArray();
-            return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(repos);
+            // Dashboard searches aggregate across workspace owners. Full repository details are selected on demand.
+            return Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>(Array.Empty<RemoteRepoIdentifier>());
         }
 
         public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maxItems, CancellationToken cancellationToken)
@@ -480,10 +479,13 @@ namespace StartScreen.Services.DevHub.Providers
 
         // The limit applies independently to each activity lane. A busy incoming lane must
         // not crowd out authored/assigned work, or the separately bounded completed lane.
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "VSTHRD003", Justification = "All pending search tasks are created and observed within this operation.")]
         internal static async Task<List<DevHubPullRequest>> GetUserPullRequestsAsync(HttpClient client,
             DevHubCredential credential, string login, DevHubActivityOptions options, CancellationToken cancellationToken,
-            RemoteRepoIdentifier repo = null, string customQuery = null, bool populateMetadata = true)
+            RemoteRepoIdentifier repo = null, string customQuery = null, bool populateMetadata = true, bool includeWorkspaceOwners = false)
         {
+            using var requests = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cancellationToken = requests.Token;
             var results = new List<DevHubPullRequest>();
             var scope = repo == null ? string.Empty : $" AND repo:{repo.Owner}/{repo.Repo}";
             var queries = new[] { BuildActivitySearchQuery("is:pr", login, customQuery, repo), BuildPersonalSearchQuery("is:pr", login, "author", repo),
@@ -498,26 +500,52 @@ namespace StartScreen.Services.DevHub.Providers
                     $"is:pr is:merged {qualifier}:{login} merged:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}",
                     login, options.MaxItems, cancellationToken, cutoff)));
             }
-            var pages = await Task.WhenAll(searches);
-            for (var index = 0; index < queries.Length; index++)
+            var completedEnd = searches.Count;
+            if (includeWorkspaceOwners && repo == null && string.IsNullOrWhiteSpace(customQuery))
+                searches.Add(SearchWorkspacePullRequestsAsync(client, credential, login, options, cancellationToken));
+            var pages = new List<DevHubPullRequest>[searches.Count];
+            var pending = searches.Select((task, index) => (Task: task, Index: index)).ToList();
+            try
             {
-                var page = pages[index];
-                foreach (var pr in page)
+                while (pending.Count > 0)
                 {
-                    pr.IsReviewRequestedForCurrentUser = index == 2 && pr.IsOpen;
-                    pr.IsMentioned = index == 3;
-                    pr.IsAssignedToCurrentUser |= index == 4;
+                    var finished = await Task.WhenAny(pending.Select(entry => entry.Task));
+                    var entry = pending.First(entry => ReferenceEquals(entry.Task, finished));
+                    pending.Remove(entry);
+                    var index = entry.Index;
+                    var page = await finished;
+                    foreach (var pr in page)
+                    {
+                        pr.IsReviewRequestedForCurrentUser = index == 2 && pr.IsOpen;
+                        pr.IsMentioned = index == 3;
+                        pr.IsAssignedToCurrentUser |= index == 4;
+                    }
+                    pages[index] = page;
+                    MergePullRequests(results, index >= queries.Length && index < completedEnd
+                        ? page.Where(pr => pr.IsMerged && pr.UpdatedAt >= cutoff && (pr.IsAuthoredByCurrentUser || pr.IsAssignedToCurrentUser))
+                        : page.Where(pr => pr.IsOpen));
+                    if (populateMetadata)
+                        DevHubActivityRequest.ReportPullRequests(options, results, repo);
                 }
-                MergePullRequests(results, page.Where(pr => pr.IsOpen));
             }
-            if (options.IncludeCompleted)
+            finally
             {
-                foreach (var completed in pages.Skip(queries.Length))
+                if (pending.Count > 0)
+                    requests.Cancel();
+                try
                 {
-                    MergePullRequests(results, completed.Where(pr => pr.IsMerged && pr.UpdatedAt >= cutoff
-                        && (pr.IsAuthoredByCurrentUser || pr.IsAssignedToCurrentUser)));
+                    await Task.WhenAll(searches);
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
                 }
             }
+            results.Clear();
+            for (var index = 0; index < pages.Length; index++)
+                MergePullRequests(results, index >= queries.Length && index < completedEnd
+                    ? pages[index].Where(pr => pr.IsMerged && pr.UpdatedAt >= cutoff && (pr.IsAuthoredByCurrentUser || pr.IsAssignedToCurrentUser))
+                    : pages[index].Where(pr => pr.IsOpen));
             if (populateMetadata)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -527,10 +555,13 @@ namespace StartScreen.Services.DevHub.Providers
             return results;
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "VSTHRD003", Justification = "All pending search tasks are created and observed within this operation.")]
         internal static async Task<List<DevHubIssue>> GetUserIssuesAsync(HttpClient client,
             DevHubCredential credential, string login, DevHubActivityOptions options, CancellationToken cancellationToken,
-            RemoteRepoIdentifier repo = null, string customQuery = null)
+            RemoteRepoIdentifier repo = null, string customQuery = null, bool includeWorkspaceOwners = false)
         {
+            using var requests = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cancellationToken = requests.Token;
             var results = new List<DevHubIssue>();
             var scope = repo == null ? string.Empty : $" AND repo:{repo.Owner}/{repo.Repo}";
             var queries = new[] { BuildActivitySearchQuery("is:issue", login, customQuery, repo), BuildPersonalSearchQuery("is:issue", login, "author", repo),
@@ -544,22 +575,125 @@ namespace StartScreen.Services.DevHub.Providers
                     $"is:issue is:closed {qualifier}:{login} closed:>={cutoff.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}{scope}",
                     login, options.MaxItems, cancellationToken, cutoff)));
             }
-            var pages = await Task.WhenAll(searches);
-            for (var index = 0; index < queries.Length; index++)
+            var completedEnd = searches.Count;
+            if (includeWorkspaceOwners && repo == null && string.IsNullOrWhiteSpace(customQuery))
+                searches.Add(SearchWorkspaceIssuesAsync(client, credential, login, options, cancellationToken));
+            var pages = new List<DevHubIssue>[searches.Count];
+            var pending = searches.Select((task, index) => (Task: task, Index: index)).ToList();
+            try
             {
-                var page = pages[index];
-                foreach (var issue in page)
-                    issue.IsMentioned = index == 3;
-                MergeIssues(results, page.Where(issue => !issue.IsClosed));
-            }
-            if (options.IncludeCompleted)
-            {
-                foreach (var completed in pages.Skip(queries.Length))
+                while (pending.Count > 0)
                 {
-                    MergeIssues(results, completed.Where(issue => issue.IsClosed && issue.UpdatedAt >= cutoff
-                        && (issue.IsAuthoredByCurrentUser || issue.IsAssignedToCurrentUser)));
+                    var finished = await Task.WhenAny(pending.Select(entry => entry.Task));
+                    var entry = pending.First(entry => ReferenceEquals(entry.Task, finished));
+                    pending.Remove(entry);
+                    var index = entry.Index;
+                    var page = await finished;
+                    foreach (var issue in page)
+                        issue.IsMentioned = index == 3;
+                    pages[index] = page;
+                    MergeIssues(results, index >= queries.Length && index < completedEnd
+                        ? page.Where(issue => issue.IsClosed && issue.UpdatedAt >= cutoff && (issue.IsAuthoredByCurrentUser || issue.IsAssignedToCurrentUser))
+                        : page.Where(issue => !issue.IsClosed));
+                    DevHubActivityRequest.ReportInventory(options, issues: results, repo: repo);
                 }
             }
+            finally
+            {
+                if (pending.Count > 0)
+                    requests.Cancel();
+                try
+                {
+                    await Task.WhenAll(searches);
+                }
+                catch (Exception ex)
+                {
+                    await ex.LogAsync();
+                }
+            }
+            results.Clear();
+            for (var index = 0; index < pages.Length; index++)
+                MergeIssues(results, index >= queries.Length && index < completedEnd
+                    ? pages[index].Where(issue => issue.IsClosed && issue.UpdatedAt >= cutoff && (issue.IsAuthoredByCurrentUser || issue.IsAssignedToCurrentUser))
+                    : pages[index].Where(issue => !issue.IsClosed));
+            return results;
+        }
+
+        private static readonly ConditionalWeakTable<HttpClient, DevHubCredentialCache<string>> _ownerTypes = new();
+
+        private static async Task<string> GetOwnerScopeAsync(HttpClient client, DevHubCredential credential, string owner,
+            CancellationToken cancellationToken)
+        {
+            var cache = _ownerTypes.GetValue(client, _ => new DevHubCredentialCache<string>(TimeSpan.FromHours(24)));
+            var resource = "https://api.github.com/users/" + Uri.EscapeDataString(owner);
+            var generation = cache.Generation;
+            if (!cache.TryGetValue(credential, resource, out var type))
+            {
+                using var response = await SendGetAsync(credential, resource, cancellationToken, client);
+                response.EnsureSuccessStatusCode();
+                using var doc = JsonDocument.Parse(await HttpResponseReader.ReadStringAsync(response, cancellationToken));
+                type = doc.RootElement.GetProperty("type").GetString();
+                if (type != "Organization" && type != "User")
+                    throw new InvalidOperationException("GitHub did not return a supported repository owner type.");
+                cache.Store(credential, resource, type, generation);
+            }
+            return (type == "Organization" ? "org:" : "user:") + owner;
+        }
+
+        private static IEnumerable<string> GetWorkspaceOwners(DevHubActivityOptions options) =>
+            (options.RefreshContext?.RemoteUrls ?? Array.Empty<string>()).Select(RemoteRepoIdentifier.TryParse)
+                .Where(repo => repo != null && repo.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+                .Select(repo => repo.Owner).Distinct(StringComparer.OrdinalIgnoreCase);
+
+        private static Task<List<DevHubPullRequest>> SearchWorkspacePullRequestsAsync(HttpClient client,
+            DevHubCredential credential, string login, DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            return SearchWorkspaceActivityAsync(client, credential, options, cancellationToken,
+                scope => SearchPullRequestsAsync(client, credential, "is:pr is:open " + scope, login, options.MaxItems, cancellationToken),
+                MergePullRequests, items => DevHubActivityRequest.ReportPullRequests(options, items));
+        }
+
+        private static Task<List<DevHubIssue>> SearchWorkspaceIssuesAsync(HttpClient client,
+            DevHubCredential credential, string login, DevHubActivityOptions options, CancellationToken cancellationToken)
+        {
+            return SearchWorkspaceActivityAsync(client, credential, options, cancellationToken,
+                scope => SearchIssuesAsync(client, credential, "is:issue is:open " + scope, login, options.MaxItems, cancellationToken),
+                MergeIssues, items => DevHubActivityRequest.ReportInventory(options, issues: items));
+        }
+
+        private static async Task<List<T>> SearchWorkspaceActivityAsync<T>(HttpClient client, DevHubCredential credential,
+            DevHubActivityOptions options, CancellationToken cancellationToken, Func<string, Task<List<T>>> search,
+            Action<List<T>, IEnumerable<T>> merge, Action<List<T>> report)
+        {
+            var results = new List<T>();
+            var gate = new object();
+            using var concurrency = new SemaphoreSlim(MaximumSearchConcurrency, MaximumSearchConcurrency);
+            await Task.WhenAll(GetWorkspaceOwners(options).Select(async owner =>
+            {
+                await concurrency.WaitAsync(cancellationToken);
+                try
+                {
+                    var result = await DevHubActivityRequest.RunAsync(async () =>
+                    {
+                        var scope = await GetOwnerScopeAsync(client, credential, owner, cancellationToken);
+                        return await search(scope);
+                    }, items => items.Count > 0, cancellationToken);
+                    if (result.Status != DevHubActivityStatus.Success)
+                    {
+                        DevHubActivityRequest.Failed(result.Status == DevHubActivityStatus.Unauthorized);
+                        DevHubActivityRequest.Warning(result.Message ?? $"GitHub activity for {owner} is unavailable. Showing loaded activity where available. Refresh to retry.");
+                    }
+                    lock (gate)
+                    {
+                        merge(results, result.Value ?? new List<T>());
+                        report(results);
+                    }
+                }
+                finally
+                {
+                    concurrency.Release();
+                }
+            }));
             return results;
         }
 
@@ -699,13 +833,23 @@ namespace StartScreen.Services.DevHub.Providers
             var repos = await ReadPagesAsync(client, credential,
                 "https://api.github.com/user/repos?sort=pushed&affiliation=owner,collaborator,organization_member", null,
                 Math.Min(5, options.MaxItems), item => ParseRepoList("[" + item.GetRawText() + "]"), cancellationToken);
+            repos = repos.Concat((options.RefreshContext?.RemoteUrls ?? Array.Empty<string>()).Select(RemoteRepoIdentifier.TryParse)
+                .Where(repo => repo != null && repo.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))).Distinct().ToList();
             using var semaphore = new SemaphoreSlim(3, 3);
+            var inventoryGate = new object();
+            var inventory = new List<DevHubCiRun>();
             var pages = await Task.WhenAll(repos.Select(async repo =>
             {
                 await semaphore.WaitAsync(cancellationToken);
                 try
                 {
-                    return await ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken, false);
+                    var runs = await ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken, false);
+                    lock (inventoryGate)
+                    {
+                        inventory.AddRange(runs);
+                        DevHubActivityRequest.ReportInventory(options, runs: inventory.OrderByDescending(run => run.Timestamp).Take(options.MaxItems));
+                    }
+                    return runs;
                 }
                 finally
                 {

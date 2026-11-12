@@ -55,6 +55,23 @@ namespace StartScreen.Services.DevHub
             });
         }
 
+        internal static void ReportInventory(DevHubActivityOptions options, IEnumerable<DevHubIssue> issues = null,
+            IEnumerable<DevHubCiRun> runs = null, RemoteRepoIdentifier repo = null)
+        {
+            if (options.ReportProgress == null)
+                return;
+            var current = _current.Value;
+            options.ReportProgress(new DevHubActivitySnapshot
+            {
+                Issues = issues?.Select(issue => issue.Clone()).ToList() ?? new List<DevHubIssue>(),
+                CiRuns = runs?.Select(run => run.Clone()).ToList() ?? new List<DevHubCiRun>(),
+                RepoIdentifier = repo,
+                Status = HasFailure ? DevHubActivityStatus.Partial : DevHubActivityStatus.Success,
+                Message = current?._messages.Count > 0
+                    ? string.Join(" ", current._messages.Keys.OrderBy(message => message, StringComparer.Ordinal)) : null,
+            });
+        }
+
         internal static void Warning(string message)
         {
             if (!string.IsNullOrWhiteSpace(message))

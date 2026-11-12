@@ -213,6 +213,174 @@ namespace StartScreen.Test.DevHub
             Assert.IsFalse(service.IsRefreshing);
         }
 
+        [TestMethod]
+        public async Task Dashboard_PopulatesPersonalAndTeamViewItemsWhileAnotherSearchIsPendingAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var started = Signal();
+            var published = Signal();
+            var release = Signal();
+            var view = new StartScreen.ToolWindows.Controls.DevHubActivityViewModel();
+            view.SetMyWorkFilter(DevHubWorkItemKind.PullRequest, false);
+            view.SetIncomingFilter(DevHubWorkItemKind.PullRequest);
+            using var client = new HttpClient(new Handler(async (request, token) =>
+            {
+                var query = Uri.UnescapeDataString(request.RequestUri!.Query);
+                if (query.Contains("author:me"))
+                {
+                    started.TrySetResult(true);
+                    await release.Task.WithCancellation(token);
+                }
+                if (!query.Contains("involves:me"))
+                    return Json("{\"items\":[]}");
+                return Json("{\"items\":[" + string.Join(",", new[] { "me", "teammate" }.Select((author, index) =>
+                    "{\"number\":" + (index + 1) + ",\"title\":\"" + author + "\",\"state\":\"open\",\"user\":{\"login\":\"" + author
+                    + "\"},\"created_at\":\"2026-11-12T10:00:00Z\",\"updated_at\":\"2026-11-12T10:00:00Z\",\"repository_url\":\"https://api.github.com/repos/owner/repo\",\"html_url\":\"https://github.com/owner/repo/pull/" + (index + 1) + "\"}")) + "]}");
+            }));
+            var provider = new Provider(async (kind, options, _, token) =>
+            {
+                if (kind != DevHubActivityKind.PullRequests)
+                    return new DevHubActivitySnapshot();
+                var result = await DevHubActivityRequest.RunAsync(() => GitHubDevHubProvider.GetUserPullRequestsAsync(
+                    client, Credential(), "me", options, token), items => items.Count > 0, token);
+                return new DevHubActivitySnapshot { PullRequests = result.Value, Status = result.Status, Message = result.Message };
+            });
+            var service = Service(new DevHubCacheService(directory.Path), provider);
+            var operation = service.RefreshAsync(timeout.Token, new InlineProgress(dashboard =>
+            {
+                view.UpdateRepositoryActivity(dashboard.PullRequests, dashboard.Issues, dashboard.CiRuns, [], DevHubSortOrder.MostRecent, false);
+                if (dashboard.IsRefreshing && view.MyWorkItems.Count > 0 && view.IncomingItems.Count > 0)
+                    published.TrySetResult(true);
+            }));
+            try
+            {
+                await Task.WhenAll(started.Task, published.Task).WithCancellation(timeout.Token);
+                Assert.IsFalse(operation.IsCompleted);
+                Assert.IsGreaterThan(0, view.MyWorkItems.Count);
+                Assert.IsGreaterThan(0, view.IncomingItems.Count);
+            }
+            finally
+            {
+                release.TrySetResult(true);
+                await operation;
+            }
+        }
+
+        [TestMethod]
+        public async Task Inventory_RetainsCachedItemsUntilCompletionWithoutRestoringCachedReadinessAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var seed = true;
+            var release = Signal();
+            var published = Signal();
+            DevHubDashboard? preview = null;
+            DevHubPullRequest Item(int id, string title) => new()
+            {
+                NumericId = id,
+                Title = title,
+                Status = "open",
+                RepoIdentifier = new("github.com", "owner", "repo"),
+                WebUrl = "https://github.com/owner/repo/pull/" + id,
+                IsAuthoredByCurrentUser = true,
+                CanMerge = seed ? true : null,
+            };
+            var provider = new Provider(async (kind, options, _, token) =>
+            {
+                if (kind != DevHubActivityKind.PullRequests)
+                    return new DevHubActivitySnapshot();
+                if (seed)
+                    return new DevHubActivitySnapshot { PullRequests = [Item(1, "Cached"), Item(2, "Still cached")] };
+                DevHubActivityRequest.ReportPullRequests(options, [Item(1, "Fresh inventory")]);
+                await release.Task.WithCancellation(token);
+                return new DevHubActivitySnapshot();
+            });
+            var service = Service(new DevHubCacheService(directory.Path), provider);
+            await service.RefreshAsync(timeout.Token);
+            seed = false;
+            var operation = service.RefreshAsync(timeout.Token, new InlineProgress(dashboard =>
+            {
+                if (dashboard.IsRefreshing && dashboard.PullRequests.Any(pr => pr.Title == "Fresh inventory"))
+                {
+                    preview = dashboard;
+                    published.TrySetResult(true);
+                }
+            }));
+            try
+            {
+                await published.Task.WithCancellation(timeout.Token);
+                Assert.IsNotNull(preview);
+                Assert.HasCount(2, preview.PullRequests);
+                Assert.IsNull(preview.PullRequests.Single(pr => pr.NumericId == 1).CanMerge);
+                Assert.AreEqual("Still cached", preview.PullRequests.Single(pr => pr.NumericId == 2).Title);
+                Assert.IsFalse(operation.IsCompleted);
+            }
+            finally
+            {
+                release.TrySetResult(true);
+                await operation;
+            }
+            Assert.IsEmpty((await operation)!.PullRequests, "Successful final results must replace, not retain, cached inventory.");
+            Assert.HasCount(2, preview!.PullRequests, "Final completion must not mutate the previously published preview.");
+        }
+
+        [TestMethod]
+        public async Task Inventory_LegacyRepositoryCacheRemainsVisibleUntilAggregateFeedsFinishAsync()
+        {
+            using var directory = new TemporaryDirectory();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var seed = true;
+            var release = Signal();
+            var published = Signal();
+            var repo = new RemoteRepoIdentifier("github.com", "owner", "repo");
+            DevHubDashboard? preview = null;
+            var provider = new Provider(async (kind, _, _, token) =>
+            {
+                if (!seed)
+                    await release.Task.WithCancellation(token);
+                return kind == DevHubActivityKind.Repository ? new DevHubActivitySnapshot
+                {
+                    RepoIdentifier = repo,
+                    PullRequests = [new DevHubPullRequest { NumericId = 1, Title = "Cached team PR", RepoIdentifier = repo, Status = "open" }],
+                    Issues = [new DevHubIssue { NumericId = 1, Title = "Cached team issue", RepoIdentifier = repo, State = "open" }],
+                    CiRuns = [new DevHubCiRun { Name = "Cached build", RepoIdentifier = repo }],
+                } : new DevHubActivitySnapshot();
+            }) { ActivityRepositories = [repo] };
+            var service = Service(new DevHubCacheService(directory.Path), provider);
+            await service.RefreshAsync(timeout.Token);
+            seed = false;
+            provider.ActivityRepositories = [];
+            var operation = service.RefreshAsync(timeout.Token, new InlineProgress(dashboard =>
+            {
+                if (dashboard.IsRefreshing && !dashboard.Sources.Keys.Any(key => key.Contains("/repo/"))
+                    && dashboard.PullRequests.Count > 0 && dashboard.Issues.Count > 0 && dashboard.CiRuns.Count > 0)
+                {
+                    preview = dashboard;
+                    published.TrySetResult(true);
+                }
+            }));
+            try
+            {
+                await published.Task.WithCancellation(timeout.Token);
+                Assert.IsNotNull(preview);
+                Assert.HasCount(1, preview.PullRequests);
+                Assert.HasCount(1, preview.Issues);
+                Assert.HasCount(1, preview.CiRuns);
+                Assert.IsFalse(operation.IsCompleted);
+            }
+            finally
+            {
+                release.TrySetResult(true);
+                await operation;
+            }
+            var final = await operation;
+            Assert.IsNotNull(final);
+            Assert.IsEmpty(final.PullRequests);
+            Assert.IsEmpty(final.Issues);
+            Assert.IsEmpty(final.CiRuns);
+        }
+
         private static DevHubService Service(DevHubCacheService cache, IDevHubProvider provider, Func<int>? generation = null) =>
             new(cache, [provider], _ => Task.FromResult<IReadOnlyList<string>>([]), () => DevHubSortOrder.MostRecent,
                 () => string.Empty, generation ?? (() => 0));
@@ -234,6 +402,7 @@ namespace StartScreen.Test.DevHub
             : IDevHubProvider, IDevHubActivitySource
         {
             public string DisplayName => "GitHub test";
+            public IReadOnlyList<RemoteRepoIdentifier> ActivityRepositories { get; set; } = [];
             public Task<DevHubActivitySnapshot> FetchActivityAsync(DevHubActivityKind kind, DevHubActivityOptions options,
                 RemoteRepoIdentifier repo, CancellationToken token) => fetch(kind, options, repo, token);
             public bool CanHandle(string url) => url.Contains("github.com");
@@ -244,7 +413,7 @@ namespace StartScreen.Test.DevHub
             public Task<IReadOnlyList<DevHubPullRequest>> GetUserPullRequestsAsync(CancellationToken token) => throw new NotSupportedException();
             public Task<IReadOnlyList<DevHubIssue>> GetUserIssuesAsync(CancellationToken token) => throw new NotSupportedException();
             public Task<IReadOnlyList<DevHubCiRun>> GetUserCiRunsAsync(CancellationToken token) => throw new NotSupportedException();
-            public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> urls, CancellationToken token) => Task.FromResult<IReadOnlyList<RemoteRepoIdentifier>>([]);
+            public Task<IReadOnlyList<RemoteRepoIdentifier>> GetActivityReposAsync(IReadOnlyList<string> urls, CancellationToken token) => Task.FromResult(ActivityRepositories);
             public Task<DevHubRepoDetail> GetRepoDetailAsync(RemoteRepoIdentifier repo, int maximum, CancellationToken token) => throw new NotSupportedException();
             public Task<DevHubRepoSummary> GetRepoSummaryAsync(RemoteRepoIdentifier repo, CancellationToken token) => throw new NotSupportedException();
             public string GetRepoWebUrl(RemoteRepoIdentifier repo) => "https://github.com/" + repo.DisplayName;

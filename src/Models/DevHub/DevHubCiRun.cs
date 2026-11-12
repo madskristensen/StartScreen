@@ -73,6 +73,8 @@ namespace StartScreen.Models.DevHub
         [JsonIgnore]
         public bool IsNew { get; set; }
 
+        internal DevHubCiRun Clone() => (DevHubCiRun)MemberwiseClone();
+
         /// <summary>
         /// Returns a status display icon.
         /// </summary>

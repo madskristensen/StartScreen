@@ -181,5 +181,12 @@ namespace StartScreen.Models.DevHub
         /// Returns a comma-separated label text for display.
         /// </summary>
         public string LabelText => Labels.Count > 0 ? string.Join(", ", Labels.Select(l => l.Name)) : string.Empty;
+
+        internal DevHubIssue Clone()
+        {
+            var copy = (DevHubIssue)MemberwiseClone();
+            copy.Labels = Labels?.ToList();
+            return copy;
+        }
     }
 }
