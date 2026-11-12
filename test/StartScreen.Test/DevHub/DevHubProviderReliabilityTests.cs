@@ -117,7 +117,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async Task CacheRestoreAndBackgroundRefreshShareVerifiedBitbucketProfileButManualRefreshRevalidatesAsync()
+        public async Task CacheRestoreAndActivityRefreshShareVerifiedBitbucketProfileUntilExplicitRevalidationAsync()
         {
             using var directory = new TemporaryDirectory();
             var profiles = 0;
@@ -157,6 +157,8 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual(1, profiles, "The immediate background update must not repeat cache restoration's profile request.");
             Assert.IsGreaterThanOrEqualTo(2, acquisitions, "Every operation must still acquire the currently selected credential.");
             await service.RefreshAsync(CancellationToken.None, forceRefresh: true);
+            Assert.AreEqual(1, profiles, "Refreshing activity must not force another online identity check.");
+            await service.RefreshAsync(CancellationToken.None, forceRefresh: true, forceAuthentication: true);
             Assert.AreEqual(2, profiles);
         }
 

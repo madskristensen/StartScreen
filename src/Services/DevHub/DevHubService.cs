@@ -105,7 +105,7 @@ namespace StartScreen.Services.DevHub
             {
                 // Providers without repository-based identity discovery can verify accounts in parallel with the local scan.
                 foreach (var provider in providers.Where(provider => !(provider is IDevHubRefreshProvider)))
-                    authentications[provider] = AuthenticateAsync(provider, requestToken);
+                    authentications[provider] = AuthenticateAsync(provider, requestToken, cachedUsers: cached.Users);
 
                 stepProgress?.Report("Finding workspace repositories...");
                 var candidates = await DevHubActivityRequest.RunAsync(() => _getCachedCandidateRemoteUrls(requestToken), urls => urls.Count > 0, requestToken);
@@ -128,7 +128,7 @@ namespace StartScreen.Services.DevHub
                 workProgress?.Report((completedWork, totalWork));
                 stepProgress?.Report("Verifying cached activity accounts...");
                 foreach (var provider in providers.Where(provider => provider is IDevHubRefreshProvider))
-                    authentications[provider] = AuthenticateAsync(provider, requestToken, refreshContext);
+                    authentications[provider] = AuthenticateAsync(provider, requestToken, refreshContext, cached.Users);
                 var remaining = providers.Select(async provider =>
                     (Provider: provider, Result: await authentications[provider])).ToList();
                 var restored = false;
@@ -172,7 +172,8 @@ namespace StartScreen.Services.DevHub
                     SetCurrentDashboard(null);
                     return null;
                 }
-                _cacheNeedsRefresh |= dashboard.CacheContext != cached.CacheContext;
+                _cacheNeedsRefresh |= dashboard.CacheContext != cached.CacheContext
+                    || dashboard.Users.Any(user => user.RestoredFromAccountBinding);
                 return CurrentDashboard;
             }
             finally
@@ -202,17 +203,17 @@ namespace StartScreen.Services.DevHub
         /// Fetches fresh data from all authenticated providers and updates the dashboard.
         /// Reports progress incrementally so the UI can render data as it arrives.
         /// Categories and per-repository activity are published independently as they complete.
-        /// A forced refresh waits for an active refresh and then fetches fresh authentication and data.
+        /// A forced refresh waits for an active refresh and fetches fresh activity, reusing current account verification.
         /// </summary>
         public async Task<DevHubDashboard> RefreshAsync(CancellationToken cancellationToken, IProgress<DevHubDashboard> progress = null,
             bool forceRefresh = false, DevHubActivityOptions options = null, IProgress<(int Completed, int Total)> workProgress = null,
-            IProgress<string> stepProgress = null)
+            IProgress<string> stepProgress = null, bool forceAuthentication = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
             options = options ?? new DevHubActivityOptions();
 
             stepProgress?.Report("Waiting for the activity refresh...");
-            if (!await _refreshGate.WaitAsync(forceRefresh ? Timeout.Infinite : 0, cancellationToken))
+            if (!await _refreshGate.WaitAsync(forceRefresh || forceAuthentication ? Timeout.Infinite : 0, cancellationToken))
                 return CurrentDashboard;
 
             _isRefreshing = true;
@@ -229,7 +230,7 @@ namespace StartScreen.Services.DevHub
                 var candidates = await DevHubActivityRequest.RunAsync(() => _getCandidateRemoteUrls(cancellationToken),
                     urls => urls.Count > 0, cancellationToken);
                 workProgress?.Report((++completedWork, totalWork));
-                var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status, forceRefresh);
+                var refreshContext = new DevHubRefreshContext(candidates.Value, candidates.Status, forceAuthentication);
                 options = new DevHubActivityOptions(options.MaxItems, options.IncludeCompleted, refreshContext);
                 var dashboard = new DevHubDashboard
                 {
@@ -253,9 +254,30 @@ namespace StartScreen.Services.DevHub
                     dashboard.ActivityWarnings["repositories/discovery"] = message;
                 }
                 if (candidates.Status != DevHubActivityStatus.Success || previousDashboard == null
+                    || previousDashboard.CredentialGeneration != authenticationGeneration || previousDashboard.QueryContext != queryContext
                     || previousDashboard.CacheContext != CreateContext(previousDashboard.Users, options, candidateUrls))
                     previousDashboard = null;
                 var generation = authenticationGeneration;
+
+                if (previousDashboard != null)
+                {
+                    foreach (var provider in providers)
+                    {
+                        if (!(provider is IDevHubCachedAuthenticationProvider cachedProvider))
+                            continue;
+                        var previousUsers = previousDashboard.Users.Where(user => user.ProviderName == provider.DisplayName).ToArray();
+                        if (previousUsers.Length == 0)
+                            continue;
+                        var restored = await DevHubActivityRequest.RunAsync(
+                            () => cachedProvider.GetCachedAuthenticatedUsersAsync(previousUsers, refreshContext, cancellationToken),
+                            values => values.Count > 0, cancellationToken);
+                        if (restored.Status != DevHubActivityStatus.Success || restored.Value == null || restored.Value.Count == 0)
+                            continue;
+                        dashboard.Users.AddRange(restored.Value);
+                        foreach (var pair in previousDashboard.Sources.Where(pair => pair.Key.StartsWith(provider.DisplayName + "/", StringComparison.Ordinal)))
+                            dashboard.Sources[pair.Key] = pair.Value;
+                    }
+                }
 
                 using var requests = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 var requestToken = requests.Token;
@@ -373,6 +395,26 @@ namespace StartScreen.Services.DevHub
                             authentications.Remove(authentication);
                             var (provider, result) = await authentication;
                             var users = result.Value ?? Array.Empty<DevHubUser>();
+                            var previousUsers = previousDashboard?.Users.Where(user => user.ProviderName == provider.DisplayName).ToList();
+                            var retainedIdentity = false;
+                            if (result.Status == DevHubActivityStatus.Unavailable && users.Count == 0 && previousUsers?.Count > 0
+                                && provider is IDevHubCachedAuthenticationProvider cachedProvider)
+                            {
+                                var restored = await DevHubActivityRequest.RunAsync(
+                                    () => cachedProvider.GetCachedAuthenticatedUsersAsync(previousUsers, refreshContext, requestToken),
+                                    values => values.Count > 0, requestToken);
+                                if (restored.Status == DevHubActivityStatus.Success && restored.Value?.Count > 0)
+                                {
+                                    users = restored.Value;
+                                    retainedIdentity = true;
+                                }
+                            }
+                            if (generation != _getCredentialGeneration() || queryContext != _getQueryContext())
+                                return InvalidateContext(progress);
+                            var prefix = provider.DisplayName + "/";
+                            dashboard.Users.RemoveAll(user => user.ProviderName == provider.DisplayName);
+                            foreach (var cachedKey in dashboard.Sources.Keys.Where(sourceKey => sourceKey.StartsWith(prefix, StringComparison.Ordinal)).ToArray())
+                                dashboard.Sources.Remove(cachedKey);
                             dashboard.Users.AddRange(users);
                             if (result.Status != DevHubActivityStatus.Success)
                             {
@@ -383,17 +425,20 @@ namespace StartScreen.Services.DevHub
                             }
                             if (users.Count > 0)
                             {
-                                var previousUsers = previousDashboard?.Users.Where(user => user.ProviderName == provider.DisplayName).ToList();
                                 if (previousUsers != null && CreateIdentityContext(users) == CreateIdentityContext(previousUsers))
                                 {
-                                    var prefix = provider.DisplayName + "/";
                                     foreach (var pair in previousDashboard.Sources.Where(pair => pair.Key.StartsWith(prefix, StringComparison.Ordinal)
                                         && !pair.Key.EndsWith("/authentication", StringComparison.Ordinal)))
-                                        dashboard.Sources[pair.Key] = pair.Value;
+                                        dashboard.Sources[pair.Key] = retainedIdentity
+                                            ? RetainFailedSource(new DevHubActivitySnapshot { Status = result.Status, Message = result.Message,
+                                                RepoIdentifier = pair.Value.RepoIdentifier }, pair.Value) : pair.Value;
                                 }
-                                authenticated.Add(provider);
-                                totalWork += 4;
-                                AddProviderSources(provider);
+                                if (!retainedIdentity)
+                                {
+                                    authenticated.Add(provider);
+                                    totalWork += 4;
+                                    AddProviderSources(provider);
+                                }
                             }
                             dashboard.IdentityContext = CreateIdentityContext(dashboard.Users);
                             dashboard.CacheContext = candidates.Status == DevHubActivityStatus.Success
@@ -539,11 +584,21 @@ namespace StartScreen.Services.DevHub
         }
 
         private static async Task<DevHubActivityResult<IReadOnlyList<DevHubUser>>> AuthenticateAsync(IDevHubProvider provider,
-            CancellationToken cancellationToken, DevHubRefreshContext context = null)
+            CancellationToken cancellationToken, DevHubRefreshContext context = null, IReadOnlyList<DevHubUser> cachedUsers = null)
         {
             await TaskScheduler.Default.SwitchTo(alwaysYield: true);
             return await DevHubActivityRequest.RunAsync(async () =>
             {
+                if (cachedUsers != null && provider is IDevHubCachedAuthenticationProvider cachedProvider)
+                {
+                    var previous = cachedUsers.Where(user => user.ProviderName == provider.DisplayName).ToArray();
+                    if (previous.Length > 0)
+                    {
+                        var restored = await cachedProvider.GetCachedAuthenticatedUsersAsync(previous, context, cancellationToken);
+                        if (restored != null)
+                            return restored;
+                    }
+                }
                 var users = context != null && provider is IDevHubRefreshProvider refreshProvider
                     ? await refreshProvider.GetAuthenticatedUsersAsync(context, cancellationToken)
                     : provider is IDevHubAuthenticationProvider authenticationProvider

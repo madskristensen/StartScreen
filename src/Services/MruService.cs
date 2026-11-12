@@ -198,16 +198,22 @@ namespace StartScreen.Services
             {
                 var cache = new MruMetadataCache();
                 await cache.LoadAsync(cancellationToken);
-                cache.Apply(items.Where(item => !cache.IsStale(item)));
+                return await GetRepositoryRemoteUrlsAsync(items, cancellationToken, cache);
             }
             return await GetRepositoryRemoteUrlsAsync(items, cancellationToken);
         }
 
         internal static async Task<IReadOnlyList<string>> GetRepositoryRemoteUrlsAsync(
-            IEnumerable<MruItem> items, CancellationToken cancellationToken)
+            IEnumerable<MruItem> items, CancellationToken cancellationToken, MruMetadataCache metadataCache = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await TaskScheduler.Default;
+            if (metadataCache != null)
+            {
+                items = items.ToArray();
+                // Expiration schedules refresh; it must not force a workspace scan before displaying cached activity.
+                metadataCache.Apply(items);
+            }
             var urls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in items)

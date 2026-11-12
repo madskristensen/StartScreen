@@ -78,6 +78,8 @@ namespace StartScreen.Services.DevHub
         {
             if (!response.IsSuccessStatusCode)
             {
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                    DevHubCredentialHelper.InvalidateAccountVerification();
                 Failed(response.StatusCode == HttpStatusCode.Unauthorized);
                 var uri = response.RequestMessage?.RequestUri;
                 var endpoint = uri == null ? "The activity service" : uri.Host + uri.AbsolutePath;

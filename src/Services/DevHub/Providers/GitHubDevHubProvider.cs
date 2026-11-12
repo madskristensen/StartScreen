@@ -17,7 +17,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// GitHub provider for the Dev Hub.
     /// Fetches PRs, issues, and CI status from the GitHub REST API.
     /// </summary>
-    internal sealed class GitHubDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource, IDevHubAuthenticationProvider
+    internal sealed class GitHubDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource, IDevHubAuthenticationProvider, IDevHubCachedAuthenticationProvider
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -52,6 +52,17 @@ namespace StartScreen.Services.DevHub.Providers
 
         private readonly DevHubIdentityCache _identityCache = new DevHubIdentityCache();
         private readonly DevHubCredentialCache<DevHubUser> _users = new DevHubCredentialCache<DevHubUser>(TimeSpan.FromMinutes(5));
+        private readonly HttpClient _authenticationClient;
+        private readonly Func<CancellationToken, Task<DevHubCredential>> _acquireCredential;
+        private readonly DevHubAccountBinding _accountBinding;
+
+        internal GitHubDevHubProvider(HttpClient authenticationClient = null,
+            Func<CancellationToken, Task<DevHubCredential>> acquireCredential = null, DevHubAccountBinding accountBinding = null)
+        {
+            _authenticationClient = authenticationClient ?? _httpClient;
+            _acquireCredential = acquireCredential ?? (token => DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), token));
+            _accountBinding = accountBinding ?? (authenticationClient == null ? DevHubAccountBinding.Default : null);
+        }
 
         private static string GetPreferredGitHubAccount()
         {
@@ -102,8 +113,8 @@ namespace StartScreen.Services.DevHub.Providers
 
         public async Task<DevHubUser> GetAuthenticatedUserAsync(CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
-            return await GetAuthenticatedUserAsync(_httpClient, credential, cancellationToken);
+            var credential = await _acquireCredential(cancellationToken);
+            return await GetAuthenticatedUserAsync(_authenticationClient, credential, cancellationToken, _acquireCredential);
         }
 
         internal async Task<DevHubUser> GetAuthenticatedUserAsync(HttpClient httpClient, DevHubCredential credential,
@@ -133,6 +144,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
                     response.Dispose();
+                    _accountBinding?.Invalidate();
                     DevHubCredentialHelper.InvalidateCachedCredential("github.com");
                     credential = reacquireCredential != null ? await reacquireCredential(cancellationToken)
                         : await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
@@ -171,6 +183,8 @@ namespace StartScreen.Services.DevHub.Providers
                     };
                     cancellationToken.ThrowIfCancellationRequested();
                     user.CredentialContext = DevHubMetadataCache.GetKey(credential, resource);
+                    if (ReferenceEquals(httpClient, _authenticationClient))
+                        _accountBinding?.Remember(credential, "https://api.github.com/user", user);
                     if (!_users.Store(credential, resource, user, generation))
                     {
                         DevHubActivityRequest.Failed(unauthorized: true);
@@ -196,9 +210,30 @@ namespace StartScreen.Services.DevHub.Providers
 
         public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(bool forceRefresh, CancellationToken cancellationToken)
         {
-            var credential = await DevHubCredentialHelper.GetCredentialAsync("github.com", GetPreferredGitHubAccount(), cancellationToken);
-            var user = await GetAuthenticatedUserAsync(_httpClient, credential, cancellationToken, forceRefresh: forceRefresh);
+            var credential = await _acquireCredential(cancellationToken);
+            var user = await GetAuthenticatedUserAsync(_authenticationClient, credential, cancellationToken,
+                reacquireCredential: _acquireCredential, forceRefresh: forceRefresh);
             return user != null ? new[] { user } : Array.Empty<DevHubUser>();
+        }
+
+        public async Task<IReadOnlyList<DevHubUser>> GetCachedAuthenticatedUsersAsync(IReadOnlyList<DevHubUser> users,
+            DevHubRefreshContext context, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_accountBinding == null || users.Count != 1 || string.IsNullOrEmpty(users[0].AccountBinding))
+                return null;
+            var generation = _users.Generation;
+            var credential = await _acquireCredential(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (credential == null)
+                return Array.Empty<DevHubUser>();
+            const string resource = "https://api.github.com/user";
+            var user = users[0];
+            if (!_users.IsCurrent(credential, generation) || !_accountBinding.Matches(credential, resource, user))
+                return null;
+            user.CredentialContext = DevHubMetadataCache.GetKey(credential, DevHubMetadataCache.GetClientScope(_authenticationClient) + "|" + resource);
+            user.RestoredFromAccountBinding = true;
+            return users;
         }
 
         /// <summary>
@@ -378,9 +413,13 @@ namespace StartScreen.Services.DevHub.Providers
             var detail = new DevHubRepoDetail { RepoIdentifier = repo, FetchedAt = DateTime.UtcNow };
             var root = $"https://api.github.com/repos/{repo.Owner}/{repo.Repo}";
             var hasCustomQuery = !string.IsNullOrWhiteSpace(customQuery);
+            // Each category owns its outcomes while requests overlap; merge only after all have completed.
+            var pullOutcome = new DevHubRepoDetail();
+            var issueOutcome = new DevHubRepoDetail();
+            var buildOutcome = new DevHubRepoDetail();
             // REST repository lists cannot enforce GitHub search syntax. Use the same scoped
             // activity searches as the dashboard, keeping personal work independent of the filter.
-            detail.PullRequests = await DevHubActivityRequest.ReadCategoryAsync(detail, DevHubActivityKind.PullRequests, async () =>
+            var pulls = DevHubActivityRequest.ReadCategoryAsync(pullOutcome, DevHubActivityKind.PullRequests, async () =>
             {
                 var prs = hasCustomQuery
                     ? new List<DevHubPullRequest>()
@@ -403,7 +442,7 @@ namespace StartScreen.Services.DevHub.Providers
                 await PopulateActivityMetadataAsync(client, credential, prs, cancellationToken);
                 return prs;
             }, cancellationToken);
-            detail.Issues = await DevHubActivityRequest.ReadCategoryAsync(detail, DevHubActivityKind.Issues, async () =>
+            var issuesTask = DevHubActivityRequest.ReadCategoryAsync(issueOutcome, DevHubActivityKind.Issues, async () =>
             {
                 var issues = hasCustomQuery
                     ? new List<DevHubIssue>()
@@ -422,8 +461,20 @@ namespace StartScreen.Services.DevHub.Providers
                 }
                 return issues;
             }, cancellationToken);
-            detail.CiRuns = await DevHubActivityRequest.ReadCategoryAsync(detail, DevHubActivityKind.CiRuns,
+            var builds = DevHubActivityRequest.ReadCategoryAsync(buildOutcome, DevHubActivityKind.CiRuns,
                 () => ReadCiRunsAsync(client, credential, repo, login, options.MaxItems, cancellationToken), cancellationToken);
+            await Task.WhenAll(pulls, issuesTask, builds);
+            cancellationToken.ThrowIfCancellationRequested();
+            detail.PullRequests = await pulls;
+            detail.Issues = await issuesTask;
+            detail.CiRuns = await builds;
+            detail.HasCategoryOutcomes = true;
+            detail.PullRequestsStatus = pullOutcome.PullRequestsStatus;
+            detail.IssuesStatus = issueOutcome.IssuesStatus;
+            detail.CiRunsStatus = buildOutcome.CiRunsStatus;
+            detail.ActivityWarning = string.Join(" ", new[] { pullOutcome.ActivityWarning, issueOutcome.ActivityWarning, buildOutcome.ActivityWarning }
+                .Where(message => !string.IsNullOrWhiteSpace(message)));
+            detail.Status = DevHubActivityRequest.AggregateStatus(detail.PullRequestsStatus, detail.IssuesStatus, detail.CiRunsStatus, detail.HasData);
             return detail;
         }
 

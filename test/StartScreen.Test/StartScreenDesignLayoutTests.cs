@@ -416,11 +416,15 @@ namespace StartScreen.Test
             if (shortTitle)
                 Assert.AreEqual(title.LineHeight, title.ActualHeight, 0.01);
             var separator = ((Grid)card.Child).Children.OfType<Border>().Single(element => element.Name == "ActivitySeparator");
-            Assert.AreEqual(1d, separator.ActualHeight, 0.01);
+            var dpiScale = VisualTreeHelper.GetDpi(separator).DpiScaleY;
+            Assert.AreEqual(1d, separator.Height);
+            Assert.AreEqual(Math.Round(dpiScale) / dpiScale, separator.ActualHeight, 0.01);
             Assert.AreEqual(grid.ActualWidth, separator.ActualWidth, 0.01);
             Assert.AreEqual(team ? new Thickness(8, 10, 8, 10) : new Thickness(8, 4, 8, 4), card.Padding);
             Assert.AreEqual(team ? 12d : 6d, separator.Margin.Top);
-            Assert.IsGreaterThanOrEqualTo(Math.Round(grid.TranslatePoint(new Point(0, grid.ActualHeight), card).Y) + separator.Margin.Top - 0.01,
+            // The content and separator edges can each round by half a device pixel.
+            Assert.IsGreaterThanOrEqualTo(grid.TranslatePoint(new Point(0, grid.ActualHeight), card).Y
+                + separator.Margin.Top - 1 / dpiScale - 0.01,
                 separator.TranslatePoint(new Point(), card).Y);
             if (team)
             {

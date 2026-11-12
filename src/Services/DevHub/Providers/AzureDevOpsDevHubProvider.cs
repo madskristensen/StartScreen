@@ -18,7 +18,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// Azure DevOps provider for the Dev Hub.
     /// Fetches PRs, work items, and build status from the ADO REST API.
     /// </summary>
-    internal sealed class AzureDevOpsDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource, IDevHubRefreshProvider
+    internal sealed class AzureDevOpsDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource, IDevHubRefreshProvider, IDevHubCachedAuthenticationProvider
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -32,6 +32,7 @@ namespace StartScreen.Services.DevHub.Providers
         private readonly Func<CancellationToken, Task<IReadOnlyList<string>>> _getRemoteUrls;
         private readonly Func<IReadOnlyList<string>> _getCredentialHosts;
         private readonly DevHubCredentialCache<DevHubUser> _users = new DevHubCredentialCache<DevHubUser>(TimeSpan.FromMinutes(5));
+        private readonly DevHubAccountBinding _accountBinding;
 
         public AzureDevOpsDevHubProvider() : this(_sharedHttpClient, DevHubCredentialHelper.GetAzureDevOpsCredentialAsync,
             (host, credential) =>
@@ -40,7 +41,7 @@ namespace StartScreen.Services.DevHub.Providers
                     DevHubCredentialHelper.InvalidateAzureDevOpsCredential(credential);
                 else
                     DevHubCredentialHelper.InvalidateCachedCredential(host);
-            })
+            }, accountBinding: DevHubAccountBinding.Default)
         {
         }
 
@@ -48,13 +49,14 @@ namespace StartScreen.Services.DevHub.Providers
             Func<string, string, CancellationToken, Task<DevHubCredential>> acquireCredential,
             Action<string, DevHubCredential> invalidateCredential,
             Func<CancellationToken, Task<IReadOnlyList<string>>> getRemoteUrls = null,
-            Func<IReadOnlyList<string>> getCredentialHosts = null)
+            Func<IReadOnlyList<string>> getCredentialHosts = null, DevHubAccountBinding accountBinding = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _acquireCredential = acquireCredential ?? throw new ArgumentNullException(nameof(acquireCredential));
             _invalidateCredential = invalidateCredential ?? throw new ArgumentNullException(nameof(invalidateCredential));
             _getRemoteUrls = getRemoteUrls ?? MruService.GetRepositoryRemoteUrlsAsync;
             _getCredentialHosts = getCredentialHosts ?? AzureDevOpsServerHelper.GetAllKnownHosts;
+            _accountBinding = accountBinding;
         }
 
         private static HttpClient CreateSharedHttpClient()
@@ -180,28 +182,7 @@ namespace StartScreen.Services.DevHub.Providers
         public async Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(DevHubRefreshContext context, CancellationToken cancellationToken)
         {
             var results = new List<DevHubUser>();
-            var credentialHosts = _getCredentialHosts();
-            var profileTargets = new List<(string CredentialHost, string ProfileUrl)>();
-
-            foreach (var host in credentialHosts)
-            {
-                if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
-                    profileTargets.Add((host, "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"));
-                else
-                {
-                    var server = AzureDevOpsServerHelper.GetServerUri(host);
-                    if (server != null)
-                        profileTargets.Add((host, GetConnectionDataUrl(server.AbsoluteUri)));
-                }
-            }
-
-            var organizationUrls = await GetCloudProfileBaseUrlsAsync(context, cancellationToken);
-            foreach (var organizationUrl in organizationUrls)
-            {
-                var target = (AzureDevOpsServerHelper.CloudHost, GetConnectionDataUrl(organizationUrl));
-                if (!profileTargets.Contains(target))
-                    profileTargets.Add(target);
-            }
+            var profileTargets = await GetProfileTargetsAsync(context, cancellationToken);
 
             var attempts = new List<(string Host, DevHubActivityResult<DevHubUser[]> Result)>();
             foreach (var (credentialHost, profileUrl) in profileTargets)
@@ -230,6 +211,59 @@ namespace StartScreen.Services.DevHub.Providers
             }
 
             return results;
+        }
+
+        private async Task<IReadOnlyList<(string CredentialHost, string ProfileUrl)>> GetProfileTargetsAsync(
+            DevHubRefreshContext context, CancellationToken cancellationToken)
+        {
+            var credentialHosts = _getCredentialHosts();
+            var profileTargets = new List<(string CredentialHost, string ProfileUrl)>();
+
+            foreach (var host in credentialHosts)
+            {
+                if (host.Equals(AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                    profileTargets.Add((host, "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1"));
+                else
+                {
+                    var server = AzureDevOpsServerHelper.GetServerUri(host);
+                    if (server != null)
+                        profileTargets.Add((host, GetConnectionDataUrl(server.AbsoluteUri)));
+                }
+            }
+
+            var organizationUrls = await GetCloudProfileBaseUrlsAsync(context, cancellationToken);
+            foreach (var organizationUrl in organizationUrls)
+            {
+                var target = (AzureDevOpsServerHelper.CloudHost, GetConnectionDataUrl(organizationUrl));
+                if (!profileTargets.Contains(target))
+                    profileTargets.Add(target);
+            }
+
+            return profileTargets;
+        }
+
+        public async Task<IReadOnlyList<DevHubUser>> GetCachedAuthenticatedUsersAsync(IReadOnlyList<DevHubUser> users,
+            DevHubRefreshContext context, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_accountBinding == null)
+                return null;
+            var generation = _users.Generation;
+            var targets = await GetProfileTargetsAsync(context, cancellationToken);
+            foreach (var user in users)
+            {
+                var target = targets.FirstOrDefault(candidate => candidate.CredentialHost + "|" + candidate.ProfileUrl == user.AccountBindingResource);
+                if (target.ProfileUrl == null)
+                    return null;
+                var credential = await _acquireCredential(target.CredentialHost, target.ProfileUrl, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!_users.IsCurrent(credential, generation)
+                    || !_accountBinding.Matches(credential, user.AccountBindingResource, user))
+                    return null;
+                user.CredentialContext = DevHubMetadataCache.GetKey(credential, user.AccountBindingResource);
+                user.RestoredFromAccountBinding = true;
+            }
+            return users;
         }
 
         internal async Task<DevHubUser> GetUserForHostAsync(string credentialHost, string profileUrl, CancellationToken cancellationToken,
@@ -321,6 +355,7 @@ namespace StartScreen.Services.DevHub.Providers
                     }
                     cancellationToken.ThrowIfCancellationRequested();
                     user.CredentialContext = DevHubMetadataCache.GetKey(credential, resource);
+                    _accountBinding?.Remember(credential, resource, user);
                     if (!_users.Store(credential, resource, user, generation))
                     {
                         DevHubActivityRequest.Failed(unauthorized: true);

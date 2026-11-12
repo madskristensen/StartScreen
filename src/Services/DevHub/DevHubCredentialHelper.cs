@@ -67,6 +67,7 @@ namespace StartScreen.Services.DevHub
         {
             lock (_cacheLock)
             {
+                DevHubAccountBinding.Default.Invalidate();
                 _hostGenerations[AzureDevOpsServerHelper.CloudHost] = ++_credentialGeneration;
                 if (credential.IsBearer)
                 {
@@ -153,6 +154,7 @@ namespace StartScreen.Services.DevHub
         {
             lock (_cacheLock)
             {
+                DevHubAccountBinding.Default.Invalidate();
                 _allCredentialsGeneration = ++_credentialGeneration;
                 _accountGeneration++;
                 _hostGenerations.Clear();
@@ -162,11 +164,17 @@ namespace StartScreen.Services.DevHub
             }
         }
 
-        /// <summary>
-        /// Invalidates the cached credential for a specific host.
-        /// Call this when an API returns 401 Unauthorized so the next
-        /// request re-acquires a fresh token from GCM.
-        /// </summary>
+        /// <summary>Invalidates verified identities after an activity API rejects authentication.</summary>
+        internal static void InvalidateAccountVerification()
+        {
+            lock (_cacheLock)
+            {
+                DevHubAccountBinding.Default.Invalidate();
+                _credentialGeneration++;
+            }
+        }
+
+        /// <summary>Invalidates a host credential so the next request reacquires it.</summary>
         public static void InvalidateCachedCredential(string host)
         {
             if (string.IsNullOrWhiteSpace(host))
@@ -174,6 +182,7 @@ namespace StartScreen.Services.DevHub
 
             lock (_cacheLock)
             {
+                DevHubAccountBinding.Default.Invalidate();
                 _hostGenerations[host] = ++_credentialGeneration;
                 RemoveCachedCredentialsForHost(host);
             }
@@ -209,6 +218,7 @@ namespace StartScreen.Services.DevHub
             if (string.IsNullOrWhiteSpace(host))
                 return;
 
+            DevHubAccountBinding.Default.Invalidate();
             try
             {
                 NativeCredentialManager.Delete($"StartScreen:{host}");

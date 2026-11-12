@@ -14,6 +14,10 @@ namespace StartScreen.Models.DevHub
 
         internal string CredentialContext { get; set; }
 
+        public string AccountBinding { get; set; }
+        public string AccountBindingResource { get; set; }
+        internal bool RestoredFromAccountBinding { get; set; }
+
         /// <summary>
         /// The display name (e.g., "Mads Kristensen").
         /// </summary>

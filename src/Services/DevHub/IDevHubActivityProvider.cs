@@ -33,6 +33,14 @@ namespace StartScreen.Services.DevHub
         Task<IReadOnlyList<DevHubUser>> GetAuthenticatedUsersAsync(bool forceRefresh, CancellationToken cancellationToken);
     }
 
+    /// <summary>Restores credential-bound identities locally, without extending online verification freshness.</summary>
+    internal interface IDevHubCachedAuthenticationProvider
+    {
+        /// <summary>Null requires online verification; an empty list means no current credential is available.</summary>
+        Task<IReadOnlyList<DevHubUser>> GetCachedAuthenticatedUsersAsync(IReadOnlyList<DevHubUser> users,
+            DevHubRefreshContext context, CancellationToken cancellationToken);
+    }
+
     /// <summary>An immutable workspace discovery result shared only within one dashboard operation.</summary>
     internal sealed class DevHubRefreshContext
     {

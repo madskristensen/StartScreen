@@ -11,6 +11,7 @@ namespace StartScreen.Test.DevHub
     public class GitHubActivityDetailsTests
     {
         private static readonly RemoteRepoIdentifier _repo = new RemoteRepoIdentifier("github.com", "owner", "repo");
+        private static readonly DateTime _itemTimestamp = DateTime.UtcNow;
 
         [TestMethod]
         [DataRow(false)]
@@ -506,12 +507,18 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public async Task OptionalGraphQlError_ReportsReasonAndOnlyInvalidatesAffectedPullRequestAsync()
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task OptionalGraphQlError_ReportsReasonAndOnlyInvalidatesAffectedPullRequestAsync(bool affectedIsNewest)
         {
+            var updatedAt = new DateTime(2026, 11, 1, 10, 0, 0, DateTimeKind.Utc);
+            var affectedAlias = affectedIsNewest ? "r0" : "r1";
             using var client = Client(request => request.Method == HttpMethod.Post
-                ? Json("{\"errors\":[{\"message\":\"Checks permission denied not-a-real-token\",\"path\":[\"r1\",\"pullRequest\",\"reviewDecision\"]}],"
+                ? Json("{\"errors\":[{\"message\":\"Checks permission denied not-a-real-token\",\"path\":[\"" + affectedAlias + "\",\"pullRequest\",\"reviewDecision\"]}],"
                     + "\"data\":{\"r0\":{\"pullRequest\":" + Metadata() + "},\"r1\":{\"pullRequest\":" + Metadata() + "}}}")
-                : Query(request).Contains("author:me") ? Search([Item(1, "me"), Item(2, "me")]) : Search([]));
+                : Query(request).Contains("author:me") ? Search([
+                    Item(1, "me", updatedAt: updatedAt),
+                    Item(2, "me", updatedAt: updatedAt.AddMinutes(affectedIsNewest ? 1 : -1))]) : Search([]));
 
             var result = await DevHubActivityRequest.RunAsync(() => GitHubDevHubProvider.GetUserPullRequestsAsync(
                 client, Credential(), "me", new DevHubActivityOptions(), CancellationToken.None), prs => prs.Count > 0, CancellationToken.None);
@@ -857,9 +864,10 @@ namespace StartScreen.Test.DevHub
         }
 
         private static string Item(int id, string author = "other", bool assigned = false, bool closed = false,
-            bool merged = false, bool oldOutcome = false, bool repoPayload = false, string extra = "")
+            bool merged = false, bool oldOutcome = false, bool repoPayload = false, string extra = "", DateTime? updatedAt = null)
         {
-            var now = DateTime.UtcNow;
+            // Equal default timestamps keep GraphQL aliases in search-result order.
+            var now = updatedAt ?? _itemTimestamp;
             var outcome = now.AddDays(oldOutcome ? -30 : -1).ToString("O");
             return "{\"repository_url\":\"https://api.github.com/repos/owner/repo\",\"number\":" + id
                 + ",\"title\":\"Activity\",\"user\":{\"login\":\"" + author + "\"},\"state\":\"" + (closed ? "closed" : "open")

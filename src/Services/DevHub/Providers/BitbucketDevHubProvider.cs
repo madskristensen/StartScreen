@@ -14,7 +14,7 @@ namespace StartScreen.Services.DevHub.Providers
     /// Bitbucket Cloud provider for the Dev Hub.
     /// Fetches PRs, issues, and pipeline status from the Bitbucket REST API v2.
     /// </summary>
-    internal sealed class BitbucketDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource, IDevHubRefreshProvider
+    internal sealed class BitbucketDevHubProvider : IDevHubProvider, IDevHubActivityProvider, IDevHubActivitySource, IDevHubRefreshProvider, IDevHubCachedAuthenticationProvider
     {
         // Shared HttpClient: reusing the connection pool across requests avoids repeated DNS,
         // TCP, and TLS handshakes, which are a significant chunk of the Dev Hub cold-start cost.
@@ -26,18 +26,20 @@ namespace StartScreen.Services.DevHub.Providers
         private readonly DevHubIdentityCache _identityCache;
         private readonly Func<bool> _hasStoredCredential;
         private readonly DevHubCredentialCache<DevHubUser> _users = new DevHubCredentialCache<DevHubUser>(TimeSpan.FromMinutes(5));
+        private readonly DevHubAccountBinding _accountBinding;
 
         public BitbucketDevHubProvider() : this(_httpClient,
-            token => DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", token))
+            token => DevHubCredentialHelper.GetCredentialAsync("bitbucket.org", token), accountBinding: DevHubAccountBinding.Default)
         {
         }
 
         internal BitbucketDevHubProvider(HttpClient client, Func<CancellationToken, Task<DevHubCredential>> acquireCredential,
-            DevHubIdentityCache identityCache = null, Func<bool> hasStoredCredential = null)
+            DevHubIdentityCache identityCache = null, Func<bool> hasStoredCredential = null, DevHubAccountBinding accountBinding = null)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
             _acquireCredential = acquireCredential ?? throw new ArgumentNullException(nameof(acquireCredential));
             _identityCache = identityCache ?? new DevHubIdentityCache();
+            _accountBinding = accountBinding;
             _hasStoredCredential = hasStoredCredential ?? (() => DevHubCredentialHelper.HasCredential("bitbucket.org")
                 || NativeCredentialManager.HasGitCredential("bitbucket.org"));
         }
@@ -124,6 +126,7 @@ namespace StartScreen.Services.DevHub.Providers
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
                     response.Dispose();
+                    _accountBinding?.Invalidate();
                     DevHubCredentialHelper.InvalidateCachedCredential("bitbucket.org");
                     credential = await _acquireCredential(cancellationToken);
                     if (credential == null)
@@ -167,6 +170,7 @@ namespace StartScreen.Services.DevHub.Providers
                     };
                     cancellationToken.ThrowIfCancellationRequested();
                     user.CredentialContext = DevHubMetadataCache.GetKey(credential, resource);
+                    _accountBinding?.Remember(credential, resource, user);
                     if (!_users.Store(credential, resource, user, generation))
                     {
                         DevHubActivityRequest.Failed(unauthorized: true);
@@ -197,6 +201,27 @@ namespace StartScreen.Services.DevHub.Providers
         {
             var user = await GetAuthenticatedUserAsync(cancellationToken);
             return user != null ? new[] { user } : Array.Empty<DevHubUser>();
+        }
+
+        public async Task<IReadOnlyList<DevHubUser>> GetCachedAuthenticatedUsersAsync(IReadOnlyList<DevHubUser> users,
+            DevHubRefreshContext context, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_accountBinding == null || users.Count != 1 || string.IsNullOrEmpty(users[0].AccountBinding)
+                || !context.RemoteUrls.Any(url => ParseRemoteUrl(url) != null) && !_hasStoredCredential())
+                return null;
+            var generation = _users.Generation;
+            var credential = await _acquireCredential(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (credential == null)
+                return Array.Empty<DevHubUser>();
+            const string resource = "https://api.bitbucket.org/2.0/user";
+            var user = users[0];
+            if (!_users.IsCurrent(credential, generation) || !_accountBinding.Matches(credential, resource, user))
+                return null;
+            user.CredentialContext = DevHubMetadataCache.GetKey(credential, resource);
+            user.RestoredFromAccountBinding = true;
+            return users;
         }
 
         /// <summary>
