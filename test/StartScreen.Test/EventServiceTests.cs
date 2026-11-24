@@ -383,7 +383,7 @@ namespace StartScreen.Test
             {
                 Assert.IsFalse(string.IsNullOrWhiteSpace(item.Location));
                 if (item.Location != "Virtual")
-                    Assert.AreEqual(2, item.Location.Split(',').Length, "Event locations use City, Country without venue or state details.");
+                    Assert.HasCount(2, item.Location.Split(','), "Event locations use City, Country without venue or state details.");
                 Assert.IsFalse(string.IsNullOrWhiteSpace(item.Description));
                 Assert.IsNotNull(item.Sources);
                 Assert.IsNotEmpty(item.Sources);

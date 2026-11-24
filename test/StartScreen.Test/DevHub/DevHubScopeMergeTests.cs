@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using StartScreen.Models.DevHub;
 using StartScreen.Services.DevHub;
+using StartScreen.ToolWindows.Controls;
 
 namespace StartScreen.Test.DevHub
 {
@@ -174,11 +175,57 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        public void MergeIssues_WorkItemIdentityIsCollectionWideButNotCrossOrganization()
+        [DataRow("https://dev.azure.com/devdiv/DevDiv", "https://dev.azure.com/devdiv/DevDiv/_git/WebTools")]
+        [DataRow("https://devdiv.visualstudio.com/DevDiv", "https://dev.azure.com/devdiv/DevDiv/_git/WebTools")]
+        [DataRow("https://devdiv.visualstudio.com/DefaultCollection/DevDiv", "https://dev.azure.com/devdiv/OtherProject/_git/WebTools")]
+        [DataRow("https://dev.azure.com/devdiv/DevDiv", "https://devdiv.visualstudio.com/DevDiv/_git/WebTools")]
+        [DataRow("https://tfs.contoso.com:8080/tfs/Collection/DevDiv", "https://tfs.contoso.com:8080/tfs/Collection/DevDiv/_git/WebTools")]
+        [DataRow("http://tfs.contoso.com:8080/Collection/DevDiv", "http://tfs.contoso.com:8080/Collection/OtherProject/_git/WebTools")]
+        public void MergeIssues_ProjectWideAndRepositoryActivityProduceOneAttentionCardPerWorkItem(string projectUrl, string remoteUrl)
+        {
+            var repo = RemoteRepoIdentifier.TryParse(remoteUrl);
+            var personal = new List<DevHubIssue>();
+            var linked = new List<DevHubIssue>();
+            foreach (var id in new[] { 3106859, 3106860, 3105159 })
+            {
+                personal.Add(new DevHubIssue
+                {
+                    NumericId = id, Number = $"#{id}", Title = $"Task {id}", State = "Active",
+                    IsAssignedToCurrentUser = true, IsAuthoredByCurrentUser = true, IsMentioned = true,
+                    UpdatedAt = DateTime.UtcNow, RepoDisplayName = "devdiv/DevDiv",
+                    WebUrl = $"{projectUrl}/_workitems/edit/{id}",
+                });
+                linked.Add(new DevHubIssue
+                {
+                    NumericId = id, Number = $"#{id}", Title = $"Task {id}", State = "Active",
+                    RepoIdentifier = repo, RepoDisplayName = repo.DisplayName, UpdatedAt = DateTime.UtcNow,
+                    WebUrl = $"{repo.BaseUrl}/{repo.Project}/_workitems/edit/{id}",
+                });
+            }
+
+            var issues = DevHubService.MergeIssues(personal, linked).ToList();
+            CollectionAssert.AreEqual(linked, issues);
+            Assert.IsTrue(issues.All(issue => issue.IsAssignedToCurrentUser && issue.IsAuthoredByCurrentUser && issue.IsMentioned));
+            var activity = new DevHubActivityViewModel();
+            activity.SetMyWorkFilter(DevHubWorkItemKind.All, true);
+            activity.UpdateRepositoryActivity([], issues, [], [], DevHubSortOrder.MostRecent, false);
+
+            Assert.AreEqual(3, activity.AttentionCount);
+            Assert.AreEqual("Attention (3)", activity.AttentionFilterText);
+            CollectionAssert.AreEquivalent(linked.Select(issue => issue.WebUrl).ToArray(), activity.MyWorkItems.Select(item => item.WebUrl).ToArray());
+            Assert.IsTrue(activity.MyWorkItems.All(item => item.RepoIdentifier.Equals(repo)));
+            activity.Refresh([], DevHubSortOrder.MostRecent, false);
+            Assert.HasCount(3, activity.MyWorkItems);
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void MergeIssues_WorkItemIdentityIsCollectionWideButNotCrossOrganization(bool projectWide)
         {
             var first = new DevHubIssue
             {
-                RepoIdentifier = new RemoteRepoIdentifier("dev.azure.com", "org", "one", "project"), NumericId = 1,
+                RepoIdentifier = projectWide ? null : new RemoteRepoIdentifier("dev.azure.com", "org", "one", "project"), NumericId = 1,
                 WebUrl = "https://dev.azure.com/org/project/_workitems/edit/1",
             };
             var linked = new DevHubIssue
@@ -198,13 +245,15 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
-        [DataRow("https://tfs.contoso.com/tfs/First", "https://tfs.contoso.com/tfs/Second")]
-        [DataRow("https://tfs.contoso.com:8080/tfs/First", "https://tfs.contoso.com:8081/tfs/First")]
-        public void MergeIssues_ServerCollectionsRemainDistinct(string firstUrl, string secondUrl)
+        [DataRow("https://tfs.contoso.com/tfs/First", "https://tfs.contoso.com/tfs/Second", false)]
+        [DataRow("https://tfs.contoso.com:8080/tfs/First", "https://tfs.contoso.com:8081/tfs/First", false)]
+        [DataRow("https://tfs.contoso.com/tfs/First", "https://tfs.contoso.com/tfs/Second", true)]
+        [DataRow("https://tfs.contoso.com:8080/tfs/First", "https://tfs.contoso.com:8081/tfs/First", true)]
+        public void MergeIssues_ServerCollectionsRemainDistinct(string firstUrl, string secondUrl, bool projectWide)
         {
             var first = new DevHubIssue
             {
-                RepoIdentifier = new RemoteRepoIdentifier("tfs.contoso.com", "First", "repo", "project", firstUrl, true),
+                RepoIdentifier = projectWide ? null : new RemoteRepoIdentifier("tfs.contoso.com", "First", "repo", "project", firstUrl, true),
                 NumericId = 1, WebUrl = firstUrl + "/project/_workitems/edit/1",
             };
             var second = new DevHubIssue

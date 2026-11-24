@@ -977,9 +977,28 @@ namespace StartScreen.Services.DevHub
 
         private static string GetActivityItemKey(string webUrl, RemoteRepoIdentifier repo, int id, bool workItem)
         {
-            if (string.IsNullOrEmpty(webUrl) || repo == null || id <= 0)
+            if (string.IsNullOrEmpty(webUrl) || id <= 0)
                 return webUrl;
-            if (!repo.IsAzureDevOpsServer && !string.Equals(repo.Host, AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+            // Project-wide work items have no repository; recover their collection from the edit URL.
+            if (workItem && repo == null && Uri.TryCreate(webUrl, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
+            {
+                var workItemsIndex = uri.AbsolutePath.IndexOf("/_workitems/edit/", StringComparison.OrdinalIgnoreCase);
+                if (workItemsIndex > 0)
+                {
+                    var inferredRepo = RemoteRepoIdentifier.TryParse(webUrl);
+                    if (string.Equals(inferredRepo?.Host, AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
+                        repo = inferredRepo;
+                    else
+                    {
+                        var projectIndex = uri.AbsolutePath.LastIndexOf('/', workItemsIndex - 1);
+                        if (projectIndex >= 0)
+                            return $"{uri.GetLeftPart(UriPartial.Authority)}{uri.AbsolutePath.Substring(0, projectIndex)}/workitem/{id}";
+                    }
+                }
+            }
+            if (repo == null || !repo.IsAzureDevOpsServer
+                && !string.Equals(repo.Host, AzureDevOpsServerHelper.CloudHost, StringComparison.OrdinalIgnoreCase))
                 return webUrl;
             var collection = repo.IsAzureDevOpsServer ? repo.BaseUrl?.TrimEnd('/') : $"https://dev.azure.com/{repo.Owner}";
             if (string.IsNullOrEmpty(collection))

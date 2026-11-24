@@ -79,7 +79,7 @@ namespace StartScreen.Test
             if (message == null)
             {
                 Assert.AreEqual(0d, root.Children[1].TranslatePoint(new Point(), root).Y, 0.01);
-                Assert.IsFalse(screen.UnifiedRefreshDetails.Contains("Events:"));
+                Assert.DoesNotContain("Events:", screen.UnifiedRefreshDetails);
             }
         }
 
