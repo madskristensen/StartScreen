@@ -16,35 +16,23 @@ namespace StartScreen.Test
         private static readonly XNamespace _xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
 
         [TestMethod]
-        [DataRow(0, 5, false, Key.Down, 1)]
-        [DataRow(4, 5, false, Key.Down, -1)]
-        [DataRow(1, 5, false, Key.Up, 0)]
-        [DataRow(0, 5, false, Key.Up, -1)]
-        [DataRow(0, 5, false, Key.Right, -1)]
-        [DataRow(1, 5, false, Key.Left, -1)]
-        [DataRow(0, 5, true, Key.Down, 2)]
-        [DataRow(1, 5, true, Key.Down, 3)]
-        [DataRow(2, 5, true, Key.Up, 0)]
-        [DataRow(1, 5, true, Key.Up, -1)]
-        [DataRow(3, 5, true, Key.Down, -1)]
-        [DataRow(0, 5, true, Key.Right, 1)]
-        [DataRow(1, 5, true, Key.Left, 0)]
-        [DataRow(1, 5, true, Key.Right, -1)]
-        [DataRow(2, 5, true, Key.Left, -1)]
-        [DataRow(4, 5, true, Key.Right, -1)]
-        public void ActivityNavigation_FollowsPersonalRowsAndTeamColumns(int index, int count, bool team, Key key, int expected)
+        [DataRow(0, 5, Key.Down, 1)]
+        [DataRow(4, 5, Key.Down, -1)]
+        [DataRow(1, 5, Key.Up, 0)]
+        [DataRow(0, 5, Key.Up, -1)]
+        [DataRow(0, 5, Key.Right, -1)]
+        [DataRow(1, 5, Key.Left, -1)]
+        public void ActivityNavigation_FollowsPersonalRows(int index, int count, Key key, int expected)
         {
-            Assert.AreEqual(expected, DevHubPanel.GetActivityNavigationTarget(index, count, team, key));
+            Assert.AreEqual(expected, DevHubPanel.GetActivityNavigationTarget(index, count, key));
         }
 
         [STATestMethod]
-        [DataRow(false)]
-        [DataRow(true)]
-        public void ActivityFilterChanges_PreserveLayoutAndTemplateContext(bool team)
+        public void ActivityFilterChanges_PreserveLayoutAndTemplateContext()
         {
             var document = Read("DevHubPanel.xaml");
             var definition = new XElement(document.Descendants(_presentation + "ItemsControl")
-                .Single(element => element.Attribute(_xaml + "Name")?.Value == (team ? "IncomingList" : "MyWorkList")));
+                .Single(element => element.Attribute(_xaml + "Name")?.Value == "MyWorkList"));
             definition.Attribute("ItemTemplate")!.Remove();
             var original = (ItemsControl)SharedXamlReader.Parse(definition.ToString());
             var host = new StackPanel();
@@ -56,16 +44,11 @@ namespace StartScreen.Test
 
             foreach (var list in new[] { original, issues, builds })
             {
-                Assert.AreEqual(team ? "Team" : null, list.Tag);
-                Assert.AreEqual(team ? 0 : int.MaxValue, list.AlternationCount);
+                Assert.AreEqual(null, list.Tag);
+                Assert.AreEqual(int.MaxValue, list.AlternationCount);
                 Assert.AreSame(original.ItemsPanel, list.ItemsPanel);
                 Assert.AreSame(original.ItemContainerStyle, list.ItemContainerStyle);
                 Assert.AreEqual(original.Margin, list.Margin);
-                if (team)
-                {
-                    var panel = (System.Windows.Controls.Primitives.UniformGrid)list.ItemsPanel.LoadContent();
-                    Assert.AreEqual(2, panel.Columns);
-                }
             }
             Assert.AreSame(issues, presentation.Show(DevHubWorkItemKind.Issue, false, []));
         }
@@ -73,7 +56,7 @@ namespace StartScreen.Test
         [STATestMethod]
         [DataRow(640d, 480d, 12d)]
         [DataRow(1000d, 700d, 20d)]
-        public void StackedActivity_ConstrainsAndIndependentlyScrollsBothLists(double width, double height, double fontSize)
+        public void MyWork_FillsAvailableHeightAndScrollsBelowItsHeader(double width, double height, double fontSize)
         {
             var document = Read("DevHubPanel.xaml");
             var definition = new XElement(document.Descendants(_presentation + "Grid")
@@ -109,24 +92,26 @@ namespace StartScreen.Test
             }
             Layout(root, width, height);
             var sections = blades.Children.OfType<Grid>().ToArray();
+            Assert.HasCount(1, sections);
             var personal = sections[0].Children.OfType<ScrollViewer>().Single();
-            var team = sections[1].Children.OfType<ScrollViewer>().Single();
             Assert.AreEqual(height, blades.ActualHeight, 0.01);
-            Assert.IsGreaterThan(sections[0].ActualHeight, sections[1].TranslatePoint(new Point(), root).Y);
-            foreach (var scroll in new[] { personal, team })
+            Assert.AreEqual(height, sections[0].ActualHeight, 0.01);
+            foreach (var scroll in new[] { personal })
             {
                 Assert.IsGreaterThan(0d, scroll.ViewportHeight);
                 Assert.IsGreaterThan(scroll.ViewportHeight, scroll.ExtentHeight);
-                Assert.IsLessThan(height / 2, scroll.ActualHeight);
+                Assert.IsGreaterThan(height / 2, scroll.ActualHeight);
+                Assert.IsLessThan(height, scroll.ActualHeight);
             }
             personal.ScrollToVerticalOffset(120);
             Layout(root, width, height);
             Assert.AreEqual(120d, personal.VerticalOffset, 0.01);
-            Assert.AreEqual(0d, team.VerticalOffset);
-            team.ScrollToVerticalOffset(60);
-            Layout(root, width, height);
-            Assert.AreEqual(120d, personal.VerticalOffset, 0.01);
-            Assert.AreEqual(60d, team.VerticalOffset, 0.01);
+            var workHeading = Descendants<TextBlock>(root).Single(element => element.Name == "WorkHeadingLine");
+            var filterPanel = Descendants<WrapPanel>(root).Single();
+            Assert.AreEqual(TextAlignment.Left, workHeading.TextAlignment);
+            Assert.AreEqual(workHeading.TranslatePoint(new Point(), root).X, filterPanel.TranslatePoint(new Point(), root).X, 0.01);
+            Assert.AreEqual(workHeading.TranslatePoint(new Point(0, workHeading.ActualHeight), root).Y + 16,
+                filterPanel.TranslatePoint(new Point(), root).Y, 0.01);
             foreach (var filter in new[]
             {
                 ("MyWorkCopilotFilter", "Recent conversations", "Last active"),
@@ -146,11 +131,58 @@ namespace StartScreen.Test
                     Assert.AreEqual("State / assignee", columns.Children.OfType<TextBlock>().ElementAt(1).Text);
             }
             foreach (var sectionHeading in Descendants<TextBlock>(root).Where(element =>
-                element.Name == "IncomingHeading" || element.Name == "WorkHeadingLine" || element.Text == "My work"))
+                element.Name == "WorkHeadingLine" || element.Text == "My work"))
             {
                 Assert.AreEqual(fontSize * 20 / 12, sectionHeading.FontSize, 0.01);
                 Assert.AreEqual(FontWeights.SemiBold, sectionHeading.FontWeight);
                 Assert.AreEqual(1d, sectionHeading.Opacity);
+            }
+        }
+
+        [STATestMethod]
+        [DataRow(12d)]
+        [DataRow(20d)]
+        [DataRow(28d)]
+        public void ColumnHeaders_ShareBaselineTypographyAndSpacing(double fontSize)
+        {
+            var screen = Read("StartScreenControl.xaml");
+            var work = Read("DevHubPanel.xaml");
+            var recent = screen.Descendants(_presentation + "TextBlock").Single(element => element.Attribute("Text")?.Value == "Recent");
+            var myWork = work.Descendants(_presentation + "TextBlock").Single(element => element.Attribute(_xaml + "Name")?.Value == "WorkHeadingLine");
+            var news = screen.Descendants(_presentation + "TextBlock").Single(element => element.Attribute("Text")?.Value == "News & updates");
+            var workHost = screen.Descendants().Single(element => element.Attribute(_xaml + "Name")?.Value == "DevHubPanelControl");
+            var root = new Grid();
+            var headings = new List<TextBlock>();
+            foreach (var (definition, margin) in new[]
+            {
+                (recent, recent.Parent!.Attribute("Margin")!.Value),
+                (myWork, workHost.Attribute("Margin")!.Value),
+                (news, news.Parent!.Attribute("Margin")!.Value),
+            })
+            {
+                root.ColumnDefinitions.Add(new ColumnDefinition());
+                var heading = (TextBlock)SharedXamlReader.Parse(new XElement(definition).ToString());
+                var container = new Border
+                {
+                    Margin = (Thickness)new ThicknessConverter().ConvertFromInvariantString(margin)!,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Child = heading,
+                };
+                Grid.SetColumn(container, headings.Count);
+                root.Children.Add(container);
+                headings.Add(heading);
+            }
+            StartScreen.ToolWindows.Typography.SetEnvironmentSize(root, fontSize);
+            Layout(root, 1600, 400);
+            var baseline = headings[0].TranslatePoint(new Point(0, headings[0].BaselineOffset), root).Y;
+            foreach (var heading in headings)
+            {
+                Assert.AreEqual(baseline, heading.TranslatePoint(new Point(0, heading.BaselineOffset), root).Y, 0.01);
+                Assert.AreEqual(20d, heading.TranslatePoint(new Point(), root).Y, 0.01);
+                Assert.AreEqual(headings[0].FontSize, heading.FontSize, 0.01);
+                Assert.AreEqual(headings[0].FontWeight, heading.FontWeight);
+                Assert.AreEqual(TextAlignment.Left, heading.TextAlignment);
+                Assert.AreEqual(16d, heading.Margin.Bottom);
             }
         }
 
@@ -219,31 +251,6 @@ namespace StartScreen.Test
             Layout(scroll, 440, 200);
             Assert.AreEqual(1d, thumb.Opacity);
             Assert.AreSame(SystemColors.WindowTextBrush, thumb.Background);
-        }
-
-        [STATestMethod]
-        public void TeamGutter_Remains32PixelsAfterSwitchingFilters()
-        {
-            var definition = new XElement(Read("DevHubPanel.xaml").Descendants(_presentation + "ItemsControl")
-                .Single(element => element.Attribute(_xaml + "Name")?.Value == "IncomingList"));
-            definition.Attribute("ItemTemplate")!.Remove();
-            var original = (ItemsControl)SharedXamlReader.Parse(definition.ToString());
-            var host = new StackPanel();
-            host.Children.Add(original);
-            var presentation = new DevHubActivityList(original);
-            var items = DevHubWorkItem.GetIncoming([], Enumerable.Range(1, 2).Select(index => new DevHubIssue
-            {
-                Title = "Issue " + index, WebUrl = "https://example.com/issues/" + index,
-            }), []);
-            foreach (var kind in new[] { DevHubWorkItemKind.PullRequest, DevHubWorkItemKind.Issue, DevHubWorkItemKind.Build })
-            {
-                var list = presentation.Show(kind, false, items);
-                Layout(host, 800, 200);
-                var left = (FrameworkElement)list.ItemContainerGenerator.ContainerFromIndex(0);
-                var right = (FrameworkElement)list.ItemContainerGenerator.ContainerFromIndex(1);
-                Assert.AreEqual(32d, right.TranslatePoint(new Point(), host).X - left.TranslatePoint(new Point(left.ActualWidth, 0), host).X, 0.01);
-                Assert.AreEqual(800d, right.TranslatePoint(new Point(right.ActualWidth, 0), host).X, 0.01);
-            }
         }
 
         [STATestMethod]
@@ -350,8 +357,22 @@ namespace StartScreen.Test
             foreach (var image in resources.SelectMany(element => element.Descendants()).Where(element => element.Name.LocalName == "CrispImage").ToArray())
                 image.ReplaceWith(new XElement(_presentation + "Border", new XAttribute("Width", "16"), new XAttribute("Height", "16")));
             var listDefinition = document.Descendants(_presentation + "ItemsControl")
-                .Single(element => element.Attribute(_xaml + "Name")?.Value == (team ? "IncomingList" : "MyWorkList"));
+                .Single(element => element.Attribute(_xaml + "Name")?.Value == "MyWorkList");
             var content = new List<XElement> { new(listDefinition) };
+            if (team)
+            {
+                var teamList = content[0];
+                teamList.SetAttributeValue(_xaml + "Name", "IncomingList");
+                teamList.SetAttributeValue("Tag", "Team");
+                teamList.SetAttributeValue("AlternationCount", null);
+                teamList.SetAttributeValue("Margin", "0 0 -32 0");
+                teamList.Add(new XElement(_presentation + "ItemsControl.ItemContainerStyle",
+                    new XElement(_presentation + "Style", new XAttribute("TargetType", "ContentPresenter"),
+                        new XElement(_presentation + "Setter", new XAttribute("Property", "Margin"), new XAttribute("Value", "0 0 32 0")))),
+                    new XElement(_presentation + "ItemsControl.ItemsPanel",
+                        new XElement(_presentation + "ItemsPanelTemplate",
+                            new XElement(_presentation + "UniformGrid", new XAttribute("Columns", "2")))));
+            }
             if (!team)
             {
                 var heading = new XElement(document.Descendants(_presentation + "TextBlock")

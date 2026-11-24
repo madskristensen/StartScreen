@@ -481,7 +481,7 @@ namespace StartScreen.ToolWindows
 
         private void MruItemControl_FocusDevHubRequested(object sender, EventArgs e)
         {
-            if (!DevHubPanelControl.FocusFirstItem(DevHubDefaultTab.MyWork))
+            if (!DevHubPanelControl.FocusFirstItem())
                 FocusFirstNewsItem();
         }
 
@@ -516,7 +516,7 @@ namespace StartScreen.ToolWindows
             if (Keyboard.Modifiers == ModifierKeys.None)
                 e.Handled = NewsKeyboardNavigation.HandleKey(NewsTabs, Keyboard.FocusedElement as DependencyObject, e.Key, () =>
                 {
-                    if (!DevHubPanelControl.FocusFirstItem(DevHubDefaultTab.Incoming))
+                    if (!DevHubPanelControl.FocusFirstItem())
                         DevHubPanel_FocusMruRequested(this, EventArgs.Empty);
                 });
         }

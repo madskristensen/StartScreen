@@ -354,8 +354,7 @@ namespace StartScreen.Test.DevHub
             Assert.AreEqual("MyWorkCopilotFilter", selectedWorkTab.Attribute(x + "Name")?.Value);
             var workBuilds = document.Descendants(p + "RadioButton").Single(element => element.Attribute(x + "Name")?.Value == "MyWorkBuildFilter");
             Assert.AreEqual("MyWorkKind", workBuilds.Attribute("GroupName")?.Value);
-            var incoming = document.Descendants(p + "ItemsControl").Single(element => element.Attribute(x + "Name")?.Value == "IncomingList");
-            Assert.IsEmpty(incoming.Elements(p + "ItemsControl.GroupStyle"), "Team activity must not display redundant section headings.");
+            Assert.IsFalse(document.Descendants().Any(element => element.Attribute(x + "Name")?.Value == "IncomingList"));
         }
 
         [TestMethod]

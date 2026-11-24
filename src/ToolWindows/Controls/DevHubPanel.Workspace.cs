@@ -15,10 +15,8 @@ namespace StartScreen.ToolWindows.Controls
     {
         private readonly DevHubActivityViewModel _activity = new();
         private DevHubActivityList _myWorkPresentation;
-        private DevHubActivityList _incomingPresentation;
         private int _activityLoadCount;
         private bool _isApplyingMyWorkFilter;
-        private DevHubDefaultTab _activeWorkView = DevHubDefaultTab.MyWork;
 
         internal DevHubActivityOptions ActivityOptions { get; } = new DevHubActivityOptions();
 
@@ -36,24 +34,16 @@ namespace StartScreen.ToolWindows.Controls
         private void InitializeActivityPresentation()
         {
             _myWorkPresentation = new DevHubActivityList(MyWorkList);
-            _incomingPresentation = new DevHubActivityList(IncomingList);
             UpdateActivityPresentation();
             ((INotifyCollectionChanged)_activity.MyWorkItems).CollectionChanged += ActivityItemsChanged;
-            ((INotifyCollectionChanged)_activity.IncomingItems).CollectionChanged += ActivityItemsChanged;
             MyWorkAttentionFilter.SetBinding(ContentControl.ContentProperty,
                 new Binding(nameof(DevHubActivityViewModel.AttentionFilterText)) { Source = _activity });
             MyWorkCount.SetBinding(TextBlock.TextProperty,
                 new Binding(nameof(DevHubActivityViewModel.MyWorkCountText)) { Source = _activity });
-            IncomingCount.SetBinding(TextBlock.TextProperty,
-                new Binding(nameof(DevHubActivityViewModel.IncomingCountText)) { Source = _activity });
             MyWorkEmpty.SetBinding(TextBlock.TextProperty,
                 new Binding(nameof(DevHubActivityViewModel.MyWorkEmptyText)) { Source = _activity });
-            IncomingEmpty.SetBinding(TextBlock.TextProperty,
-                new Binding(nameof(DevHubActivityViewModel.IncomingEmptyText)) { Source = _activity });
             var visibilityConverter = new BooleanToVisibilityConverter();
             MyWorkEmpty.SetBinding(VisibilityProperty, new Binding(nameof(DevHubActivityViewModel.IsMyWorkEmpty))
-                { Source = _activity, Converter = visibilityConverter });
-            IncomingEmpty.SetBinding(VisibilityProperty, new Binding(nameof(DevHubActivityViewModel.IsIncomingEmpty))
                 { Source = _activity, Converter = visibilityConverter });
         }
 
@@ -70,15 +60,8 @@ namespace StartScreen.ToolWindows.Controls
             _copilotLoaded = true;
             if (Options.Instance.ApplyWorkViewsDefault())
                 SaveOptionsAsync().FileAndForget(nameof(DevHubPanel));
-            _defaultTabApplied = false;
-            ApplyDefaultTab();
             SelectInitialMyWorkTab();
             StartCopilotActivity();
-        }
-
-        private void SelectDefaultTab(DevHubDefaultTab tab)
-        {
-            _activeWorkView = tab == DevHubDefaultTab.Incoming ? DevHubDefaultTab.Incoming : DevHubDefaultTab.MyWork;
         }
 
         private void UpdateWorkspaceActivity(IReadOnlyList<DevHubPullRequest> prs,
@@ -133,28 +116,14 @@ namespace StartScreen.ToolWindows.Controls
 
         private void ActivityFilter_Changed(object sender, RoutedEventArgs e)
         {
-            if (MyWorkList != null && IncomingList != null)
-            {
-                var group = (sender as RadioButton)?.GroupName;
-                if (group == "MyWorkKind")
-                {
-                    if (_isApplyingMyWorkFilter)
-                        return;
-                    var kind = MyWorkPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
-                        : MyWorkIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
-                        : MyWorkCopilotFilter.IsChecked == true ? DevHubWorkItemKind.Copilot
-                        : MyWorkBuildFilter.IsChecked == true ? DevHubWorkItemKind.Build : DevHubWorkItemKind.All;
-                    _activity.SetMyWorkFilter(kind, MyWorkAttentionFilter.IsChecked == true);
-                }
-                else if (group == "IncomingKind")
-                {
-                    var kind = IncomingPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
-                        : IncomingIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
-                        : IncomingBuildFilter.IsChecked == true ? DevHubWorkItemKind.Build : DevHubWorkItemKind.All;
-                    _activity.SetIncomingFilter(kind);
-                }
-                UpdateActivityPresentation();
-            }
+            if (MyWorkList == null || (sender as RadioButton)?.GroupName != "MyWorkKind" || _isApplyingMyWorkFilter)
+                return;
+            var kind = MyWorkPrFilter.IsChecked == true ? DevHubWorkItemKind.PullRequest
+                : MyWorkIssueFilter.IsChecked == true ? DevHubWorkItemKind.Issue
+                : MyWorkCopilotFilter.IsChecked == true ? DevHubWorkItemKind.Copilot
+                : MyWorkBuildFilter.IsChecked == true ? DevHubWorkItemKind.Build : DevHubWorkItemKind.All;
+            _activity.SetMyWorkFilter(kind, MyWorkAttentionFilter.IsChecked == true);
+            UpdateActivityPresentation();
         }
 
         private void WorkItem_MouseUp(object sender, MouseButtonEventArgs e)
@@ -174,20 +143,17 @@ namespace StartScreen.ToolWindows.Controls
 
         private void UpdateActivityPresentation()
         {
-            if (_myWorkPresentation == null || _incomingPresentation == null)
+            if (_myWorkPresentation == null)
                 return;
             var myWork = _myWorkPresentation.Show(_activity.MyWorkKind, _activity.MyWorkAttention, _activity.MyWorkItems);
-            var incoming = _incomingPresentation.Show(_activity.IncomingKind, false, _activity.IncomingItems);
-            if (!ReferenceEquals(MyWorkList, myWork) || !ReferenceEquals(IncomingList, incoming))
+            if (!ReferenceEquals(MyWorkList, myWork))
                 InvalidateBorderCache();
             MyWorkList = myWork;
-            IncomingList = incoming;
         }
 
         private void ClearInactiveActivityItems()
         {
             _myWorkPresentation?.ClearInactiveItems();
-            _incomingPresentation?.ClearInactiveItems();
         }
     }
 

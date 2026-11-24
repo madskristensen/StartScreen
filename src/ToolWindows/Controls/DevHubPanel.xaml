@@ -774,7 +774,7 @@
                         Margin="0 16 0 16"/>
 
                 <!-- Search query section -->
-                <Expander x:Name="SearchQueryOptions" Header="Team activity search query (GitHub)" IsExpanded="False"
+                <Expander x:Name="SearchQueryOptions" Header="Repository activity search query (GitHub)" IsExpanded="False"
                           typography:Typography.Role="Metadata" Margin="0 0 0 16">
                     <StackPanel Margin="18 10 0 0">
                 <Grid>
@@ -795,7 +795,7 @@
                                IsHitTestVisible="False"
                                VerticalAlignment="Center"/>
                 </Grid>
-                <TextBlock Text="Filters team activity, not your personal work. Use {login} for your username. Leave empty for issues and PRs involving you. is:issue or is:pr is added automatically."
+                <TextBlock Text="Filters repository activity, not your personal work. Use {login} for your username. Leave empty for issues and PRs involving you. is:issue or is:pr is added automatically."
                            typography:Typography.Role="Metadata"
                            Opacity="0.5"
                            TextWrapping="Wrap"
@@ -816,31 +816,13 @@
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                <TextBlock Text="Initial keyboard focus"
-                           typography:Typography.Role="Metadata"
-                           VerticalAlignment="Center"
-                           Margin="0 0 16 12"/>
-                <ComboBox x:Name="DefaultTabComboBox"
-                          Grid.Column="1"
-                          Style="{StaticResource StartScreen.FilterSelector}"
-                          Padding="4 2"
-                          Margin="0 0 0 12"
-                          HorizontalAlignment="Stretch"
-                          SelectionChanged="DefaultTabComboBox_SelectionChanged"
-                          >
-                    <ComboBoxItem Content="My work"/>
-                    <ComboBoxItem Content="Team activity"/>
-                </ComboBox>
-
                 <TextBlock Text="Sort issues and pull requests by"
-                           Grid.Row="1"
                            typography:Typography.Role="Metadata"
                            VerticalAlignment="Center"
                            Margin="0 0 16 0"/>
                 <ComboBox x:Name="SortOrderComboBox"
-                          Grid.Row="1" Grid.Column="1"
+                          Grid.Column="1"
                           Style="{StaticResource StartScreen.FilterSelector}"
                           Padding="4 2"
                           HorizontalAlignment="Stretch"
@@ -931,26 +913,24 @@
             <Grid x:Name="WorkBlades">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*"/>
-                    <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <Grid x:Name="MyWorkBlade" Grid.Row="0" Margin="0 0 0 24">
+                <Grid x:Name="MyWorkBlade" Grid.Row="0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <DockPanel MinHeight="32" Margin="8 0 8 12" LastChildFill="True">
-                        <Border DockPanel.Dock="Bottom" Style="{StaticResource StartScreen.Separator}"/>
-                        <TextBlock x:Name="WorkHeadingLine" DockPanel.Dock="Right" Style="{StaticResource StartScreen.SectionLabel}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                    <DockPanel Margin="8 0 8 0" LastChildFill="True">
+                        <TextBlock x:Name="WorkHeadingLine" DockPanel.Dock="Top" Style="{StaticResource StartScreen.Heading}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                                    Focusable="True" FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
-                                   VerticalAlignment="Center" Margin="24 0 0 0" AutomationProperties.Name="My work">
+                                   Margin="0 0 0 16" AutomationProperties.Name="My work">
                             <InlineUIContainer BaselineAlignment="Baseline">
-                                <TextBlock Text="My work" Style="{StaticResource StartScreen.SectionLabel}" Opacity="1"/>
+                                <TextBlock Text="My work" Style="{StaticResource StartScreen.Heading}" Opacity="1"/>
                             </InlineUIContainer>
                             <Run x:Name="MyWorkCount" Style="{StaticResource StartScreen.HeaderCount}"/>
                         </TextBlock>
-                        <WrapPanel ButtonBase.Click="ActivityFilter_Click">
+                        <WrapPanel ButtonBase.Click="ActivityFilter_Click" Margin="0 0 0 10">
                             <RadioButton x:Name="MyWorkAttentionFilter" Content="Attention" GroupName="MyWorkKind"
                                          Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"
                                          ToolTip="Items that need you and items you pinned here. Right-click a PR, issue, or build and choose Pin to Attention. Pinned items first, then newest updated."/>
@@ -1051,45 +1031,6 @@
                         <StackPanel>
                             <ItemsControl x:Name="MyWorkList" AlternationCount="2147483647" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}"/>
                             <TextBlock x:Name="MyWorkEmpty" Text="No personal work in the loaded activity."
-                                       TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
-                        </StackPanel>
-                    </ScrollViewer>
-                </Grid>
-                <Grid x:Name="IncomingBlade" Grid.Row="1">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <DockPanel MinHeight="32" Margin="8 0 8 12" LastChildFill="True">
-                        <Border DockPanel.Dock="Bottom" Style="{StaticResource StartScreen.Separator}"/>
-                        <TextBlock x:Name="IncomingHeading" DockPanel.Dock="Right" Style="{StaticResource StartScreen.SectionLabel}" Focusable="True"
-                                   FocusVisualStyle="{DynamicResource {x:Static SystemParameters.FocusVisualStyleKey}}"
-                                   VerticalAlignment="Center" Margin="24 0 0 0" AutomationProperties.Name="Team activity">
-                            <Run Text="Team activity"/>
-                            <Run x:Name="IncomingCount" Style="{StaticResource StartScreen.HeaderCount}"/>
-                        </TextBlock>
-                        <WrapPanel>
-                            <RadioButton x:Name="IncomingPrFilter" Content="PRs" GroupName="IncomingKind" IsChecked="True"
-                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
-                            <RadioButton x:Name="IncomingIssueFilter" Content="Issues" GroupName="IncomingKind"
-                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
-                            <RadioButton x:Name="IncomingBuildFilter" Content="Builds" GroupName="IncomingKind"
-                                         Style="{StaticResource ActivityFilterStyle}" Checked="ActivityFilter_Changed"/>
-                        </WrapPanel>
-                    </DockPanel>
-                    <ScrollViewer Grid.Row="1" Style="{StaticResource StartScreen.ScrollViewer}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
-                        <StackPanel>
-                            <ItemsControl x:Name="IncomingList" Tag="Team" Margin="0 0 -32 0" Focusable="False" ItemTemplate="{StaticResource WorkItemTemplate}">
-                                <ItemsControl.ItemContainerStyle>
-                                    <Style TargetType="ContentPresenter">
-                                        <Setter Property="Margin" Value="0 0 32 0"/>
-                                    </Style>
-                                </ItemsControl.ItemContainerStyle>
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                            </ItemsControl>
-                            <TextBlock x:Name="IncomingEmpty" Text="No team activity."
                                        TextWrapping="Wrap" Opacity="0.6" Margin="8 4 0 12"/>
                         </StackPanel>
                     </ScrollViewer>

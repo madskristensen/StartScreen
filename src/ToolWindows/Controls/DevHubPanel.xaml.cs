@@ -38,7 +38,6 @@ namespace StartScreen.ToolWindows.Controls
         private bool _suppressSaveOnLostFocus;
         private bool _showGitHubCredentialHelp;
         private bool _suppressGitHubAccountSelectionChanged;
-        private bool _defaultTabApplied;
         private bool _suppressSettingsComboChanged;
         private readonly CancellationTokenSource _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(StartScreenPackage.ShutdownToken);
         private Microsoft.VisualStudio.Threading.JoinableTask _gitHubAccountsRefreshTask;
@@ -103,18 +102,14 @@ namespace StartScreen.ToolWindows.Controls
 
         public void ShowPullRequests()
         {
-            _defaultTabApplied = true;
             _activity.CancelInitialFilterSelection();
             MyWorkPrFilter.IsChecked = true;
-            IncomingPrFilter.IsChecked = true;
         }
 
         public void ShowRequestedReviews()
         {
-            _defaultTabApplied = true;
             _activity.CancelInitialFilterSelection();
             MyWorkAttentionFilter.IsChecked = true;
-            SelectDefaultTab(DevHubDefaultTab.MyWork);
         }
 
         /// <summary>
@@ -410,7 +405,6 @@ namespace StartScreen.ToolWindows.Controls
             DashboardPanel.Visibility = Visibility.Visible;
 
             UpdateBusyState();
-            ApplyDefaultTab();
         }
 
         private void UpdateBusyState()
@@ -423,19 +417,6 @@ namespace StartScreen.ToolWindows.Controls
         {
             foreach (var panel in panels)
                 panel.Visibility = Visibility.Collapsed;
-        }
-
-        // Keeps the stored preference as the initial keyboard focus destination.
-        private void ApplyDefaultTab()
-        {
-            if (_defaultTabApplied)
-            {
-                return;
-            }
-
-            _defaultTabApplied = true;
-
-            SelectDefaultTab(Options.Instance.DevHubDefaultTab);
         }
 
         private static async Task SaveOptionsAsync()
@@ -557,7 +538,6 @@ namespace StartScreen.ToolWindows.Controls
             _suppressSettingsComboChanged = true;
             try
             {
-                DefaultTabComboBox.SelectedIndex = Options.Instance.DevHubDefaultTab == DevHubDefaultTab.Incoming ? 1 : 0;
                 SortOrderComboBox.SelectedIndex = (int)Options.Instance.DevHubSortOrder;
                 GitHubProviderEnabled.IsChecked = Options.Instance.DevHubGitHubEnabled;
                 AdoProviderEnabled.IsChecked = Options.Instance.DevHubAzureDevOpsEnabled;
@@ -603,26 +583,6 @@ namespace StartScreen.ToolWindows.Controls
             }
             if (!_isDisposed)
                 RefreshRequested?.Invoke(this, EventArgs.Empty);
-        }
-
-        private void DefaultTabComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        {
-            if (_suppressSettingsComboChanged || DefaultTabComboBox.SelectedIndex < 0)
-            {
-                return;
-            }
-
-            var selected = DefaultTabComboBox.SelectedIndex == 1 ? DevHubDefaultTab.Incoming : DevHubDefaultTab.MyWork;
-            if (selected == Options.Instance.DevHubDefaultTab)
-            {
-                return;
-            }
-
-            Options.Instance.DevHubDefaultTab = selected;
-            Options.Instance.SaveAsync().FireAndForget();
-
-            // Reflect the new default immediately so the user sees the effect.
-            SelectDefaultTab(selected);
         }
 
         private void SortOrderComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -1324,30 +1284,21 @@ namespace StartScreen.ToolWindows.Controls
 
         private bool FocusActiveBladeHeader()
         {
-            return (_activeWorkView == DevHubDefaultTab.Incoming ? IncomingHeading : WorkHeadingLine).Focus();
+            return WorkHeadingLine.Focus();
         }
 
-        internal bool FocusFirstItem(DevHubDefaultTab? blade = null)
+        internal bool FocusFirstItem()
         {
             if (DashboardPanel.Visibility != Visibility.Visible)
                 return false;
 
-            if (blade.HasValue)
-                SelectDefaultTab(blade.Value);
-            else
-                GetActiveItemsList();
             UpdateLayout();
             return FocusFirstItemInActiveBlade();
         }
 
         private DependencyObject GetActiveItemsList()
         {
-            var focused = Keyboard.FocusedElement as DependencyObject;
-            if (IsInsideBlade(focused, IncomingBlade))
-                _activeWorkView = DevHubDefaultTab.Incoming;
-            else if (IsInsideBlade(focused, MyWorkBlade))
-                _activeWorkView = DevHubDefaultTab.MyWork;
-            return _activeWorkView == DevHubDefaultTab.Incoming ? IncomingList : MyWorkList;
+            return MyWorkList;
         }
 
         private void DevHubPanel_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -1368,10 +1319,7 @@ namespace StartScreen.ToolWindows.Controls
                     FocusFirstItemInActiveBlade();
                 else if (e.Key == Key.Up)
                 {
-                    if (_activeWorkView == DevHubDefaultTab.Incoming)
-                        FocusLastPersonalItem();
-                    else
-                        FocusActiveBladeHeader();
+                    FocusActiveBladeHeader();
                 }
                 else if (e.Key == Key.Left || e.Key == Key.Right)
                 {
@@ -1379,8 +1327,7 @@ namespace StartScreen.ToolWindows.Controls
                     var next = Array.IndexOf(filters, filter) + (right ? 1 : -1);
                     if (next >= 0 && next < filters.Length)
                     {
-                        if (_activeWorkView == DevHubDefaultTab.MyWork)
-                            _activity.CancelInitialFilterSelection();
+                        _activity.CancelInitialFilterSelection();
                         filters[next].IsChecked = true;
                         filters[next].Focus();
                     }
@@ -1401,8 +1348,7 @@ namespace StartScreen.ToolWindows.Controls
 
                 if (index >= 0)
                 {
-                    var team = _activeWorkView == DevHubDefaultTab.Incoming;
-                    var target = GetActivityNavigationTarget(index, borders.Count, team, e.Key);
+                    var target = GetActivityNavigationTarget(index, borders.Count, e.Key);
                     if (Keyboard.Modifiers == ModifierKeys.None && target >= 0)
                     {
                         borders[target].Focus();
@@ -1410,11 +1356,6 @@ namespace StartScreen.ToolWindows.Controls
                     }
                     else if (e.Key == Key.Down && Keyboard.Modifiers == ModifierKeys.None)
                     {
-                        if (!team)
-                        {
-                            SelectDefaultTab(DevHubDefaultTab.Incoming);
-                            FocusActiveFilter();
-                        }
                         e.Handled = true;
                     }
                     else if (e.Key == Key.Up && Keyboard.Modifiers == ModifierKeys.None)
@@ -1453,14 +1394,9 @@ namespace StartScreen.ToolWindows.Controls
                 }
             }
 
-            if (ReferenceEquals(focused, WorkHeadingLine) || ReferenceEquals(focused, IncomingHeading))
+            if (ReferenceEquals(focused, WorkHeadingLine))
             {
-                if (e.Key == Key.Up && _activeWorkView == DevHubDefaultTab.Incoming)
-                {
-                    FocusLastPersonalItem();
-                    e.Handled = true;
-                }
-                else if (e.Key == Key.Down)
+                if (e.Key == Key.Down)
                 {
                     FocusActiveFilter();
                     e.Handled = true;
@@ -1486,34 +1422,20 @@ namespace StartScreen.ToolWindows.Controls
                 FocusMruRequested?.Invoke(this, EventArgs.Empty);
         }
 
-        internal static int GetActivityNavigationTarget(int index, int count, bool team, Key key)
+        internal static int GetActivityNavigationTarget(int index, int count, Key key)
         {
             var target = key switch
             {
-                Key.Down => index + (team ? 2 : 1),
-                Key.Up => index - (team ? 2 : 1),
-                Key.Left when team && index % 2 == 1 => index - 1,
-                Key.Right when team && index % 2 == 0 => index + 1,
+                Key.Down => index + 1,
+                Key.Up => index - 1,
                 _ => -1,
             };
             return target >= 0 && target < count ? target : -1;
         }
 
-        private void FocusLastPersonalItem()
-        {
-            SelectDefaultTab(DevHubDefaultTab.MyWork);
-            var borders = GetCachedBorders(MyWorkList);
-            if (borders.Count > 0)
-                borders[borders.Count - 1].Focus();
-            else
-                FocusActiveFilter();
-        }
-
         private RadioButton[] GetActiveFilters()
         {
-            return _activeWorkView == DevHubDefaultTab.Incoming
-                ? new[] { IncomingPrFilter, IncomingIssueFilter, IncomingBuildFilter }
-                : new[] { MyWorkAttentionFilter, MyWorkCopilotFilter, MyWorkPrFilter, MyWorkIssueFilter, MyWorkBuildFilter };
+            return new[] { MyWorkAttentionFilter, MyWorkCopilotFilter, MyWorkPrFilter, MyWorkIssueFilter, MyWorkBuildFilter };
         }
 
         private void FocusActiveFilter()
@@ -1524,23 +1446,10 @@ namespace StartScreen.ToolWindows.Controls
 
         private bool FocusFirstItemInActiveBlade()
         {
-            var list = _activeWorkView == DevHubDefaultTab.Incoming ? IncomingList : MyWorkList;
-            var borders = GetCachedBorders(list);
+            var borders = GetCachedBorders(MyWorkList);
             if (borders.Count > 0)
                 return borders[0].Focus();
             return FocusActiveBladeHeader();
-        }
-
-        private static bool IsInsideBlade(DependencyObject element, DependencyObject blade)
-        {
-            while (element != null)
-            {
-                if (ReferenceEquals(element, blade))
-                    return true;
-                element = element is FrameworkContentElement content ? content.Parent : VisualTreeHelper.GetParent(element);
-            }
-
-            return false;
         }
 
         private List<Border> GetCachedBorders(DependencyObject list)

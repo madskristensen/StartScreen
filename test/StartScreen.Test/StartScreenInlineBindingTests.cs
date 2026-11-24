@@ -592,7 +592,6 @@ namespace StartScreen.Test
             var query = (TextBox)panel.FindName("SearchQueryTextBox");
             var servers = (ItemsControl)panel.FindName("AdoServersList");
             var display = (Grid)panel.FindName("DisplaySettingsGrid");
-            var defaultTab = (ComboBox)panel.FindName("DefaultTabComboBox");
             var sortOrder = (ComboBox)panel.FindName("SortOrderComboBox");
             var github = (CheckBox)panel.FindName("GitHubProviderEnabled");
             var ado = (CheckBox)panel.FindName("AdoProviderEnabled");
@@ -635,14 +634,11 @@ namespace StartScreen.Test
             Assert.IsTrue(bitbucket.IsChecked);
             github.IsChecked = ado.IsChecked = true;
             Layout();
-            Assert.AreEqual(Visibility.Visible, defaultTab.Visibility);
+            Assert.IsNull(panel.FindName("DefaultTabComboBox"));
             Assert.AreEqual(Visibility.Visible, sortOrder.Visibility);
-            Assert.AreSame(display, defaultTab.Parent);
             Assert.AreSame(display, sortOrder.Parent);
-            Assert.AreEqual(1, Grid.GetColumn(defaultTab));
             Assert.AreEqual(1, Grid.GetColumn(sortOrder));
-            Assert.AreEqual(defaultTab.ActualWidth, sortOrder.ActualWidth, 0.01);
-            Assert.IsGreaterThan(100d, defaultTab.ActualWidth, "Preference controls must remain usable in the narrow pane.");
+            Assert.IsGreaterThan(100d, sortOrder.ActualWidth, "Preference controls must remain usable in the narrow pane.");
             var collapsedHeight = panel.DesiredSize.Height;
 
             ((System.Windows.Controls.Primitives.ToggleButton)connections.Template.FindName("HeaderToggle", connections)).IsChecked = true;
@@ -738,7 +734,7 @@ namespace StartScreen.Test
         [DataRow(1200d, true)]
         [DataRow(2400d, false)]
         [DataRow(2400d, true)]
-        public void ActivitySections_StackWorkWithLeftTabsAndRightHeadingsBesideNews(double width, bool repositorySelected)
+        public void ActivitySections_ShowMyWorkWithTabsBelowItsHeadingBesideNews(double width, bool repositorySelected)
         {
             var screen = ReadLayoutXaml("StartScreenControl.xaml");
             var work = ReadLayoutXaml("DevHubPanel.xaml");
@@ -796,29 +792,26 @@ namespace StartScreen.Test
             var newsPanel = new StackPanel();
             Grid.SetColumn(newsPanel, 1);
             grid.Children.Add(newsPanel);
-            var newsHeaderDefinition = new XElement(newsDefinition.Descendants(p + "DockPanel").First());
-            newsHeaderDefinition.Elements(p + "TextBlock").Where(element => element.Attribute("DockPanel.Dock")?.Value == "Right").Remove();
-            var newsHeader = (DockPanel)XamlReader.Parse(newsHeaderDefinition.ToString());
-            var newsHeading = newsHeader.Children.OfType<TextBlock>().Single();
-            newsPanel.Children.Add(newsHeader);
+            var newsHeaderDefinition = new XElement(newsDefinition.Descendants(p + "TextBlock")
+                .Single(element => element.Attribute("Text")?.Value == "News & updates"));
+            var newsHeading = (TextBlock)XamlReader.Parse(newsHeaderDefinition.ToString());
+            newsPanel.Children.Add(newsHeading);
             var contentWidth = Math.Max(1400, width);
             grid.Measure(new Size(contentWidth, 600));
             grid.Arrange(new Rect(0, 0, contentWidth, 600));
             grid.UpdateLayout();
 
-            Assert.HasCount(2, headings);
-            Assert.IsGreaterThan(headings[0].TranslatePoint(new Point(), grid).Y, headings[1].TranslatePoint(new Point(), grid).Y);
-            Assert.AreEqual(headings[0].TranslatePoint(new Point(headings[0].ActualWidth, 0), grid).X,
-                headings[1].TranslatePoint(new Point(headings[1].ActualWidth, 0), grid).X, 0.01);
-            Assert.IsGreaterThan(headings[1].TranslatePoint(new Point(), grid).X + headings[1].ActualWidth, newsHeading.TranslatePoint(new Point(), grid).X);
+            Assert.HasCount(1, headings);
+            Assert.AreEqual(headings[0].TranslatePoint(new Point(), grid).Y, newsHeading.TranslatePoint(new Point(), grid).Y, 0.01);
+            Assert.IsGreaterThan(headings[0].TranslatePoint(new Point(), grid).X + headings[0].ActualWidth, newsHeading.TranslatePoint(new Point(), grid).X);
             Assert.IsGreaterThanOrEqualTo(400d, headers[0].ActualWidth);
-            Assert.AreEqual(filterRows[0].TranslatePoint(new Point(), grid).X, filterRows[1].TranslatePoint(new Point(), grid).X, 0.01);
             foreach (var header in headers)
             {
                 var filters = header.Children.OfType<WrapPanel>().Single();
                 var label = header.Children.OfType<TextBlock>().Single();
-                Assert.IsLessThanOrEqualTo(label.TranslatePoint(new Point(), header).X,
-                    filters.TranslatePoint(new Point(filters.ActualWidth, 0), header).X);
+                Assert.AreEqual(label.TranslatePoint(new Point(), header).X, filters.TranslatePoint(new Point(), header).X, 0.01);
+                Assert.AreEqual(label.TranslatePoint(new Point(0, label.ActualHeight), header).Y + 16,
+                    filters.TranslatePoint(new Point(), header).Y, 0.01);
             }
             var scope = new XElement(bladesDefinition.Descendants(p + "Border").Single(element => element.Attribute(x + "Name")?.Value == "RepositoryScopeStrip"));
             scope.Descendants(p + "Hyperlink").Single().Attribute("Click")!.Remove();
@@ -933,7 +926,8 @@ namespace StartScreen.Test
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
             var panel = document.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "NewsColumnPanel");
-            var headingDefinition = new XElement(panel.Descendants(p + "DockPanel").First());
+            var headingDefinition = new XElement(panel.Descendants(p + "TextBlock")
+                .Single(element => element.Attribute("Text")?.Value == "News & updates"));
             var tabsDefinition = new XElement(panel.Descendants(p + "TabControl").Single());
             tabsDefinition.Descendants(p + "ScrollViewer.Resources").Remove();
             tabsDefinition.Attribute("SelectionChanged")!.Remove();
@@ -977,7 +971,7 @@ namespace StartScreen.Test
                 new XElement(p + "StackPanel.Resources", style), headingDefinition, tabsDefinition).ToString());
             root.Resources["ContentBrush"] = SystemColors.ControlTextBrush;
             root.Resources["HeaderBrush"] = SystemColors.HighlightBrush;
-            var heading = ((DockPanel)root.Children[0]).Children.OfType<TextBlock>().Single();
+            var heading = (TextBlock)root.Children[0];
             var tabs = (TabControl)root.Children[1];
             tabs.SelectedIndex = selectedIndex;
             root.Measure(new Size(width, double.PositiveInfinity));
@@ -1015,7 +1009,6 @@ namespace StartScreen.Test
         [STATestMethod]
         [DataRow("MyWorkBlade", true)]
         [DataRow("MyWorkBlade", false)]
-        [DataRow("IncomingBlade", false)]
         public void WorkCards_AlignWithHeadingsAndTabsInAttentionAndTypeViews(string bladeName, bool attention)
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
@@ -1135,7 +1128,7 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        public void WorkViews_HaveMyWorkAttentionAndTeamTypeFilters()
+        public void WorkViews_HaveOnlyMyWorkWithTabsBelowTheHeading()
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -1143,7 +1136,7 @@ namespace StartScreen.Test
             var tabs = document.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "WorkBlades")
                 .Elements(p + "Grid").ToArray();
 
-            CollectionAssert.AreEqual(new[] { "MyWorkBlade", "IncomingBlade" }, tabs.Select(tab => tab.Attribute(x + "Name")?.Value).ToArray());
+            CollectionAssert.AreEqual(new[] { "MyWorkBlade" }, tabs.Select(tab => tab.Attribute(x + "Name")?.Value).ToArray());
             Assert.IsEmpty(document.Descendants(p + "TabControl"));
             foreach (var tab in tabs)
             {
@@ -1154,22 +1147,20 @@ namespace StartScreen.Test
             }
             CollectionAssert.AreEqual(new[] { "Attention", "Copilot", "PRs", "Issues", "Builds" }, tabs[0].Descendants(p + "RadioButton")
                 .Select(button => button.Attribute("Content")?.Value).ToArray());
-            CollectionAssert.AreEqual(new[] { "PRs", "Issues", "Builds" }, tabs[1].Descendants(p + "RadioButton")
-                .Select(button => button.Attribute("Content")?.Value).ToArray());
             foreach (var tab in tabs)
             {
                 var selected = tab.Descendants(p + "RadioButton").Single(button => button.Attribute("IsChecked")?.Value == "True");
                 Assert.AreEqual(tab == tabs[0] ? "Copilot" : "PRs", selected.Attribute("Content")?.Value);
                 Assert.AreEqual("ActivityFilter_Changed", selected.Attribute("Checked")?.Value);
             }
-            Assert.AreNotEqual(tabs[0].Descendants(p + "RadioButton").First().Attribute("GroupName")?.Value,
-                tabs[1].Descendants(p + "RadioButton").First().Attribute("GroupName")?.Value);
-            var teamHeading = tabs[1].Descendants(p + "TextBlock").Single(element => element.Attribute(x + "Name")?.Value == "IncomingHeading");
-            Assert.AreEqual("Team activity", teamHeading.Attribute("AutomationProperties.Name")?.Value);
-            Assert.AreEqual("Team activity", teamHeading.Element(p + "Run")?.Attribute("Text")?.Value);
-            var focusOptions = document.Descendants(p + "ComboBox").Single(element => element.Attribute(x + "Name")?.Value == "DefaultTabComboBox");
-            CollectionAssert.AreEqual(new[] { "My work", "Team activity" }, focusOptions.Elements(p + "ComboBoxItem")
-                .Select(element => element.Attribute("Content")?.Value).ToArray());
+            Assert.IsFalse(document.Descendants().Any(element => element.Attribute(x + "Name")?.Value
+                is "IncomingBlade" or "IncomingList" or "IncomingHeading" or "DefaultTabComboBox"));
+            var heading = tabs[0].Descendants(p + "TextBlock").Single(element => element.Attribute(x + "Name")?.Value == "WorkHeadingLine");
+            Assert.AreEqual("Top", heading.Attribute("DockPanel.Dock")?.Value);
+            Assert.AreEqual("{StaticResource StartScreen.Heading}", heading.Attribute("Style")?.Value);
+            Assert.AreEqual("0 0 0 16", heading.Attribute("Margin")?.Value);
+            Assert.AreSame(heading, heading.Parent!.Elements().First());
+            Assert.AreEqual(p + "WrapPanel", heading.Parent.Elements().Last().Name);
         }
 
         [STATestMethod]
@@ -1228,7 +1219,7 @@ namespace StartScreen.Test
         [STATestMethod]
         [DataRow(260d)]
         [DataRow(460d)]
-        public void ActivityFilters_WrapWithoutClippingAndKeepSelectionsIndependent(double width)
+        public void ActivityFilters_WrapWithoutClippingAndKeepOneSelection(double width)
         {
             var document = ReadLayoutXaml("DevHubPanel.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -1236,28 +1227,22 @@ namespace StartScreen.Test
             var tabs = document.Descendants(p + "Grid").Single(element => element.Attribute(x + "Name")?.Value == "WorkBlades")
                 .Elements(p + "Grid").ToArray();
             var own = CreateActivityFilters(document, tabs[0]);
-            var incoming = CreateActivityFilters(document, tabs[1]);
             var root = new StackPanel();
             root.Children.Add(own);
-            root.Children.Add(incoming);
             var ownButtons = ((WrapPanel)own.Children[0]).Children.OfType<RadioButton>().ToArray();
-            var incomingButtons = ((WrapPanel)incoming.Children[0]).Children.OfType<RadioButton>().ToArray();
 
             Assert.IsTrue(ownButtons[1].IsChecked);
-            Assert.IsTrue(incomingButtons[0].IsChecked);
             ownButtons[0].Content = "Attention (123)";
-            Assert.AreEqual("PRs", incomingButtons[0].Content);
             ownButtons[0].IsChecked = true;
-            incomingButtons[2].IsChecked = true;
+            ownButtons[4].IsChecked = true;
             root.Measure(new Size(width, double.PositiveInfinity));
             root.Arrange(new Rect(0, 0, width, root.DesiredSize.Height));
             root.UpdateLayout();
 
-            Assert.IsTrue(ownButtons[0].IsChecked);
-            Assert.IsTrue(incomingButtons[2].IsChecked);
+            Assert.IsTrue(ownButtons[4].IsChecked);
+            Assert.HasCount(1, ownButtons.Where(button => button.IsChecked == true));
             Assert.IsFalse(ownButtons[1].IsChecked);
-            Assert.IsFalse(incomingButtons[0].IsChecked);
-            foreach (var view in new[] { own, incoming })
+            foreach (var view in new[] { own })
             {
                 var panel = (WrapPanel)view.Children[0];
                 foreach (FrameworkElement filter in panel.Children)

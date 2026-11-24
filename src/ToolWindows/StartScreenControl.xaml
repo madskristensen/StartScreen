@@ -618,9 +618,7 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="*"/>
                                     </Grid.RowDefinitions>
-                                    <DockPanel MinHeight="28" Margin="8 0 0 12">
-                                        <TextBlock Text="News &amp; updates" Style="{StaticResource StartScreen.Heading}" VerticalAlignment="Center"/>
-                                    </DockPanel>
+                                    <TextBlock Text="News &amp; updates" Style="{StaticResource StartScreen.Heading}" Margin="8 0 0 16"/>
                             <TabControl Grid.Row="1"
                                         x:Name="NewsTabs"
                                         Background="Transparent"

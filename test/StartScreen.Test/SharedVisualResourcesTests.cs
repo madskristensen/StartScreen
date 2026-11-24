@@ -148,7 +148,7 @@ namespace StartScreen.Test
             }
             Assert.HasCount(1, document.Descendants().Where(element => element.Name.LocalName == "NewsItemControl"));
             var work = Read("DevHubPanel.xaml");
-            foreach (var name in new[] { "MyWorkList", "IncomingList" })
+            foreach (var name in new[] { "MyWorkList" })
                 Assert.AreEqual("{StaticResource WorkItemTemplate}", work.Descendants(_presentation + "ItemsControl")
                     .Single(element => element.Attribute(_xaml + "Name")?.Value == name).Attribute("ItemTemplate")?.Value);
         }
@@ -161,7 +161,7 @@ namespace StartScreen.Test
             Assert.AreEqual("{StaticResource {x:Static shell:VsResourceKeys.ThemedDialogComboBoxStyleKey}}",
                 style.Attribute("BasedOn")?.Value);
             var panel = Read("DevHubPanel.xaml");
-            foreach (var name in new[] { "GitHubAccountsComboBox", "DefaultTabComboBox", "SortOrderComboBox" })
+            foreach (var name in new[] { "GitHubAccountsComboBox", "SortOrderComboBox" })
                 Assert.AreEqual("{StaticResource StartScreen.FilterSelector}", panel.Descendants(_presentation + "ComboBox")
                     .Single(element => element.Attribute(_xaml + "Name")?.Value == name).Attribute("Style")?.Value);
         }
