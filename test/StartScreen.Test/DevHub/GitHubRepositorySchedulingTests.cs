@@ -70,9 +70,11 @@ namespace StartScreen.Test.DevHub
         public async Task RepositoryCategories_CancellationDrainsAllRequestsAsync()
         {
             var started = Signal();
+            var drained = Signal();
             var requests = 0;
             var active = 0;
-            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var cancellation = new CancellationTokenSource();
             using var client = new HttpClient(new Handler(async (_, token) =>
             {
                 Interlocked.Increment(ref active);
@@ -85,19 +87,22 @@ namespace StartScreen.Test.DevHub
                 }
                 finally
                 {
-                    Interlocked.Decrement(ref active);
+                    if (Interlocked.Decrement(ref active) == 0)
+                        drained.TrySetResult(true);
                 }
             }));
             var operation = FetchAsync(client, cancellation.Token);
             try
             {
-                await started.Task.WithCancellation(cancellation.Token);
+                await started.Task.WithCancellation(timeout.Token);
             }
             finally
             {
                 cancellation.Cancel();
             }
             await Assert.ThrowsAsync<OperationCanceledException>(() => operation);
+            // Shared reads cancel callers before their transport cleanup necessarily completes.
+            await drained.Task.WithCancellation(timeout.Token);
             Assert.AreEqual(3, requests);
             Assert.AreEqual(0, active);
         }
