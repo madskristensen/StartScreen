@@ -83,7 +83,7 @@ Copilot integration is optional and experimental, and depends on compatible inst
 
 ## Stay current without leaving your IDE
 
-The **News & updates** sidebar gives you more than headlines:
+The **News & updates** sidebar uses the same tab styling as **My work** and gives you more than headlines:
 
 - **Blogs** - curated developer news from sources including the Visual Studio and .NET blogs, with support for your own RSS or Atom feeds.
 - **Videos** - recent videos from the Visual Studio YouTube channel.
@@ -103,7 +103,11 @@ To curate conferences, edit [events.json](events.json) and publish it to the rep
 
 Start Screen follows your IDE theme and font settings, including High Contrast. Native context menus and familiar controls keep it feeling like part of Visual Studio, not a separate app.
 
-Prefer a simpler dashboard? **Hide Dev Hub** and give news more space. Customize provider connections, activity sorting, and GitHub team queries. Your pinned projects and feed preferences are saved automatically.
+Prefer a simpler dashboard? Toggle **My work** and **News & updates** independently in Start Screen settings. Hiding either section gives the other more space. Customize provider connections, activity sorting, and GitHub queries. Your pinned projects and feed preferences are saved automatically.
+
+The project commands spread across the width of Recent and stay on a single row without a scrollbar. Recent grows with the window from 560 to 680 device-independent pixels wide, allowing more space between commands on wider screens. Its minimum expands further when needed to accommodate your IDE font size. Refresh and Settings stay on the top toolbar row as the window narrows, with service status underneath them. The update link shows "Update available", with the version number in its hover tooltip. Status text trims to fit, with full refresh details available on hover.
+
+My work adapts to the available space between 520 and 900 device-independent pixels wide. When both sections are visible, it targets 65 percent of the content area within those limits. Narrower windows scroll horizontally instead of squeezing titles, tabs, and dates; News & updates retains its own scrollable space.
 
 **Keyboard-friendly from the first click:**
 

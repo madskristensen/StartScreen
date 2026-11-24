@@ -54,10 +54,14 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        [DataRow(640d, 480d, 12d)]
-        [DataRow(1000d, 700d, 20d)]
-        public void MyWork_FillsAvailableHeightAndScrollsBelowItsHeader(double width, double height, double fontSize)
+        [DataRow(800d, 480d, 12d, true)]
+        [DataRow(800d, 480d, 12d, false)]
+        [DataRow(1000d, 700d, 20d, true)]
+        [DataRow(3200d, 700d, 20d, false)]
+        public void MyWork_FillsAvailableHeightAndKeepsDatesWithinTheViewport(double viewportWidth, double height, double fontSize, bool showNews)
         {
+            var layout = StartScreen.ToolWindows.StartScreenControl.CalculateContentLayout(viewportWidth, true, showNews);
+            double width = layout.WorkWidth - 24;
             var document = Read("DevHubPanel.xaml");
             var definition = new XElement(document.Descendants(_presentation + "Grid")
                 .Single(element => element.Attribute(_xaml + "Name")?.Value == "WorkBlades"));
@@ -126,6 +130,11 @@ namespace StartScreen.Test
                 var heading = Descendants<TextBlock>(root).Single(element => element.Name == "MyWorkColumnHeading");
                 Assert.AreEqual(filter.Item2, heading.Text);
                 var columns = (Grid)heading.Parent;
+                var date = columns.Children.OfType<TextBlock>().Last();
+                Assert.IsGreaterThan(0d, date.ActualWidth);
+                Assert.IsGreaterThanOrEqualTo(date.DesiredSize.Width, date.ActualWidth);
+                Assert.IsLessThanOrEqualTo(viewportWidth, date.TranslatePoint(new Point(date.ActualWidth, 0), root).X);
+                Assert.IsLessThanOrEqualTo(width, date.TranslatePoint(new Point(date.ActualWidth, 0), root).X);
                 Assert.AreEqual(filter.Item3, columns.Children.OfType<TextBlock>().Last().Text);
                 if (filter.Item1 == "MyWorkIssueFilter")
                     Assert.AreEqual("State / assignee", columns.Children.OfType<TextBlock>().ElementAt(1).Text);
@@ -184,6 +193,66 @@ namespace StartScreen.Test
                 Assert.AreEqual(TextAlignment.Left, heading.TextAlignment);
                 Assert.AreEqual(16d, heading.Margin.Bottom);
             }
+        }
+
+        [STATestMethod]
+        [DataRow(12d, false)]
+        [DataRow(12d, true)]
+        [DataRow(20d, false)]
+        [DataRow(20d, true)]
+        public void NewsTabs_MatchMyWorkTypographySpacingAndUnderlines(double fontSize, bool selected)
+        {
+            var activityStyle = new XElement(Read("DevHubPanel.xaml").Descendants(_presentation + "Style")
+                .Single(element => element.Attribute(_xaml + "Key")?.Value == "ActivityFilterStyle"));
+            var newsStyle = new XElement(Read("StartScreenControl.xaml").Descendants(_presentation + "Style")
+                .Single(element => element.Attribute(_xaml + "Key")?.Value == "NewsTabItemStyle"));
+            var newsTemplate = new XElement(Read("StartScreenControl.xaml").Descendants(_presentation + "ControlTemplate")
+                .Single(element => element.Attribute("TargetType")?.Value == "TabControl"));
+            newsTemplate.Descendants(_presentation + "ScrollViewer.Resources").Remove();
+            var root = (UserControl)SharedXamlReader.Parse(new XElement(_presentation + "UserControl",
+                new XAttribute("Style", "{StaticResource StartScreen.Root}"),
+                new XElement(_presentation + "UserControl.Resources", activityStyle, newsStyle),
+                new XElement(_presentation + "StackPanel", new XAttribute("Orientation", "Horizontal"),
+                    new XElement(_presentation + "WrapPanel",
+                        new XElement(_presentation + "RadioButton", new XAttribute("Content", "Blogs"),
+                            new XAttribute("Style", "{StaticResource ActivityFilterStyle}")),
+                        new XElement(_presentation + "RadioButton", new XAttribute("Content", "Events"),
+                            new XAttribute("Style", "{StaticResource ActivityFilterStyle}"))),
+                    new XElement(_presentation + "TabControl", new XAttribute("BorderThickness", "0"), new XAttribute("Padding", "0"),
+                        new XElement(_presentation + "TabControl.Template", newsTemplate),
+                        new XElement(_presentation + "TabItem", new XAttribute("Header", "Blogs"),
+                            new XAttribute("Style", "{StaticResource NewsTabItemStyle}")),
+                        new XElement(_presentation + "TabItem", new XAttribute("Header", "Events"),
+                            new XAttribute("Style", "{StaticResource NewsTabItemStyle}"))))).ToString());
+            var panel = (StackPanel)root.Content;
+            var workPanel = (WrapPanel)panel.Children[0];
+            var newsPanel = (TabControl)panel.Children[1];
+            var work = (RadioButton)workPanel.Children[0];
+            var news = (TabItem)newsPanel.Items[0];
+            work.IsChecked = news.IsSelected = selected;
+            newsPanel.SelectedIndex = selected ? 0 : 1;
+            StartScreen.ToolWindows.Typography.SetEnvironmentSize(root, fontSize);
+            Layout(root, 600, 120);
+            Assert.AreEqual(work.FontSize, news.FontSize, 0.01);
+            Assert.AreEqual(work.FontWeight, news.FontWeight);
+            Assert.AreEqual(work.ActualHeight, news.ActualHeight, 0.01);
+            var workContent = (ContentPresenter)work.Template.FindName("TabContent", work);
+            var newsContent = (ContentPresenter)news.Template.FindName("TabContent", news);
+            Assert.AreEqual(workContent.ActualWidth, newsContent.ActualWidth, 0.01);
+            var workUnderline = (System.Windows.Shapes.Rectangle)work.Template.FindName("SelectionIndicator", work);
+            var newsUnderline = (System.Windows.Shapes.Rectangle)news.Template.FindName("SelectionIndicator", news);
+            Assert.AreEqual(workContent.Margin, newsContent.Margin);
+            Assert.AreEqual(workUnderline.Height, newsUnderline.Height);
+            Assert.AreEqual(workUnderline.ActualWidth, newsUnderline.ActualWidth, 0.01);
+            Assert.AreEqual(workUnderline.Visibility, newsUnderline.Visibility);
+            Assert.AreEqual(workUnderline.TranslatePoint(new Point(), work).Y, newsUnderline.TranslatePoint(new Point(), news).Y, 0.01);
+            var nextWork = (RadioButton)workPanel.Children[1];
+            var nextNews = (TabItem)newsPanel.Items[1];
+            var nextWorkContent = (ContentPresenter)nextWork.Template.FindName("TabContent", nextWork);
+            var nextNewsContent = (ContentPresenter)nextNews.Template.FindName("TabContent", nextNews);
+            var workGap = nextWorkContent.TranslatePoint(new Point(), workPanel).X - workContent.TranslatePoint(new Point(workContent.ActualWidth, 0), workPanel).X;
+            var newsGap = nextNewsContent.TranslatePoint(new Point(), newsPanel).X - newsContent.TranslatePoint(new Point(newsContent.ActualWidth, 0), newsPanel).X;
+            Assert.AreEqual(workGap, newsGap, 0.01);
         }
 
         [STATestMethod]
@@ -334,6 +403,8 @@ namespace StartScreen.Test
 
         [STATestMethod]
         [DataRow(false, 640d, 12d, false)]
+        [DataRow(false, 480d, 12d, false)]
+        [DataRow(false, 520d, 20d, false)]
         [DataRow(false, 640d, 20d, false)]
         [DataRow(true, 300d, 12d, false)]
         [DataRow(true, 300d, 20d, false)]
@@ -468,6 +539,8 @@ namespace StartScreen.Test
                 title.TranslatePoint(new Point(), card).X);
             Assert.AreEqual(grid.ActualWidth, date.TranslatePoint(new Point(date.ActualWidth, 0), grid).X, 0.01);
             Assert.IsGreaterThanOrEqualTo(date.DesiredSize.Width, date.ActualWidth);
+            if (!team)
+                Assert.IsLessThanOrEqualTo(width, date.TranslatePoint(new Point(date.ActualWidth, 0), root).X);
             if (team)
             {
                 Assert.AreEqual(3, Grid.GetRow(status));
@@ -535,13 +608,16 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        [DataRow(800d, 480d, true)]
-        [DataRow(1400d, 700d, true)]
-        [DataRow(2200d, 900d, true)]
-        [DataRow(3200d, 1000d, true)]
-        [DataRow(300d, 480d, false)]
-        [DataRow(3200d, 1000d, false)]
-        public void NewsSidebar_FillsThePageViewportEvenWhenHorizontallyScrolled(double width, double height, bool showWork)
+        [DataRow(800d, 480d, true, true)]
+        [DataRow(300d, 480d, true, true)]
+        [DataRow(1400d, 700d, true, true)]
+        [DataRow(2200d, 900d, true, true)]
+        [DataRow(3200d, 1000d, true, true)]
+        [DataRow(300d, 480d, false, true)]
+        [DataRow(3200d, 1000d, false, true)]
+        [DataRow(300d, 480d, true, false)]
+        [DataRow(519d, 480d, true, false)]
+        public void ContentColumns_KeepTheirMinimumWidthsAndScrollToTheirRightEdges(double width, double height, bool showWork, bool showNews)
         {
             var document = Read("StartScreenControl.xaml");
             var definition = new XElement(document.Descendants(_presentation + "ScrollViewer")
@@ -551,17 +627,24 @@ namespace StartScreen.Test
                 new[] { "PreviewMouseWheel", "SizeChanged", "ScrollChanged" }.Contains(attribute.Name.LocalName)).ToArray())
                 attribute.Remove();
             var layout = definition.Descendants(_presentation + "Grid").Single(element => element.Attribute(_xaml + "Name")?.Value == "ContentLayout");
-            var contentWidth = Math.Max(showWork ? 1400 : 440, width - 24);
-            var columns = StartScreen.ToolWindows.StartScreenControl.CalculateContentLayout(width - 24, showWork);
+            var columns = StartScreen.ToolWindows.StartScreenControl.CalculateContentLayout(width - 24, showWork, showNews);
+            var contentWidth = Math.Max(width - 24, columns.WorkWidth + (showNews ? 440 : 0));
             layout.SetAttributeValue("Width", contentWidth);
             layout.Element(_presentation + "Grid.ColumnDefinitions")!.Elements().First().SetAttributeValue("Width", columns.WorkWidth);
-            layout.Elements().Single(element => element.Name.LocalName == "DevHubPanel").ReplaceWith(new XElement(_presentation + "Border"));
+            layout.Elements().Single(element => element.Name.LocalName == "DevHubPanel").ReplaceWith(new XElement(_presentation + "Border",
+                new XAttribute(_xaml + "Name", "TestWorkPanel"), new XAttribute("Grid.RowSpan", "2")));
             var sidebarDefinition = layout.Elements(_presentation + "Grid").Single();
             sidebarDefinition.SetAttributeValue("Grid.Column", showWork ? 1 : 0);
             sidebarDefinition.SetAttributeValue("Grid.ColumnSpan", showWork ? 1 : 2);
             var newsColumn = layout.Element(_presentation + "Grid.ColumnDefinitions")!.Elements().Last();
             Assert.AreEqual("440", newsColumn.Attribute("MinWidth")?.Value);
             Assert.IsNull(newsColumn.Attribute("MaxWidth"));
+            if (!showNews)
+            {
+                newsColumn.SetAttributeValue("MinWidth", "0");
+                newsColumn.SetAttributeValue("Width", "0");
+                sidebarDefinition.SetAttributeValue("Visibility", "Collapsed");
+            }
             sidebarDefinition.RemoveNodes();
             sidebarDefinition.Add(new XElement(_presentation + "ScrollViewer", new XAttribute("VerticalScrollBarVisibility", "Auto"),
                 new XElement(_presentation + "Border", new XAttribute("Height", "1400"))));
@@ -575,15 +658,26 @@ namespace StartScreen.Test
             Layout(page, width, height);
             Assert.AreEqual(height, page.ViewportHeight, 0.01);
             Assert.AreEqual(page.ViewportHeight, content.ActualHeight, 0.01);
-            Assert.AreEqual(contentWidth - columns.WorkWidth, sidebar.ActualWidth, 0.01);
-            Assert.IsGreaterThanOrEqualTo(440d, sidebar.ActualWidth);
-            Assert.IsLessThanOrEqualTo(1000d, columns.WorkWidth);
+            Assert.IsLessThanOrEqualTo(900d, columns.WorkWidth);
             if (showWork)
-                Assert.IsGreaterThanOrEqualTo(960d, columns.WorkWidth);
-            Assert.AreEqual(width, sidebar.TranslatePoint(new Point(sidebar.ActualWidth, 0), page).X, 0.01);
-            Assert.AreEqual(height, sidebar.TranslatePoint(new Point(0, sidebar.ActualHeight), page).Y, 0.01);
+                Assert.IsGreaterThanOrEqualTo(520d, columns.WorkWidth);
+            if (showNews)
+            {
+                Assert.AreEqual(contentWidth - columns.WorkWidth, sidebar.ActualWidth, 0.01);
+                Assert.IsGreaterThanOrEqualTo(440d, sidebar.ActualWidth);
+                Assert.AreEqual(width, sidebar.TranslatePoint(new Point(sidebar.ActualWidth, 0), page).X, 0.01);
+                Assert.AreEqual(height, sidebar.TranslatePoint(new Point(0, sidebar.ActualHeight), page).Y, 0.01);
+                Assert.IsGreaterThan(0d, ((ScrollViewer)sidebar.Children[0]).ScrollableHeight);
+            }
+            else
+            {
+                var work = Descendants<Border>(page).Single(element => element.Name == "TestWorkPanel");
+                Assert.AreEqual(520d, work.ActualWidth, 0.01);
+                Assert.IsGreaterThan(0d, horizontal.ScrollableWidth);
+                Assert.AreEqual(horizontal.ScrollableWidth, horizontal.HorizontalOffset, 0.01);
+                Assert.AreEqual(width, work.TranslatePoint(new Point(work.ActualWidth, 0), page).X, 0.01);
+            }
             Assert.AreEqual(0d, page.ScrollableHeight);
-            Assert.IsGreaterThan(0d, ((ScrollViewer)sidebar.Children[0]).ScrollableHeight);
         }
 
         [STATestMethod]
@@ -613,19 +707,30 @@ namespace StartScreen.Test
 
         [STATestMethod]
         [DataRow(800d, 12d)]
+        [DataRow(1000d, 12d)]
+        [DataRow(1200d, 12d)]
         [DataRow(1400d, 12d)]
         [DataRow(1746d, 12d)]
+        [DataRow(1920d, 12d)]
+        [DataRow(2400d, 12d)]
+        [DataRow(1400d, 16d)]
         [DataRow(800d, 20d)]
         [DataRow(1746d, 20d)]
-        public void Header_WrapsCommandsAndStatusWithoutOverlapping(double width, double fontSize)
+        public void Header_KeepsRefreshAndSettingsOnTheFirstRowWithoutOverlapping(double width, double fontSize)
         {
             var document = Read("StartScreenControl.xaml");
-            var actionBar = document.Descendants(_presentation + "WrapPanel")
+            var actionBar = document.Descendants()
                 .Single(element => element.Attribute(_xaml + "Name")?.Value == "ActionBar");
+            Assert.AreEqual("MruLayout_SizeChanged", actionBar.Attribute("SizeChanged")?.Value);
+            Assert.AreEqual("MruLayout_SizeChanged", document.Root!.Attribute("SizeChanged")?.Value);
+            var recentDefinition = document.Descendants(_presentation + "DockPanel")
+                .Single(element => element.Attribute(_xaml + "Name")?.Value == "RecentPane");
+            var leftColumnDefinition = document.Descendants(_presentation + "ColumnDefinition")
+                .Single(element => element.Attribute(_xaml + "Name")?.Value == "LeftColumn");
             var definition = new XElement(actionBar.Ancestors(_presentation + "Border").First());
             definition.Descendants(_presentation + "Button.ContextMenu").Remove();
             foreach (var attribute in definition.DescendantsAndSelf().Attributes().Where(attribute =>
-                new[] { "Click", "PreviewKeyDown", "PreviewMouseLeftButtonDown" }.Contains(attribute.Name.LocalName)).ToArray())
+                new[] { "Click", "PreviewKeyDown", "PreviewMouseLeftButtonDown", "SizeChanged" }.Contains(attribute.Name.LocalName)).ToArray())
                 attribute.Remove();
             foreach (var image in definition.Descendants().Where(element => element.Name.LocalName == "CrispImage").ToArray())
                 image.ReplaceWith(new XElement(_presentation + "Border", new XAttribute("Width", "16"), new XAttribute("Height", "16")));
@@ -636,28 +741,136 @@ namespace StartScreen.Test
             styles.Single(element => element.Attribute(_xaml + "Key")?.Value == "ActionButtonStyle").Attribute("BasedOn")!.Remove();
             var root = (Grid)SharedXamlReader.Parse(new XElement(_presentation + "Grid",
                 new XAttribute(XNamespace.Xmlns + "x", _xaml.NamespaceName),
+                new XAttribute(XName.Get("Typography.Role", "clr-namespace:StartScreen.ToolWindows"), "Body"),
                 new XElement(_presentation + "Grid.Resources", styles,
                     new XElement(_presentation + "BooleanToVisibilityConverter", new XAttribute(_xaml + "Key", "BoolToVisibilityConverter"))),
-                definition).ToString());
-            root.DataContext = new
+                new XElement(_presentation + "Grid.RowDefinitions",
+                    new XElement(_presentation + "RowDefinition", new XAttribute("Height", "Auto")),
+                    new XElement(_presentation + "RowDefinition", new XAttribute("Height", "*"))),
+                definition,
+                new XElement(_presentation + "Grid", new XAttribute("Grid.Row", "1"),
+                    new XElement(_presentation + "Grid.ColumnDefinitions", new XElement(leftColumnDefinition),
+                        new XElement(_presentation + "ColumnDefinition", new XAttribute("Width", "*"))),
+                    new XElement(_presentation + "DockPanel", new XAttribute(recentDefinition.Attribute("Margin")!),
+                        new XElement(_presentation + "Border", new XAttribute(_xaml + "Name", "MruPanel"))))).ToString());
+            var recentLayout = (Grid)root.Children[1];
+            var recentPane = (DockPanel)recentLayout.Children[0];
+            var recentColumn = recentLayout.ColumnDefinitions[0];
+            var commands = (Grid)root.FindName("ActionBar");
+            var toolbarButtons = (StackPanel)root.FindName("HeaderButtons");
+            void UpdateMruLayout(object sender, SizeChangedEventArgs e) => StartScreen.ToolWindows.StartScreenControl.ApplyMruColumnWidths(
+                recentColumn, commands, recentPane.Margin, root.ActualWidth, toolbarButtons.DesiredSize.Width);
+            commands.SizeChanged += UpdateMruLayout;
+            root.SizeChanged += UpdateMruLayout;
+            object Status(string caption, string serviceText = "Service operational", bool showService = true) => new
             {
-                HasServiceHealthStatus = true, ServiceHealthText = "Services healthy", IsUpdateAvailable = true,
-                UpdateAvailableText = "Update to 18.5", UnifiedRefreshStatus = "Updated just now", IsRefreshingAny = false,
+                HasServiceHealthStatus = showService, ServiceHealthText = serviceText, IsUpdateAvailable = true,
+                UpdateAvailableText = "VS 18.14.12423.272 update available", UnifiedRefreshStatus = caption, IsRefreshingAny = false,
             };
+            root.DataContext = Status("Verifying cached activity accounts...");
             root.Resources["TestEnvironmentFontSize"] = fontSize;
             StartScreen.ToolWindows.Typography.SetEnvironmentSize(root, fontSize);
             for (var pass = 0; pass < 3; pass++)
                 Layout(root, width, 400);
             var header = (Grid)((Border)root.Children[0]).Child;
             var launch = (StackPanel)header.Children[0];
-            var status = (StackPanel)header.Children[1];
+            var status = (DockPanel)header.Children[1];
             Assert.IsGreaterThanOrEqualTo(launch.TranslatePoint(new Point(launch.ActualWidth, 0), root).X,
                 status.TranslatePoint(new Point(), root).X);
-            foreach (var button in Descendants<Button>(header))
+            foreach (var button in commands.Children.OfType<Button>().Concat(Descendants<Button>(status)))
             {
                 Assert.IsGreaterThan(0d, button.ActualWidth);
-                Assert.IsGreaterThanOrEqualTo(0d, button.TranslatePoint(new Point(), root).X);
-                Assert.IsLessThanOrEqualTo(width, button.TranslatePoint(new Point(button.ActualWidth, 0), root).X);
+                if (!commands.Children.Contains(button))
+                {
+                    Assert.IsGreaterThanOrEqualTo(launch.TranslatePoint(new Point(launch.ActualWidth, 0), root).X,
+                        button.TranslatePoint(new Point(), root).X);
+                    Assert.IsLessThanOrEqualTo(width, button.TranslatePoint(new Point(button.ActualWidth, 0), root).X);
+                }
+            }
+            var refresh = Descendants<Button>(header).Single(button => button.Name == "UnifiedRefreshButton");
+            var settings = Descendants<Button>(header).Single(button => button.Name == "StartScreenSettingsButton");
+            var firstAction = commands.Children.OfType<Button>().First();
+            var attach = commands.Children.OfType<Button>().Single(button => button.Name == "AttachToProcessButton");
+            Assert.AreEqual(firstAction.TranslatePoint(new Point(), root).Y, refresh.TranslatePoint(new Point(), root).Y, 0.01);
+            Assert.AreEqual(refresh.TranslatePoint(new Point(0, refresh.ActualHeight / 2), root).Y,
+                settings.TranslatePoint(new Point(0, settings.ActualHeight / 2), root).Y, 0.01);
+            var refreshOrigin = refresh.TranslatePoint(new Point(), root);
+            var settingsOrigin = settings.TranslatePoint(new Point(), root);
+            var service = Descendants<DockPanel>(header).Single(panel => panel.Name == "ServiceHealthPanel");
+            foreach (var serviceText in new[] { "Service operational", "Visual Studio service incident with a very long description" })
+            {
+                root.DataContext = Status("Updated just now", serviceText);
+                for (var pass = 0; pass < 3; pass++)
+                    Layout(root, width, 400);
+                Assert.AreEqual(refreshOrigin, refresh.TranslatePoint(new Point(), root));
+                Assert.AreEqual(settingsOrigin, settings.TranslatePoint(new Point(), root));
+                Assert.IsGreaterThanOrEqualTo(refresh.TranslatePoint(new Point(0, refresh.ActualHeight), root).Y,
+                    service.TranslatePoint(new Point(), root).Y);
+                Assert.IsGreaterThanOrEqualTo(refreshOrigin.X - 0.01, service.TranslatePoint(new Point(), root).X);
+                Assert.IsLessThanOrEqualTo(width - 24 + 0.01,
+                    service.TranslatePoint(new Point(service.ActualWidth, 0), root).X);
+            }
+            root.DataContext = Status("Updated just now", showService: false);
+            Layout(root, width, 400);
+            Assert.AreEqual(Visibility.Collapsed, service.Visibility);
+            Assert.AreEqual(refreshOrigin, refresh.TranslatePoint(new Point(), root));
+            Assert.AreEqual(settingsOrigin, settings.TranslatePoint(new Point(), root));
+            var caption = Descendants<TextBlock>(header).Single(text => text.Name == "LastRefreshText");
+            foreach (var text in new[] { "Updated just now", "Loading GitHub activity for a repository with a very long name..." })
+            {
+                root.DataContext = Status(text);
+                Layout(root, width, 400);
+                Assert.AreEqual(refreshOrigin, refresh.TranslatePoint(new Point(), root));
+                Assert.AreEqual(settingsOrigin, settings.TranslatePoint(new Point(), root));
+                var captionViewport = (Grid)caption.Parent;
+                Assert.IsTrue(captionViewport.ClipToBounds);
+                var visibleCaption = new Rect(caption.TranslatePoint(new Point(), root), caption.RenderSize);
+                visibleCaption.Intersect(new Rect(captionViewport.TranslatePoint(new Point(), root), captionViewport.RenderSize));
+                if (!visibleCaption.IsEmpty && visibleCaption.Width > 0 && visibleCaption.Height > 0)
+                    Assert.IsLessThanOrEqualTo(refreshOrigin.X, visibleCaption.Right);
+            }
+            var recent = (Border)recentPane.Children[0];
+            foreach (var recentWidth in new[] { 280d, 600d, 680d, 280d })
+            {
+                recentColumn.Width = new GridLength(recentWidth);
+                for (var pass = 0; pass < 3; pass++)
+                    Layout(root, width, 400);
+                Assert.AreEqual(recent.ActualWidth, launch.ActualWidth, 0.01);
+                Assert.AreEqual(recent.ActualWidth, commands.ActualWidth, 0.01);
+                Assert.AreEqual(recent.TranslatePoint(new Point(), root).X, launch.TranslatePoint(new Point(), root).X, 0.01);
+                var recentRight = recent.TranslatePoint(new Point(recent.ActualWidth, 0), root).X;
+                Assert.IsGreaterThanOrEqualTo(commands.ActualWidth, recent.ActualWidth);
+                foreach (var button in commands.Children.OfType<Button>())
+                {
+                    Assert.AreEqual(firstAction.TranslatePoint(new Point(), root).Y,
+                        button.TranslatePoint(new Point(), root).Y, 0.01);
+                    Assert.IsLessThanOrEqualTo(recentRight + 0.01,
+                        button.TranslatePoint(new Point(button.ActualWidth, 0), root).X);
+                }
+                Assert.IsLessThanOrEqualTo(recentRight + 0.01,
+                    attach.TranslatePoint(new Point(attach.ActualWidth, 0), root).X);
+                Assert.IsGreaterThanOrEqualTo(recent.TranslatePoint(new Point(), root).X - 0.01,
+                    attach.TranslatePoint(new Point(), root).X);
+                Assert.AreEqual(firstAction.TranslatePoint(new Point(), root).Y, refresh.TranslatePoint(new Point(), root).Y, 0.01);
+            }
+            if (fontSize == 12)
+            {
+                var previousGap = 0d;
+                foreach (var (screenWidth, expectedRecentWidth) in new[] { (1600d, 560d), (1920d, 614.4d), (3200d, 680d), (1600d, 560d) })
+                {
+                    for (var pass = 0; pass < 3; pass++)
+                        Layout(root, screenWidth, 400);
+                    Assert.AreEqual(expectedRecentWidth, recentColumn.ActualWidth, 0.01);
+                    var secondAction = commands.Children.OfType<Button>().ElementAt(1);
+                    var gap = secondAction.TranslatePoint(new Point(), root).X
+                        - firstAction.TranslatePoint(new Point(firstAction.ActualWidth, 0), root).X;
+                    if (screenWidth > 1600)
+                        Assert.IsGreaterThan(previousGap, gap);
+                    previousGap = gap;
+                    Assert.AreEqual(recent.TranslatePoint(new Point(recent.ActualWidth, 0), root).X,
+                        attach.TranslatePoint(new Point(attach.ActualWidth, 0), root).X, 0.01);
+                    Assert.AreEqual(firstAction.TranslatePoint(new Point(), root).Y, attach.TranslatePoint(new Point(), root).Y, 0.01);
+                }
             }
         }
 

@@ -649,26 +649,16 @@ namespace StartScreen.Test
         }
 
         [TestMethod]
-        [DataRow(780d, true, 960d, false, 1, 1)]
-        [DataRow(900d, true, 960d, false, 1, 1)]
-        [DataRow(1399d, true, 960d, false, 1, 1)]
-        [DataRow(1400d, true, 960d, false, 1, 1)]
-        [DataRow(1401d, true, 961d, false, 1, 1)]
-        [DataRow(1439d, true, 999d, false, 1, 1)]
-        [DataRow(1440d, true, 1000d, false, 1, 1)]
-        [DataRow(1441d, true, 1000d, false, 1, 1)]
-        [DataRow(1600d, true, 1000d, false, 1, 2)]
-        [DataRow(1663d, true, 1000d, false, 1, 2)]
-        [DataRow(1664d, true, 1000d, false, 2, 2)]
-        [DataRow(1995d, true, 1000d, false, 2, 3)]
-        [DataRow(1996d, true, 1000d, false, 3, 3)]
-        [DataRow(2200d, true, 1000d, false, 3, 4)]
-        [DataRow(3200d, true, 1000d, false, 6, 7)]
-        [DataRow(779d, true, 960d, false, 1, 1)]
-        [DataRow(0d, true, 960d, false, 1, 1)]
-        [DataRow(1000d, true, 960d, false, 1, 1)]
-        [DataRow(1080d, true, 960d, false, 1, 1)]
-        [DataRow(1081d, true, 960d, false, 1, 1)]
+        [DataRow(0d, true, 520d, false, 1, 1)]
+        [DataRow(300d, true, 520d, false, 1, 1)]
+        [DataRow(799d, true, 520d, false, 1, 1)]
+        [DataRow(800d, true, 520d, false, 1, 1)]
+        [DataRow(1000d, true, 650d, false, 1, 1)]
+        [DataRow(1200d, true, 780d, false, 1, 1)]
+        [DataRow(1400d, true, 900d, false, 1, 1)]
+        [DataRow(1564d, true, 900d, false, 2, 2)]
+        [DataRow(2200d, true, 900d, false, 3, 4)]
+        [DataRow(3200d, true, 900d, false, 6, 7)]
         [DataRow(1200d, false, 0d, false, 3, 4)]
         [DataRow(0d, false, 0d, false, 1, 1)]
         [DataRow(300d, false, 0d, false, 1, 1)]
@@ -685,10 +675,28 @@ namespace StartScreen.Test
             Assert.AreEqual(expectedVideoColumns, layout.VideoColumns);
             if (showWork)
             {
-                Assert.IsLessThanOrEqualTo(1000d, layout.WorkWidth);
-                Assert.IsGreaterThanOrEqualTo(960d, layout.WorkWidth);
-                Assert.IsGreaterThanOrEqualTo(440d, Math.Max(1400, width) - layout.WorkWidth);
+                Assert.IsLessThanOrEqualTo(900d, layout.WorkWidth);
+                Assert.IsGreaterThanOrEqualTo(520d, layout.WorkWidth);
             }
+        }
+
+        [TestMethod]
+        [DataRow(0d, true, 520d)]
+        [DataRow(300d, true, 520d)]
+        [DataRow(519d, true, 520d)]
+        [DataRow(520d, true, 520d)]
+        [DataRow(521d, true, 521d)]
+        [DataRow(800d, true, 800d)]
+        [DataRow(900d, true, 900d)]
+        [DataRow(901d, true, 900d)]
+        [DataRow(3200d, true, 900d)]
+        [DataRow(1600d, false, 0d)]
+        public void ContentLayout_HiddenNewsKeepsMyWorkWithinItsMinimumAndMaximumWidths(double width, bool showWork, double expectedWorkWidth)
+        {
+            var layout = StartScreenControl.CalculateContentLayout(width, showWork, showNews: false);
+
+            Assert.AreEqual(expectedWorkWidth, layout.WorkWidth);
+            Assert.IsFalse(layout.Stacked);
         }
 
         [TestMethod]

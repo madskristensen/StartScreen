@@ -1289,7 +1289,7 @@ namespace StartScreen.ToolWindows.Controls
 
         internal bool FocusFirstItem()
         {
-            if (DashboardPanel.Visibility != Visibility.Visible)
+            if (Visibility != Visibility.Visible || DashboardPanel.Visibility != Visibility.Visible)
                 return false;
 
             UpdateLayout();

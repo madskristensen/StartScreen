@@ -23,6 +23,7 @@
              PreviewDrop="UserControl_Drop"
              Loaded="UserControl_Loaded"
              Unloaded="UserControl_Unloaded"
+             SizeChanged="MruLayout_SizeChanged"
              PreviewKeyDown="UserControl_PreviewKeyDown"
              GotKeyboardFocus="UserControl_GotKeyboardFocus">
 
@@ -51,9 +52,9 @@
         <!-- Action Button Style -->
         <Style x:Key="ActionButtonStyle" TargetType="Button"
                BasedOn="{StaticResource {x:Static shell:VsResourceKeys.ThemedDialogButtonStyleKey}}">
-            <Setter Property="MinWidth" Value="90"/>
+            <Setter Property="MinWidth" Value="0"/>
             <Setter Property="MinHeight" Value="34"/>
-            <Setter Property="Padding" Value="12 6"/>
+            <Setter Property="Padding" Value="3 6"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="Width" Value="Auto"/>
             <Setter Property="Height" Value="Auto"/>
@@ -103,8 +104,8 @@
         <Style x:Key="NewsTabItemStyle" TargetType="TabItem">
             <Setter Property="Padding" Value="0 4"/>
             <Setter Property="local:Typography.Role" Value="Body"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarTextActiveBrushKey}}"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Template">
@@ -243,31 +244,42 @@
                 BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowBorderBrushKey}}">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="{Binding ActualWidth, ElementName=MruPanel}"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                <WrapPanel x:Name="ActionBar"
+                <Grid x:Name="ActionBar"
+                            SizeChanged="MruLayout_SizeChanged"
                             PreviewKeyDown="ActionBar_PreviewKeyDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*" MinWidth="1"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*" MinWidth="1"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*" MinWidth="1"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*" MinWidth="1"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
                     <Button Click="NewProjectButton_Click" Style="{StaticResource ActionButtonStyle}">
                         <TextBlock Text="New Project"/>
                     </Button>
-                    <Button Click="OpenProjectButton_Click" Style="{StaticResource CommandButtonStyle}" Margin="4 0 0 0">
+                    <Button Grid.Column="2" Click="OpenProjectButton_Click" Style="{StaticResource CommandButtonStyle}">
                         <TextBlock Text="Open Project"/>
                     </Button>
-                    <Button Click="OpenFolderButton_Click" Style="{StaticResource CommandButtonStyle}" Margin="4 0 0 0">
+                    <Button Grid.Column="4" Click="OpenFolderButton_Click" Style="{StaticResource CommandButtonStyle}">
                         <TextBlock Text="Open Folder"/>
                     </Button>
-                    <Button Click="CloneRepoButton_Click" Style="{StaticResource CommandButtonStyle}" Margin="4 0 0 0">
+                    <Button Grid.Column="6" Click="CloneRepoButton_Click" Style="{StaticResource CommandButtonStyle}">
                         <TextBlock Text="Clone Repo"/>
                     </Button>
-                    <Button x:Name="AttachToProcessButton"
+                    <Button x:Name="AttachToProcessButton" Grid.Column="8"
                             Click="AttachToProcessButton_Click"
                             PreviewMouseLeftButtonDown="AttachToProcessButton_PreviewMouseLeftButtonDown"
                             Style="{StaticResource CommandButtonStyle}"
-                            Padding="12 0 0 0"
+                            Padding="3 0 0 0"
                             HorizontalContentAlignment="Stretch"
-                            Margin="4 0 0 0"
                             ToolTip="Attach to Process">
                         <Button.ContextMenu>
                             <ContextMenu x:Name="AttachToProcessMenu">
@@ -283,9 +295,9 @@
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="25"/>
+                                <ColumnDefinition Width="18"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Attach" VerticalAlignment="Center" Margin="0 0 12 0"/>
+                            <TextBlock Text="Attach" VerticalAlignment="Center" Margin="0 0 3 0"/>
                             <Border Grid.Column="1" BorderThickness="1 0 0 0" Padding="0 12"
                                     BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=Button}}">
                                 <Path Data="M0,0 L6,0 L3,4 z" Width="6" Height="4" Stretch="Fill"
@@ -294,55 +306,12 @@
                             </Border>
                         </Grid>
                     </Button>
-                </WrapPanel>
+                </Grid>
 
                 </StackPanel>
-                <StackPanel Grid.Column="1" Margin="16 0 0 0" HorizontalAlignment="Right">
-                    <WrapPanel HorizontalAlignment="Right">
-                    <StackPanel Orientation="Horizontal" Margin="0 0 16 0" VerticalAlignment="Center" ToolTip="{Binding ServiceHealthDetails}"
-                                Visibility="{Binding HasServiceHealthStatus, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Collapsed, TargetNullValue=Collapsed}">
-                        <imaging:CrispImage Width="12" Height="12" Margin="0 0 6 0" VerticalAlignment="Center">
-                            <imaging:CrispImage.Style>
-                                <Style TargetType="imaging:CrispImage">
-                                    <Setter Property="Moniker" Value="{x:Static catalog:KnownMonikers.StatusInformation}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsServiceHealthy}" Value="True">
-                                            <Setter Property="Moniker" Value="{x:Static catalog:KnownMonikers.StatusOK}"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsServiceHealthy}" Value="False">
-                                            <Setter Property="Moniker" Value="{x:Static catalog:KnownMonikers.StatusWarning}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </imaging:CrispImage.Style>
-                        </imaging:CrispImage>
-                        <TextBlock Style="{StaticResource StartScreen.Metadata}" Opacity="0.7">
-                            <Hyperlink Click="ServiceStatusLink_Click">
-                                <Hyperlink.Style>
-                                    <Style TargetType="Hyperlink">
-                                        <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
-                                        <Setter Property="TextDecorations" Value="{x:Null}"/>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Hyperlink.Style>
-                                <Run Text="{Binding ServiceHealthText, Mode=OneWay}"/>
-                            </Hyperlink>
-                        </TextBlock>
-                    </StackPanel>
-                        <TextBlock Margin="0 0 16 0" VerticalAlignment="Center"
-                                   Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Collapsed, TargetNullValue=Collapsed}">
-                            <Hyperlink Click="UpdateNowButton_Click" Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
-                                <Run Text="{Binding UpdateAvailableText, Mode=OneWay}"/>
-                            </Hyperlink>
-                        </TextBlock>
-                        <TextBlock x:Name="LastRefreshText" Text="{Binding UnifiedRefreshStatus}" Opacity="0.65"
-                                   Style="{StaticResource StartScreen.Metadata}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
-                                   Width="220" TextAlignment="Right" ToolTip="{Binding UnifiedRefreshDetails}"
-                                   VerticalAlignment="Center" Margin="0 0 16 0"/>
+                <DockPanel Grid.Column="1" Margin="16 0 0 0" VerticalAlignment="Top" LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Right">
+                    <StackPanel x:Name="HeaderButtons" Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button x:Name="UnifiedRefreshButton" Click="UnifiedRefreshButton_Click" ToolTip="Refresh Dev Hub, news, and videos">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
@@ -370,8 +339,62 @@
                                 ToolTip="Start Screen settings" AutomationProperties.Name="Start Screen settings">
                             <imaging:CrispImage Moniker="{x:Static catalog:KnownMonikers.Settings}" Width="16" Height="16"/>
                         </Button>
-                    </WrapPanel>
-                </StackPanel>
+                    </StackPanel>
+                    <DockPanel x:Name="ServiceHealthPanel" Margin="0 6 0 0" HorizontalAlignment="Right" ToolTip="{Binding ServiceHealthDetails}"
+                                MaxWidth="{Binding ActualWidth, ElementName=HeaderButtons}"
+                                ClipToBounds="True"
+                                Visibility="{Binding HasServiceHealthStatus, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Collapsed, TargetNullValue=Collapsed}">
+                        <imaging:CrispImage Width="12" Height="12" Margin="0 0 6 0" VerticalAlignment="Center">
+                            <imaging:CrispImage.Style>
+                                <Style TargetType="imaging:CrispImage">
+                                    <Setter Property="Moniker" Value="{x:Static catalog:KnownMonikers.StatusInformation}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsServiceHealthy}" Value="True">
+                                            <Setter Property="Moniker" Value="{x:Static catalog:KnownMonikers.StatusOK}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsServiceHealthy}" Value="False">
+                                            <Setter Property="Moniker" Value="{x:Static catalog:KnownMonikers.StatusWarning}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </imaging:CrispImage.Style>
+                        </imaging:CrispImage>
+                        <TextBlock Style="{StaticResource StartScreen.Metadata}" Opacity="0.7" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap">
+                            <Hyperlink Click="ServiceStatusLink_Click">
+                                <Hyperlink.Style>
+                                    <Style TargetType="Hyperlink">
+                                        <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ToolWindowTextBrushKey}}"/>
+                                        <Setter Property="TextDecorations" Value="{x:Null}"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Hyperlink.Style>
+                                <Run Text="{Binding ServiceHealthText, Mode=OneWay}"/>
+                            </Hyperlink>
+                        </TextBlock>
+                    </DockPanel>
+                    </StackPanel>
+                    <Grid VerticalAlignment="Top" Height="{Binding ActualHeight, ElementName=HeaderButtons}" ClipToBounds="True">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*" MaxWidth="236"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Margin="0 0 16 0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding UpdateAvailableText}"
+                                   Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVisibilityConverter}, FallbackValue=Collapsed, TargetNullValue=Collapsed}">
+                            <Hyperlink Click="UpdateNowButton_Click" Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
+                                <Run Text="Update available"/>
+                            </Hyperlink>
+                        </TextBlock>
+                        <TextBlock x:Name="LastRefreshText" Grid.Column="1" Text="{Binding UnifiedRefreshStatus}" Opacity="0.65"
+                                   Style="{StaticResource StartScreen.Metadata}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                   MaxWidth="220" TextAlignment="Right" ToolTip="{Binding UnifiedRefreshDetails}"
+                                   VerticalAlignment="Center" Margin="0 0 16 0"/>
+                    </Grid>
+                </DockPanel>
             </Grid>
         </Border>
             <ProgressBar x:Name="UnifiedProgressBar" Grid.Row="0" Height="2" VerticalAlignment="Bottom"
@@ -406,11 +429,11 @@
             </ProgressBar>
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="LeftColumn" Width="300" MinWidth="280"/>
+                    <ColumnDefinition x:Name="LeftColumn" Width="560" MinWidth="560" MaxWidth="680"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition x:Name="RightColumn" Width="*"/>
                 </Grid.ColumnDefinitions>
-                <DockPanel Grid.Column="0" Margin="24 20 16 16">
+                <DockPanel x:Name="RecentPane" Grid.Column="0" Margin="24 20 16 16">
                 <TextBlock DockPanel.Dock="Top" Text="Recent" Style="{StaticResource StartScreen.Heading}" Margin="0 0 0 16"/>
                 <!-- Search Box -->
                 <Grid DockPanel.Dock="Top" Margin="0 0 0 8" HorizontalAlignment="Stretch">
@@ -880,10 +903,16 @@
                                Margin="0 0 0 8"/>
 
                     <CheckBox x:Name="ShowDevHubCheckBox"
-                              Content="Show Dev Hub"
+                              Content="My work"
                               Margin="0 6 0 0"
                               Checked="ShowDevHubCheckBox_Changed"
                               Unchecked="ShowDevHubCheckBox_Changed"/>
+
+                    <CheckBox x:Name="ShowNewsUpdatesCheckBox"
+                              Content="News &amp; updates"
+                              Margin="0 6 0 0"
+                              Checked="ShowNewsUpdatesCheckBox_Changed"
+                              Unchecked="ShowNewsUpdatesCheckBox_Changed"/>
 
                     <Border BorderThickness="0 0 0 1"
                             BorderBrush="{DynamicResource {x:Static platformui:EnvironmentColors.CommandBarBorderBrushKey}}"
@@ -895,7 +924,7 @@
                             Dev Hub accounts and search query...
                         </Hyperlink>
                     </TextBlock>
-                    <TextBlock>
+                    <TextBlock x:Name="NewsFeedsSettingsLinkText">
                         <Hyperlink Click="NewsFeedsSettingsLink_Click"
                                    Foreground="{DynamicResource {x:Static platformui:EnvironmentColors.ControlLinkTextBrushKey}}">
                             Customize news feeds...

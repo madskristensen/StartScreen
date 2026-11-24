@@ -29,6 +29,7 @@ namespace StartScreen.ToolWindows
         private readonly DevHubStartupLoad _devHubStartup;
         private JoinableTask _controlLoadTask;
         private bool _isInitialized;
+        private bool _isUpdatingSettings;
         private bool _isSynchronizingContentHorizontalScroll;
         private readonly CancellationToken _shutdownToken = StartScreenPackage.ShutdownToken;
         private CancellationTokenSource _lifetimeCancellation;
@@ -60,6 +61,7 @@ namespace StartScreen.ToolWindows
             DataContext = _viewModel;
             _viewModel.LoadWorkspaceTagsAsync(options.WorkspaceTagsJson).FileAndForget(nameof(StartScreenControl));
             ApplyDevHubVisibility(options.DevHubEnabled);
+            ApplyNewsVisibility(options.NewsUpdatesEnabled);
             if (options.DevHubEnabled && _devHubService.CurrentDashboard != null)
                 ApplyStartupDevHubDashboard(_devHubService.CurrentDashboard);
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
@@ -200,7 +202,7 @@ namespace StartScreen.ToolWindows
                     return;
                 }
 
-                await ApplyDevHubEnabledAsync();
+                await ApplySectionVisibilityAsync();
 
                 UpdateResponsiveColumns();
 
@@ -257,10 +259,25 @@ namespace StartScreen.ToolWindows
 
         internal static void ApplyInitialMruWidth(ColumnDefinition column, double splitterPosition)
         {
-            if (splitterPosition >= 280 && splitterPosition <= 480)
+            if (splitterPosition >= 280 && splitterPosition <= 680)
             {
                 column.Width = new GridLength(splitterPosition);
             }
+        }
+
+        private void MruLayout_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ApplyMruColumnWidths(LeftColumn, ActionBar, RecentPane.Margin, ActualWidth, HeaderButtons.DesiredSize.Width);
+        }
+
+        internal static void ApplyMruColumnWidths(ColumnDefinition column, Grid commandBar, Thickness contentMargin,
+            double availableWidth, double toolbarWidth)
+        {
+            double commandWidth = commandBar.ColumnDefinitions.Sum(definition => definition.Width.IsAuto ? definition.ActualWidth : definition.MinWidth);
+            double minimumWidth = Math.Max(Math.Max(560, Math.Min(680, availableWidth * 0.32)),
+                Math.Ceiling(commandWidth) + contentMargin.Left + contentMargin.Right);
+            column.MaxWidth = Math.Max(minimumWidth, Math.Min(680, availableWidth - toolbarWidth - 24));
+            column.MinWidth = minimumWidth;
         }
 
         private void GridSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
@@ -280,20 +297,25 @@ namespace StartScreen.ToolWindows
                 return;
 
             bool showWork = DevHubPanelControl.Visibility == Visibility.Visible;
+            bool showNews = NewsColumnPanel.Visibility == Visibility.Visible;
             double contentWidth = Math.Max(0, RightPaneBorder.ActualWidth - NewsPanel.Margin.Left - NewsPanel.Margin.Right);
-            var layout = CalculateContentLayout(contentWidth, showWork);
-            ContentLayout.Width = Math.Max(contentWidth, showWork ? 1400 : 440);
+            var layout = CalculateContentLayout(contentWidth, showWork, showNews);
+            ContentLayout.Width = Math.Max(contentWidth, layout.WorkWidth + (showNews ? 440 : 0));
             DevHubColumn.Width = new GridLength(layout.WorkWidth);
-            NewsColumn.Width = new GridLength(1, GridUnitType.Star);
+            NewsColumn.MinWidth = showNews ? 440 : 0;
+            NewsColumn.Width = showNews ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             Grid.SetColumn(NewsColumnPanel, showWork ? 1 : 0);
             Grid.SetColumnSpan(NewsColumnPanel, showWork ? 1 : 2);
             ViewModel.UpdateColumnCounts(layout.NewsColumns, layout.VideoColumns);
         }
 
-        internal static (double WorkWidth, bool Stacked, int NewsColumns, int VideoColumns) CalculateContentLayout(double width, bool showWork)
+        internal static (double WorkWidth, bool Stacked, int NewsColumns, int VideoColumns) CalculateContentLayout(double width, bool showWork, bool showNews = true)
         {
-            double workWidth = showWork ? Math.Min(1000, Math.Max(1400, width) - 440) : 0;
-            double newsWidth = showWork ? Math.Max(1400, width) - workWidth : Math.Max(440, width);
+            width = Math.Max(0, width);
+            double workWidth = showWork ? Math.Min(900, Math.Max(520, showNews ? width * 0.65 : width)) : 0;
+            if (!showNews)
+                return (workWidth, false, 1, 1);
+            double newsWidth = Math.Max(440, width - workWidth);
             return (workWidth, false, Math.Max(1, (int)(newsWidth / 332)), Math.Max(1, (int)(newsWidth / 292)));
         }
 
@@ -508,7 +530,8 @@ namespace StartScreen.ToolWindows
 
         private void FocusFirstNewsItem()
         {
-            NewsKeyboardNavigation.FocusFirstItem(NewsTabs);
+            if (NewsColumnPanel.Visibility == Visibility.Visible)
+                NewsKeyboardNavigation.FocusFirstItem(NewsTabs);
         }
 
         private void NewsTabs_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -1377,7 +1400,16 @@ namespace StartScreen.ToolWindows
             try
             {
                 Options options = await Options.GetLiveInstanceAsync();
-                ShowDevHubCheckBox.IsChecked = options.DevHubEnabled;
+                _isUpdatingSettings = true;
+                try
+                {
+                    ShowDevHubCheckBox.IsChecked = options.DevHubEnabled;
+                    ShowNewsUpdatesCheckBox.IsChecked = options.NewsUpdatesEnabled;
+                }
+                finally
+                {
+                    _isUpdatingSettings = false;
+                }
                 StartScreenSettingsPopup.IsOpen = true;
             }
             catch (Exception ex)
@@ -1390,7 +1422,31 @@ namespace StartScreen.ToolWindows
 
         private void ShowDevHubCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            SaveShowDevHubAsync().FileAndForget(nameof(StartScreenControl));
+            if (!_isUpdatingSettings)
+                SaveShowDevHubAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private void ShowNewsUpdatesCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_isUpdatingSettings)
+                SaveShowNewsUpdatesAsync().FileAndForget(nameof(StartScreenControl));
+        }
+
+        private async Task SaveShowNewsUpdatesAsync()
+        {
+            try
+            {
+                bool show = ShowNewsUpdatesCheckBox.IsChecked == true;
+                Options options = await Options.GetLiveInstanceAsync();
+                options.NewsUpdatesEnabled = show;
+                await options.SaveAsync();
+                ApplyNewsVisibility(show);
+            }
+            catch (Exception ex)
+            {
+                await ex.LogAsync();
+                await VS.MessageBox.ShowErrorAsync("Start Screen", "Could not save the News & updates setting. Please try again.");
+            }
         }
 
         private async Task SaveShowDevHubAsync()
@@ -1418,12 +1474,13 @@ namespace StartScreen.ToolWindows
             }
         }
 
-        private async Task ApplyDevHubEnabledAsync()
+        private async Task ApplySectionVisibilityAsync()
         {
             try
             {
                 Options options = await Options.GetLiveInstanceAsync();
                 ApplyDevHubVisibility(options.DevHubEnabled);
+                ApplyNewsVisibility(options.NewsUpdatesEnabled);
             }
             catch (Exception ex)
             {
@@ -1435,6 +1492,13 @@ namespace StartScreen.ToolWindows
         {
             DevHubPanelControl.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             DevHubSettingsLinkText.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            UpdateResponsiveColumns();
+        }
+
+        private void ApplyNewsVisibility(bool show)
+        {
+            NewsColumnPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            NewsFeedsSettingsLinkText.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             UpdateResponsiveColumns();
         }
 

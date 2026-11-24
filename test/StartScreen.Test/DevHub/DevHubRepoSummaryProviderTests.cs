@@ -10,6 +10,7 @@ namespace StartScreen.Test.DevHub
     public class DevHubRepoSummaryProviderTests
     {
         [TestMethod]
+        [DoNotParallelize]
         public async Task VerifiedCountsAreSharedAcrossIdentityCacheInstancesButNotCredentialsAsync()
         {
             DevHubRepoSummaryFetcher.InvalidateSummaries();

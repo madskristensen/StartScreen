@@ -287,24 +287,28 @@ namespace StartScreen.Test
             var element = Read("StartScreenControl.xaml").Descendants(_presentation + "TextBlock")
                 .Single(candidate => candidate.Attribute(_xaml + "Name")?.Value == "LastRefreshText");
             var caption = (TextBlock)SharedXamlReader.Parse(element.ToString());
+            var host = new Grid { Width = 236 };
+            host.Children.Add(caption);
             caption.Resources["TestEnvironmentFontSize"] = environmentSize;
             caption.DataContext = new { IsRefreshingAny = false, UnifiedRefreshStatus = "Updated just now" };
             UpdateBindings(caption);
-            caption.Measure(new Size(420, double.PositiveInfinity));
-            var size = caption.DesiredSize;
+            host.Measure(new Size(420, double.PositiveInfinity));
+            host.Arrange(new Rect(host.DesiredSize));
+            var size = caption.RenderSize;
             Assert.AreEqual(Visibility.Visible, caption.Visibility);
             Assert.AreEqual("Updated just now", caption.Text);
-            Assert.AreEqual(220d + caption.Margin.Left + caption.Margin.Right, size.Width);
+            Assert.AreEqual(220d, size.Width);
             Assert.AreEqual(TextTrimming.CharacterEllipsis, caption.TextTrimming);
             foreach (var step in new[] { "Checking connected provider accounts...",
                 "Loading GitHub activity for a repository with a very long name that cannot fit in the caption...", "Updated just now" })
             {
                 caption.DataContext = new { UnifiedRefreshStatus = step, UnifiedRefreshDetails = step + "\n3 of 8 work items finished." };
                 UpdateBindings(caption);
-                caption.Measure(new Size(420, double.PositiveInfinity));
+                host.Measure(new Size(420, double.PositiveInfinity));
+                host.Arrange(new Rect(host.DesiredSize));
                 Assert.AreEqual(Visibility.Visible, caption.Visibility);
                 Assert.AreEqual(step, caption.Text);
-                Assert.AreEqual(size, caption.DesiredSize);
+                Assert.AreEqual(size, caption.RenderSize);
                 StringAssert.Contains((string)caption.ToolTip, step);
             }
         }

@@ -47,6 +47,7 @@ namespace StartScreen.Test.DevHub
         }
 
         [TestMethod]
+        [DoNotParallelize]
         [DataRow(false, false)]
         [DataRow(true, false)]
         [DataRow(false, true)]

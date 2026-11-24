@@ -13,6 +13,33 @@ namespace StartScreen.Test
     public class StartScreenInlineBindingTests
     {
         [STATestMethod]
+        [DataRow("VS 18.14.12423.272 update available")]
+        [DataRow("VS update available")]
+        public void UpdateLink_ShowsShortCaptionAndKeepsVersionDetailsInTooltip(string details)
+        {
+            var document = ReadLayoutXaml("StartScreenControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            var linkDefinition = document.Descendants(p + "Hyperlink")
+                .Single(element => element.Attribute("Click")?.Value == "UpdateNowButton_Click");
+            var definition = new XElement(linkDefinition.Parent!);
+            definition.Attribute("Visibility")!.Remove();
+            var hyperlink = definition.Element(p + "Hyperlink")!;
+            hyperlink.Attribute("Click")!.Remove();
+            hyperlink.Attribute("Foreground")!.Remove();
+            var caption = (TextBlock)XamlReader.Parse(definition.ToString());
+            var binding = BindingOperations.GetBinding(caption, FrameworkElement.ToolTipProperty)!;
+            BindingOperations.SetBinding(caption, FrameworkElement.ToolTipProperty, new Binding(binding.Path.Path)
+            {
+                Source = new { UpdateAvailableText = details },
+                Mode = binding.Mode,
+            }).UpdateTarget();
+
+            var link = (Hyperlink)caption.Inlines.FirstInline;
+            Assert.AreEqual("Update available", new TextRange(link.ContentStart, link.ContentEnd).Text);
+            Assert.AreEqual(details, caption.ToolTip);
+        }
+
+        [STATestMethod]
         [DataRow(12d)]
         [DataRow(20d)]
         public void CopilotLoadingCaption_FitsTheHeaderWithoutTrimming(double fontSize)
@@ -52,6 +79,36 @@ namespace StartScreen.Test
 
             Assert.AreEqual("Customize news feeds...", link.Value.Trim());
             Assert.AreEqual("StartScreenSettingsPopup", link.Ancestors(p + "Popup").Single().Attribute(x + "Name")?.Value);
+        }
+
+        [STATestMethod]
+        public void SectionVisibilitySettings_OfferIndependentMyWorkAndNewsCheckboxes()
+        {
+            var document = ReadLayoutXaml("StartScreenControl.xaml");
+            XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+            XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+            var popup = document.Descendants(p + "Popup").Single(element => element.Attribute(x + "Name")?.Value == "StartScreenSettingsPopup");
+            var definitions = popup.Descendants(p + "CheckBox").ToArray();
+            CollectionAssert.AreEqual(new[] { "My work", "News & updates" }, definitions.Select(element => element.Attribute("Content")?.Value).ToArray());
+            var root = new StackPanel();
+            foreach (var definition in definitions)
+            {
+                var copy = new XElement(definition);
+                var handler = copy.Attribute(x + "Name")!.Value + "_Changed";
+                Assert.AreEqual(handler, copy.Attribute("Checked")?.Value);
+                Assert.AreEqual(handler, copy.Attribute("Unchecked")?.Value);
+                copy.Attribute("Checked")!.Remove();
+                copy.Attribute("Unchecked")!.Remove();
+                root.Children.Add((CheckBox)XamlReader.Parse(copy.ToString()));
+            }
+            var work = (CheckBox)root.Children[0];
+            var news = (CheckBox)root.Children[1];
+            work.IsChecked = news.IsChecked = true;
+            work.IsChecked = false;
+            Assert.IsTrue(news.IsChecked);
+            work.IsChecked = true;
+            news.IsChecked = false;
+            Assert.IsTrue(work.IsChecked);
         }
 
         [STATestMethod]
@@ -226,18 +283,19 @@ namespace StartScreen.Test
         }
 
         [STATestMethod]
-        [DataRow(280d, 280d)]
-        [DataRow(320d, 320d)]
-        [DataRow(360d, 360d)]
-        [DataRow(450d, 450d)]
-        [DataRow(480d, 480d)]
-        [DataRow(0d, 300d)]
-        [DataRow(-1d, 300d)]
-        [DataRow(279d, 300d)]
-        [DataRow(481d, 300d)]
-        [DataRow(double.NaN, 300d)]
-        [DataRow(double.PositiveInfinity, 300d)]
-        [DataRow(double.NegativeInfinity, 300d)]
+        [DataRow(280d, 560d)]
+        [DataRow(360d, 560d)]
+        [DataRow(480d, 560d)]
+        [DataRow(560d, 560d)]
+        [DataRow(600d, 600d)]
+        [DataRow(680d, 680d)]
+        [DataRow(0d, 560d)]
+        [DataRow(-1d, 560d)]
+        [DataRow(279d, 560d)]
+        [DataRow(681d, 560d)]
+        [DataRow(double.NaN, 560d)]
+        [DataRow(double.PositiveInfinity, 560d)]
+        [DataRow(double.NegativeInfinity, 560d)]
         public void RecentItems_UseSavedWidthOnFirstLayoutAndKeepItAsContentLoads(double savedWidth, double expectedWidth)
         {
             var document = ReadLayoutXaml("StartScreenControl.xaml");
@@ -671,7 +729,7 @@ namespace StartScreen.Test
             var document = ReadLayoutXaml("StartScreenControl.xaml");
             XNamespace p = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
             XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-            var definition = new XElement(document.Descendants(p + "StackPanel")
+            var definition = new XElement(document.Descendants(p + "DockPanel")
                 .Single(element => element.Attribute("ToolTip")?.Value == "{Binding ServiceHealthDetails}"));
             definition.RemoveNodes();
             var root = new XElement(p + "Grid",
@@ -679,7 +737,7 @@ namespace StartScreen.Test
                     new XElement(p + "BooleanToVisibilityConverter", new XAttribute(x + "Key", "BoolToVisibilityConverter"))),
                 definition);
             var grid = (Grid)XamlReader.Parse(root.ToString());
-            var panel = (StackPanel)grid.Children[0];
+            var panel = (DockPanel)grid.Children[0];
             Assert.AreEqual(Visibility.Collapsed, panel.Visibility);
             var model = new StartScreenViewModel();
             var changed = new List<string?>();
@@ -796,7 +854,7 @@ namespace StartScreen.Test
                 .Single(element => element.Attribute("Text")?.Value == "News & updates"));
             var newsHeading = (TextBlock)XamlReader.Parse(newsHeaderDefinition.ToString());
             newsPanel.Children.Add(newsHeading);
-            var contentWidth = Math.Max(1400, width);
+            var contentWidth = Math.Max(width, layout.WorkWidth + 440);
             grid.Measure(new Size(contentWidth, 600));
             grid.Arrange(new Rect(0, 0, contentWidth, 600));
             grid.UpdateLayout();
@@ -1663,14 +1721,13 @@ namespace StartScreen.Test
             Assert.AreEqual("{Binding UnifiedRefreshStatus}", status.Attribute("Text")?.Value);
             Assert.AreEqual("{Binding UnifiedRefreshDetails}", status.Attribute("ToolTip")?.Value);
             Assert.AreEqual("NoWrap", status.Attribute("TextWrapping")?.Value);
-            Assert.AreEqual("220", status.Attribute("Width")?.Value);
+            Assert.AreEqual("220", status.Attribute("MaxWidth")?.Value);
             Assert.AreEqual("CharacterEllipsis", status.Attribute("TextTrimming")?.Value);
             Assert.AreEqual("Right", status.Attribute("TextAlignment")?.Value);
         }
 
         [STATestMethod]
         [DataRow(nameof(StartScreenViewModel.ServiceHealthText))]
-        [DataRow(nameof(StartScreenViewModel.UpdateAvailableText))]
         [DataRow(nameof(StartScreenViewModel.DiscoverySectionVersion))]
         public void InlineDisplayBinding_IsOneWayAndActivatesWithoutWritingToViewModel(string propertyName)
         {

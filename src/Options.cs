@@ -80,6 +80,10 @@ namespace StartScreen
 
         [Browsable(false)]
         [DefaultValue(true)]
+        public bool NewsUpdatesEnabled { get; set; } = true;
+
+        [Browsable(false)]
+        [DefaultValue(true)]
         public bool DevHubGitHubEnabled { get; set; } = true;
 
         [Browsable(false)]
